@@ -1,0 +1,31 @@
+name: Feature
+description: Implement a scoped project capability
+title: "[Feature] "
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and non-goals
+    validations:
+      required: true
+  - type: textarea
+    id: contract
+    attributes:
+      label: Data and API contract
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      value: "- [ ] "
+    validations:
+      required: true
+  - type: input
+    id: adr
+    attributes:
+      label: Related ADR
