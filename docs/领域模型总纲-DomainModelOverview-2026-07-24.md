@@ -1,0 +1,112 @@
+# 领域模型总纲 v2
+
+> 状态：有效  
+> 修订日期：2026-07-27  
+> 上级文档：`项目宪法-MarketDataCenter-2026-07-24.md`
+
+## 1. 当前领域范围
+
+第一阶段只有三个业务领域和一个采集审计边界：
+
+| 边界 | 职责 | 第一阶段实体 |
+| --- | --- | --- |
+| Ingestion | 采集批次、Raw 清单和质量结果 | `IngestionRun`、`RawManifest`、`QualityResult` |
+| Security | 证券身份、生命周期和名称历史 | `Security`、`SecurityNameHistory` |
+| Trading | A 股市场交易日历 | `TradingDay` |
+| Market | 不复权日频量价事实 | `DailyBar` |
+
+Capital、Classification、Metrics 是未来候选领域，不属于第一阶段。进入实现前必须创建新 ADR 和相应领域详设。
+
+## 2. 依赖方向
+
+```text
+Ingestion ───────────────┐
+                        ▼
+Security ────────────► Market
+Trading ─────────────► Market
+```
+
+- Ingestion 提供来源追溯，不包含业务事实语义。
+- Security 和 Trading 不依赖 Market。
+- Market 通过 `symbol` 关联 Security，通过 `(market, trade_date)` 关联 Trading。
+- 禁止基础领域反向依赖行情或未来统计领域。
+
+## 3. 数据流
+
+```text
+External Source
+      │
+      ▼
+Provider Fetch
+      │
+      ├──► Raw Store ──► Raw Manifest
+      │
+      ▼
+Standard DTO
+      │
+      ▼
+Validator
+      │
+      ├──失败──► Quality Result
+      │
+      ▼通过
+Persistence ──► Core Facts ──► api_v1 Views ──► PostgREST
+```
+
+后续出现派生计算时，在 Core Facts 后增加：
+
+```text
+Core Facts → Calculator → Versioned Derived Facts → Statistics
+```
+
+Calculator 必须是纯计算，不直接访问数据库或 Raw Store。
+
+## 4. Provider 边界
+
+Provider 按数据集能力拆分接口：
+
+- `SecurityProvider`；
+- `TradingCalendarProvider`；
+- `DailyBarProvider`。
+
+Provider 同时承担来源适配，输出标准 DTO。以下内容必须在 Provider 内完成：
+
+- 来源字段映射；
+- `symbol` 转换；
+- 日期、时区和枚举转换；
+- 价格、成交量、成交额单位转换；
+- 缺失值语义转换。
+
+Pipeline、Validator、Persistence 和 API 不允许出现第三方专用字段名。
+
+## 5. 标识与时间
+
+- 证券统一标识：`SSE:600000`、`SZSE:000001`、`BSE:920000`；
+- A 股统一市场日历标识：`CN_A_SHARE`；
+- 时区：`Asia/Shanghai`；
+- 交易日使用本地 `date`，不使用 UTC 日期替代；
+- 所有审计时间使用带时区时间戳，数据库统一保存 `timestamptz`。
+
+## 6. 存储边界
+
+| Schema | 用途 | 是否直接暴露 PostgREST |
+| --- | --- | --- |
+| `ingestion` | 采集、Raw 清单和运行记录 | 否 |
+| `core` | 标准事实 | 否 |
+| `audit` | 数据质量和审计 | 否 |
+| `api_v1` | 稳定只读 View/RPC | 是 |
+
+上层应用只能依赖 `api_v1`，不能依赖内部表结构。
+
+## 7. 一致性规则
+
+- 相同自然键写入必须幂等；
+- 所有 Core 事实必须带 `ingestion_id` 和 `source`；
+- Raw 对象必须记录 SHA-256；
+- 严重校验失败的数据不得进入 Core；
+- 生产 Schema 只能通过 migration 修改；
+- 删除或改变 API 字段需要新 API 版本或明确弃用窗口。
+
+## 8. 扩展纪律
+
+新增数据源时，先实现现有 Provider 契约和契约测试；新增领域时，先定义边界、事实、自然键、时间语义和 ADR。不得为了未来可能需求提前创建空领域包或空数据库表。
