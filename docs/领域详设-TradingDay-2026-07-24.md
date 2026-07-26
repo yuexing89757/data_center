@@ -24,16 +24,16 @@ timezone = Asia/Shanghai
 | 字段 | 类型 | 约束与含义 |
 | --- | --- | --- |
 | `market` | text | 第一阶段固定 `CN_A_SHARE` |
-| `trading_date` | date | 市场本地日期 |
+| `trade_date` | date | 市场本地日期 |
 | `is_trading_day` | boolean | 是否开市 |
 | `previous_trading_day` | date | 可重算派生字段 |
 | `next_trading_day` | date | 可重算派生字段 |
-| `source` | text | 来源 |
+| `source_code` | text | 标准来源标识，第一阶段为 `baostock` |
 | `ingestion_id` | uuid | 采集批次 |
 | `created_at` | timestamptz | 创建时间 |
 | `updated_at` | timestamptz | 最近更新时间 |
 
-主键：`(market, trading_date)`。
+主键：`(market, trade_date)`。
 
 ## 3. 日期覆盖
 
@@ -57,23 +57,22 @@ timezone = Asia/Shanghai
 ## 5. 标准 DTO
 
 ```text
-TradingDayDTO
+TradingDayRecord
 ├── market
-├── trading_date
+├── trade_date
 ├── is_trading_day
-├── source
-└── ingestion_id
+└── source_code
 ```
 
-前后交易日不由 Provider 提供，而由领域 Calculator 计算。
+DTO 不包含 `ingestion_id`；Pipeline 使用 `IngestionEnvelope[TradingDayRecord]` 附加批次 ID。前后交易日不由 Provider 提供，而由领域 Calculator 计算。
 
 ## 6. 幂等与校验
 
-- 按 `(market, trading_date)` upsert；
+- 按 `(market, trade_date)` upsert；
 - 同一采集批次重跑结果一致；
 - 请求范围不得出现日期缺口；
 - 每条记录的日期必须位于请求闭区间；
-- `previous_trading_day < trading_date < next_trading_day`；
+- `previous_trading_day < trade_date < next_trading_day`；
 - 前后日期自身必须是开市日；
 - 来源冲突进入质量结果，不静默选择。
 
@@ -82,7 +81,7 @@ TradingDayDTO
 `api_v1.trading_calendar` 只读 View 公开：
 
 ```text
-market, trading_date, is_trading_day,
+market, trade_date, is_trading_day,
 previous_trading_day, next_trading_day
 ```
 

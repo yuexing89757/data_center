@@ -42,7 +42,7 @@ Provider Fetch
       ├──► Raw Store ──► Raw Manifest
       │
       ▼
-Standard DTO
+Standard Record DTO
       │
       ▼
 Validator
@@ -50,6 +50,9 @@ Validator
       ├──失败──► Quality Result
       │
       ▼通过
+IngestionEnvelope(record + ingestion_id)
+      │
+      ▼
 Persistence ──► Core Facts ──► api_v1 Views ──► PostgREST
 ```
 
@@ -69,7 +72,7 @@ Provider 按数据集能力拆分接口：
 - `TradingCalendarProvider`；
 - `DailyBarProvider`。
 
-Provider 同时承担来源适配，输出标准 DTO。以下内容必须在 Provider 内完成：
+Provider 同时承担来源适配，输出标准 Record DTO。以下内容必须在 Provider 内完成：
 
 - 来源字段映射；
 - `symbol` 转换；
@@ -78,6 +81,8 @@ Provider 同时承担来源适配，输出标准 DTO。以下内容必须在 Pro
 - 缺失值语义转换。
 
 Pipeline、Validator、Persistence 和 API 不允许出现第三方专用字段名。
+
+Provider DTO 不包含 `ingestion_id`。Pipeline 在创建采集批次后，将通过校验的 Record DTO 包装为 `IngestionEnvelope[T]`，附加 `ingestion_id` 后交给 Persistence。
 
 ## 5. 标识与时间
 
@@ -101,7 +106,7 @@ Pipeline、Validator、Persistence 和 API 不允许出现第三方专用字段�
 ## 7. 一致性规则
 
 - 相同自然键写入必须幂等；
-- 所有 Core 事实必须带 `ingestion_id` 和 `source`；
+- 所有 Core 事实必须带 `ingestion_id` 和 `source_code`；
 - Raw 对象必须记录 SHA-256；
 - 严重校验失败的数据不得进入 Core；
 - 生产 Schema 只能通过 migration 修改；
