@@ -1,13 +1,12 @@
 """Apply repository SQL migrations to a self-hosted Supabase database."""
 
 from argparse import ArgumentParser
-from collections.abc import Sequence
 from os import environ
-from pathlib import Path
 
 import psycopg
 
-MIGRATION_DIR = Path(__file__).resolve().parents[1] / "supabase" / "migrations"
+from market_data_center.migrations import MIGRATION_DIR, apply_migrations
+
 TARGET_SCHEMAS = ("api_v1", "audit", "core", "ingestion")
 
 
@@ -24,7 +23,7 @@ def main() -> None:
         if args.mode == "check":
             _check(connection)
         else:
-            _apply(connection, sorted(MIGRATION_DIR.glob("*.sql")))
+            apply_migrations(connection, sorted(MIGRATION_DIR.glob("*.sql")))
 
 
 def _check(connection: psycopg.Connection[tuple[object, ...]]) -> None:
@@ -78,50 +77,6 @@ def _check(connection: psycopg.Connection[tuple[object, ...]]) -> None:
     print(f"api_views={views}")
     print(f"rls_tables={rls_tables}")
     print(f"migration_versions={versions}")
-
-
-def _apply(connection: psycopg.Connection[tuple[object, ...]], migrations: Sequence[Path]) -> None:
-    _ensure_history_table(connection)
-    applied = {
-        row[0]
-        for row in connection.execute(
-            "select version from supabase_migrations.schema_migrations"
-        ).fetchall()
-    }
-    for migration in migrations:
-        version, name = migration.stem.split("_", maxsplit=1)
-        if version in applied:
-            print(f"skip {migration.name}")
-            continue
-        sql = migration.read_text(encoding="utf-8")
-        with connection.transaction():
-            connection.execute(sql)
-            connection.execute(
-                """
-                insert into supabase_migrations.schema_migrations(version, name, statements)
-                values (%s, %s, %s)
-                """,
-                (version, name, [sql]),
-            )
-        print(f"applied {migration.name}")
-
-
-def _ensure_history_table(connection: psycopg.Connection[tuple[object, ...]]) -> None:
-    with connection.transaction():
-        connection.execute("create schema if not exists supabase_migrations")
-        connection.execute("""
-            create table if not exists supabase_migrations.schema_migrations (
-                version text not null primary key
-            )
-        """)
-        connection.execute("""
-            alter table supabase_migrations.schema_migrations
-            add column if not exists statements text[]
-        """)
-        connection.execute("""
-            alter table supabase_migrations.schema_migrations
-            add column if not exists name text
-        """)
 
 
 if __name__ == "__main__":
