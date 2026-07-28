@@ -17,6 +17,9 @@ dependencies = [
   "sqlalchemy>=2.0",
 ]
 
+[project.scripts]
+market-data-center = "market_data_center.cli:main"
+
 [dependency-groups]
 dev = [
   "mypy>=1.13",

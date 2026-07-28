@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from enum import StrEnum
-from typing import Generic, TypeVar
 from uuid import UUID
 
 
@@ -105,10 +104,7 @@ class DailyBarRecord:
                     raise ValueError(f"{field_name} must be within [low, high]")
 
 
-RecordT = TypeVar("RecordT", SecurityRecord, TradingDayRecord, DailyBarRecord)
-
-
 @dataclass(frozen=True, slots=True)
-class IngestionEnvelope(Generic[RecordT]):
+class IngestionEnvelope[RecordT: SecurityRecord | TradingDayRecord | DailyBarRecord]:
     ingestion_id: UUID
     record: RecordT

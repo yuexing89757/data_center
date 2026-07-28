@@ -1,0 +1,9 @@
+project_id = "market-data-center"
+
+[api]
+enabled = true
+schemas = ["api_v1"]
+extra_search_path = ["extensions"]
+
+[db]
+major_version = 15

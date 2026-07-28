@@ -17,8 +17,45 @@ jobs:
         with:
           enable-cache: true
           python-version: "3.12"
-      - run: uv sync --all-groups
+      - run: uv sync --all-groups --locked
       - run: uv run ruff format --check .
       - run: uv run ruff check .
       - run: uv run mypy src tests
       - run: uv run pytest
+
+  migrations:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: market_data_center
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d market_data_center"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGDATABASE: market_data_center
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply migrations to an empty database
+        shell: bash
+        run: |
+          set -euo pipefail
+          for migration in supabase/migrations/*.sql; do
+            psql --set ON_ERROR_STOP=1 --file "$migration"
+          done
+      - name: Verify public API views
+        run: >-
+          psql --set ON_ERROR_STOP=1 --tuples-only --command
+          "select count(*) from information_schema.views
+          where table_schema = 'api_v1';" | grep -q 3
