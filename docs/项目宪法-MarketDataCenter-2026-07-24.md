@@ -46,13 +46,13 @@ Market Data Center 是一个独立的证券数据产品，负责数据的采集�
 - Security；
 - Trading Calendar；
 - 未复权 Daily Bar；
-- 单一 BaoStock Provider；
+- BaoStock 默认 Provider，以及 Accepted ADR 明确批准的显式可选 Provider；
 - Raw Store 与采集审计；
 - 数据质量校验；
 - 自托管 Supabase PostgreSQL/PostgREST；
 - migration、测试、CI/CD 和备份流程。
 
-第一阶段不建设 Router、Capital、Classification、Metrics、FastAPI、MCP、复权因子和分钟行情。
+第一阶段不建设 Capital、Classification、Metrics、FastAPI、MCP、复权因子和分钟行情。Provider 自动路由仅按 ADR-0005 的确定性策略实现。
 
 ## 5. 文档优先级
 

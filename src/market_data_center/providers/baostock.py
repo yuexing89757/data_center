@@ -1,6 +1,6 @@
 """BaoStock adapter that contains every source-specific field name."""
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 from types import TracebackType
@@ -81,7 +81,7 @@ class BaoStockProvider:
         return cls(cast(BaoStockClient, baostock))
 
     def __enter__(self) -> Self:
-        response = self._client.login()
+        response = _provider_call("login", self._client.login)
         _ensure_success(response, "login")
         return self
 
@@ -91,7 +91,7 @@ class BaoStockProvider:
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        response = self._client.logout()
+        response = _provider_call("logout", self._client.logout)
         if exc_type is None:
             _ensure_success(response, "logout")
 
@@ -104,7 +104,8 @@ class BaoStockProvider:
         return f"{prefix}.{code}"
 
     def fetch_securities(self) -> ProviderBatch[SecurityRecord]:
-        raw_rows = _read_result(self._client.query_stock_basic(), "query_stock_basic")
+        result = _provider_call("query_stock_basic", self._client.query_stock_basic)
+        raw_rows = _read_result(result, "query_stock_basic")
         records = [_map_security(row) for row in raw_rows]
         return ProviderBatch(
             records=records,
@@ -117,8 +118,11 @@ class BaoStockProvider:
         self, start_date: date, end_date: date
     ) -> ProviderBatch[TradingDayRecord]:
         _ensure_date_range(start_date, end_date)
-        result = self._client.query_trade_dates(
-            start_date=start_date.isoformat(), end_date=end_date.isoformat()
+        result = _provider_call(
+            "query_trade_dates",
+            lambda: self._client.query_trade_dates(
+                start_date=start_date.isoformat(), end_date=end_date.isoformat()
+            ),
         )
         raw_rows = _read_result(result, "query_trade_dates")
         by_date = {date.fromisoformat(row["calendar_date"]): row for row in raw_rows}
@@ -146,13 +150,16 @@ class BaoStockProvider:
         self, source_symbol: str, start_date: date, end_date: date
     ) -> ProviderBatch[DailyBarRecord]:
         _ensure_date_range(start_date, end_date)
-        result = self._client.query_history_k_data_plus(
-            code=source_symbol,
-            fields=",".join(DAILY_BAR_FIELDS),
-            start_date=start_date.isoformat(),
-            end_date=end_date.isoformat(),
-            frequency="d",
-            adjustflag="3",
+        result = _provider_call(
+            "query_history_k_data_plus",
+            lambda: self._client.query_history_k_data_plus(
+                code=source_symbol,
+                fields=",".join(DAILY_BAR_FIELDS),
+                start_date=start_date.isoformat(),
+                end_date=end_date.isoformat(),
+                frequency="d",
+                adjustflag="3",
+            ),
         )
         raw_rows = _read_result(result, "query_history_k_data_plus")
         return ProviderBatch(
@@ -180,6 +187,15 @@ def _read_result(result: BaoStockResult, operation: str) -> list[RawRow]:
         rows.append(dict(zip(fields, values, strict=True)))
     _ensure_success(result, operation)
     return rows
+
+
+def _provider_call[ResultT](operation: str, call: Callable[[], ResultT]) -> ResultT:
+    try:
+        return call()
+    except ProviderError:
+        raise
+    except Exception as error:
+        raise ProviderError(f"BaoStock {operation} request failed") from error
 
 
 def _ensure_success(response: BaoStockResponse, operation: str) -> None:

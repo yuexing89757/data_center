@@ -5,12 +5,14 @@ from collections.abc import Callable
 from market_data_center.providers.akshare import AKShareProvider
 from market_data_center.providers.baostock import BaoStockProvider
 from market_data_center.providers.contracts import ManagedMarketDataProvider, ProviderError
+from market_data_center.providers.pytdx import PytdxProvider
 
 type ProviderFactory = Callable[[], ManagedMarketDataProvider]
 
 _PROVIDER_FACTORIES: dict[str, ProviderFactory] = {
     "akshare": AKShareProvider.default,
     "baostock": BaoStockProvider.default,
+    "pytdx": PytdxProvider.default,
 }
 
 
@@ -28,7 +30,12 @@ def create_provider(provider_code: str) -> ManagedMarketDataProvider:
         raise ProviderError(
             f"unsupported provider: {provider_code}; supported providers: {supported}"
         ) from error
-    provider = factory()
+    try:
+        provider = factory()
+    except ProviderError:
+        raise
+    except Exception as error:
+        raise ProviderError(f"failed to construct provider: {provider_code}") from error
     if provider.source_code != provider_code:
         raise ProviderError(
             f"provider registry mismatch: requested {provider_code}, got {provider.source_code}"
