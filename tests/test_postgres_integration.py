@@ -1,8 +1,10 @@
 from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from os import environ
+from pathlib import Path
 from typing import cast
 from urllib.parse import urlsplit, urlunsplit
 from uuid import UUID, uuid4
@@ -32,6 +34,12 @@ from market_data_center.domain import (
 )
 from market_data_center.migrations import MIGRATION_DIR, apply_migrations
 from market_data_center.persistence import PostgreSQLPersistence
+from market_data_center.recovery import (
+    backup_application_data,
+    capture_database_snapshot,
+    restore_application_data,
+    verify_restored_snapshot,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -46,17 +54,8 @@ def empty_database_url() -> Iterator[str]:
     admin_url = environ.get("TEST_DATABASE_URL")
     if not admin_url:
         pytest.skip("TEST_DATABASE_URL is required for PostgreSQL integration tests")
-    database_name = f"market_data_center_test_{uuid4().hex}"
-    database_url = _replace_database_name(admin_url, database_name)
-    with psycopg.connect(admin_url, autocommit=True) as admin:
-        _ensure_supabase_client_roles(admin)
-        admin.execute(sql.SQL("create database {}").format(sql.Identifier(database_name)))
-        try:
-            yield database_url
-        finally:
-            admin.execute(
-                sql.SQL("drop database {} with (force)").format(sql.Identifier(database_name))
-            )
+    with _temporary_database_url(admin_url) as database_url:
+        yield database_url
 
 
 @pytest.fixture
@@ -393,6 +392,42 @@ def test_internal_tables_have_rls_with_worker_only_policies(database_engine: Eng
     assert rls_tables == expected_tables
     assert {(cast(str, row[0]), cast(str, row[1])) for row in policies} == expected_tables
     assert all(row[2] == ["market_data_worker"] for row in policies)
+
+
+def test_application_backup_restores_to_independent_database(
+    migrated_database_url: str, database_engine: Engine, tmp_path: Path
+) -> None:
+    _prepare_api_data(database_engine)
+    source_snapshot = capture_database_snapshot(migrated_database_url)
+    backup_path = tmp_path / "application-data.dump"
+
+    digest = backup_application_data(migrated_database_url, backup_path)
+
+    admin_url = environ["TEST_DATABASE_URL"]
+    with _temporary_database_url(admin_url) as target_url:
+        with psycopg.connect(target_url) as connection:
+            apply_migrations(connection, MIGRATIONS)
+        restore_application_data(target_url, backup_path)
+        restored_snapshot = capture_database_snapshot(target_url)
+
+    verify_restored_snapshot(source_snapshot, restored_snapshot)
+    assert len(digest) == 64
+    assert backup_path.stat().st_size > 0
+
+
+@contextmanager
+def _temporary_database_url(admin_url: str) -> Iterator[str]:
+    database_name = f"market_data_center_test_{uuid4().hex}"
+    database_url = _replace_database_name(admin_url, database_name)
+    with psycopg.connect(admin_url, autocommit=True) as admin:
+        _ensure_supabase_client_roles(admin)
+        admin.execute(sql.SQL("create database {}").format(sql.Identifier(database_name)))
+        try:
+            yield database_url
+        finally:
+            admin.execute(
+                sql.SQL("drop database {} with (force)").format(sql.Identifier(database_name))
+            )
 
 
 def _ensure_supabase_client_roles(
