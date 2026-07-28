@@ -1,21 +1,27 @@
+from pathlib import Path
+
 import pytest
+from pytest import MonkeyPatch
 
 from market_data_center.providers import (
     AKShareProvider,
     BaoStockProvider,
     ProviderError,
+    PytdxProvider,
     available_provider_codes,
     create_provider,
 )
 
 
 def test_registry_exposes_stable_provider_codes() -> None:
-    assert available_provider_codes() == ("akshare", "baostock")
+    assert available_provider_codes() == ("akshare", "baostock", "pytdx")
 
 
-def test_registry_builds_each_adapter() -> None:
+def test_registry_builds_each_adapter(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
     assert isinstance(create_provider("akshare"), AKShareProvider)
     assert isinstance(create_provider("baostock"), BaoStockProvider)
+    monkeypatch.setenv("PYTDX_VIPDOC_PATH", str(tmp_path))
+    assert isinstance(create_provider("pytdx"), PytdxProvider)
 
 
 def test_registry_rejects_unknown_provider() -> None:

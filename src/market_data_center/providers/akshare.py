@@ -1,6 +1,6 @@
 """AKShare adapter; source-specific names are contained in this module."""
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -64,7 +64,8 @@ class AKShareProvider(AbstractContextManager["AKShareProvider"]):
         return _source_code(symbol)
 
     def fetch_securities(self) -> ProviderBatch[SecurityRecord]:
-        rows = _rows(self._client.stock_info_a_code_name(), ("code", "name"), "stock list")
+        result = _provider_call("stock list", self._client.stock_info_a_code_name)
+        rows = _rows(result, ("code", "name"), "stock list")
         return ProviderBatch(
             records=[_map_security(row) for row in rows],
             raw_rows=rows,
@@ -76,7 +77,8 @@ class AKShareProvider(AbstractContextManager["AKShareProvider"]):
         self, start_date: date, end_date: date
     ) -> ProviderBatch[TradingDayRecord]:
         _ensure_date_range(start_date, end_date)
-        rows = _rows(self._client.tool_trade_date_hist_sina(), ("trade_date",), "trading calendar")
+        result = _provider_call("trading calendar", self._client.tool_trade_date_hist_sina)
+        rows = _rows(result, ("trade_date",), "trading calendar")
         trading_dates = {_parse_date(row["trade_date"]) for row in rows}
         if not trading_dates or start_date < min(trading_dates) or end_date > max(trading_dates):
             raise ProviderError("AKShare trading calendar does not cover the requested date range")
@@ -104,14 +106,18 @@ class AKShareProvider(AbstractContextManager["AKShareProvider"]):
     ) -> ProviderBatch[DailyBarRecord]:
         _ensure_date_range(start_date, end_date)
         code = _source_code(source_symbol)
-        rows = _rows(
-            self._client.stock_zh_a_hist(
+        result = _provider_call(
+            "daily bars",
+            lambda: self._client.stock_zh_a_hist(
                 symbol=code,
                 period="daily",
                 start_date=start_date.strftime("%Y%m%d"),
                 end_date=end_date.strftime("%Y%m%d"),
                 adjust="",
             ),
+        )
+        rows = _rows(
+            result,
             ("日期", "股票代码", "开盘", "收盘", "最高", "最低", "成交量", "成交额"),
             "daily bars",
         )
@@ -136,6 +142,15 @@ def _rows(result: TabularResult, required: Sequence[str], operation: str) -> lis
         raise ProviderError(f"AKShare {operation} missing fields: {', '.join(sorted(missing))}")
     objects = cast(list[Mapping[object, object]], result.to_dict(orient="records"))
     return [{str(key): _raw_value(value) for key, value in row.items()} for row in objects]
+
+
+def _provider_call[ResultT](operation: str, call: Callable[[], ResultT]) -> ResultT:
+    try:
+        return call()
+    except ProviderError:
+        raise
+    except Exception as error:
+        raise ProviderError(f"AKShare {operation} request failed") from error
 
 
 def _raw_value(value: object) -> str:

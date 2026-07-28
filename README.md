@@ -1,6 +1,6 @@
 # Market Data Center
 
-A phase-one A-share daily market data pipeline using BaoStock, Python 3.12 and a self-hosted Supabase deployment.
+A phase-one A-share daily market data pipeline using Python 3.12 and a self-hosted Supabase deployment. BaoStock is the default provider; AKShare is explicitly selectable, and pytdx reads local Shanghai/Shenzhen `.day` files for daily-bar supplementation.
 
 ## Development
 
@@ -15,3 +15,5 @@ uv run pytest
 The first phase intentionally has no FastAPI service. Read queries are provided by Supabase PostgREST views under `api_v1`.
 
 Configuration is loaded from environment variables. Copy `.env.example` locally and replace placeholders; never commit the resulting `.env` file.
+
+The CLI uses deterministic provider routing by default: BaoStock then AKShare for security/calendar, and local pytdx then BaoStock then AKShare for daily bars. Use `--provider baostock|akshare|pytdx` to bypass routing for reproducible diagnostics.

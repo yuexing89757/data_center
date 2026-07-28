@@ -3,9 +3,9 @@
 ## Scope
 
 - Follow `docs/项目宪法-MarketDataCenter-2026-07-24.md` and accepted ADRs.
-- Phase 1 uses BaoStock by default, with AKShare as the explicit optional provider accepted by ADR-0002.
+- Phase 1 uses BaoStock by default, with AKShare and pytdx as explicit optional providers accepted by ADR-0002/ADR-0004.
 - Phase 1 uses self-hosted Supabase, SQL migrations and PostgREST.
-- Do not introduce FastAPI, automatic multi-provider routing or adjusted-price facts without a new ADR.
+- Do not introduce FastAPI or adjusted-price facts without a new ADR. Automatic provider routing follows ADR-0005.
 
 ## Commands
 
