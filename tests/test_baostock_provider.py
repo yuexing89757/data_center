@@ -1,7 +1,9 @@
 from collections.abc import Sequence
 from datetime import date
 
-from market_data_center.domain import Exchange, SecurityStatus, TradeStatus
+import pytest
+
+from market_data_center.domain import Exchange, SecurityStatus, SecurityType, TradeStatus
 from market_data_center.providers import BaoStockProvider
 
 
@@ -28,8 +30,9 @@ class FakeResult(FakeResponse):
 
 
 class FakeClient:
-    def __init__(self) -> None:
+    def __init__(self, security_type: str = "1") -> None:
         self.daily_bar_arguments: dict[str, str] = {}
+        self.security_type = security_type
 
     def login(self) -> FakeResponse:
         return FakeResponse()
@@ -40,7 +43,7 @@ class FakeClient:
     def query_stock_basic(self, code: str = "", code_name: str = "") -> FakeResult:
         return FakeResult(
             ("code", "code_name", "ipoDate", "outDate", "type", "status"),
-            (("sh.600000", "浦发银行", "1999-11-10", "", "1", "1"),),
+            (("sh.600000", "浦发银行", "1999-11-10", "", self.security_type, "1"),),
         )
 
     def query_trade_dates(self, start_date: str, end_date: str) -> FakeResult:
@@ -93,6 +96,23 @@ def test_security_mapping_consumes_baostock_fields() -> None:
     assert record.exchange is Exchange.SSE
     assert record.status is SecurityStatus.LISTED
     assert not hasattr(record, "ipoDate")
+
+
+@pytest.mark.parametrize(
+    ("source_type", "expected"),
+    [
+        ("1", SecurityType.STOCK),
+        ("2", SecurityType.INDEX),
+        ("3", SecurityType.OTHER),
+        ("4", SecurityType.CONVERTIBLE_BOND),
+        ("5", SecurityType.ETF),
+        ("", SecurityType.UNKNOWN),
+    ],
+)
+def test_security_type_mapping(source_type: str, expected: SecurityType) -> None:
+    record = BaoStockProvider(FakeClient(source_type)).fetch_securities().records[0]
+
+    assert record.security_type is expected
 
 
 def test_trading_calendar_contains_every_natural_day() -> None:

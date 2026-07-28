@@ -11,6 +11,7 @@ from uuid import UUID
 
 class ProviderCode(StrEnum):
     BAOSTOCK = "baostock"
+    AKSHARE = "akshare"
 
 
 class DatasetCode(StrEnum):

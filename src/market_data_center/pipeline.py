@@ -19,9 +19,14 @@ from market_data_center.domain.ingestion import (
     RawFileFormat,
     RawManifest,
 )
-from market_data_center.domain.records import DailyBarRecord, SecurityRecord, TradingDayRecord
+from market_data_center.domain.records import DailyBarRecord, SecurityRecord
 from market_data_center.domain.validation import validate_daily_bars
-from market_data_center.providers.contracts import ProviderBatch, ProviderRecord
+from market_data_center.providers.contracts import (
+    MarketDataProvider,
+    ProviderBatch,
+    ProviderError,
+    ProviderRecord,
+)
 from market_data_center.raw_store import LocalRawStore, StoredRawObject
 
 
@@ -59,23 +64,11 @@ class PipelinePersistence(Protocol):
     ) -> None: ...
 
 
-class PhaseOneProvider(Protocol):
-    def fetch_securities(self) -> ProviderBatch[SecurityRecord]: ...
-
-    def fetch_trading_calendar(
-        self, start_date: date, end_date: date
-    ) -> ProviderBatch[TradingDayRecord]: ...
-
-    def fetch_daily_bars(
-        self, source_symbol: str, start_date: date, end_date: date
-    ) -> ProviderBatch[DailyBarRecord]: ...
-
-
 class IngestionPipeline:
     def __init__(
         self,
         *,
-        provider: PhaseOneProvider,
+        provider: MarketDataProvider,
         raw_store: LocalRawStore,
         persistence: PipelinePersistence,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
@@ -88,10 +81,11 @@ class IngestionPipeline:
         self._uuid_factory = uuid_factory
 
     def ingest_securities(self) -> IngestionRun:
-        with self._persistence.task_lock("baostock:security"):
+        with self._persistence.task_lock(f"{self._provider.source_code}:security"):
             run = self._start_run(DatasetCode.SECURITY, {})
             try:
                 batch = self._provider.fetch_securities()
+                self._ensure_batch_source(batch)
                 manifest = self._store_raw(run, batch)
                 completed = self._completed_run(run, len(batch.raw_rows), len(batch.records), 0)
                 self._persistence.commit_security_batch(completed, manifest, batch.records)
@@ -102,10 +96,11 @@ class IngestionPipeline:
 
     def ingest_trading_calendar(self, start_date: date, end_date: date) -> IngestionRun:
         params = {"start_date": start_date.isoformat(), "end_date": end_date.isoformat()}
-        with self._persistence.task_lock("baostock:trading_calendar"):
+        with self._persistence.task_lock(f"{self._provider.source_code}:trading_calendar"):
             run = self._start_run(DatasetCode.TRADING_CALENDAR, params)
             try:
                 batch = self._provider.fetch_trading_calendar(start_date, end_date)
+                self._ensure_batch_source(batch)
                 manifest = self._store_raw(run, batch)
                 calculated = calculate_trading_day_links(batch.records)
                 completed = self._completed_run(run, len(batch.raw_rows), len(calculated), 0)
@@ -123,10 +118,11 @@ class IngestionPipeline:
             "start_date": start_date.isoformat(),
             "end_date": end_date.isoformat(),
         }
-        with self._persistence.task_lock(f"baostock:daily_bar:{source_symbol}"):
+        with self._persistence.task_lock(f"{self._provider.source_code}:daily_bar:{source_symbol}"):
             run = self._start_run(DatasetCode.DAILY_BAR, params)
             try:
                 batch = self._provider.fetch_daily_bars(source_symbol, start_date, end_date)
+                self._ensure_batch_source(batch)
                 manifest = self._store_raw(run, batch)
                 records = list(batch.records)
                 known_symbols = self._persistence.known_symbols(
@@ -186,7 +182,7 @@ class IngestionPipeline:
         now = self._clock()
         run = IngestionRun(
             ingestion_id=self._uuid_factory(),
-            provider_code=ProviderCode.BAOSTOCK,
+            provider_code=ProviderCode(self._provider.source_code),
             dataset_code=dataset_code,
             status=IngestionStatus.RUNNING,
             requested_at=now,
@@ -208,6 +204,15 @@ class IngestionPipeline:
             schema_version=batch.schema_version,
         )
         return self._manifest(run.ingestion_id, stored)
+
+    def _ensure_batch_source[RecordT: ProviderRecord](self, batch: ProviderBatch[RecordT]) -> None:
+        mismatched = sum(
+            record.source_code != self._provider.source_code for record in batch.records
+        )
+        if mismatched:
+            raise ProviderError(
+                f"provider batch contains {mismatched} record(s) with a mismatched source_code"
+            )
 
     def _manifest(self, ingestion_id: UUID, stored: StoredRawObject) -> RawManifest:
         return RawManifest(

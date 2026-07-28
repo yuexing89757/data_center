@@ -19,6 +19,10 @@ class Market(StrEnum):
 
 class SecurityType(StrEnum):
     STOCK = "stock"
+    INDEX = "index"
+    OTHER = "other"
+    CONVERTIBLE_BOND = "convertible_bond"
+    ETF = "etf"
     UNKNOWN = "unknown"
 
 

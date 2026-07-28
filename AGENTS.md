@@ -3,8 +3,9 @@
 ## Scope
 
 - Follow `docs/项目宪法-MarketDataCenter-2026-07-24.md` and accepted ADRs.
-- Phase 1 uses BaoStock, self-hosted Supabase, SQL migrations and PostgREST.
-- Do not introduce FastAPI, a second provider or adjusted-price facts without a new ADR.
+- Phase 1 uses BaoStock by default, with AKShare as the explicit optional provider accepted by ADR-0002.
+- Phase 1 uses self-hosted Supabase, SQL migrations and PostgREST.
+- Do not introduce FastAPI, automatic multi-provider routing or adjusted-price facts without a new ADR.
 
 ## Commands
 

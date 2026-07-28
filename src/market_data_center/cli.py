@@ -8,7 +8,7 @@ from sqlalchemy import create_engine
 from market_data_center.domain.ingestion import IngestionRun
 from market_data_center.persistence import PostgreSQLPersistence
 from market_data_center.pipeline import IngestionPipeline
-from market_data_center.providers import BaoStockProvider
+from market_data_center.providers import available_provider_codes, create_provider
 from market_data_center.raw_store import LocalRawStore
 from market_data_center.settings import WorkerSettings
 
@@ -20,7 +20,7 @@ def main() -> None:
     persistence = PostgreSQLPersistence(engine)
     raw_store = LocalRawStore(settings.raw_data_root)
 
-    with BaoStockProvider.default() as provider:
+    with create_provider(args.provider) as provider:
         pipeline = IngestionPipeline(
             provider=provider,
             raw_store=raw_store,
@@ -42,6 +42,12 @@ def _execute(args: Namespace, pipeline: IngestionPipeline) -> IngestionRun:
 
 def _parser() -> ArgumentParser:
     parser = ArgumentParser(prog="market-data-center")
+    parser.add_argument(
+        "--provider",
+        choices=available_provider_codes(),
+        default="baostock",
+        help="explicit data provider (default: baostock)",
+    )
     subparsers = parser.add_subparsers(dest="dataset", required=True)
     subparsers.add_parser("security", help="synchronize the security master")
 
@@ -49,7 +55,11 @@ def _parser() -> ArgumentParser:
     _add_date_range(calendar)
 
     daily_bar = subparsers.add_parser("daily-bar", help="synchronize unadjusted daily bars")
-    daily_bar.add_argument("--source-symbol", required=True, help="BaoStock symbol, e.g. sh.600000")
+    daily_bar.add_argument(
+        "--source-symbol",
+        required=True,
+        help="provider symbol: sh.600000 for BaoStock, 600000 for AKShare",
+    )
     _add_date_range(daily_bar)
     return parser
 

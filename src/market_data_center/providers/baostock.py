@@ -191,7 +191,7 @@ def _map_security(row: Mapping[str, str]) -> SecurityRecord:
         code=code,
         exchange=exchange,
         name=row["code_name"].strip(),
-        security_type=SecurityType.STOCK if row.get("type") == "1" else SecurityType.UNKNOWN,
+        security_type=_security_type(row.get("type", "")),
         status=_security_status(row.get("status", "")),
         ipo_date=_optional_date(row.get("ipoDate")),
         delisting_date=_optional_date(row.get("outDate")),
@@ -231,6 +231,16 @@ def _security_status(value: str) -> SecurityStatus:
     return {"1": SecurityStatus.LISTED, "0": SecurityStatus.DELISTED}.get(
         value, SecurityStatus.UNKNOWN
     )
+
+
+def _security_type(value: str) -> SecurityType:
+    return {
+        "1": SecurityType.STOCK,
+        "2": SecurityType.INDEX,
+        "3": SecurityType.OTHER,
+        "4": SecurityType.CONVERTIBLE_BOND,
+        "5": SecurityType.ETF,
+    }.get(value, SecurityType.UNKNOWN)
 
 
 def _trade_status(value: str) -> TradeStatus:

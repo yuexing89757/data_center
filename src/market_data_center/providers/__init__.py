@@ -1,6 +1,22 @@
 """External market-data provider adapters."""
 
+from market_data_center.providers.akshare import AKShareProvider
 from market_data_center.providers.baostock import BaoStockProvider
-from market_data_center.providers.contracts import ProviderBatch, ProviderError
+from market_data_center.providers.contracts import (
+    ManagedMarketDataProvider,
+    MarketDataProvider,
+    ProviderBatch,
+    ProviderError,
+)
+from market_data_center.providers.registry import available_provider_codes, create_provider
 
-__all__ = ["BaoStockProvider", "ProviderBatch", "ProviderError"]
+__all__ = [
+    "AKShareProvider",
+    "BaoStockProvider",
+    "ManagedMarketDataProvider",
+    "MarketDataProvider",
+    "ProviderBatch",
+    "ProviderError",
+    "available_provider_codes",
+    "create_provider",
+]

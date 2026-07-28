@@ -60,13 +60,28 @@ def _daily_bar() -> DailyBarRecord:
 
 
 class StubProvider:
+    source_code = "baostock"
     fail_security = False
+    mismatched_source = False
 
     def fetch_securities(self) -> ProviderBatch[SecurityRecord]:
         if self.fail_security:
             raise RuntimeError("provider unavailable with secret detail")
+        security = _security()
+        if self.mismatched_source:
+            security = SecurityRecord(
+                symbol=security.symbol,
+                code=security.code,
+                exchange=security.exchange,
+                name=security.name,
+                security_type=security.security_type,
+                status=security.status,
+                ipo_date=security.ipo_date,
+                delisting_date=security.delisting_date,
+                source_code="akshare",
+            )
         return ProviderBatch(
-            records=[_security()],
+            records=[security],
             raw_rows=[{"code": "sh.600000"}],
             request_params={},
             schema_version="security.v1",
@@ -203,3 +218,16 @@ def test_provider_failure_marks_run_failed_without_leaking_message(tmp_path: Pat
 
     assert persistence.failed[0].status is IngestionStatus.FAILED
     assert persistence.failed[0].error_summary == "RuntimeError: ingestion failed"
+
+
+def test_mismatched_record_source_fails_before_raw_or_core_write(tmp_path: Path) -> None:
+    provider = StubProvider()
+    provider.mismatched_source = True
+    persistence = StubPersistence()
+    pipeline = _pipeline(tmp_path, provider, persistence)
+
+    with pytest.raises(RuntimeError, match="mismatched source_code"):
+        pipeline.ingest_securities()
+
+    assert persistence.security_commits == []
+    assert persistence.failed[0].status is IngestionStatus.FAILED
