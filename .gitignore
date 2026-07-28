@@ -12,6 +12,7 @@ htmlcov/
 data/raw/
 data/bulk/
 backups/
+reports/
 dist/
 build/
 *.egg-info/

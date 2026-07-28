@@ -34,6 +34,7 @@ from market_data_center.domain import (
 )
 from market_data_center.migrations import MIGRATION_DIR, apply_migrations
 from market_data_center.persistence import PostgreSQLPersistence
+from market_data_center.quality_audit import audit_daily_bars
 from market_data_center.recovery import (
     backup_application_data,
     capture_database_snapshot,
@@ -415,6 +416,71 @@ def test_application_backup_restores_to_independent_database(
     assert backup_path.stat().st_size > 0
 
 
+def test_daily_bar_quality_audit_reports_coverage_and_traceability(
+    migrated_database_url: str, database_engine: Engine
+) -> None:
+    _prepare_api_data(database_engine)
+
+    report = audit_daily_bars(
+        migrated_database_url,
+        date(2026, 7, 27),
+        date(2026, 7, 29),
+    )
+
+    assert not report.has_errors
+    assert not report.has_warnings
+    assert report.total_rows == 3
+    assert report.coverage.stock_count == 1
+    assert report.coverage.covered_stock_count == 1
+    assert report.coverage.eligible_symbol_days == 3
+    assert report.coverage.observed_eligible_rows == 3
+    assert report.coverage.coverage_percent == Decimal("100.00")
+    assert report.traceability.ingestion_run_count == 1
+    assert report.traceability.raw_manifest_count == 1
+    assert report.traceability.manifest_row_count_mismatch_runs == 0
+    assert [(item.source_code, item.row_count) for item in report.source_distribution] == [
+        ("baostock", 3)
+    ]
+
+
+def test_daily_bar_quality_audit_excludes_pre_ipo_days_and_reports_active_gaps(
+    migrated_database_url: str, database_engine: Engine
+) -> None:
+    _prepare_api_data(database_engine)
+    persistence = PostgreSQLPersistence(database_engine)
+    running = _running_run(DatasetCode.SECURITY)
+    persistence.create_ingestion_run(running)
+    security = replace(
+        _security(),
+        symbol="SZSE:000001",
+        code="000001",
+        exchange=Exchange.SZSE,
+        name="平安银行",
+        ipo_date=date(2026, 7, 28),
+    )
+    persistence.commit_security_batch(
+        _completed_run(running),
+        _manifest(running.ingestion_id, "second-security"),
+        [security],
+    )
+
+    report = audit_daily_bars(
+        migrated_database_url,
+        date(2026, 7, 27),
+        date(2026, 7, 29),
+    )
+
+    assert not report.has_errors
+    assert report.has_warnings
+    assert report.coverage.all_stock_calendar_days == 6
+    assert report.coverage.pre_ipo_symbol_days_excluded == 1
+    assert report.coverage.eligible_symbol_days == 5
+    assert report.coverage.missing_eligible_symbol_days == 2
+    assert report.gap_candidates[0].symbol == "SZSE:000001"
+    assert report.gap_candidates[0].first_missing_date == date(2026, 7, 28)
+    assert report.gap_candidates[0].last_missing_date == date(2026, 7, 29)
+
+
 @contextmanager
 def _temporary_database_url(admin_url: str) -> Iterator[str]:
     database_name = f"market_data_center_test_{uuid4().hex}"
@@ -543,7 +609,7 @@ def _completed_run(run: IngestionRun, row_count: int = 1) -> IngestionRun:
     )
 
 
-def _manifest(ingestion_id: UUID, dataset: str) -> RawManifest:
+def _manifest(ingestion_id: UUID, dataset: str, row_count: int = 1) -> RawManifest:
     return RawManifest(
         raw_id=uuid4(),
         ingestion_id=ingestion_id,
@@ -551,7 +617,7 @@ def _manifest(ingestion_id: UUID, dataset: str) -> RawManifest:
         file_format=RawFileFormat.JSONL,
         content_sha256="0" * 64,
         byte_size=10,
-        row_count=1,
+        row_count=row_count,
         schema_version=f"{dataset}.v1",
     )
 
@@ -645,7 +711,7 @@ def _prepare_api_data(engine: Engine) -> None:
     daily_bars = [_daily_bar(trade_date) for trade_date in dates]
     persistence.commit_daily_bar_batch(
         _completed_run(daily_run, len(daily_bars)),
-        _manifest(daily_run.ingestion_id, "api-daily-bar"),
+        _manifest(daily_run.ingestion_id, "api-daily-bar", len(daily_bars)),
         daily_bars,
         [],
     )
