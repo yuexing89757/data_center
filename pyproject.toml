@@ -48,3 +48,6 @@ files = ["src", "tests"]
 [tool.pytest.ini_options]
 addopts = "-ra --strict-config --strict-markers"
 testpaths = ["tests"]
+markers = [
+  "integration: requires an isolated PostgreSQL server configured by TEST_DATABASE_URL",
+]
