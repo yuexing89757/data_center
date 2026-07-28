@@ -10,6 +10,7 @@ from uuid import UUID, uuid4
 import psycopg
 import pytest
 from psycopg import sql
+from psycopg.errors import InsufficientPrivilege
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.exc import IntegrityError
 
@@ -48,6 +49,7 @@ def empty_database_url() -> Iterator[str]:
     database_name = f"market_data_center_test_{uuid4().hex}"
     database_url = _replace_database_name(admin_url, database_name)
     with psycopg.connect(admin_url, autocommit=True) as admin:
+        _ensure_supabase_client_roles(admin)
         admin.execute(sql.SQL("create database {}").format(sql.Identifier(database_name)))
         try:
             yield database_url
@@ -229,6 +231,181 @@ def test_failed_batch_rolls_back_raw_and_core_writes(database_engine: Engine) ->
     )
 
 
+def test_api_v1_contract_supports_symbol_and_closed_date_range(
+    database_engine: Engine,
+) -> None:
+    _prepare_api_data(database_engine)
+
+    with database_engine.connect() as connection:
+        rows = connection.execute(
+            text("""
+                select symbol, trade_date
+                from api_v1.daily_bars
+                where symbol = :symbol
+                  and trade_date between :start_date and :end_date
+                order by trade_date
+            """),
+            {
+                "symbol": SYMBOL,
+                "start_date": date(2026, 7, 27),
+                "end_date": date(2026, 7, 28),
+            },
+        ).all()
+
+    assert [tuple(row) for row in rows] == [
+        (SYMBOL, date(2026, 7, 27)),
+        (SYMBOL, date(2026, 7, 28)),
+    ]
+    assert _view_columns(database_engine, "securities") == [
+        "symbol",
+        "code",
+        "exchange",
+        "current_name",
+        "security_type",
+        "status",
+        "ipo_date",
+        "delisting_date",
+    ]
+    assert _view_columns(database_engine, "trading_calendar") == [
+        "market",
+        "trade_date",
+        "is_trading_day",
+        "previous_trading_day",
+        "next_trading_day",
+    ]
+    assert _view_columns(database_engine, "daily_bars") == [
+        "symbol",
+        "trade_date",
+        "open",
+        "high",
+        "low",
+        "close",
+        "previous_close",
+        "volume",
+        "amount",
+        "trade_status",
+        "is_st",
+    ]
+
+
+@pytest.mark.parametrize("client_role", ["anon", "authenticated"])
+def test_client_roles_can_only_read_api_v1(
+    migrated_database_url: str, database_engine: Engine, client_role: str
+) -> None:
+    _prepare_api_data(database_engine)
+
+    with psycopg.connect(migrated_database_url, autocommit=True) as connection:
+        connection.execute(sql.SQL("set role {}").format(sql.Identifier(client_role)))
+        api_count = connection.execute("select count(*) from api_v1.daily_bars").fetchone()
+        assert api_count is not None and api_count[0] == 3
+
+        denied_statements = (
+            "select count(*) from core.daily_bar",
+            "select count(*) from ingestion.ingestion_run",
+            "select count(*) from audit.quality_result",
+            """
+            insert into api_v1.daily_bars(symbol, trade_date)
+            values ('SSE:600000', date '2026-07-30')
+            """,
+        )
+        for statement in denied_statements:
+            with pytest.raises(InsufficientPrivilege):
+                connection.execute(statement)
+
+
+def test_worker_has_only_ingestion_permissions(
+    migrated_database_url: str, database_engine: Engine
+) -> None:
+    _prepare_api_data(database_engine)
+    expected = {
+        ("audit", "quality_result", "INSERT"),
+        ("audit", "quality_result", "SELECT"),
+        ("core", "daily_bar", "INSERT"),
+        ("core", "daily_bar", "SELECT"),
+        ("core", "daily_bar", "UPDATE"),
+        ("core", "security", "INSERT"),
+        ("core", "security", "SELECT"),
+        ("core", "security", "UPDATE"),
+        ("core", "security_name_history", "INSERT"),
+        ("core", "security_name_history", "SELECT"),
+        ("core", "security_name_history", "UPDATE"),
+        ("core", "trading_calendar", "INSERT"),
+        ("core", "trading_calendar", "SELECT"),
+        ("core", "trading_calendar", "UPDATE"),
+        ("ingestion", "ingestion_run", "INSERT"),
+        ("ingestion", "ingestion_run", "SELECT"),
+        ("ingestion", "ingestion_run", "UPDATE"),
+        ("ingestion", "raw_manifest", "INSERT"),
+        ("ingestion", "raw_manifest", "SELECT"),
+    }
+    with psycopg.connect(migrated_database_url, autocommit=True) as connection:
+        privileges = {
+            (cast(str, schema), cast(str, table), cast(str, privilege))
+            for schema, table, privilege in connection.execute("""
+                select table_schema, table_name, privilege_type
+                from information_schema.role_table_grants
+                where grantee = 'market_data_worker'
+                  and table_schema in ('audit', 'core', 'ingestion', 'api_v1')
+            """).fetchall()
+        }
+        assert privileges == expected
+
+        connection.execute("set role market_data_worker")
+        assert connection.execute("select count(*) from core.daily_bar").fetchone() == (3,)
+        with pytest.raises(InsufficientPrivilege):
+            connection.execute("delete from core.daily_bar")
+        with pytest.raises(InsufficientPrivilege):
+            connection.execute("select count(*) from api_v1.daily_bars")
+
+
+def test_internal_tables_have_rls_with_worker_only_policies(database_engine: Engine) -> None:
+    expected_tables = {
+        ("audit", "quality_result"),
+        ("core", "daily_bar"),
+        ("core", "security"),
+        ("core", "security_name_history"),
+        ("core", "trading_calendar"),
+        ("ingestion", "ingestion_run"),
+        ("ingestion", "raw_manifest"),
+    }
+    with database_engine.connect() as connection:
+        rls_tables = {
+            (cast(str, schema), cast(str, table))
+            for schema, table in connection.execute(
+                text("""
+                select n.nspname, c.relname
+                from pg_class c
+                join pg_namespace n on n.oid = c.relnamespace
+                where n.nspname in ('audit', 'core', 'ingestion')
+                  and c.relkind = 'r'
+                  and c.relrowsecurity
+            """)
+            ).all()
+        }
+        policies = connection.execute(
+            text("""
+            select schemaname, tablename, roles
+            from pg_policies
+            where schemaname in ('audit', 'core', 'ingestion')
+        """)
+        ).all()
+
+    assert rls_tables == expected_tables
+    assert {(cast(str, row[0]), cast(str, row[1])) for row in policies} == expected_tables
+    assert all(row[2] == ["market_data_worker"] for row in policies)
+
+
+def _ensure_supabase_client_roles(
+    connection: psycopg.Connection[tuple[object, ...]],
+) -> None:
+    for role in ("anon", "authenticated"):
+        existing = connection.execute(
+            "select exists(select 1 from pg_roles where rolname = %s)", (role,)
+        ).fetchone()
+        if existing is None or not existing[0]:
+            connection.execute(sql.SQL("create role {} nologin").format(sql.Identifier(role)))
+
+
 def _replace_database_name(database_url: str, database_name: str) -> str:
     parsed = urlsplit(database_url)
     if parsed.scheme not in {"postgres", "postgresql"} or not parsed.netloc:
@@ -321,13 +498,13 @@ def _running_run(dataset_code: DatasetCode) -> IngestionRun:
     )
 
 
-def _completed_run(run: IngestionRun) -> IngestionRun:
+def _completed_run(run: IngestionRun, row_count: int = 1) -> IngestionRun:
     return replace(
         run,
         status=IngestionStatus.SUCCEEDED,
         finished_at=NOW,
-        fetched_rows=1,
-        accepted_rows=1,
+        fetched_rows=row_count,
+        accepted_rows=row_count,
     )
 
 
@@ -358,10 +535,10 @@ def _security() -> SecurityRecord:
     )
 
 
-def _daily_bar() -> DailyBarRecord:
+def _daily_bar(trade_date: date = TRADE_DATE) -> DailyBarRecord:
     return DailyBarRecord(
         symbol=SYMBOL,
-        trade_date=TRADE_DATE,
+        trade_date=trade_date,
         market=Market.CN_A_SHARE,
         open=Decimal("10.00"),
         high=Decimal("11.00"),
@@ -402,6 +579,57 @@ def _commit_calendar_prerequisite(persistence: PostgreSQLPersistence) -> None:
         _manifest(running.ingestion_id, "calendar-prerequisite"),
         [trading_day],
     )
+
+
+def _prepare_api_data(engine: Engine) -> None:
+    persistence = PostgreSQLPersistence(engine)
+    _commit_security_prerequisite(persistence)
+
+    calendar_run = _running_run(DatasetCode.TRADING_CALENDAR)
+    persistence.create_ingestion_run(calendar_run)
+    dates = [date(2026, 7, 27), date(2026, 7, 28), date(2026, 7, 29)]
+    trading_days = [
+        CalculatedTradingDay(
+            market=Market.CN_A_SHARE,
+            trade_date=trade_date,
+            is_trading_day=True,
+            previous_trading_day=dates[index - 1] if index else None,
+            next_trading_day=dates[index + 1] if index + 1 < len(dates) else None,
+            source_code="baostock",
+        )
+        for index, trade_date in enumerate(dates)
+    ]
+    persistence.commit_trading_calendar_batch(
+        _completed_run(calendar_run, len(trading_days)),
+        _manifest(calendar_run.ingestion_id, "api-calendar"),
+        trading_days,
+    )
+
+    daily_run = _running_run(DatasetCode.DAILY_BAR)
+    persistence.create_ingestion_run(daily_run)
+    daily_bars = [_daily_bar(trade_date) for trade_date in dates]
+    persistence.commit_daily_bar_batch(
+        _completed_run(daily_run, len(daily_bars)),
+        _manifest(daily_run.ingestion_id, "api-daily-bar"),
+        daily_bars,
+        [],
+    )
+
+
+def _view_columns(engine: Engine, view_name: str) -> list[str]:
+    with engine.connect() as connection:
+        return [
+            cast(str, column)
+            for column in connection.execute(
+                text("""
+                    select column_name
+                    from information_schema.columns
+                    where table_schema = 'api_v1' and table_name = :view_name
+                    order by ordinal_position
+                """),
+                {"view_name": view_name},
+            ).scalars()
+        ]
 
 
 def _scalar(
