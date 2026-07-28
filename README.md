@@ -16,4 +16,6 @@ The first phase intentionally has no FastAPI service. Read queries are provided 
 
 Configuration is loaded from environment variables. Copy `.env.example` locally and replace placeholders; never commit the resulting `.env` file.
 
+Backup, independent restore verification, credential rotation, and database network hardening are documented in [docs/Supabase备份恢复与凭据轮换.md](docs/Supabase备份恢复与凭据轮换.md).
+
 The CLI uses deterministic provider routing by default: BaoStock then AKShare for security/calendar, and local pytdx then BaoStock then AKShare for daily bars. Use `--provider baostock|akshare|pytdx` to bypass routing for reproducible diagnostics.
