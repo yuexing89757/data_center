@@ -2,6 +2,7 @@
 
 from argparse import ArgumentParser, Namespace
 from datetime import date
+from sys import stderr
 
 from sqlalchemy import create_engine
 
@@ -26,6 +27,33 @@ def main() -> None:
             raw_store=raw_store,
             persistence=persistence,
         )
+        if args.dataset == "daily-bars-bulk":
+            if args.shard_count < 1 or not 0 <= args.shard_index < args.shard_count:
+                raise SystemExit("shard-index must be in [0, shard-count)")
+            start_date = date.fromisoformat(args.start_date)
+            end_date = date.fromisoformat(args.end_date)
+            completed = persistence.symbols_with_daily_bars(start_date, end_date)
+            symbols = [
+                symbol
+                for index, symbol in enumerate(persistence.listed_stock_symbols())
+                if index % args.shard_count == args.shard_index and symbol not in completed
+            ]
+            failures = 0
+            for position, symbol in enumerate(symbols, start=1):
+                try:
+                    pipeline.ingest_daily_bars(
+                        provider.source_symbol(symbol),
+                        start_date,
+                        end_date,
+                    )
+                except Exception as error:
+                    failures += 1
+                    print(f"failed {symbol}: {type(error).__name__}", file=stderr)
+                if position % 100 == 0 or position == len(symbols):
+                    print(f"progress={position}/{len(symbols)} failures={failures}")
+            if failures:
+                raise SystemExit(f"bulk ingestion completed with {failures} failures")
+            return
         run = _execute(args, pipeline)
     print(f"{run.dataset_code.value} {run.status.value} ingestion_id={run.ingestion_id}")
 
@@ -61,6 +89,13 @@ def _parser() -> ArgumentParser:
         help="provider symbol: sh.600000 for BaoStock, 600000 for AKShare",
     )
     _add_date_range(daily_bar)
+
+    bulk = subparsers.add_parser(
+        "daily-bars-bulk", help="synchronize daily bars for every currently listed stock"
+    )
+    _add_date_range(bulk)
+    bulk.add_argument("--shard-count", type=int, default=1)
+    bulk.add_argument("--shard-index", type=int, default=0)
     return parser
 
 

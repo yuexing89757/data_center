@@ -64,6 +64,9 @@ class StubProvider:
     fail_security = False
     mismatched_source = False
 
+    def source_symbol(self, symbol: str) -> str:
+        return symbol
+
     def fetch_securities(self) -> ProviderBatch[SecurityRecord]:
         if self.fail_security:
             raise RuntimeError("provider unavailable with secret detail")

@@ -92,3 +92,7 @@ def test_daily_bar_requests_unadjusted_data_and_maps_decimal_values() -> None:
     assert record.previous_close == Decimal("9.90")
     assert record.trade_status is TradeStatus.TRADING
     assert record.is_st is None
+
+
+def test_standard_symbol_maps_to_akshare_source_symbol() -> None:
+    assert AKShareProvider(FakeClient()).source_symbol("SSE:600000") == "600000"

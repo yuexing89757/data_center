@@ -21,6 +21,8 @@ class MarketDataProvider(Protocol):
 
     source_code: str
 
+    def source_symbol(self, symbol: str) -> str: ...
+
     def fetch_securities(self) -> "ProviderBatch[SecurityRecord]": ...
 
     def fetch_trading_calendar(

@@ -252,6 +252,28 @@ class PostgreSQLPersistence:
         with self._engine.connect() as connection:
             return set(connection.execute(statement, {"symbols": list(symbols)}).scalars())
 
+    def listed_stock_symbols(self) -> list[str]:
+        statement = text("""
+select symbol
+from core.security
+where security_type = 'stock' and status = 'listed'
+order by symbol
+""")
+        with self._engine.connect() as connection:
+            return list(connection.execute(statement).scalars())
+
+    def symbols_with_daily_bars(self, start_date: date, end_date: date) -> set[str]:
+        statement = text("""
+select distinct symbol from core.daily_bar
+where trade_date between :start_date and :end_date
+""")
+        with self._engine.connect() as connection:
+            return set(
+                connection.execute(
+                    statement, {"start_date": start_date, "end_date": end_date}
+                ).scalars()
+            )
+
     def known_trading_dates(self, dates: Collection[date]) -> set[date]:
         if not dates:
             return set()

@@ -95,6 +95,14 @@ class BaoStockProvider:
         if exc_type is None:
             _ensure_success(response, "logout")
 
+    def source_symbol(self, symbol: str) -> str:
+        try:
+            exchange, code = symbol.split(":", maxsplit=1)
+            prefix = {"SSE": "sh", "SZSE": "sz", "BSE": "bj"}[exchange]
+        except (KeyError, ValueError) as error:
+            raise ProviderError(f"unsupported standard symbol: {symbol}") from error
+        return f"{prefix}.{code}"
+
     def fetch_securities(self) -> ProviderBatch[SecurityRecord]:
         raw_rows = _read_result(self._client.query_stock_basic(), "query_stock_basic")
         records = [_map_security(row) for row in raw_rows]

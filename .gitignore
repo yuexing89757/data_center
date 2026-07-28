@@ -10,6 +10,7 @@ htmlcov/
 .env.*
 !.env.example
 data/raw/
+data/bulk/
 dist/
 build/
 *.egg-info/

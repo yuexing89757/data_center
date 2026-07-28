@@ -60,6 +60,9 @@ class AKShareProvider(AbstractContextManager["AKShareProvider"]):
     ) -> None:
         return None
 
+    def source_symbol(self, symbol: str) -> str:
+        return _source_code(symbol)
+
     def fetch_securities(self) -> ProviderBatch[SecurityRecord]:
         rows = _rows(self._client.stock_info_a_code_name(), ("code", "name"), "stock list")
         return ProviderBatch(

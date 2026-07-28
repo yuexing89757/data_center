@@ -134,3 +134,7 @@ def test_daily_bar_explicitly_requests_unadjusted_prices() -> None:
     assert client.daily_bar_arguments["frequency"] == "d"
     assert record.trade_status is TradeStatus.TRADING
     assert not hasattr(record, "adjustflag")
+
+
+def test_standard_symbol_maps_to_baostock_source_symbol() -> None:
+    assert BaoStockProvider(FakeClient()).source_symbol("SSE:600000") == "sh.600000"
