@@ -124,6 +124,8 @@ def restore_application_data(
         "--single-transaction",
         "--exit-on-error",
         "--disable-triggers",
+        "--dbname",
+        _database_name(database_url),
         str(backup_path),
     ]
     _run_postgres_command(arguments, database_url, "application restore")
@@ -145,9 +147,6 @@ def _postgres_environment(database_url: str) -> dict[str, str]:
         raise ValueError("database URL must use the postgres or postgresql scheme")
     if not parsed.username or parsed.password is None:
         raise ValueError("database URL must include a username and password")
-    database = parsed.path.removeprefix("/")
-    if not database:
-        raise ValueError("database URL must include a database name")
     command_environment = dict(environ)
     command_environment.update(
         {
@@ -155,7 +154,7 @@ def _postgres_environment(database_url: str) -> dict[str, str]:
             "PGPORT": str(parsed.port or 5432),
             "PGUSER": unquote(parsed.username),
             "PGPASSWORD": unquote(parsed.password),
-            "PGDATABASE": unquote(database),
+            "PGDATABASE": _database_name(database_url),
         }
     )
     query = parse_qs(parsed.query)
@@ -163,6 +162,13 @@ def _postgres_environment(database_url: str) -> dict[str, str]:
     if sslmode:
         command_environment["PGSSLMODE"] = sslmode[-1]
     return command_environment
+
+
+def _database_name(database_url: str) -> str:
+    database = urlsplit(database_url).path.removeprefix("/")
+    if not database:
+        raise ValueError("database URL must include a database name")
+    return unquote(database)
 
 
 def _run_postgres_command(arguments: list[str], database_url: str, operation: str) -> None:
