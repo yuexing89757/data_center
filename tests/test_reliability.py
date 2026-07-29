@@ -19,10 +19,10 @@ from market_data_center.domain import (
     RawManifest,
     SecurityRecord,
 )
+from market_data_center.domain.ingestion import ReplaySource
 from market_data_center.raw_store import LocalRawStore, RawIntegrityError
 from market_data_center.reliability import (
     RawReplayService,
-    ReplaySource,
     compare_daily_bar_sources,
     recover_stale_runs,
 )
