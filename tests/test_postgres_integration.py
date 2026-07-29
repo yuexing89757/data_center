@@ -19,6 +19,11 @@ from sqlalchemy.exc import IntegrityError
 from market_data_center.domain import (
     CalculatedTradingDay,
     CapitalRecord,
+    ClassificationCatalogSnapshotRecord,
+    ClassificationDefinition,
+    ClassificationMemberSnapshotRecord,
+    ClassificationRecord,
+    ClassificationType,
     CorporateActionStatus,
     DailyBarRecord,
     DatasetCode,
@@ -113,6 +118,9 @@ def test_migrations_apply_to_empty_database_and_are_idempotent(
     assert ("api_v1", "share_capital") in first_snapshot["views"]
     assert ("api_v1", "distributions") in first_snapshot["views"]
     assert ("api_v1", "rights_issues") in first_snapshot["views"]
+    assert ("api_v1", "classification_catalog_snapshots") in first_snapshot["views"]
+    assert ("api_v1", "classification_member_snapshots") in first_snapshot["views"]
+    assert ("api_v1", "classification_member_intervals") in first_snapshot["views"]
 
 
 def test_replay_lineage_and_source_manifest_are_queryable(database_engine: Engine) -> None:
@@ -238,6 +246,119 @@ def test_capital_facts_are_idempotent_revision_aware_and_exposed_by_views(
 
     assert tuple(share_row) == (1_100_000, "revised", revision_run.ingestion_id)
     assert tuple(counts) == (1, 1, 1)
+
+
+def test_classification_snapshots_are_versioned_idempotent_and_interval_safe(
+    database_engine: Engine,
+) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    security_run = _running_run(DatasetCode.SECURITY)
+    persistence.create_ingestion_run(security_run)
+    persistence.commit_security_batch(
+        _completed_run(security_run),
+        _manifest(security_run.ingestion_id, "security"),
+        _envelopes(security_run.ingestion_id, [_security()]),
+    )
+    snapshot_date = date(2026, 7, 29)
+    catalog_record = ClassificationCatalogSnapshotRecord(
+        namespace="eastmoney",
+        classification_type=ClassificationType.INDUSTRY,
+        snapshot_date=snapshot_date,
+        definitions=(ClassificationDefinition("BK0475", "银行"),),
+        source_code="akshare",
+    )
+    catalog_run = _running_run(DatasetCode.CLASSIFICATION_CATALOG)
+    persistence.create_ingestion_run(catalog_run)
+    persistence.commit_classification_catalog_batch(
+        _completed_run(catalog_run),
+        _manifest(catalog_run.ingestion_id, "classification-catalog"),
+        IngestionEnvelope(catalog_run.ingestion_id, catalog_record),
+        [],
+    )
+    key = ("eastmoney", ClassificationType.INDUSTRY, "BK0475", snapshot_date)
+    assert persistence.known_classification_snapshots({key}) == {key}
+
+    member_record = ClassificationMemberSnapshotRecord(
+        namespace="eastmoney",
+        classification_type=ClassificationType.INDUSTRY,
+        classification_code="BK0475",
+        snapshot_date=snapshot_date,
+        members=(SYMBOL,),
+        source_code="akshare",
+    )
+    member_run = _running_run(DatasetCode.CLASSIFICATION_MEMBERS)
+    persistence.create_ingestion_run(member_run)
+    persistence.commit_classification_members_batch(
+        _completed_run(member_run),
+        _manifest(member_run.ingestion_id, "classification-members"),
+        IngestionEnvelope(member_run.ingestion_id, member_record),
+        [],
+    )
+    catalog_replay_run = _running_run(DatasetCode.CLASSIFICATION_CATALOG)
+    persistence.create_ingestion_run(catalog_replay_run)
+    persistence.commit_classification_catalog_batch(
+        _completed_run(catalog_replay_run),
+        _manifest(catalog_replay_run.ingestion_id, "classification-catalog-replay"),
+        IngestionEnvelope(catalog_replay_run.ingestion_id, catalog_record),
+        [],
+    )
+    with database_engine.connect() as connection:
+        assert (
+            connection.execute(
+                text("select count(*) from api_v1.classification_member_snapshots")
+            ).scalar_one()
+            == 1
+        )
+    revision_run = _running_run(DatasetCode.CLASSIFICATION_MEMBERS)
+    persistence.create_ingestion_run(revision_run)
+    persistence.commit_classification_members_batch(
+        _completed_run(revision_run, row_count=0),
+        _manifest(revision_run.ingestion_id, "classification-members-revision", row_count=0),
+        IngestionEnvelope(revision_run.ingestion_id, replace(member_record, members=())),
+        [],
+    )
+
+    with database_engine.connect() as connection:
+        counts = connection.execute(
+            text(
+                "select "
+                "(select count(*) from api_v1.classification_catalog_snapshots), "
+                "(select count(*) from classification.member_snapshot), "
+                "(select count(*) from api_v1.classification_member_snapshots)"
+            )
+        ).one()
+    assert tuple(counts) == (1, 1, 0)
+
+    interval_params = {
+        "namespace": "official",
+        "classification_type": "industry",
+        "classification_code": "TEST",
+        "symbol": SYMBOL,
+        "valid_from": date(2024, 1, 1),
+        "valid_to": date(2024, 12, 31),
+        "source_code": "akshare",
+        "ingestion_id": revision_run.ingestion_id,
+    }
+    interval_insert = text("""
+insert into classification.member_interval (
+    namespace, classification_type, classification_code, symbol,
+    valid_from, valid_to, source_code, ingestion_id
+) values (
+    :namespace, :classification_type, :classification_code, :symbol,
+    :valid_from, :valid_to, :source_code, :ingestion_id
+)
+""")
+    with database_engine.begin() as connection:
+        connection.execute(interval_insert, interval_params)
+    with pytest.raises(IntegrityError), database_engine.begin() as connection:
+        connection.execute(
+            interval_insert,
+            {
+                **interval_params,
+                "valid_from": date(2024, 6, 1),
+                "valid_to": None,
+            },
+        )
 
 
 def test_stale_running_ingestions_are_recovered_atomically(database_engine: Engine) -> None:
@@ -1014,9 +1135,13 @@ def _prepare_api_data(engine: Engine) -> None:
     )
 
 
-def _envelopes[RecordT: SecurityRecord | CalculatedTradingDay | DailyBarRecord | CapitalRecord](
-    ingestion_id: UUID, records: list[RecordT]
-) -> list[IngestionEnvelope[RecordT]]:
+def _envelopes[
+    RecordT: SecurityRecord
+    | CalculatedTradingDay
+    | DailyBarRecord
+    | CapitalRecord
+    | ClassificationRecord
+](ingestion_id: UUID, records: list[RecordT]) -> list[IngestionEnvelope[RecordT]]:
     return [IngestionEnvelope(ingestion_id, record) for record in records]
 
 

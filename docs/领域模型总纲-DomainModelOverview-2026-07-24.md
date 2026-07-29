@@ -1,21 +1,23 @@
-# 领域模型总纲 v2
+# 领域模型总纲 v3
 
 > 状态：有效  
-> 修订日期：2026-07-27  
+> 修订日期：2026-07-29
 > 上级文档：`项目宪法-MarketDataCenter-2026-07-24.md`
 
 ## 1. 当前领域范围
 
-第一阶段只有三个业务领域和一个采集审计边界：
+当前已实现五个业务领域和一个采集审计边界：
 
-| 边界 | 职责 | 第一阶段实体 |
+| 边界 | 职责 | 当前实体 |
 | --- | --- | --- |
 | Ingestion | 采集批次、Raw 清单和质量结果 | `IngestionRun`、`RawManifest`、`QualityResult` |
 | Security | 证券身份、生命周期和名称历史 | `Security`、`SecurityNameHistory` |
 | Trading | A 股市场交易日历 | `TradingDay` |
 | Market | 不复权日频量价事实 | `DailyBar` |
+| Capital | 股本和公司行为输入事实 | `ShareCapital`、`Distribution`、`RightsIssue` |
+| Classification | 分类目录和成员历史 | `ClassificationCatalogSnapshot`、`ClassificationMemberSnapshot`、`MemberInterval` |
 
-Capital 已由 ADR-0007 进入实现，包含股本结构、分红送转与配股输入事实。Classification、Metrics 仍是未来候选领域，进入实现前必须创建新 ADR 和相应领域详设。
+Capital 和 Classification 分别由 ADR-0007、ADR-0008 进入实现。Metrics 仍是未来候选领域，进入实现前必须创建新 ADR 和相应领域详设。
 
 ## 2. 依赖方向
 
@@ -24,12 +26,15 @@ Ingestion ───────────────┐
                         ▼
 Security ────────────► Market
 Trading ─────────────► Market
+Security ────────────► Capital
+Security ────────────► Classification
 ```
 
 - Ingestion 提供来源追溯，不包含业务事实语义。
 - Security 和 Trading 不依赖 Market。
 - Market 通过 `symbol` 关联 Security，通过 `(market, trade_date)` 关联 Trading。
 - Capital 通过 `symbol` 关联 Security，不依赖 Market，也不发布复权行情。
+- Classification 通过 `symbol` 关联 Security；分类定义不是 Security，也不依赖 Market。
 - 禁止基础领域反向依赖行情或未来统计领域。
 
 ## 3. 数据流
@@ -72,6 +77,8 @@ Provider 按数据集能力拆分接口：
 - `SecurityProvider`；
 - `TradingCalendarProvider`；
 - `DailyBarProvider`。
+- `CapitalProvider`；
+- `ClassificationProvider`。
 
 Provider 同时承担来源适配，输出标准 Record DTO。以下内容必须在 Provider 内完成：
 
@@ -99,6 +106,8 @@ Provider DTO 不包含 `ingestion_id`。Pipeline 在创建采集批次后，将�
 | --- | --- | --- |
 | `ingestion` | 采集、Raw 清单和运行记录 | 否 |
 | `core` | 标准事实 | 否 |
+| `capital` | 股本与公司行为输入事实 | 否 |
+| `classification` | 分类目录、成分快照和有效区间 | 否 |
 | `audit` | 数据质量和审计 | 否 |
 | `api_v1` | 稳定只读 View/RPC | 是 |
 

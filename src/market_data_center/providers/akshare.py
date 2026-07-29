@@ -7,6 +7,13 @@ from decimal import Decimal, InvalidOperation
 from types import TracebackType
 from typing import Protocol, Self, cast
 
+from market_data_center.domain.classification import (
+    ClassificationCatalogSnapshotRecord,
+    ClassificationDefinition,
+    ClassificationMemberSnapshotRecord,
+    ClassificationRecord,
+    ClassificationType,
+)
 from market_data_center.domain.ingestion import DatasetCode
 from market_data_center.domain.records import (
     CapitalRecord,
@@ -52,6 +59,14 @@ class AKShareClient(Protocol):
     def stock_fhps_detail_em(self, *, symbol: str) -> TabularResult: ...
 
     def stock_history_dividend_detail(self, *, symbol: str, indicator: str) -> TabularResult: ...
+
+    def stock_board_industry_name_em(self) -> TabularResult: ...
+
+    def stock_board_concept_name_em(self) -> TabularResult: ...
+
+    def stock_board_industry_cons_em(self, *, symbol: str) -> TabularResult: ...
+
+    def stock_board_concept_cons_em(self, *, symbol: str) -> TabularResult: ...
 
 
 class AKShareProvider(AbstractContextManager["AKShareProvider"]):
@@ -200,6 +215,54 @@ class AKShareProvider(AbstractContextManager["AKShareProvider"]):
             record_factory=lambda: list(_map_capital_rows(rows, code)),
         )
 
+    def fetch_classification_catalog(
+        self, classification_type: str, snapshot_date: date
+    ) -> ProviderBatch[ClassificationRecord]:
+        kind = _classification_type(classification_type)
+        call = (
+            self._client.stock_board_industry_name_em
+            if kind is ClassificationType.INDUSTRY
+            else self._client.stock_board_concept_name_em
+        )
+        result = _provider_call(f"{kind.value} classification catalog", call)
+        rows = _rows(result, ("板块名称", "板块代码"), "classification catalog")
+        return ProviderBatch(
+            raw_rows=rows,
+            request_params={
+                "classification_type": kind.value,
+                "snapshot_date": snapshot_date.isoformat(),
+            },
+            schema_version="akshare.classification_catalog.v1",
+            records=[_map_classification_catalog(rows, kind, snapshot_date)],
+        )
+
+    def fetch_classification_members(
+        self, classification_type: str, classification_code: str, snapshot_date: date
+    ) -> ProviderBatch[ClassificationRecord]:
+        kind = _classification_type(classification_type)
+        code = classification_code.strip().upper()
+        if not code:
+            raise ValueError("classification_code must not be blank")
+        call = (
+            self._client.stock_board_industry_cons_em
+            if kind is ClassificationType.INDUSTRY
+            else self._client.stock_board_concept_cons_em
+        )
+        result = _provider_call(f"{kind.value} classification members", lambda: call(symbol=code))
+        rows = (
+            [] if len(result.columns) == 0 else _rows(result, ("代码",), "classification members")
+        )
+        return ProviderBatch(
+            raw_rows=rows,
+            request_params={
+                "classification_type": kind.value,
+                "classification_code": code,
+                "snapshot_date": snapshot_date.isoformat(),
+            },
+            schema_version="akshare.classification_members.v1",
+            records=[_map_classification_members(rows, kind, code, snapshot_date)],
+        )
+
 
 def normalize_akshare_raw(
     dataset_code: DatasetCode,
@@ -212,6 +275,8 @@ def normalize_akshare_raw(
         DatasetCode.TRADING_CALENDAR: "akshare.trading_calendar.v1",
         DatasetCode.DAILY_BAR: "akshare.daily_bar.v1",
         DatasetCode.CAPITAL: "akshare.capital.v1",
+        DatasetCode.CLASSIFICATION_CATALOG: "akshare.classification_catalog.v1",
+        DatasetCode.CLASSIFICATION_MEMBERS: "akshare.classification_members.v1",
     }[dataset_code]
     if schema_version != expected_schema:
         raise ProviderError(f"unsupported AKShare Raw schema: {schema_version}")
@@ -226,7 +291,73 @@ def normalize_akshare_raw(
         if not isinstance(source_symbol, str):
             raise ProviderError("AKShare replay request is missing source_symbol")
         return tuple(_map_capital_rows(raw_rows, _source_code(source_symbol)))
+    if dataset_code is DatasetCode.CLASSIFICATION_CATALOG:
+        kind = _replay_classification_type(request_params)
+        snapshot_date = _replay_request_date(request_params, "snapshot_date")
+        return (_map_classification_catalog(raw_rows, kind, snapshot_date),)
+    if dataset_code is DatasetCode.CLASSIFICATION_MEMBERS:
+        kind = _replay_classification_type(request_params)
+        snapshot_date = _replay_request_date(request_params, "snapshot_date")
+        code = request_params.get("classification_code")
+        if not isinstance(code, str) or not code.strip():
+            raise ProviderError("AKShare replay request is missing classification_code")
+        return (_map_classification_members(raw_rows, kind, code, snapshot_date),)
     return tuple(_map_daily_bar(row) for row in raw_rows)
+
+
+def _classification_type(value: str) -> ClassificationType:
+    try:
+        kind = ClassificationType(value.strip().lower())
+    except ValueError as error:
+        raise ProviderError(f"unsupported AKShare classification type: {value}") from error
+    if kind is ClassificationType.INDEX:
+        raise ProviderError("AKShare classification adapter supports industry and concept")
+    return kind
+
+
+def _replay_classification_type(
+    request_params: Mapping[str, object],
+) -> ClassificationType:
+    value = request_params.get("classification_type")
+    if not isinstance(value, str):
+        raise ProviderError("AKShare replay request is missing classification_type")
+    return _classification_type(value)
+
+
+def _map_classification_catalog(
+    rows: Sequence[Mapping[str, str]],
+    kind: ClassificationType,
+    snapshot_date: date,
+) -> ClassificationCatalogSnapshotRecord:
+    return ClassificationCatalogSnapshotRecord(
+        namespace="eastmoney",
+        classification_type=kind,
+        snapshot_date=snapshot_date,
+        definitions=tuple(
+            ClassificationDefinition(
+                code=row["板块代码"].strip().upper(),
+                name=row["板块名称"].strip(),
+            )
+            for row in rows
+        ),
+        source_code="akshare",
+    )
+
+
+def _map_classification_members(
+    rows: Sequence[Mapping[str, str]],
+    kind: ClassificationType,
+    classification_code: str,
+    snapshot_date: date,
+) -> ClassificationMemberSnapshotRecord:
+    return ClassificationMemberSnapshotRecord(
+        namespace="eastmoney",
+        classification_type=kind,
+        classification_code=classification_code.strip().upper(),
+        snapshot_date=snapshot_date,
+        members=tuple(_normalize_symbol(row["代码"])[2] for row in rows),
+        source_code="akshare",
+    )
 
 
 def _tagged_rows(

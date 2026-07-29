@@ -6,6 +6,7 @@ import pytest
 
 from market_data_center.domain import (
     CapitalRecord,
+    ClassificationRecord,
     DailyBarRecord,
     SecurityRecord,
     TradingDayRecord,
@@ -59,6 +60,16 @@ class FakeProvider:
     def fetch_capital(self, source_symbol: str) -> ProviderBatch[CapitalRecord]:
         raise NotImplementedError
 
+    def fetch_classification_catalog(
+        self, classification_type: str, snapshot_date: date
+    ) -> ProviderBatch[ClassificationRecord]:
+        raise NotImplementedError
+
+    def fetch_classification_members(
+        self, classification_type: str, classification_code: str, snapshot_date: date
+    ) -> ProviderBatch[ClassificationRecord]:
+        raise NotImplementedError
+
 
 class FakeFactory:
     def __init__(self) -> None:
@@ -76,6 +87,8 @@ def test_default_routes_are_capability_specific_and_deterministic() -> None:
         DatasetCode.TRADING_CALENDAR: ("baostock", "akshare"),
         DatasetCode.DAILY_BAR: ("pytdx", "baostock", "akshare"),
         DatasetCode.CAPITAL: ("akshare",),
+        DatasetCode.CLASSIFICATION_CATALOG: ("akshare",),
+        DatasetCode.CLASSIFICATION_MEMBERS: ("akshare",),
     }
 
 

@@ -20,6 +20,8 @@ DEFAULT_PROVIDER_ROUTES: Mapping[DatasetCode, tuple[str, ...]] = {
     DatasetCode.TRADING_CALENDAR: ("baostock", "akshare"),
     DatasetCode.DAILY_BAR: ("pytdx", "baostock", "akshare"),
     DatasetCode.CAPITAL: ("akshare",),
+    DatasetCode.CLASSIFICATION_CATALOG: ("akshare",),
+    DatasetCode.CLASSIFICATION_MEMBERS: ("akshare",),
 }
 
 

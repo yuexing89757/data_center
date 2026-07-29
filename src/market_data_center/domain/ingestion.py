@@ -20,6 +20,8 @@ class DatasetCode(StrEnum):
     TRADING_CALENDAR = "trading_calendar"
     DAILY_BAR = "daily_bar"
     CAPITAL = "capital"
+    CLASSIFICATION_CATALOG = "classification_catalog"
+    CLASSIFICATION_MEMBERS = "classification_members"
 
 
 class IngestionStatus(StrEnum):

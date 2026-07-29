@@ -8,6 +8,16 @@ from market_data_center.domain.capital import (
     capital_natural_key_json,
     validate_capital,
 )
+from market_data_center.domain.classification import (
+    ClassificationCatalogSnapshotRecord,
+    ClassificationDefinition,
+    ClassificationFinding,
+    ClassificationMemberSnapshotRecord,
+    ClassificationRecord,
+    ClassificationType,
+    validate_catalog,
+    validate_member_snapshot,
+)
 from market_data_center.domain.entities import CalculatedTradingDay, SecurityNameHistory
 from market_data_center.domain.ingestion import (
     DatasetCode,
@@ -47,6 +57,12 @@ __all__ = [
     "CapitalFinding",
     "CapitalRecord",
     "CapitalValidationResult",
+    "ClassificationCatalogSnapshotRecord",
+    "ClassificationDefinition",
+    "ClassificationFinding",
+    "ClassificationMemberSnapshotRecord",
+    "ClassificationRecord",
+    "ClassificationType",
     "CorporateActionStatus",
     "DailyBarRecord",
     "DatasetCode",
@@ -76,5 +92,7 @@ __all__ = [
     "capital_natural_key",
     "capital_natural_key_json",
     "validate_capital",
+    "validate_catalog",
     "validate_daily_bars",
+    "validate_member_snapshot",
 ]

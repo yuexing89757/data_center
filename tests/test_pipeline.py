@@ -9,6 +9,11 @@ import pytest
 
 from market_data_center.domain import (
     CapitalRecord,
+    ClassificationCatalogSnapshotRecord,
+    ClassificationDefinition,
+    ClassificationMemberSnapshotRecord,
+    ClassificationRecord,
+    ClassificationType,
     DailyBarRecord,
     Exchange,
     IngestionEnvelope,
@@ -146,6 +151,43 @@ class StubProvider:
             schema_version="capital.v1",
         )
 
+    def fetch_classification_catalog(
+        self, classification_type: str, snapshot_date: date
+    ) -> ProviderBatch[ClassificationRecord]:
+        return ProviderBatch(
+            records=[
+                ClassificationCatalogSnapshotRecord(
+                    namespace="stub",
+                    classification_type=ClassificationType(classification_type),
+                    snapshot_date=snapshot_date,
+                    definitions=(ClassificationDefinition("BK0475", "银行"),),
+                    source_code=self.source_code,
+                )
+            ],
+            raw_rows=[{"板块名称": "银行", "板块代码": "BK0475"}],
+            request_params={},
+            schema_version="classification-catalog.v1",
+        )
+
+    def fetch_classification_members(
+        self, classification_type: str, classification_code: str, snapshot_date: date
+    ) -> ProviderBatch[ClassificationRecord]:
+        return ProviderBatch(
+            records=[
+                ClassificationMemberSnapshotRecord(
+                    namespace="stub",
+                    classification_type=ClassificationType(classification_type),
+                    classification_code=classification_code,
+                    snapshot_date=snapshot_date,
+                    members=("SSE:600000",),
+                    source_code=self.source_code,
+                )
+            ],
+            raw_rows=[{"代码": "600000"}],
+            request_params={},
+            schema_version="classification-members.v1",
+        )
+
 
 class StubPersistence:
     def __init__(self) -> None:
@@ -174,6 +216,22 @@ class StubPersistence:
                 IngestionRun,
                 RawManifest,
                 Sequence[IngestionEnvelope[CapitalRecord]],
+                Sequence[QualityResult],
+            ]
+        ] = []
+        self.classification_catalog_commits: list[
+            tuple[
+                IngestionRun,
+                RawManifest,
+                IngestionEnvelope[ClassificationCatalogSnapshotRecord],
+                Sequence[QualityResult],
+            ]
+        ] = []
+        self.classification_member_commits: list[
+            tuple[
+                IngestionRun,
+                RawManifest,
+                IngestionEnvelope[ClassificationMemberSnapshotRecord],
                 Sequence[QualityResult],
             ]
         ] = []
@@ -235,6 +293,29 @@ class StubPersistence:
     ) -> None:
         self.capital_commits.append((run, manifest, records, quality_results))
 
+    def known_classification_snapshots(
+        self, keys: Collection[tuple[str, ClassificationType, str, date]]
+    ) -> set[tuple[str, ClassificationType, str, date]]:
+        return set(keys)
+
+    def commit_classification_catalog_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest,
+        record: IngestionEnvelope[ClassificationCatalogSnapshotRecord],
+        quality_results: Sequence[QualityResult],
+    ) -> None:
+        self.classification_catalog_commits.append((run, manifest, record, quality_results))
+
+    def commit_classification_members_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest,
+        record: IngestionEnvelope[ClassificationMemberSnapshotRecord],
+        quality_results: Sequence[QualityResult],
+    ) -> None:
+        self.classification_member_commits.append((run, manifest, record, quality_results))
+
     def commit_rejected_batch(
         self,
         run: IngestionRun,
@@ -280,6 +361,22 @@ def test_capital_pipeline_commits_validated_envelopes(tmp_path: Path) -> None:
     assert persistence.created[0].request_params["mode"] == "backfill"
     assert len(persistence.capital_commits) == 1
     assert persistence.capital_commits[0][2][0].record == _share_capital()
+
+
+def test_classification_pipeline_commits_catalog_before_members(tmp_path: Path) -> None:
+    persistence = StubPersistence()
+    pipeline = _pipeline(tmp_path, StubProvider(), persistence)
+    snapshot_date = date(2026, 7, 28)
+
+    catalog_run = pipeline.ingest_classification_catalog("industry", snapshot_date=snapshot_date)
+    member_run = pipeline.ingest_classification_members(
+        "industry", "BK0475", snapshot_date=snapshot_date
+    )
+
+    assert catalog_run.status is IngestionStatus.SUCCEEDED
+    assert member_run.status is IngestionStatus.SUCCEEDED
+    assert persistence.classification_catalog_commits[0][2].record.definitions[0].code == "BK0475"
+    assert persistence.classification_member_commits[0][2].record.members == ("SSE:600000",)
 
 
 def test_daily_bar_reference_failure_is_recorded_and_blocked(tmp_path: Path) -> None:
