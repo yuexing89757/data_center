@@ -2,7 +2,15 @@ from collections.abc import Mapping, Sequence
 from datetime import date
 from decimal import Decimal
 
-from market_data_center.domain import Exchange, SecurityStatus, TradeStatus
+from market_data_center.domain import (
+    CorporateActionStatus,
+    DistributionRecord,
+    Exchange,
+    RightsIssueRecord,
+    SecurityStatus,
+    ShareCapitalRecord,
+    TradeStatus,
+)
 from market_data_center.providers import AKShareProvider
 from market_data_center.providers.akshare import TabularResult
 
@@ -17,7 +25,7 @@ class FakeFrame:
         return list(self._rows)
 
 
-class FakeClient:
+class _BaseFakeClient:
     def __init__(self) -> None:
         self.daily_arguments: dict[str, str] = {}
 
@@ -33,6 +41,8 @@ class FakeClient:
             )
         )
 
+
+class FakeClient(_BaseFakeClient):
     def stock_zh_a_hist(
         self, *, symbol: str, period: str, start_date: str, end_date: str, adjust: str
     ) -> TabularResult:
@@ -58,6 +68,61 @@ class FakeClient:
                 },
             )
         )
+
+    def stock_zh_a_gbjg_em(self, *, symbol: str) -> TabularResult:
+        return FakeFrame(
+            (
+                {
+                    "变更日期": date(2024, 1, 15),
+                    "总股本": 1_000_000,
+                    "流通受限股份": 100_000,
+                    "已流通股份": 900_000,
+                    "已上市流通A股": 900_000,
+                    "变动原因": "回购",
+                },
+            )
+        )
+
+    def stock_fhps_detail_em(self, *, symbol: str) -> TabularResult:
+        return FakeFrame(
+            (
+                {
+                    "报告期": date(2023, 12, 31),
+                    "送转股份-送股比例": "1",
+                    "送转股份-转股比例": "2",
+                    "现金分红-现金分红比例": "3.5",
+                    "预案公告日": date(2024, 3, 1),
+                    "股权登记日": date(2024, 6, 5),
+                    "除权除息日": date(2024, 6, 6),
+                    "方案进度": "实施分配",
+                    "最新公告日期": date(2024, 5, 31),
+                },
+            )
+        )
+
+    def stock_history_dividend_detail(self, *, symbol: str, indicator: str) -> TabularResult:
+        assert indicator == "配股"
+        return FakeFrame(
+            (
+                {
+                    "公告日期": date(2020, 1, 2),
+                    "配股方案": "2.5",
+                    "配股价格": "8.5",
+                    "基准股本": "1000000",
+                    "除权日": date(2020, 1, 10),
+                    "股权登记日": date(2020, 1, 9),
+                    "缴款起始日": date(2020, 1, 10),
+                    "缴款终止日": date(2020, 1, 16),
+                    "配股上市日": date(2020, 2, 1),
+                    "募集资金合计": "2125000",
+                },
+            )
+        )
+
+
+class EmptyRightsFakeClient(FakeClient):
+    def stock_history_dividend_detail(self, *, symbol: str, indicator: str) -> TabularResult:
+        return FakeFrame(())
 
 
 def test_security_mapping_keeps_unknown_lifecycle_fields_explicit() -> None:
@@ -96,3 +161,29 @@ def test_daily_bar_requests_unadjusted_data_and_maps_decimal_values() -> None:
 
 def test_standard_symbol_maps_to_akshare_source_symbol() -> None:
     assert AKShareProvider(FakeClient()).source_symbol("SSE:600000") == "600000"
+
+
+def test_capital_mapping_normalizes_units_and_record_types() -> None:
+    batch = AKShareProvider(FakeClient()).fetch_capital("SSE:600000")
+
+    assert len(batch.raw_rows) == 3
+    share_capital, distribution, rights_issue = batch.records
+    assert isinstance(share_capital, ShareCapitalRecord)
+    assert share_capital.total_shares == 1_000_000
+    assert isinstance(distribution, DistributionRecord)
+    assert distribution.cash_dividend_per_share == Decimal("0.35")
+    assert distribution.bonus_share_ratio == Decimal("0.1")
+    assert distribution.transfer_share_ratio == Decimal("0.2")
+    assert distribution.status is CorporateActionStatus.IMPLEMENTED
+    assert isinstance(rights_issue, RightsIssueRecord)
+    assert rights_issue.rights_ratio == Decimal("0.25")
+    assert rights_issue.rights_price == Decimal("8.5")
+
+
+def test_capital_mapping_accepts_an_empty_optional_rights_table() -> None:
+    records = AKShareProvider(EmptyRightsFakeClient()).fetch_capital("600000").records
+
+    assert [type(record).__name__ for record in records] == [
+        "ShareCapitalRecord",
+        "DistributionRecord",
+    ]

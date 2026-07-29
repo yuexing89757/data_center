@@ -8,6 +8,7 @@ from typing import Protocol, Self, cast
 
 from market_data_center.domain.ingestion import DatasetCode
 from market_data_center.domain.records import (
+    CapitalRecord,
     DailyBarRecord,
     Exchange,
     Market,
@@ -21,6 +22,7 @@ from market_data_center.providers.contracts import (
     ProviderBatch,
     ProviderError,
     ProviderRecord,
+    ProviderRequestUnavailable,
     RawRow,
 )
 
@@ -167,6 +169,9 @@ class BaoStockProvider:
             schema_version="baostock.daily_bar.v1",
             record_factory=lambda: [_map_daily_bar(row) for row in raw_rows],
         )
+
+    def fetch_capital(self, source_symbol: str) -> ProviderBatch[CapitalRecord]:
+        raise ProviderRequestUnavailable("BaoStock does not provide Capital facts")
 
 
 def normalize_baostock_raw(

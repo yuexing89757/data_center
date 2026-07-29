@@ -9,6 +9,7 @@ from typing import Protocol, cast
 from uuid import UUID, uuid4
 
 from market_data_center.domain.calendar import calculate_trading_day_links
+from market_data_center.domain.capital import validate_capital
 from market_data_center.domain.entities import CalculatedTradingDay
 from market_data_center.domain.ingestion import (
     DatasetCode,
@@ -22,6 +23,7 @@ from market_data_center.domain.ingestion import (
     ReplaySource,
 )
 from market_data_center.domain.records import (
+    CapitalRecord,
     DailyBarRecord,
     IngestionEnvelope,
     SecurityRecord,
@@ -116,6 +118,14 @@ class ReliabilityPersistence(Protocol):
         run: IngestionRun,
         manifest: RawManifest | None,
         records: Sequence[IngestionEnvelope[DailyBarRecord]],
+        quality_results: Sequence[QualityResult],
+    ) -> None: ...
+
+    def commit_capital_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest | None,
+        records: Sequence[IngestionEnvelope[CapitalRecord]],
         quality_results: Sequence[QualityResult],
     ) -> None: ...
 
@@ -229,6 +239,47 @@ class RawReplayService:
                 )
             return self._summary(source, completed, dry_run, len(records), len(calculated), 0)
 
+        if source.dataset_code is DatasetCode.CAPITAL:
+            capital_records = cast(tuple[CapitalRecord, ...], records)
+            known_symbols = self._persistence.known_symbols(
+                {record.symbol for record in capital_records}
+            )
+            validation = validate_capital(capital_records, known_symbols=known_symbols)
+            completed = self._completed(
+                run,
+                len(records),
+                len(validation.accepted),
+                validation.rejected_rows,
+            )
+            if completed is not None:
+                quality_results = tuple(
+                    QualityResult(
+                        quality_result_id=self._uuid_factory(),
+                        ingestion_id=completed.ingestion_id,
+                        dataset_code=DatasetCode.CAPITAL,
+                        rule_code=finding.rule_code,
+                        severity=QualitySeverity.ERROR,
+                        status=QualityStatus.FAILED,
+                        message=finding.message,
+                        natural_key=finding.natural_key,
+                    )
+                    for finding in validation.findings
+                )
+                self._persistence.commit_capital_batch(
+                    completed,
+                    None,
+                    self._envelopes(completed.ingestion_id, validation.accepted),
+                    quality_results,
+                )
+            return self._summary(
+                source,
+                completed,
+                dry_run,
+                len(records),
+                len(validation.accepted),
+                validation.rejected_rows,
+            )
+
         daily_records = cast(tuple[DailyBarRecord, ...], records)
         known_symbols = self._persistence.known_symbols({record.symbol for record in daily_records})
         known_dates = self._persistence.known_trading_dates(
@@ -338,7 +389,7 @@ class RawReplayService:
         self._persistence.commit_rejected_batch(failed, None, [quality])
 
     @staticmethod
-    def _envelopes[RecordT: SecurityRecord | CalculatedTradingDay | DailyBarRecord](
+    def _envelopes[RecordT: SecurityRecord | CalculatedTradingDay | DailyBarRecord | CapitalRecord](
         ingestion_id: UUID, records: Sequence[RecordT]
     ) -> tuple[IngestionEnvelope[RecordT], ...]:
         return tuple(IngestionEnvelope(ingestion_id, record) for record in records)

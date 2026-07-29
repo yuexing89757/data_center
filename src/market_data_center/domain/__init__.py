@@ -1,6 +1,13 @@
 """Stable phase-one domain contracts."""
 
 from market_data_center.domain.calendar import calculate_trading_day_links
+from market_data_center.domain.capital import (
+    CapitalFinding,
+    CapitalValidationResult,
+    capital_natural_key,
+    capital_natural_key_json,
+    validate_capital,
+)
 from market_data_center.domain.entities import CalculatedTradingDay, SecurityNameHistory
 from market_data_center.domain.ingestion import (
     DatasetCode,
@@ -14,13 +21,18 @@ from market_data_center.domain.ingestion import (
     RawManifest,
 )
 from market_data_center.domain.records import (
+    CapitalRecord,
+    CorporateActionStatus,
     DailyBarRecord,
+    DistributionRecord,
     Exchange,
     IngestionEnvelope,
     Market,
+    RightsIssueRecord,
     SecurityRecord,
     SecurityStatus,
     SecurityType,
+    ShareCapitalRecord,
     TradeStatus,
     TradingDayRecord,
 )
@@ -32,8 +44,13 @@ from market_data_center.domain.validation import (
 
 __all__ = [
     "CalculatedTradingDay",
+    "CapitalFinding",
+    "CapitalRecord",
+    "CapitalValidationResult",
+    "CorporateActionStatus",
     "DailyBarRecord",
     "DatasetCode",
+    "DistributionRecord",
     "Exchange",
     "IngestionEnvelope",
     "IngestionRun",
@@ -45,14 +62,19 @@ __all__ = [
     "QualityStatus",
     "RawFileFormat",
     "RawManifest",
+    "RightsIssueRecord",
     "SecurityNameHistory",
     "SecurityRecord",
     "SecurityStatus",
     "SecurityType",
+    "ShareCapitalRecord",
     "TradeStatus",
     "TradingDayRecord",
     "ValidationFinding",
     "ValidationRule",
     "calculate_trading_day_links",
+    "capital_natural_key",
+    "capital_natural_key_json",
+    "validate_capital",
     "validate_daily_bars",
 ]

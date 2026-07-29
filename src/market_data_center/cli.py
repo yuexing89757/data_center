@@ -180,6 +180,8 @@ def _execute_automatic_provider(
     )
     if args.dataset == "security":
         return pipeline.ingest_securities()
+    if args.dataset == "capital":
+        return pipeline.ingest_capital(provider.source_symbol(args.source_symbol), mode=args.mode)
     start_date = date.fromisoformat(args.start_date)
     end_date = date.fromisoformat(args.end_date)
     if args.dataset == "trading-calendar":
@@ -350,12 +352,15 @@ def _dataset_code(dataset: str) -> DatasetCode:
         "security": DatasetCode.SECURITY,
         "trading-calendar": DatasetCode.TRADING_CALENDAR,
         "daily-bar": DatasetCode.DAILY_BAR,
+        "capital": DatasetCode.CAPITAL,
     }[dataset]
 
 
 def _execute(args: Namespace, pipeline: IngestionPipeline) -> IngestionRun:
     if args.dataset == "security":
         return pipeline.ingest_securities()
+    if args.dataset == "capital":
+        return pipeline.ingest_capital(args.source_symbol, mode=args.mode)
     start_date = date.fromisoformat(args.start_date)
     end_date = date.fromisoformat(args.end_date)
     if args.dataset == "trading-calendar":
@@ -387,6 +392,24 @@ def _parser() -> ArgumentParser:
         ),
     )
     _add_date_range(daily_bar)
+
+    capital = subparsers.add_parser(
+        "capital", help="reconcile share-capital, distribution, and rights-issue history"
+    )
+    capital.add_argument(
+        "--source-symbol",
+        required=True,
+        help=(
+            "standard symbol such as SSE:600000 in auto mode; provider-specific symbol "
+            "in explicit mode"
+        ),
+    )
+    capital.add_argument(
+        "--mode",
+        choices=("backfill", "incremental"),
+        default="incremental",
+        help="record operational intent; both modes reconcile the provider's complete history",
+    )
 
     bulk = subparsers.add_parser(
         "daily-bars-bulk", help="synchronize daily bars for every currently listed stock"

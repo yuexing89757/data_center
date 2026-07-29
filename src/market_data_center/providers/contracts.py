@@ -5,9 +5,14 @@ from datetime import date
 from types import TracebackType
 from typing import Protocol, Self
 
-from market_data_center.domain.records import DailyBarRecord, SecurityRecord, TradingDayRecord
+from market_data_center.domain.records import (
+    CapitalRecord,
+    DailyBarRecord,
+    SecurityRecord,
+    TradingDayRecord,
+)
 
-type ProviderRecord = SecurityRecord | TradingDayRecord | DailyBarRecord
+type ProviderRecord = SecurityRecord | TradingDayRecord | DailyBarRecord | CapitalRecord
 type RawRow = Mapping[str, str]
 
 
@@ -35,6 +40,8 @@ class MarketDataProvider(Protocol):
     def fetch_daily_bars(
         self, source_symbol: str, start_date: date, end_date: date
     ) -> "ProviderBatch[DailyBarRecord]": ...
+
+    def fetch_capital(self, source_symbol: str) -> "ProviderBatch[CapitalRecord]": ...
 
 
 class ManagedMarketDataProvider(MarketDataProvider, Protocol):

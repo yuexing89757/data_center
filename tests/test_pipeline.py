@@ -8,6 +8,7 @@ from uuid import uuid4
 import pytest
 
 from market_data_center.domain import (
+    CapitalRecord,
     DailyBarRecord,
     Exchange,
     IngestionEnvelope,
@@ -19,6 +20,7 @@ from market_data_center.domain import (
     SecurityRecord,
     SecurityStatus,
     SecurityType,
+    ShareCapitalRecord,
     TradeStatus,
     TradingDayRecord,
 )
@@ -56,6 +58,19 @@ def _daily_bar() -> DailyBarRecord:
         amount=Decimal("1050"),
         trade_status=TradeStatus.TRADING,
         is_st=False,
+        source_code="baostock",
+    )
+
+
+def _share_capital() -> ShareCapitalRecord:
+    return ShareCapitalRecord(
+        symbol="SSE:600000",
+        effective_date=date(2024, 1, 15),
+        total_shares=1_000_000,
+        restricted_shares=100_000,
+        circulating_shares=900_000,
+        listed_a_shares=900_000,
+        change_reason="test",
         source_code="baostock",
     )
 
@@ -123,6 +138,14 @@ class StubProvider:
             schema_version="daily.v1",
         )
 
+    def fetch_capital(self, source_symbol: str) -> ProviderBatch[CapitalRecord]:
+        return ProviderBatch(
+            records=[_share_capital()],
+            raw_rows=[{"_capital_record_type": "share_capital", "symbol": source_symbol}],
+            request_params={"source_symbol": source_symbol},
+            schema_version="capital.v1",
+        )
+
 
 class StubPersistence:
     def __init__(self) -> None:
@@ -143,6 +166,14 @@ class StubPersistence:
                 IngestionRun,
                 RawManifest,
                 Sequence[IngestionEnvelope[DailyBarRecord]],
+                Sequence[QualityResult],
+            ]
+        ] = []
+        self.capital_commits: list[
+            tuple[
+                IngestionRun,
+                RawManifest,
+                Sequence[IngestionEnvelope[CapitalRecord]],
                 Sequence[QualityResult],
             ]
         ] = []
@@ -195,6 +226,15 @@ class StubPersistence:
     ) -> None:
         self.daily_commits.append((run, manifest, records, quality_results))
 
+    def commit_capital_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest,
+        records: Sequence[IngestionEnvelope[CapitalRecord]],
+        quality_results: Sequence[QualityResult],
+    ) -> None:
+        self.capital_commits.append((run, manifest, records, quality_results))
+
     def commit_rejected_batch(
         self,
         run: IngestionRun,
@@ -227,6 +267,19 @@ def test_security_pipeline_commits_raw_and_success_together(tmp_path: Path) -> N
     assert len(persistence.security_commits) == 1
     manifest = persistence.security_commits[0][1]
     assert tmp_path.joinpath(*manifest.object_path.split("/")).exists()
+
+
+def test_capital_pipeline_commits_validated_envelopes(tmp_path: Path) -> None:
+    persistence = StubPersistence()
+    pipeline = _pipeline(tmp_path, StubProvider(), persistence)
+
+    run = pipeline.ingest_capital("600000", mode="backfill")
+
+    assert run.status is IngestionStatus.SUCCEEDED
+    assert run.accepted_rows == 1
+    assert persistence.created[0].request_params["mode"] == "backfill"
+    assert len(persistence.capital_commits) == 1
+    assert persistence.capital_commits[0][2][0].record == _share_capital()
 
 
 def test_daily_bar_reference_failure_is_recorded_and_blocked(tmp_path: Path) -> None:

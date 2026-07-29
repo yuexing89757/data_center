@@ -18,8 +18,11 @@ from sqlalchemy.exc import IntegrityError
 
 from market_data_center.domain import (
     CalculatedTradingDay,
+    CapitalRecord,
+    CorporateActionStatus,
     DailyBarRecord,
     DatasetCode,
+    DistributionRecord,
     Exchange,
     IngestionEnvelope,
     IngestionRun,
@@ -31,9 +34,11 @@ from market_data_center.domain import (
     QualityStatus,
     RawFileFormat,
     RawManifest,
+    RightsIssueRecord,
     SecurityRecord,
     SecurityStatus,
     SecurityType,
+    ShareCapitalRecord,
     TradeStatus,
 )
 from market_data_center.migrations import MIGRATION_DIR, apply_migrations
@@ -105,6 +110,9 @@ def test_migrations_apply_to_empty_database_and_are_idempotent(
     assert ("api_v1", "daily_bars") in first_snapshot["views"]
     assert ("api_v1", "securities") in first_snapshot["views"]
     assert ("api_v1", "trading_calendar") in first_snapshot["views"]
+    assert ("api_v1", "share_capital") in first_snapshot["views"]
+    assert ("api_v1", "distributions") in first_snapshot["views"]
+    assert ("api_v1", "rights_issues") in first_snapshot["views"]
 
 
 def test_replay_lineage_and_source_manifest_are_queryable(database_engine: Engine) -> None:
@@ -138,6 +146,98 @@ def test_replay_lineage_and_source_manifest_are_queryable(database_engine: Engin
             {"ingestion_id": replay.ingestion_id},
         ).scalar_one()
     assert replayed_from == manifest.raw_id
+
+
+def test_capital_facts_are_idempotent_revision_aware_and_exposed_by_views(
+    database_engine: Engine,
+) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    security_run = _running_run(DatasetCode.SECURITY)
+    persistence.create_ingestion_run(security_run)
+    persistence.commit_security_batch(
+        _completed_run(security_run),
+        _manifest(security_run.ingestion_id, "security"),
+        _envelopes(security_run.ingestion_id, [_security()]),
+    )
+    capital_run = _running_run(DatasetCode.CAPITAL)
+    persistence.create_ingestion_run(capital_run)
+    records: list[CapitalRecord] = [
+        ShareCapitalRecord(
+            symbol=SYMBOL,
+            effective_date=date(2024, 1, 15),
+            total_shares=1_000_000,
+            restricted_shares=100_000,
+            circulating_shares=900_000,
+            listed_a_shares=900_000,
+            change_reason="initial",
+            source_code="akshare",
+        ),
+        DistributionRecord(
+            symbol=SYMBOL,
+            report_period=date(2023, 12, 31),
+            announcement_date=date(2024, 5, 31),
+            record_date=date(2024, 6, 5),
+            ex_date=date(2024, 6, 6),
+            cash_dividend_per_share=Decimal("0.35"),
+            bonus_share_ratio=Decimal("0.1"),
+            transfer_share_ratio=Decimal("0.2"),
+            status=CorporateActionStatus.IMPLEMENTED,
+            source_code="akshare",
+        ),
+        RightsIssueRecord(
+            symbol=SYMBOL,
+            record_date=date(2020, 1, 9),
+            announcement_date=date(2020, 1, 2),
+            ex_date=date(2020, 1, 10),
+            payment_start_date=date(2020, 1, 10),
+            payment_end_date=date(2020, 1, 16),
+            listing_date=date(2020, 2, 1),
+            rights_ratio=Decimal("0.25"),
+            rights_price=Decimal("8.5"),
+            base_shares=1_000_000,
+            proceeds=Decimal("2125000"),
+            source_code="akshare",
+        ),
+    ]
+    persistence.commit_capital_batch(
+        _completed_run(capital_run, row_count=3),
+        _manifest(capital_run.ingestion_id, "capital"),
+        _envelopes(capital_run.ingestion_id, records),
+        [],
+    )
+    revision_run = _running_run(DatasetCode.CAPITAL)
+    persistence.create_ingestion_run(revision_run)
+    revised_share_capital = replace(
+        cast(ShareCapitalRecord, records[0]),
+        total_shares=1_100_000,
+        change_reason="revised",
+    )
+    persistence.commit_capital_batch(
+        _completed_run(revision_run),
+        _manifest(revision_run.ingestion_id, "capital-revision"),
+        _envelopes(revision_run.ingestion_id, [revised_share_capital]),
+        [],
+    )
+
+    with database_engine.connect() as connection:
+        share_row = connection.execute(
+            text(
+                "select total_shares, change_reason, ingestion_id "
+                "from capital.share_capital where symbol = :symbol"
+            ),
+            {"symbol": SYMBOL},
+        ).one()
+        counts = connection.execute(
+            text(
+                "select "
+                "(select count(*) from api_v1.share_capital), "
+                "(select count(*) from api_v1.distributions), "
+                "(select count(*) from api_v1.rights_issues)"
+            )
+        ).one()
+
+    assert tuple(share_row) == (1_100_000, "revised", revision_run.ingestion_id)
+    assert tuple(counts) == (1, 1, 1)
 
 
 def test_stale_running_ingestions_are_recovered_atomically(database_engine: Engine) -> None:
@@ -914,7 +1014,7 @@ def _prepare_api_data(engine: Engine) -> None:
     )
 
 
-def _envelopes[RecordT: SecurityRecord | CalculatedTradingDay | DailyBarRecord](
+def _envelopes[RecordT: SecurityRecord | CalculatedTradingDay | DailyBarRecord | CapitalRecord](
     ingestion_id: UUID, records: list[RecordT]
 ) -> list[IngestionEnvelope[RecordT]]:
     return [IngestionEnvelope(ingestion_id, record) for record in records]

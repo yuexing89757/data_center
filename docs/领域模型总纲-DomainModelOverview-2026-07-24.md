@@ -15,7 +15,7 @@
 | Trading | A 股市场交易日历 | `TradingDay` |
 | Market | 不复权日频量价事实 | `DailyBar` |
 
-Capital、Classification、Metrics 是未来候选领域，不属于第一阶段。进入实现前必须创建新 ADR 和相应领域详设。
+Capital 已由 ADR-0007 进入实现，包含股本结构、分红送转与配股输入事实。Classification、Metrics 仍是未来候选领域，进入实现前必须创建新 ADR 和相应领域详设。
 
 ## 2. 依赖方向
 
@@ -29,6 +29,7 @@ Trading ─────────────► Market
 - Ingestion 提供来源追溯，不包含业务事实语义。
 - Security 和 Trading 不依赖 Market。
 - Market 通过 `symbol` 关联 Security，通过 `(market, trade_date)` 关联 Trading。
+- Capital 通过 `symbol` 关联 Security，不依赖 Market，也不发布复权行情。
 - 禁止基础领域反向依赖行情或未来统计领域。
 
 ## 3. 数据流
