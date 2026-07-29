@@ -121,6 +121,8 @@ Provider DTO 不包含 `ingestion_id`。Pipeline 在创建采集批次后，将�
 
 上层应用只能依赖 `api_v1`，不能依赖内部表结构。
 
+根据 ADR-0010，研究脚本、看板、回测和 Agent 使用 `api_v1` 稳定 View/RPC；版本化查询必须保持单一 CalculationRun，Agent 工具 Schema 只是 PostgREST RPC 的只读契约。当前不建设 FastAPI 或 MCP。
+
 ## 7. 一致性规则
 
 - 相同自然键写入必须幂等；

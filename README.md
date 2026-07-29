@@ -14,7 +14,7 @@ uv run mypy src
 uv run pytest
 ```
 
-The first phase intentionally has no FastAPI service. Read queries are provided by Supabase PostgREST views under `api_v1`.
+The project currently has no FastAPI or MCP service. Read queries are provided by bounded Supabase PostgREST views and RPCs under `api_v1`.
 
 Configuration is loaded from environment variables. Copy `.env.example` locally and replace placeholders; never commit the resulting `.env` file.
 
@@ -40,6 +40,8 @@ market-data-center derived-recompute --start-date 2026-01-01 --end-date 2026-07-
 ```
 
 `api_v1.daily_bars` remains unadjusted. Derived views include the calculation ID, algorithm version, calculation range, input hash, and calculation timestamp; see [ADR-0009](docs/adr/ADR-0009-版本化复权行情与客观Metrics.md).
+
+Stable consumer and Agent reads use bounded Supabase PostgREST RPCs. The checked-in contracts are [OpenAPI v1](contracts/postgrest-openapi-v1.json) and [Agent tools v1](contracts/agent-tools-v1.json). ADR-0010 keeps FastAPI and MCP deferred because current queries remain inside PostgreSQL/PostgREST.
 
 The daily incremental workflow and systemd timer are documented in [docs/Worker日常采集与调度.md](docs/Worker日常采集与调度.md).
 

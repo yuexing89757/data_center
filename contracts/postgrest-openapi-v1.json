@@ -1,0 +1,156 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Market Data Center Read API",
+    "version": "1.0.0",
+    "description": "Stable, bounded read contracts implemented by Supabase PostgREST RPC."
+  },
+  "servers": [
+    {"url": "/rest/v1"}
+  ],
+  "security": [
+    {"publishableKey": []},
+    {"bearerAuth": []}
+  ],
+  "paths": {
+    "/rpc/query_securities": {
+      "post": {
+        "operationId": "querySecurities",
+        "summary": "Search the Security master",
+        "requestBody": {"$ref": "#/components/requestBodies/SecuritySearch"},
+        "responses": {"200": {"description": "Bounded Security matches"}}
+      }
+    },
+    "/rpc/query_daily_bars": {
+      "post": {
+        "operationId": "queryDailyBars",
+        "summary": "Read unadjusted Daily Bars",
+        "requestBody": {"$ref": "#/components/requestBodies/DailyBars"},
+        "responses": {"200": {"description": "Unadjusted bars ordered by trade date"}}
+      }
+    },
+    "/rpc/query_adjusted_daily_bars": {
+      "post": {
+        "operationId": "queryAdjustedDailyBars",
+        "summary": "Read one coherent adjusted-price calculation version",
+        "requestBody": {"$ref": "#/components/requestBodies/AdjustedDailyBars"},
+        "responses": {
+          "200": {"description": "Adjusted bars from one calculation ID"},
+          "404": {"description": "No compatible successful calculation exists"}
+        }
+      }
+    },
+    "/rpc/query_market_snapshot": {
+      "post": {
+        "operationId": "queryMarketSnapshot",
+        "summary": "Read a coherent daily market snapshot",
+        "requestBody": {"$ref": "#/components/requestBodies/MarketSnapshot"},
+        "responses": {
+          "200": {"description": "Raw close, objective metrics and market cap"},
+          "404": {"description": "No compatible successful calculation exists"}
+        }
+      }
+    },
+    "/rpc/query_classification_members_as_of": {
+      "post": {
+        "operationId": "queryClassificationMembersAsOf",
+        "summary": "Read the latest complete membership snapshot as of a date",
+        "requestBody": {"$ref": "#/components/requestBodies/ClassificationMembers"},
+        "responses": {
+          "200": {"description": "One snapshot envelope, including an empty member list"},
+          "404": {"description": "No snapshot exists as of the requested date"}
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "publishableKey": {"type": "apiKey", "in": "header", "name": "apikey"},
+      "bearerAuth": {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"}
+    },
+    "schemas": {
+      "StandardSymbol": {
+        "type": "string",
+        "pattern": "^(SSE|SZSE|BSE):[0-9]{6}$",
+        "examples": ["SSE:600000"]
+      },
+      "Date": {"type": "string", "format": "date"},
+      "Limit5000": {"type": "integer", "minimum": 1, "maximum": 5000, "default": 1000},
+      "CalculationId": {"type": ["string", "null"], "format": "uuid"}
+    },
+    "requestBodies": {
+      "SecuritySearch": {
+        "required": true,
+        "content": {"application/json": {"schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["p_query"],
+          "properties": {
+            "p_query": {"type": "string", "minLength": 1},
+            "p_limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20}
+          }
+        }}}
+      },
+      "DailyBars": {
+        "required": true,
+        "content": {"application/json": {"schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["p_symbol", "p_start_date", "p_end_date"],
+          "properties": {
+            "p_symbol": {"$ref": "#/components/schemas/StandardSymbol"},
+            "p_start_date": {"$ref": "#/components/schemas/Date"},
+            "p_end_date": {"$ref": "#/components/schemas/Date"},
+            "p_limit": {"$ref": "#/components/schemas/Limit5000"}
+          }
+        }}}
+      },
+      "AdjustedDailyBars": {
+        "required": true,
+        "content": {"application/json": {"schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["p_symbol", "p_start_date", "p_end_date"],
+          "properties": {
+            "p_symbol": {"$ref": "#/components/schemas/StandardSymbol"},
+            "p_start_date": {"$ref": "#/components/schemas/Date"},
+            "p_end_date": {"$ref": "#/components/schemas/Date"},
+            "p_adjustment_type": {"type": "string", "enum": ["forward", "backward"], "default": "forward"},
+            "p_algorithm_version": {"type": "string", "default": "1.0.0"},
+            "p_calculation_id": {"$ref": "#/components/schemas/CalculationId"},
+            "p_limit": {"$ref": "#/components/schemas/Limit5000"}
+          }
+        }}}
+      },
+      "MarketSnapshot": {
+        "required": true,
+        "content": {"application/json": {"schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["p_trade_date"],
+          "properties": {
+            "p_trade_date": {"$ref": "#/components/schemas/Date"},
+            "p_algorithm_version": {"type": "string", "default": "1.0.0"},
+            "p_calculation_id": {"$ref": "#/components/schemas/CalculationId"},
+            "p_limit": {"$ref": "#/components/schemas/Limit5000"}
+          }
+        }}}
+      },
+      "ClassificationMembers": {
+        "required": true,
+        "content": {"application/json": {"schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["p_namespace", "p_classification_type", "p_classification_code", "p_as_of_date"],
+          "properties": {
+            "p_namespace": {"type": "string", "minLength": 1},
+            "p_classification_type": {"type": "string", "enum": ["industry", "concept", "index"]},
+            "p_classification_code": {"type": "string", "minLength": 1},
+            "p_as_of_date": {"$ref": "#/components/schemas/Date"},
+            "p_limit": {"$ref": "#/components/schemas/Limit5000"}
+          }
+        }}}
+      }
+    }
+  }
+}

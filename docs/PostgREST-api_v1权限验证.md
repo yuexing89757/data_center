@@ -2,10 +2,10 @@
 
 ## 目标
 
-第一阶段只通过 PostgREST 暴露 `api_v1`。`core`、`ingestion` 和 `audit`
-是内部 Schema，不进入 PostgREST 暴露列表。客户端角色 `anon` 和
-`authenticated` 只能读取三个版本化 View；采集 Worker 使用
-`market_data_worker` 的最小表权限。
+系统只通过 PostgREST 暴露 `api_v1`。`core`、`capital`、`classification`、
+`derived`、`metrics`、`ingestion` 和 `audit` 是内部 Schema，不进入
+PostgREST 暴露列表。客户端角色 `anon` 和 `authenticated` 只能读取
+已发布 View、执行 ADR-0010 接受的只读 RPC；Worker 使用最小内部表权限。
 
 ## 自动验证
 
@@ -17,11 +17,10 @@ uv run pytest -m integration
 
 验证范围：
 
-- `api_v1.securities`、`api_v1.trading_calendar` 和
-  `api_v1.daily_bars` 的字段顺序；
+- `api_v1` 当前所有稳定 View 和 RPC 是否存在；
 - `symbol` 加 `trade_date` 闭区间查询；
-- `anon`、`authenticated` 可读取 `api_v1`，但不能读取内部 Schema
-  或写入 API View；
+- `anon`、`authenticated` 可读取/执行 `api_v1` 查询契约，但不能读取
+  内部 Schema 或写入 API View；
 - `market_data_worker` 只有采集所需的 `SELECT`、`INSERT`、`UPDATE`
   权限，没有 `DELETE`，也不依赖公开 API；
 - 所有内部事实和审计表都启用 RLS，策略只授予
@@ -30,7 +29,8 @@ uv run pytest -m integration
 
 ## PostgREST 查询契约
 
-日 K 闭区间查询：
+稳定 RPC、参数边界、错误和版本规则见
+`服务接口与Agent评估-2026-07-29.md`。原始日 K 闭区间查询仍可直接使用 View：
 
 ```text
 GET /rest/v1/daily_bars
@@ -54,4 +54,4 @@ schemas = ["api_v1"]
 extra_search_path = ["extensions"]
 ```
 
-若配置包含 `core`、`ingestion` 或 `audit`，必须停止部署并修正。
+若配置包含任一内部 Schema，必须停止部署并修正。
