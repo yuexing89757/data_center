@@ -24,6 +24,8 @@ The repeatable Daily Bar coverage, invariant, source, and lineage audit is docum
 
 The daily incremental workflow and systemd timer are documented in [docs/Worker日常采集与调度.md](docs/Worker日常采集与调度.md).
 
+Verified Raw replay, stale-run recovery, and read-only cross-provider Daily Bar comparison are documented in [docs/Raw重放与运行恢复.md](docs/Raw重放与运行恢复.md).
+
 Production migration and smoke verification can be started manually through the protected `Production migration and smoke check` GitHub Actions workflow.
 
 The CLI uses deterministic provider routing by default: BaoStock then AKShare for security/calendar, and local pytdx then BaoStock then AKShare for daily bars. Use `--provider baostock|akshare|pytdx` to bypass routing for reproducible diagnostics.

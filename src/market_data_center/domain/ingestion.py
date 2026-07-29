@@ -64,6 +64,7 @@ class IngestionRun:
     accepted_rows: int = 0
     rejected_rows: int = 0
     error_summary: str | None = None
+    replayed_from_raw_id: UUID | None = None
 
     def __post_init__(self) -> None:
         counts = (self.fetched_rows, self.accepted_rows, self.rejected_rows)
@@ -107,6 +108,16 @@ class RawManifest:
             raise ValueError("raw byte_size and row_count must not be negative")
         if not self.schema_version.strip():
             raise ValueError("schema_version must not be blank")
+
+
+@dataclass(frozen=True, slots=True)
+class ReplaySource:
+    source_ingestion_id: UUID
+    provider_code: ProviderCode
+    dataset_code: DatasetCode
+    requested_at: datetime
+    request_params: Mapping[str, object]
+    manifest: RawManifest | None
 
 
 @dataclass(frozen=True, slots=True)

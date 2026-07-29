@@ -7,6 +7,7 @@ from decimal import Decimal, InvalidOperation
 from types import TracebackType
 from typing import Protocol, Self, cast
 
+from market_data_center.domain.ingestion import DatasetCode
 from market_data_center.domain.records import (
     DailyBarRecord,
     Exchange,
@@ -17,7 +18,12 @@ from market_data_center.domain.records import (
     TradeStatus,
     TradingDayRecord,
 )
-from market_data_center.providers.contracts import ProviderBatch, ProviderError, RawRow
+from market_data_center.providers.contracts import (
+    ProviderBatch,
+    ProviderError,
+    ProviderRecord,
+    RawRow,
+)
 
 
 class TabularResult(Protocol):
@@ -118,6 +124,41 @@ class AKShareProvider(AbstractContextManager["AKShareProvider"]):
             schema_version="akshare.daily_bar.v1",
             record_factory=lambda: [_map_daily_bar(row) for row in rows],
         )
+
+
+def normalize_akshare_raw(
+    dataset_code: DatasetCode,
+    schema_version: str,
+    raw_rows: Sequence[Mapping[str, str]],
+    request_params: Mapping[str, object],
+) -> tuple[ProviderRecord, ...]:
+    expected_schema = {
+        DatasetCode.SECURITY: "akshare.security.v1",
+        DatasetCode.TRADING_CALENDAR: "akshare.trading_calendar.v1",
+        DatasetCode.DAILY_BAR: "akshare.daily_bar.v1",
+    }[dataset_code]
+    if schema_version != expected_schema:
+        raise ProviderError(f"unsupported AKShare Raw schema: {schema_version}")
+    if dataset_code is DatasetCode.SECURITY:
+        return tuple(_map_security(row) for row in raw_rows)
+    if dataset_code is DatasetCode.TRADING_CALENDAR:
+        start_date = _replay_request_date(request_params, "start_date")
+        end_date = _replay_request_date(request_params, "end_date")
+        return tuple(_calendar_records(raw_rows, start_date, end_date, "akshare"))
+    return tuple(_map_daily_bar(row) for row in raw_rows)
+
+
+def _replay_request_date(request_params: Mapping[str, object], name: str) -> date:
+    value = request_params.get(name)
+    if not isinstance(value, str):
+        raise ProviderError(f"AKShare replay request is missing {name}")
+    candidate = value.strip()
+    try:
+        if len(candidate) == 8 and candidate.isdigit():
+            return date(int(candidate[:4]), int(candidate[4:6]), int(candidate[6:]))
+        return date.fromisoformat(candidate)
+    except ValueError as error:
+        raise ProviderError(f"AKShare replay request has invalid {name}") from error
 
 
 def _calendar_records(

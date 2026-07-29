@@ -2,7 +2,7 @@
 
 > 状态：第一阶段有效  
 > 日期：2026-07-27  
-> 依据：`adr/ADR-0001-第一阶段架构基线.md`
+> 依据：`adr/ADR-0001-第一阶段架构基线.md`、`adr/ADR-0006-Raw重放与运行恢复.md`
 
 ## 1. 边界职责
 
@@ -26,6 +26,7 @@ Ingestion 管理一次外部数据采集的运行状态、Raw 对象清单和数
 | `accepted_rows` | bigint | 通过校验行数，默认 0 |
 | `rejected_rows` | bigint | 被拒绝行数，默认 0 |
 | `error_summary` | text | 脱敏错误摘要，可空 |
+| `replayed_from_raw_id` | uuid | 重放时关联原 RawManifest；实时采集为空 |
 | `created_at` | timestamptz | 默认 `now()` |
 | `updated_at` | timestamptz | 默认 `now()` |
 
@@ -93,7 +94,13 @@ pending → running → succeeded
 
 Provider 返回原始行后，Pipeline 先写不可变 Raw，再触发延迟标准化。标准化或来源一致性失败时，Pipeline 在一个事务中写入 Manifest、阻断级 QualityResult 和 failed 运行状态；该批次不写 Core。连接或请求阶段没有形成可用原始响应时，只记录 failed IngestionRun。
 
-## 7. 第一阶段验收
+## 7. Raw 重放与运行治理
+
+重放创建新的 IngestionRun，通过 `replayed_from_raw_id` 引用原 RawManifest，不复制 Raw 对象或 Manifest。Raw 文件必须通过路径、格式、字节数、SHA-256 和行数校验，再按 `provider_code + dataset_code + schema_version` 进入版本化 normalizer。之后仍须经过 Validator、QualityResult、IngestionEnvelope 和幂等 Persistence。
+
+`raw-replay --dry-run` 不写数据库；实际重放失败时写 failed IngestionRun 和阻断级 QualityResult。长期 `running` 批次由 `recover-stale-runs` 按显式阈值原子转为 failed。`compare-daily-bars` 从历史 Raw 生成多源差异报告，只读且不改变 Core 来源仲裁。
+
+## 8. 第一阶段验收
 
 - 每次 CLI 执行创建唯一采集批次；
 - Raw 文件落盘成功后才写入 Manifest；
@@ -101,4 +108,5 @@ Provider 返回原始行后，Pipeline 先写不可变 Raw，再触发延迟标�
 - Core 事实的 `ingestion_id` 能关联到运行和 Raw；
 - 严重质量失败阻止对应事实入库；
 - 标准化失败仍可通过 IngestionRun、Raw Manifest 和 QualityResult 追溯；
+- 重放运行可经 `replayed_from_raw_id` 追溯原始 Raw，且不复制 Manifest；
 - API 客户端不能直接查询或修改 Ingestion/Audit 表。

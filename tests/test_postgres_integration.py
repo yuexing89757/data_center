@@ -1,7 +1,7 @@
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import replace
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from os import environ
 from pathlib import Path
@@ -105,6 +105,100 @@ def test_migrations_apply_to_empty_database_and_are_idempotent(
     assert ("api_v1", "daily_bars") in first_snapshot["views"]
     assert ("api_v1", "securities") in first_snapshot["views"]
     assert ("api_v1", "trading_calendar") in first_snapshot["views"]
+
+
+def test_replay_lineage_and_source_manifest_are_queryable(database_engine: Engine) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    original = _running_run(DatasetCode.SECURITY)
+    persistence.create_ingestion_run(original)
+    manifest = _manifest(original.ingestion_id, "security")
+    persistence.commit_security_batch(
+        _completed_run(original),
+        manifest,
+        _envelopes(original.ingestion_id, [_security()]),
+    )
+    replay = replace(
+        _running_run(DatasetCode.SECURITY),
+        replayed_from_raw_id=manifest.raw_id,
+        request_params={"replay_source_ingestion_id": str(original.ingestion_id)},
+    )
+
+    persistence.create_ingestion_run(replay)
+    source = persistence.replay_source(original.ingestion_id)
+
+    assert source.source_ingestion_id == original.ingestion_id
+    assert source.manifest == manifest
+    with database_engine.connect() as connection:
+        replayed_from = connection.execute(
+            text("""
+                select replayed_from_raw_id
+                from ingestion.ingestion_run
+                where ingestion_id = :ingestion_id
+            """),
+            {"ingestion_id": replay.ingestion_id},
+        ).scalar_one()
+    assert replayed_from == manifest.raw_id
+
+
+def test_stale_running_ingestions_are_recovered_atomically(database_engine: Engine) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    stale_time = NOW - timedelta(hours=2)
+    stale = replace(
+        _running_run(DatasetCode.SECURITY),
+        requested_at=stale_time,
+        started_at=stale_time,
+    )
+    recent = _running_run(DatasetCode.SECURITY)
+    persistence.create_ingestion_run(stale)
+    persistence.create_ingestion_run(recent)
+
+    candidates = persistence.stale_ingestion_run_ids(NOW - timedelta(hours=1))
+    recovered = persistence.recover_stale_ingestion_runs(
+        NOW - timedelta(hours=1), NOW, "StaleRunRecovery: integration test"
+    )
+
+    assert candidates == [stale.ingestion_id]
+    assert recovered == [stale.ingestion_id]
+    with database_engine.connect() as connection:
+        rows = connection.execute(
+            text("""
+                    select ingestion_id, status
+                    from ingestion.ingestion_run
+                    where ingestion_id in (:stale_id, :recent_id)
+                """),
+            {"stale_id": stale.ingestion_id, "recent_id": recent.ingestion_id},
+        ).all()
+        states: dict[UUID, str] = {cast(UUID, row[0]): cast(str, row[1]) for row in rows}
+    assert states == {stale.ingestion_id: "failed", recent.ingestion_id: "running"}
+
+
+def test_daily_bar_comparison_sources_match_standard_symbol_and_range(
+    database_engine: Engine,
+) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    _commit_security_prerequisite(persistence)
+    _commit_calendar_prerequisite(persistence)
+    running = replace(
+        _running_run(DatasetCode.DAILY_BAR),
+        request_params={
+            "source_symbol": "sh.600000",
+            "start_date": "2026-07-01",
+            "end_date": "2026-07-28",
+        },
+    )
+    persistence.create_ingestion_run(running)
+    manifest = _manifest(running.ingestion_id, "daily_bar")
+    persistence.commit_daily_bar_batch(
+        _completed_run(running),
+        manifest,
+        _envelopes(running.ingestion_id, [_daily_bar()]),
+        [],
+    )
+
+    sources = persistence.daily_bar_replay_sources(SYMBOL, date(2026, 7, 28), date(2026, 7, 28))
+
+    assert len(sources) == 1
+    assert sources[0].manifest == manifest
 
 
 def test_security_batch_commit_is_atomic(database_engine: Engine) -> None:

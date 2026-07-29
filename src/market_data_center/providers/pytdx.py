@@ -1,13 +1,14 @@
 """pytdx adapter for local unadjusted A-share daily-bar files."""
 
 import os
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from types import TracebackType
 from typing import Protocol, Self, cast
 
+from market_data_center.domain.ingestion import DatasetCode
 from market_data_center.domain.records import (
     DailyBarRecord,
     Market,
@@ -18,6 +19,7 @@ from market_data_center.domain.records import (
 from market_data_center.providers.contracts import (
     ProviderBatch,
     ProviderError,
+    ProviderRecord,
     ProviderRequestUnavailable,
     RawRow,
 )
@@ -158,6 +160,23 @@ class PytdxProvider:
             raise ProviderError(
                 f"pytdx failed to read local market sentinel: {relative_path.as_posix()}"
             ) from error
+
+
+def normalize_pytdx_raw(
+    dataset_code: DatasetCode,
+    schema_version: str,
+    raw_rows: Sequence[Mapping[str, str]],
+    request_params: Mapping[str, object],
+) -> tuple[ProviderRecord, ...]:
+    if dataset_code is not DatasetCode.DAILY_BAR:
+        raise ProviderError(f"pytdx cannot replay dataset: {dataset_code.value}")
+    if schema_version != "pytdx.local_daily_bar.v1":
+        raise ProviderError(f"unsupported pytdx Raw schema: {schema_version}")
+    source_symbol = request_params.get("source_symbol")
+    if not isinstance(source_symbol, str):
+        raise ProviderError("pytdx replay request is missing source_symbol")
+    _, _, symbol = _parse_source_symbol(source_symbol)
+    return tuple(_daily_bar_records(raw_rows, symbol))
 
 
 def _raw_row(row: LocalDailyBarRow) -> RawRow:
