@@ -796,6 +796,43 @@ def test_security_batch_commit_is_atomic(database_engine: Engine) -> None:
     assert _scalar(database_engine, "select count(*) from core.security_name_history") == 1
 
 
+def test_unknown_security_lifecycle_does_not_replace_known_values(
+    database_engine: Engine,
+) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    known_run = _running_run(DatasetCode.SECURITY)
+    persistence.create_ingestion_run(known_run)
+    persistence.commit_security_batch(
+        _completed_run(known_run),
+        _manifest(known_run.ingestion_id, "security-known"),
+        _envelopes(known_run.ingestion_id, [_security()]),
+    )
+
+    unknown_run = _running_run(DatasetCode.SECURITY, ProviderCode.AKSHARE)
+    persistence.create_ingestion_run(unknown_run)
+    unknown = replace(
+        _security(),
+        status=SecurityStatus.UNKNOWN,
+        ipo_date=None,
+        delisting_date=None,
+        source_code="akshare",
+    )
+    persistence.commit_security_batch(
+        _completed_run(unknown_run),
+        _manifest(unknown_run.ingestion_id, "security-unknown"),
+        _envelopes(unknown_run.ingestion_id, [unknown]),
+    )
+
+    with database_engine.connect() as connection:
+        row = connection.execute(
+            text(
+                "select status, ipo_date, delisting_date from core.security where symbol = :symbol"
+            ),
+            {"symbol": SYMBOL},
+        ).one()
+    assert tuple(row) == ("listed", date(1999, 11, 10), None)
+
+
 def test_trading_calendar_batch_commit_is_atomic(database_engine: Engine) -> None:
     persistence = PostgreSQLPersistence(database_engine)
     running = _running_run(DatasetCode.TRADING_CALENDAR)

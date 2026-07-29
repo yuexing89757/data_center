@@ -94,9 +94,12 @@ insert into core.security (
 on conflict (symbol) do update set
     current_name = excluded.current_name,
     security_type = excluded.security_type,
-    status = excluded.status,
-    ipo_date = excluded.ipo_date,
-    delisting_date = excluded.delisting_date,
+    status = case
+        when excluded.status = 'unknown' then core.security.status
+        else excluded.status
+    end,
+    ipo_date = coalesce(excluded.ipo_date, core.security.ipo_date),
+    delisting_date = coalesce(excluded.delisting_date, core.security.delisting_date),
     source_code = excluded.source_code,
     ingestion_id = excluded.ingestion_id
 where core.security.code = excluded.code

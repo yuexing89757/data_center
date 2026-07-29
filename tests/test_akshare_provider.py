@@ -140,12 +140,12 @@ class EmptyRightsFakeClient(FakeClient):
         return FakeFrame(())
 
 
-def test_security_mapping_keeps_unknown_lifecycle_fields_explicit() -> None:
+def test_security_mapping_marks_current_directory_members_as_listed() -> None:
     record = AKShareProvider(FakeClient()).fetch_securities().records[0]
 
     assert record.symbol == "SSE:600000"
     assert record.exchange is Exchange.SSE
-    assert record.status is SecurityStatus.UNKNOWN
+    assert record.status is SecurityStatus.LISTED
     assert record.ipo_date is None
     assert record.source_code == "akshare"
 
