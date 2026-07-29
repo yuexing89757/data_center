@@ -24,6 +24,15 @@ The repeatable Daily Bar coverage, invariant, source, and lineage audit is docum
 
 Capital history is synchronized with `market-data-center capital --source-symbol SSE:600000 --mode backfill` and reconciled later with `--mode incremental`. Its accepted boundary is documented in [ADR-0007](docs/adr/ADR-0007-Capital与公司行为基础事实.md).
 
+Classification uses complete, Shanghai-date snapshots. Capture the catalog before its members:
+
+```bash
+market-data-center classification-catalog --classification-type industry
+market-data-center classification-members --classification-type industry --classification-code BK0475
+```
+
+Industry and concept snapshots are provided by AKShare/东方财富. Snapshot and effective-interval semantics are documented in [ADR-0008](docs/adr/ADR-0008-Classification分类与成分历史.md).
+
 The daily incremental workflow and systemd timer are documented in [docs/Worker日常采集与调度.md](docs/Worker日常采集与调度.md).
 
 Verified Raw replay, stale-run recovery, and read-only cross-provider Daily Bar comparison are documented in [docs/Raw重放与运行恢复.md](docs/Raw重放与运行恢复.md).

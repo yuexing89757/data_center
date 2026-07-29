@@ -3,6 +3,9 @@ from datetime import date
 from decimal import Decimal
 
 from market_data_center.domain import (
+    ClassificationCatalogSnapshotRecord,
+    ClassificationMemberSnapshotRecord,
+    ClassificationType,
     CorporateActionStatus,
     DistributionRecord,
     Exchange,
@@ -119,6 +122,18 @@ class FakeClient(_BaseFakeClient):
             )
         )
 
+    def stock_board_industry_name_em(self) -> TabularResult:
+        return FakeFrame(({"板块名称": "银行", "板块代码": "BK0475"},))
+
+    def stock_board_concept_name_em(self) -> TabularResult:
+        return FakeFrame(({"板块名称": "融资融券", "板块代码": "BK0655"},))
+
+    def stock_board_industry_cons_em(self, *, symbol: str) -> TabularResult:
+        return FakeFrame(({"代码": "600000", "名称": "浦发银行"},))
+
+    def stock_board_concept_cons_em(self, *, symbol: str) -> TabularResult:
+        return FakeFrame(({"代码": "600000", "名称": "浦发银行"},))
+
 
 class EmptyRightsFakeClient(FakeClient):
     def stock_history_dividend_detail(self, *, symbol: str, indicator: str) -> TabularResult:
@@ -187,3 +202,18 @@ def test_capital_mapping_accepts_an_empty_optional_rights_table() -> None:
         "ShareCapitalRecord",
         "DistributionRecord",
     ]
+
+
+def test_classification_catalog_and_members_are_complete_snapshots() -> None:
+    provider = AKShareProvider(FakeClient())
+
+    catalog = provider.fetch_classification_catalog("industry", date(2026, 7, 29)).records[0]
+    members = provider.fetch_classification_members(
+        "industry", "BK0475", date(2026, 7, 29)
+    ).records[0]
+
+    assert isinstance(catalog, ClassificationCatalogSnapshotRecord)
+    assert catalog.classification_type is ClassificationType.INDUSTRY
+    assert catalog.definitions[0].name == "银行"
+    assert isinstance(members, ClassificationMemberSnapshotRecord)
+    assert members.members == ("SSE:600000",)

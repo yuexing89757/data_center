@@ -9,6 +9,15 @@ from uuid import UUID, uuid4
 
 from market_data_center.domain.calendar import calculate_trading_day_links
 from market_data_center.domain.capital import validate_capital
+from market_data_center.domain.classification import (
+    ClassificationCatalogSnapshotRecord,
+    ClassificationFinding,
+    ClassificationMemberSnapshotRecord,
+    ClassificationRecord,
+    ClassificationType,
+    validate_catalog,
+    validate_member_snapshot,
+)
 from market_data_center.domain.entities import CalculatedTradingDay
 from market_data_center.domain.ingestion import (
     DatasetCode,
@@ -79,6 +88,26 @@ class PipelinePersistence(Protocol):
         run: IngestionRun,
         manifest: RawManifest,
         records: Sequence[IngestionEnvelope[CapitalRecord]],
+        quality_results: Sequence[QualityResult],
+    ) -> None: ...
+
+    def known_classification_snapshots(
+        self, keys: Collection[tuple[str, ClassificationType, str, date]]
+    ) -> set[tuple[str, ClassificationType, str, date]]: ...
+
+    def commit_classification_catalog_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest,
+        record: IngestionEnvelope[ClassificationCatalogSnapshotRecord],
+        quality_results: Sequence[QualityResult],
+    ) -> None: ...
+
+    def commit_classification_members_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest,
+        record: IngestionEnvelope[ClassificationMemberSnapshotRecord],
         quality_results: Sequence[QualityResult],
     ) -> None: ...
 
@@ -267,6 +296,129 @@ class IngestionPipeline:
                 self._record_failure(run, error)
                 raise
 
+    def ingest_classification_catalog(
+        self, classification_type: str, *, snapshot_date: date | None = None
+    ) -> IngestionRun:
+        snapshot_date = snapshot_date or self._clock().date()
+        params = {
+            "classification_type": classification_type,
+            "snapshot_date": snapshot_date.isoformat(),
+        }
+        task_key = f"{self._provider.source_code}:classification_catalog:{classification_type}"
+        with self._persistence.task_lock(task_key):
+            run = self._start_run(DatasetCode.CLASSIFICATION_CATALOG, params)
+            try:
+                batch = self._provider.fetch_classification_catalog(
+                    classification_type, snapshot_date
+                )
+                manifest, normalized = self._stage_batch(run, batch)
+                if len(normalized) != 1 or not isinstance(
+                    normalized[0], ClassificationCatalogSnapshotRecord
+                ):
+                    raise ProviderError("classification catalog must normalize to one snapshot")
+                record = normalized[0]
+                findings = validate_catalog(record)
+                quality = self._classification_quality_results(run, findings)
+                fetched = max(len(batch.raw_rows), 1)
+                accepted = 0 if findings else len(record.definitions)
+                completed = self._completed_run(
+                    run,
+                    fetched,
+                    accepted,
+                    fetched if findings else 0,
+                )
+                self._persistence.commit_classification_catalog_batch(
+                    completed,
+                    manifest,
+                    IngestionEnvelope(run.ingestion_id, record),
+                    quality,
+                )
+                return completed
+            except _RecordedProviderError:
+                raise
+            except Exception as error:
+                self._record_failure(run, error)
+                raise
+
+    def ingest_classification_members(
+        self,
+        classification_type: str,
+        classification_code: str,
+        *,
+        snapshot_date: date | None = None,
+    ) -> IngestionRun:
+        snapshot_date = snapshot_date or self._clock().date()
+        params = {
+            "classification_type": classification_type,
+            "classification_code": classification_code,
+            "snapshot_date": snapshot_date.isoformat(),
+        }
+        task_key = (
+            f"{self._provider.source_code}:classification_members:"
+            f"{classification_type}:{classification_code}"
+        )
+        with self._persistence.task_lock(task_key):
+            run = self._start_run(DatasetCode.CLASSIFICATION_MEMBERS, params)
+            try:
+                batch = self._provider.fetch_classification_members(
+                    classification_type, classification_code, snapshot_date
+                )
+                manifest, normalized = self._stage_batch(run, batch)
+                if len(normalized) != 1 or not isinstance(
+                    normalized[0], ClassificationMemberSnapshotRecord
+                ):
+                    raise ProviderError("classification members must normalize to one snapshot")
+                record = normalized[0]
+                key = (
+                    record.namespace,
+                    record.classification_type,
+                    record.classification_code,
+                    record.snapshot_date,
+                )
+                findings = validate_member_snapshot(
+                    record,
+                    known_classifications=self._persistence.known_classification_snapshots({key}),
+                    known_symbols=self._persistence.known_symbols(set(record.members)),
+                )
+                quality = self._classification_quality_results(run, findings)
+                fetched = max(len(batch.raw_rows), 1)
+                accepted = 0 if findings else len(record.members)
+                completed = self._completed_run(
+                    run,
+                    fetched,
+                    accepted,
+                    fetched if findings else 0,
+                )
+                self._persistence.commit_classification_members_batch(
+                    completed,
+                    manifest,
+                    IngestionEnvelope(run.ingestion_id, record),
+                    quality,
+                )
+                return completed
+            except _RecordedProviderError:
+                raise
+            except Exception as error:
+                self._record_failure(run, error)
+                raise
+
+    def _classification_quality_results(
+        self, run: IngestionRun, findings: Sequence[ClassificationFinding]
+    ) -> list[QualityResult]:
+        return [
+            QualityResult(
+                quality_result_id=self._uuid_factory(),
+                ingestion_id=run.ingestion_id,
+                dataset_code=run.dataset_code,
+                rule_code=finding.rule_code,
+                severity=QualitySeverity.ERROR,
+                status=QualityStatus.FAILED,
+                message=finding.message,
+                natural_key=finding.natural_key,
+            )
+            for finding in findings
+        ]
+
     def _start_run(
         self, dataset_code: DatasetCode, request_params: Mapping[str, object]
     ) -> IngestionRun:
@@ -355,9 +507,13 @@ class IngestionPipeline:
         )
 
     @staticmethod
-    def _envelopes[RecordT: SecurityRecord | CalculatedTradingDay | DailyBarRecord | CapitalRecord](
-        ingestion_id: UUID, records: Sequence[RecordT]
-    ) -> tuple[IngestionEnvelope[RecordT], ...]:
+    def _envelopes[
+        RecordT: SecurityRecord
+        | CalculatedTradingDay
+        | DailyBarRecord
+        | CapitalRecord
+        | ClassificationRecord
+    ](ingestion_id: UUID, records: Sequence[RecordT]) -> tuple[IngestionEnvelope[RecordT], ...]:
         return tuple(IngestionEnvelope(ingestion_id, record) for record in records)
 
     def _completed_run(

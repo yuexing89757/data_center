@@ -9,6 +9,11 @@ from uuid import UUID
 
 from sqlalchemy import Connection, Engine, RowMapping, bindparam, text
 
+from market_data_center.domain.classification import (
+    ClassificationCatalogSnapshotRecord,
+    ClassificationMemberSnapshotRecord,
+    ClassificationType,
+)
 from market_data_center.domain.entities import CalculatedTradingDay
 from market_data_center.domain.ingestion import (
     DatasetCode,
@@ -219,6 +224,70 @@ on conflict (symbol, record_date) do update set
     ingestion_id = excluded.ingestion_id
 """)
 
+UPSERT_CLASSIFICATION_CATALOG = text("""
+insert into classification.catalog_snapshot (
+    namespace, classification_type, snapshot_date, definition_count,
+    source_code, ingestion_id
+) values (
+    :namespace, :classification_type, :snapshot_date, :definition_count,
+    :source_code, :ingestion_id
+)
+on conflict (namespace, classification_type, snapshot_date) do update set
+    definition_count = excluded.definition_count,
+    source_code = excluded.source_code,
+    ingestion_id = excluded.ingestion_id
+""")
+
+INSERT_CLASSIFICATION_DEFINITION = text("""
+insert into classification.definition_snapshot (
+    namespace, classification_type, snapshot_date, classification_code,
+    name, level, parent_code, source_code, ingestion_id
+) values (
+    :namespace, :classification_type, :snapshot_date, :classification_code,
+    :name, :level, :parent_code, :source_code, :ingestion_id
+)
+on conflict (namespace, classification_type, snapshot_date, classification_code)
+do update set
+    name = excluded.name,
+    level = excluded.level,
+    parent_code = excluded.parent_code,
+    source_code = excluded.source_code,
+    ingestion_id = excluded.ingestion_id
+""")
+
+DELETE_STALE_CLASSIFICATION_DEFINITIONS = text("""
+delete from classification.definition_snapshot
+where namespace = :namespace
+  and classification_type = :classification_type
+  and snapshot_date = :snapshot_date
+  and classification_code not in :classification_codes
+""").bindparams(bindparam("classification_codes", expanding=True))
+
+UPSERT_CLASSIFICATION_MEMBER_SNAPSHOT = text("""
+insert into classification.member_snapshot (
+    namespace, classification_type, classification_code, snapshot_date,
+    member_count, source_code, ingestion_id
+) values (
+    :namespace, :classification_type, :classification_code, :snapshot_date,
+    :member_count, :source_code, :ingestion_id
+)
+on conflict (namespace, classification_type, classification_code, snapshot_date)
+do update set
+    member_count = excluded.member_count,
+    source_code = excluded.source_code,
+    ingestion_id = excluded.ingestion_id
+""")
+
+INSERT_CLASSIFICATION_MEMBER = text("""
+insert into classification.member_snapshot_item (
+    namespace, classification_type, classification_code, snapshot_date,
+    symbol, source_code, ingestion_id
+) values (
+    :namespace, :classification_type, :classification_code, :snapshot_date,
+    :symbol, :source_code, :ingestion_id
+)
+""")
+
 
 class PostgreSQLPersistence:
     def __init__(self, engine: Engine) -> None:
@@ -387,6 +456,33 @@ returning ingestion_id
         )
         with self._engine.connect() as connection:
             return set(connection.execute(statement, {"symbols": list(symbols)}).scalars())
+
+    def known_classification_snapshots(
+        self, keys: Collection[tuple[str, ClassificationType, str, date]]
+    ) -> set[tuple[str, ClassificationType, str, date]]:
+        known: set[tuple[str, ClassificationType, str, date]] = set()
+        statement = text("""
+select 1
+from classification.definition_snapshot
+where namespace = :namespace
+  and classification_type = :classification_type
+  and classification_code = :classification_code
+  and snapshot_date = :snapshot_date
+""")
+        with self._engine.connect() as connection:
+            for namespace, classification_type, code, snapshot_date in keys:
+                exists = connection.execute(
+                    statement,
+                    {
+                        "namespace": namespace,
+                        "classification_type": classification_type.value,
+                        "classification_code": code,
+                        "snapshot_date": snapshot_date,
+                    },
+                ).first()
+                if exists is not None:
+                    known.add((namespace, classification_type, code, snapshot_date))
+        return known
 
     def listed_stock_symbols(self) -> list[str]:
         statement = text("""
@@ -584,6 +680,67 @@ where market = 'CN_A_SHARE'
                         UPSERT_RIGHTS_ISSUE,
                         self._rights_issue_envelope_parameters(rights_issues),
                     )
+            connection.execute(UPDATE_INGESTION_RUN, self._run_update_parameters(run))
+
+    def commit_classification_catalog_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest | None,
+        record: IngestionEnvelope[ClassificationCatalogSnapshotRecord],
+        quality_results: Sequence[QualityResult],
+    ) -> None:
+        self._ensure_single_envelope(record, run.ingestion_id)
+        with self._engine.begin() as connection:
+            self._insert_manifest(connection, manifest)
+            if quality_results:
+                connection.execute(INSERT_QUALITY_RESULT, self._quality_parameters(quality_results))
+            if not quality_results:
+                params = self._classification_catalog_parameters(record)
+                header = cast(dict[str, object], params["header"])
+                definitions = cast(list[dict[str, object]], params["definitions"])
+                connection.execute(UPSERT_CLASSIFICATION_CATALOG, header)
+                if definitions:
+                    connection.execute(INSERT_CLASSIFICATION_DEFINITION, definitions)
+                connection.execute(
+                    DELETE_STALE_CLASSIFICATION_DEFINITIONS,
+                    {
+                        **header,
+                        "classification_codes": [
+                            item["classification_code"] for item in definitions
+                        ],
+                    },
+                )
+            connection.execute(UPDATE_INGESTION_RUN, self._run_update_parameters(run))
+
+    def commit_classification_members_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest | None,
+        record: IngestionEnvelope[ClassificationMemberSnapshotRecord],
+        quality_results: Sequence[QualityResult],
+    ) -> None:
+        self._ensure_single_envelope(record, run.ingestion_id)
+        with self._engine.begin() as connection:
+            self._insert_manifest(connection, manifest)
+            if quality_results:
+                connection.execute(INSERT_QUALITY_RESULT, self._quality_parameters(quality_results))
+            if not quality_results:
+                params = self._classification_member_parameters(record)
+                header = cast(dict[str, object], params["header"])
+                members = cast(list[dict[str, object]], params["members"])
+                connection.execute(UPSERT_CLASSIFICATION_MEMBER_SNAPSHOT, header)
+                connection.execute(
+                    text("""
+delete from classification.member_snapshot_item
+where namespace = :namespace
+  and classification_type = :classification_type
+  and classification_code = :classification_code
+  and snapshot_date = :snapshot_date
+"""),
+                    header,
+                )
+                if members:
+                    connection.execute(INSERT_CLASSIFICATION_MEMBER, members)
             connection.execute(UPDATE_INGESTION_RUN, self._run_update_parameters(run))
 
     def commit_rejected_batch(
@@ -797,6 +954,53 @@ where market = 'CN_A_SHARE'
             }
             for envelope in records
         ]
+
+    @staticmethod
+    def _classification_catalog_parameters(
+        envelope: IngestionEnvelope[ClassificationCatalogSnapshotRecord],
+    ) -> dict[str, object]:
+        record = envelope.record
+        header: dict[str, object] = {
+            "namespace": record.namespace,
+            "classification_type": record.classification_type.value,
+            "snapshot_date": record.snapshot_date,
+            "definition_count": len(record.definitions),
+            "source_code": record.source_code,
+            "ingestion_id": envelope.ingestion_id,
+        }
+        definitions = [
+            {
+                **header,
+                "classification_code": definition.code,
+                "name": definition.name,
+                "level": definition.level,
+                "parent_code": definition.parent_code,
+            }
+            for definition in record.definitions
+        ]
+        return {"header": header, "definitions": definitions}
+
+    @staticmethod
+    def _classification_member_parameters(
+        envelope: IngestionEnvelope[ClassificationMemberSnapshotRecord],
+    ) -> dict[str, object]:
+        record = envelope.record
+        header: dict[str, object] = {
+            "namespace": record.namespace,
+            "classification_type": record.classification_type.value,
+            "classification_code": record.classification_code,
+            "snapshot_date": record.snapshot_date,
+            "member_count": len(record.members),
+            "source_code": record.source_code,
+            "ingestion_id": envelope.ingestion_id,
+        }
+        members = [{"symbol": symbol, **header} for symbol in record.members]
+        return {"header": header, "members": members}
+
+    @staticmethod
+    def _ensure_single_envelope(envelope: IngestionEnvelope[object], ingestion_id: UUID) -> None:
+        if envelope.ingestion_id != ingestion_id:
+            raise ValueError("ingestion envelope does not match the batch run")
 
     @staticmethod
     def _ensure_envelope_ids[

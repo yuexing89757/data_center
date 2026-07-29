@@ -8,6 +8,7 @@ from pathlib import Path
 from types import TracebackType
 from typing import Protocol, Self, cast
 
+from market_data_center.domain.classification import ClassificationRecord
 from market_data_center.domain.ingestion import DatasetCode
 from market_data_center.domain.records import (
     CapitalRecord,
@@ -140,6 +141,16 @@ class PytdxProvider:
 
     def fetch_capital(self, source_symbol: str) -> ProviderBatch[CapitalRecord]:
         raise ProviderRequestUnavailable("pytdx local files do not provide Capital facts")
+
+    def fetch_classification_catalog(
+        self, classification_type: str, snapshot_date: date
+    ) -> ProviderBatch[ClassificationRecord]:
+        raise ProviderRequestUnavailable("pytdx does not provide classification catalogs")
+
+    def fetch_classification_members(
+        self, classification_type: str, classification_code: str, snapshot_date: date
+    ) -> ProviderBatch[ClassificationRecord]:
+        raise ProviderRequestUnavailable("pytdx does not provide classification members")
 
     def _market_latest_date(self, exchange: str) -> date:
         sentinel_code = {"sh": "000001", "sz": "399001"}[exchange]

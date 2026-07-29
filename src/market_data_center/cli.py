@@ -182,6 +182,17 @@ def _execute_automatic_provider(
         return pipeline.ingest_securities()
     if args.dataset == "capital":
         return pipeline.ingest_capital(provider.source_symbol(args.source_symbol), mode=args.mode)
+    if args.dataset == "classification-catalog":
+        return pipeline.ingest_classification_catalog(
+            args.classification_type,
+            snapshot_date=datetime.now(SHANGHAI_TIME_ZONE).date(),
+        )
+    if args.dataset == "classification-members":
+        return pipeline.ingest_classification_members(
+            args.classification_type,
+            args.classification_code,
+            snapshot_date=datetime.now(SHANGHAI_TIME_ZONE).date(),
+        )
     start_date = date.fromisoformat(args.start_date)
     end_date = date.fromisoformat(args.end_date)
     if args.dataset == "trading-calendar":
@@ -353,6 +364,8 @@ def _dataset_code(dataset: str) -> DatasetCode:
         "trading-calendar": DatasetCode.TRADING_CALENDAR,
         "daily-bar": DatasetCode.DAILY_BAR,
         "capital": DatasetCode.CAPITAL,
+        "classification-catalog": DatasetCode.CLASSIFICATION_CATALOG,
+        "classification-members": DatasetCode.CLASSIFICATION_MEMBERS,
     }[dataset]
 
 
@@ -361,6 +374,17 @@ def _execute(args: Namespace, pipeline: IngestionPipeline) -> IngestionRun:
         return pipeline.ingest_securities()
     if args.dataset == "capital":
         return pipeline.ingest_capital(args.source_symbol, mode=args.mode)
+    if args.dataset == "classification-catalog":
+        return pipeline.ingest_classification_catalog(
+            args.classification_type,
+            snapshot_date=datetime.now(SHANGHAI_TIME_ZONE).date(),
+        )
+    if args.dataset == "classification-members":
+        return pipeline.ingest_classification_members(
+            args.classification_type,
+            args.classification_code,
+            snapshot_date=datetime.now(SHANGHAI_TIME_ZONE).date(),
+        )
     start_date = date.fromisoformat(args.start_date)
     end_date = date.fromisoformat(args.end_date)
     if args.dataset == "trading-calendar":
@@ -410,6 +434,17 @@ def _parser() -> ArgumentParser:
         default="incremental",
         help="record operational intent; both modes reconcile the provider's complete history",
     )
+
+    catalog = subparsers.add_parser(
+        "classification-catalog", help="capture a complete industry or concept catalog snapshot"
+    )
+    catalog.add_argument("--classification-type", choices=("industry", "concept"), required=True)
+
+    members = subparsers.add_parser(
+        "classification-members", help="capture one complete classification member snapshot"
+    )
+    members.add_argument("--classification-type", choices=("industry", "concept"), required=True)
+    members.add_argument("--classification-code", required=True, help="board code such as BK0475")
 
     bulk = subparsers.add_parser(
         "daily-bars-bulk", help="synchronize daily bars for every currently listed stock"

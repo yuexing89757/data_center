@@ -1,8 +1,8 @@
-# Market Data Center 项目宪法 v2
+# Market Data Center 项目宪法 v3
 
 > 状态：有效  
 > 初版日期：2026-07-24  
-> v2 修订日期：2026-07-27
+> v3 修订日期：2026-07-29
 
 ## 1. 项目愿景
 
@@ -41,7 +41,7 @@ Market Data Center 是一个独立的证券数据产品，负责数据的采集�
 
 ## 4. 当前阶段
 
-第一阶段只建设：
+第一阶段 MVP 已完成以下基础闭环：
 
 - Security；
 - Trading Calendar；
@@ -52,7 +52,7 @@ Market Data Center 是一个独立的证券数据产品，负责数据的采集�
 - 自托管 Supabase PostgreSQL/PostgREST；
 - migration、测试、CI/CD 和备份流程。
 
-第一阶段不建设 Capital、Classification、Metrics、FastAPI、MCP、复权因子和分钟行情。Provider 自动路由仅按 ADR-0005 的确定性策略实现。
+当前进入 MVP 后的增量阶段。新增领域必须先有 Issue、Accepted ADR、领域详设、migration 和测试；Capital 已由 ADR-0007 接受，Classification 已由 ADR-0008 接受。当前仍不建设 Metrics、FastAPI、MCP、复权因子和分钟行情。Provider 自动路由仅按 ADR-0005 的确定性策略实现。
 
 ## 5. 文档优先级
 

@@ -9,6 +9,10 @@ import pytest
 from market_data_center.domain import (
     CalculatedTradingDay,
     CapitalRecord,
+    ClassificationCatalogSnapshotRecord,
+    ClassificationDefinition,
+    ClassificationMemberSnapshotRecord,
+    ClassificationType,
     DailyBarRecord,
     DatasetCode,
     IngestionEnvelope,
@@ -67,6 +71,22 @@ class StubReliabilityPersistence:
                 IngestionRun,
                 RawManifest | None,
                 Sequence[IngestionEnvelope[CapitalRecord]],
+                Sequence[QualityResult],
+            ]
+        ] = []
+        self.classification_catalog_commits: list[
+            tuple[
+                IngestionRun,
+                RawManifest | None,
+                IngestionEnvelope[ClassificationCatalogSnapshotRecord],
+                Sequence[QualityResult],
+            ]
+        ] = []
+        self.classification_member_commits: list[
+            tuple[
+                IngestionRun,
+                RawManifest | None,
+                IngestionEnvelope[ClassificationMemberSnapshotRecord],
                 Sequence[QualityResult],
             ]
         ] = []
@@ -132,6 +152,29 @@ class StubReliabilityPersistence:
         quality_results: Sequence[QualityResult],
     ) -> None:
         self.capital_commits.append((run, manifest, records, quality_results))
+
+    def known_classification_snapshots(
+        self, keys: Collection[tuple[str, ClassificationType, str, date]]
+    ) -> set[tuple[str, ClassificationType, str, date]]:
+        return set(keys)
+
+    def commit_classification_catalog_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest | None,
+        record: IngestionEnvelope[ClassificationCatalogSnapshotRecord],
+        quality_results: Sequence[QualityResult],
+    ) -> None:
+        self.classification_catalog_commits.append((run, manifest, record, quality_results))
+
+    def commit_classification_members_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest | None,
+        record: IngestionEnvelope[ClassificationMemberSnapshotRecord],
+        quality_results: Sequence[QualityResult],
+    ) -> None:
+        self.classification_member_commits.append((run, manifest, record, quality_results))
 
     def commit_rejected_batch(
         self,
@@ -255,6 +298,45 @@ def test_raw_replay_normalizes_and_commits_capital_facts(tmp_path: Path) -> None
     assert replay_manifest is None
     assert findings == ()
     assert envelopes[0].record.symbol == "SSE:600000"
+
+
+def test_raw_replay_normalizes_and_commits_classification_catalog(
+    tmp_path: Path,
+) -> None:
+    store = LocalRawStore(tmp_path)
+    source = _source(
+        store,
+        provider=ProviderCode.AKSHARE,
+        dataset=DatasetCode.CLASSIFICATION_CATALOG,
+        schema_version="akshare.classification_catalog.v1",
+        rows=[
+            {
+                "\u677f\u5757\u540d\u79f0": "\u94f6\u884c",
+                "\u677f\u5757\u4ee3\u7801": "BK0475",
+            }
+        ],
+        request_params={
+            "classification_type": "industry",
+            "snapshot_date": "2026-07-29",
+        },
+    )
+    persistence = StubReliabilityPersistence(source)
+
+    summary = RawReplayService(
+        raw_store=store,
+        persistence=persistence,
+        clock=lambda: NOW,
+        uuid_factory=lambda: REPLAY_RUN_ID,
+    ).replay(SOURCE_RUN_ID)
+
+    assert summary.status == "succeeded"
+    completed, replay_manifest, envelope, findings = persistence.classification_catalog_commits[0]
+    assert completed.accepted_rows == 1
+    assert replay_manifest is None
+    assert findings == ()
+    assert envelope.record.definitions == (
+        ClassificationDefinition(code="BK0475", name="\u94f6\u884c"),
+    )
 
 
 def test_raw_replay_records_integrity_failure_without_copying_manifest(tmp_path: Path) -> None:

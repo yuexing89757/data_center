@@ -10,6 +10,15 @@ from uuid import UUID, uuid4
 
 from market_data_center.domain.calendar import calculate_trading_day_links
 from market_data_center.domain.capital import validate_capital
+from market_data_center.domain.classification import (
+    ClassificationCatalogSnapshotRecord,
+    ClassificationFinding,
+    ClassificationMemberSnapshotRecord,
+    ClassificationRecord,
+    ClassificationType,
+    validate_catalog,
+    validate_member_snapshot,
+)
 from market_data_center.domain.entities import CalculatedTradingDay
 from market_data_center.domain.ingestion import (
     DatasetCode,
@@ -126,6 +135,26 @@ class ReliabilityPersistence(Protocol):
         run: IngestionRun,
         manifest: RawManifest | None,
         records: Sequence[IngestionEnvelope[CapitalRecord]],
+        quality_results: Sequence[QualityResult],
+    ) -> None: ...
+
+    def known_classification_snapshots(
+        self, keys: Collection[tuple[str, ClassificationType, str, date]]
+    ) -> set[tuple[str, ClassificationType, str, date]]: ...
+
+    def commit_classification_catalog_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest | None,
+        record: IngestionEnvelope[ClassificationCatalogSnapshotRecord],
+        quality_results: Sequence[QualityResult],
+    ) -> None: ...
+
+    def commit_classification_members_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest | None,
+        record: IngestionEnvelope[ClassificationMemberSnapshotRecord],
         quality_results: Sequence[QualityResult],
     ) -> None: ...
 
@@ -280,6 +309,71 @@ class RawReplayService:
                 validation.rejected_rows,
             )
 
+        if source.dataset_code is DatasetCode.CLASSIFICATION_CATALOG:
+            if len(records) != 1 or not isinstance(records[0], ClassificationCatalogSnapshotRecord):
+                raise ProviderError("classification catalog replay must contain one snapshot")
+            catalog_record = records[0]
+            catalog_findings = validate_catalog(catalog_record)
+            fetched_count = max(len(catalog_record.definitions), 1)
+            accepted_count = 0 if catalog_findings else len(catalog_record.definitions)
+            rejected_count = fetched_count if catalog_findings else 0
+            completed = self._completed(
+                run,
+                fetched_count,
+                accepted_count,
+                rejected_count,
+            )
+            if completed is not None:
+                self._persistence.commit_classification_catalog_batch(
+                    completed,
+                    None,
+                    IngestionEnvelope(completed.ingestion_id, catalog_record),
+                    self._classification_quality(completed, catalog_findings),
+                )
+            return self._summary(
+                source,
+                completed,
+                dry_run,
+                fetched_count,
+                accepted_count,
+                rejected_count,
+            )
+
+        if source.dataset_code is DatasetCode.CLASSIFICATION_MEMBERS:
+            if len(records) != 1 or not isinstance(records[0], ClassificationMemberSnapshotRecord):
+                raise ProviderError("classification member replay must contain one snapshot")
+            member_record = records[0]
+            key = (
+                member_record.namespace,
+                member_record.classification_type,
+                member_record.classification_code,
+                member_record.snapshot_date,
+            )
+            member_findings = validate_member_snapshot(
+                member_record,
+                known_classifications=self._persistence.known_classification_snapshots({key}),
+                known_symbols=self._persistence.known_symbols(set(member_record.members)),
+            )
+            member_fetched = max(len(member_record.members), 1)
+            member_accepted = 0 if member_findings else len(member_record.members)
+            member_rejected = member_fetched if member_findings else 0
+            completed = self._completed(run, member_fetched, member_accepted, member_rejected)
+            if completed is not None:
+                self._persistence.commit_classification_members_batch(
+                    completed,
+                    None,
+                    IngestionEnvelope(completed.ingestion_id, member_record),
+                    self._classification_quality(completed, member_findings),
+                )
+            return self._summary(
+                source,
+                completed,
+                dry_run,
+                member_fetched,
+                member_accepted,
+                member_rejected,
+            )
+
         daily_records = cast(tuple[DailyBarRecord, ...], records)
         known_symbols = self._persistence.known_symbols({record.symbol for record in daily_records})
         known_dates = self._persistence.known_trading_dates(
@@ -344,6 +438,23 @@ class RawReplayService:
             replayed_from_raw_id=source.manifest.raw_id if source.manifest else None,
         )
 
+    def _classification_quality(
+        self, run: IngestionRun, findings: Sequence[ClassificationFinding]
+    ) -> tuple[QualityResult, ...]:
+        return tuple(
+            QualityResult(
+                quality_result_id=self._uuid_factory(),
+                ingestion_id=run.ingestion_id,
+                dataset_code=run.dataset_code,
+                rule_code=finding.rule_code,
+                severity=QualitySeverity.ERROR,
+                status=QualityStatus.FAILED,
+                message=finding.message,
+                natural_key=finding.natural_key,
+            )
+            for finding in findings
+        )
+
     def _completed(
         self,
         run: IngestionRun | None,
@@ -389,9 +500,13 @@ class RawReplayService:
         self._persistence.commit_rejected_batch(failed, None, [quality])
 
     @staticmethod
-    def _envelopes[RecordT: SecurityRecord | CalculatedTradingDay | DailyBarRecord | CapitalRecord](
-        ingestion_id: UUID, records: Sequence[RecordT]
-    ) -> tuple[IngestionEnvelope[RecordT], ...]:
+    def _envelopes[
+        RecordT: SecurityRecord
+        | CalculatedTradingDay
+        | DailyBarRecord
+        | CapitalRecord
+        | ClassificationRecord
+    ](ingestion_id: UUID, records: Sequence[RecordT]) -> tuple[IngestionEnvelope[RecordT], ...]:
         return tuple(IngestionEnvelope(ingestion_id, record) for record in records)
 
     @staticmethod
