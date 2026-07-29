@@ -8,6 +8,12 @@ from uuid import uuid4
 import pytest
 
 from market_data_center.domain import (
+    BoardIndexConstituentSnapshotRecord,
+    BoardIndexDailyBarRecord,
+    BoardIndexProviderRecord,
+    BoardIndexRecord,
+    BoardIndexStatus,
+    BoardIndexType,
     CapitalRecord,
     ClassificationCatalogSnapshotRecord,
     ClassificationDefinition,
@@ -30,7 +36,7 @@ from market_data_center.domain import (
     TradingDayRecord,
 )
 from market_data_center.domain.entities import CalculatedTradingDay
-from market_data_center.pipeline import IngestionPipeline
+from market_data_center.pipeline import BoardIndexIngestionPipeline, IngestionPipeline
 from market_data_center.providers.contracts import ProviderBatch
 from market_data_center.raw_store import LocalRawStore
 
@@ -189,6 +195,69 @@ class StubProvider:
         )
 
 
+class StubBoardIndexProvider:
+    source_code = "akshare_ths"
+
+    def fetch_board_indexes(self) -> ProviderBatch[BoardIndexProviderRecord]:
+        return ProviderBatch(
+            records=[
+                BoardIndexRecord(
+                    board_id="THS:883423",
+                    board_code="883423",
+                    namespace="THS",
+                    name="沪深主板昨日涨停",
+                    board_type=BoardIndexType.DYNAMIC_THEME,
+                    market=Market.CN_A_SHARE,
+                    status=BoardIndexStatus.ACTIVE,
+                    source_code=self.source_code,
+                )
+            ],
+            raw_rows=[{"board_id": "THS:883423"}],
+            request_params={},
+            schema_version="board-index.v1",
+        )
+
+    def fetch_board_index_daily_bars(
+        self, board_id: str, start_date: date, end_date: date
+    ) -> ProviderBatch[BoardIndexProviderRecord]:
+        return ProviderBatch(
+            records=[
+                BoardIndexDailyBarRecord(
+                    board_id=board_id,
+                    trade_date=start_date,
+                    market=Market.CN_A_SHARE,
+                    open=Decimal("10"),
+                    high=Decimal("11"),
+                    low=Decimal("9"),
+                    close=Decimal("10.5"),
+                    volume=100,
+                    amount=Decimal("1050"),
+                    source_code=self.source_code,
+                )
+            ],
+            raw_rows=[{"日期": start_date.isoformat()}],
+            request_params={},
+            schema_version="board-index-daily-bar.v1",
+        )
+
+    def fetch_board_index_constituents(
+        self, board_id: str, snapshot_date: date
+    ) -> ProviderBatch[BoardIndexProviderRecord]:
+        return ProviderBatch(
+            records=[
+                BoardIndexConstituentSnapshotRecord(
+                    board_id=board_id,
+                    trade_date=snapshot_date,
+                    members=("SSE:600000",),
+                    source_code=self.source_code,
+                )
+            ],
+            raw_rows=[{"代码": "600000"}],
+            request_params={},
+            schema_version="board-index-constituents.v1",
+        )
+
+
 class StubPersistence:
     def __init__(self) -> None:
         self.created: list[IngestionRun] = []
@@ -236,8 +305,32 @@ class StubPersistence:
             ]
         ] = []
         self.rejected_commits: list[tuple[IngestionRun, RawManifest, Sequence[QualityResult]]] = []
+        self.board_index_commits: list[
+            tuple[
+                IngestionRun,
+                RawManifest,
+                Sequence[IngestionEnvelope[BoardIndexRecord]],
+            ]
+        ] = []
+        self.board_daily_commits: list[
+            tuple[
+                IngestionRun,
+                RawManifest,
+                Sequence[IngestionEnvelope[BoardIndexDailyBarRecord]],
+                Sequence[QualityResult],
+            ]
+        ] = []
+        self.board_member_commits: list[
+            tuple[
+                IngestionRun,
+                RawManifest,
+                IngestionEnvelope[BoardIndexConstituentSnapshotRecord],
+                Sequence[QualityResult],
+            ]
+        ] = []
         self.symbols: set[str] = {"SSE:600000"}
         self.trading_dates: set[date] = {date(2026, 7, 28)}
+        self.board_ids: set[str] = {"THS:883423"}
 
     def task_lock(self, task_key: str) -> AbstractContextManager[None]:
         return nullcontext()
@@ -269,6 +362,9 @@ class StubPersistence:
 
     def known_trading_dates(self, dates: Collection[date]) -> set[date]:
         return self.trading_dates.intersection(dates)
+
+    def known_board_ids(self, board_ids: Collection[str]) -> set[str]:
+        return self.board_ids.intersection(board_ids)
 
     def trading_day_boundaries(
         self, start_date: date, end_date: date
@@ -315,6 +411,32 @@ class StubPersistence:
         quality_results: Sequence[QualityResult],
     ) -> None:
         self.classification_member_commits.append((run, manifest, record, quality_results))
+
+    def commit_board_index_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest,
+        records: Sequence[IngestionEnvelope[BoardIndexRecord]],
+    ) -> None:
+        self.board_index_commits.append((run, manifest, records))
+
+    def commit_board_index_daily_bar_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest,
+        records: Sequence[IngestionEnvelope[BoardIndexDailyBarRecord]],
+        quality_results: Sequence[QualityResult],
+    ) -> None:
+        self.board_daily_commits.append((run, manifest, records, quality_results))
+
+    def commit_board_index_constituents_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest,
+        record: IngestionEnvelope[BoardIndexConstituentSnapshotRecord],
+        quality_results: Sequence[QualityResult],
+    ) -> None:
+        self.board_member_commits.append((run, manifest, record, quality_results))
 
     def commit_rejected_batch(
         self,
@@ -377,6 +499,55 @@ def test_classification_pipeline_commits_catalog_before_members(tmp_path: Path) 
     assert member_run.status is IngestionStatus.SUCCEEDED
     assert persistence.classification_catalog_commits[0][2].record.definitions[0].code == "BK0475"
     assert persistence.classification_member_commits[0][2].record.members == ("SSE:600000",)
+
+
+def test_board_index_pipeline_commits_directory_bars_and_current_members(
+    tmp_path: Path,
+) -> None:
+    persistence = StubPersistence()
+    pipeline = BoardIndexIngestionPipeline(
+        provider=StubBoardIndexProvider(),
+        raw_store=LocalRawStore(tmp_path),
+        persistence=persistence,
+        clock=lambda: datetime(2026, 7, 28, 8, tzinfo=UTC),
+        uuid_factory=uuid4,
+    )
+    trade_date = date(2026, 7, 28)
+
+    directory = pipeline.ingest_board_indexes()
+    bars = pipeline.ingest_board_index_daily_bars("THS:883423", trade_date, trade_date)
+    members = pipeline.ingest_board_index_constituents("THS:883423", trade_date)
+
+    assert directory.status is IngestionStatus.SUCCEEDED
+    assert bars.status is IngestionStatus.SUCCEEDED
+    assert members.status is IngestionStatus.SUCCEEDED
+    assert persistence.board_index_commits[0][2][0].record.board_id == "THS:883423"
+    assert persistence.board_daily_commits[0][2][0].record.close == Decimal("10.5")
+    assert persistence.board_member_commits[0][2].record.members == ("SSE:600000",)
+
+
+def test_board_index_pipeline_audits_and_blocks_unknown_constituent(
+    tmp_path: Path,
+) -> None:
+    persistence = StubPersistence()
+    persistence.symbols.clear()
+    pipeline = BoardIndexIngestionPipeline(
+        provider=StubBoardIndexProvider(),
+        raw_store=LocalRawStore(tmp_path),
+        persistence=persistence,
+        clock=lambda: datetime(2026, 7, 28, 8, tzinfo=UTC),
+        uuid_factory=uuid4,
+    )
+
+    run = pipeline.ingest_board_index_constituents("THS:883423", date(2026, 7, 28))
+
+    assert run.status is IngestionStatus.FAILED
+    assert run.accepted_rows == 0
+    assert run.rejected_rows == 1
+    assert (
+        persistence.board_member_commits[0][3][0].rule_code
+        == "board_index_constituent.unknown_security"
+    )
 
 
 def test_daily_bar_reference_failure_is_recorded_and_blocked(tmp_path: Path) -> None:

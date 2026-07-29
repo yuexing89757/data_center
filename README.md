@@ -43,6 +43,22 @@ market-data-center derived-recompute --start-date 2026-01-01 --end-date 2026-07-
 
 Stable consumer and Agent reads use bounded Supabase PostgREST RPCs. The checked-in contracts are [OpenAPI v1](contracts/postgrest-openapi-v1.json) and [Agent tools v1](contracts/agent-tools-v1.json). ADR-0010 keeps FastAPI and MCP deferred because current queries remain inside PostgreSQL/PostgREST.
 
+The third-party dynamic board index `THS:883423` is isolated from Security and
+ordinary Daily Bar facts. Synchronize its explicit directory before bars and
+today's complete constituent snapshot:
+
+```bash
+market-data-center board-index
+market-data-center board-index-daily-bar --start-date 2026-01-01 --end-date 2026-07-29
+market-data-center board-index-constituents
+```
+
+The dedicated `akshare_ths` adapter is selected automatically for these commands.
+THS exposes current constituents rather than trustworthy historical membership,
+so historical snapshots are accumulated by daily runs and can be replayed from
+immutable Raw data. See [ADR-0003](docs/adr/ADR-0003-同花顺动态板块指数.md) and
+[the collection runbook](docs/同花顺动态板块指数采集.md).
+
 The daily incremental workflow and systemd timer are documented in [docs/Worker日常采集与调度.md](docs/Worker日常采集与调度.md).
 
 Verified Raw replay, stale-run recovery, and read-only cross-provider Daily Bar comparison are documented in [docs/Raw重放与运行恢复.md](docs/Raw重放与运行恢复.md).

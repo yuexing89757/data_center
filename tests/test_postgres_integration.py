@@ -18,6 +18,11 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from market_data_center.derivation import DerivationService
 from market_data_center.domain import (
+    BoardIndexConstituentSnapshotRecord,
+    BoardIndexDailyBarRecord,
+    BoardIndexRecord,
+    BoardIndexStatus,
+    BoardIndexType,
     CalculatedTradingDay,
     CapitalRecord,
     ClassificationCatalogSnapshotRecord,
@@ -128,6 +133,9 @@ def test_migrations_apply_to_empty_database_and_are_idempotent(
     assert ("api_v1", "market_capitalizations") in first_snapshot["views"]
     assert ("api_v1", "classification_daily_metrics") in first_snapshot["views"]
     assert ("api_v1", "classification_member_snapshot_status") in first_snapshot["views"]
+    assert ("api_v1", "board_indexes") in first_snapshot["views"]
+    assert ("api_v1", "board_index_daily_bars") in first_snapshot["views"]
+    assert ("api_v1", "board_index_constituents") in first_snapshot["views"]
     assert {
         "query_securities",
         "query_daily_bars",
@@ -373,6 +381,134 @@ insert into classification.member_interval (
                 "valid_to": None,
             },
         )
+
+
+def test_board_index_facts_are_idempotent_and_queryable(
+    database_engine: Engine,
+) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    security_run = _running_run(DatasetCode.SECURITY)
+    persistence.create_ingestion_run(security_run)
+    persistence.commit_security_batch(
+        _completed_run(security_run),
+        _manifest(security_run.ingestion_id, "board-security"),
+        _envelopes(security_run.ingestion_id, [_security()]),
+    )
+    calendar_run = _running_run(DatasetCode.TRADING_CALENDAR)
+    persistence.create_ingestion_run(calendar_run)
+    persistence.commit_trading_calendar_batch(
+        _completed_run(calendar_run),
+        _manifest(calendar_run.ingestion_id, "board-calendar"),
+        _envelopes(
+            calendar_run.ingestion_id,
+            [
+                CalculatedTradingDay(
+                    market=Market.CN_A_SHARE,
+                    trade_date=TRADE_DATE,
+                    is_trading_day=True,
+                    previous_trading_day=None,
+                    next_trading_day=None,
+                    source_code="baostock",
+                )
+            ],
+        ),
+    )
+
+    board = BoardIndexRecord(
+        board_id="THS:883423",
+        board_code="883423",
+        namespace="THS",
+        name="沪深主板昨日涨停",
+        board_type=BoardIndexType.DYNAMIC_THEME,
+        market=Market.CN_A_SHARE,
+        status=BoardIndexStatus.ACTIVE,
+        source_code="akshare_ths",
+    )
+    board_run = _running_run(DatasetCode.BOARD_INDEX, ProviderCode.AKSHARE_THS)
+    persistence.create_ingestion_run(board_run)
+    persistence.commit_board_index_batch(
+        _completed_run(board_run),
+        _manifest(board_run.ingestion_id, "board-index", provider="akshare_ths"),
+        _envelopes(board_run.ingestion_id, [board]),
+    )
+
+    bar = BoardIndexDailyBarRecord(
+        board_id=board.board_id,
+        trade_date=TRADE_DATE,
+        market=Market.CN_A_SHARE,
+        open=Decimal("225.229"),
+        high=Decimal("225.772"),
+        low=Decimal("220.542"),
+        close=Decimal("223.554"),
+        volume=7_365_903_100,
+        amount=Decimal("147481890000"),
+        source_code="akshare_ths",
+    )
+    first_bar_run = _running_run(DatasetCode.BOARD_INDEX_DAILY_BAR, ProviderCode.AKSHARE_THS)
+    persistence.create_ingestion_run(first_bar_run)
+    persistence.commit_board_index_daily_bar_batch(
+        _completed_run(first_bar_run),
+        _manifest(
+            first_bar_run.ingestion_id,
+            "board-daily-bar",
+            provider="akshare_ths",
+        ),
+        _envelopes(first_bar_run.ingestion_id, [bar]),
+        [],
+    )
+    revised_bar_run = _running_run(DatasetCode.BOARD_INDEX_DAILY_BAR, ProviderCode.AKSHARE_THS)
+    persistence.create_ingestion_run(revised_bar_run)
+    persistence.commit_board_index_daily_bar_batch(
+        _completed_run(revised_bar_run),
+        _manifest(
+            revised_bar_run.ingestion_id,
+            "board-daily-bar-revision",
+            provider="akshare_ths",
+        ),
+        _envelopes(
+            revised_bar_run.ingestion_id,
+            [replace(bar, close=Decimal("223.600"))],
+        ),
+        [],
+    )
+
+    snapshot = BoardIndexConstituentSnapshotRecord(
+        board_id=board.board_id,
+        trade_date=TRADE_DATE,
+        members=(SYMBOL,),
+        source_code="akshare_ths",
+    )
+    for dataset in ("board-members", "board-members-revision"):
+        member_run = _running_run(
+            DatasetCode.BOARD_INDEX_CONSTITUENT_SNAPSHOT,
+            ProviderCode.AKSHARE_THS,
+        )
+        persistence.create_ingestion_run(member_run)
+        persistence.commit_board_index_constituents_batch(
+            _completed_run(member_run),
+            _manifest(
+                member_run.ingestion_id,
+                dataset,
+                provider="akshare_ths",
+            ),
+            IngestionEnvelope(member_run.ingestion_id, snapshot),
+            [],
+        )
+
+    with database_engine.connect() as connection:
+        result = connection.execute(
+            text(
+                "select "
+                "(select count(*) from api_v1.board_indexes), "
+                "(select count(*) from api_v1.board_index_daily_bars), "
+                "(select count(*) from api_v1.board_index_constituents), "
+                "(select close from api_v1.board_index_daily_bars "
+                " where board_id = 'THS:883423')"
+            )
+        ).one()
+
+    assert tuple(result[:3]) == (1, 1, 1)
+    assert result[3] == Decimal("223.6000")
 
 
 def test_derived_calculation_is_versioned_idempotent_and_revision_aware(
@@ -929,9 +1065,11 @@ def test_client_roles_can_only_read_api_v1(
         connection.execute(sql.SQL("set role {}").format(sql.Identifier(client_role)))
         api_count = connection.execute("select count(*) from api_v1.daily_bars").fetchone()
         assert api_count is not None and api_count[0] == 3
+        assert connection.execute("select count(*) from api_v1.board_indexes").fetchone() == (0,)
 
         denied_statements = (
             "select count(*) from core.daily_bar",
+            "select count(*) from core.board_index",
             "select count(*) from ingestion.ingestion_run",
             "select count(*) from audit.quality_result",
             """
@@ -954,6 +1092,15 @@ def test_worker_has_only_ingestion_permissions(
         ("core", "daily_bar", "INSERT"),
         ("core", "daily_bar", "SELECT"),
         ("core", "daily_bar", "UPDATE"),
+        ("core", "board_index", "INSERT"),
+        ("core", "board_index", "SELECT"),
+        ("core", "board_index", "UPDATE"),
+        ("core", "board_index_daily_bar", "INSERT"),
+        ("core", "board_index_daily_bar", "SELECT"),
+        ("core", "board_index_daily_bar", "UPDATE"),
+        ("core", "board_index_constituent_snapshot", "DELETE"),
+        ("core", "board_index_constituent_snapshot", "INSERT"),
+        ("core", "board_index_constituent_snapshot", "SELECT"),
         ("core", "security", "INSERT"),
         ("core", "security", "SELECT"),
         ("core", "security", "UPDATE"),
@@ -993,6 +1140,9 @@ def test_internal_tables_have_rls_with_worker_only_policies(database_engine: Eng
     expected_tables = {
         ("audit", "quality_result"),
         ("core", "daily_bar"),
+        ("core", "board_index"),
+        ("core", "board_index_daily_bar"),
+        ("core", "board_index_constituent_snapshot"),
         ("core", "security"),
         ("core", "security_name_history"),
         ("core", "trading_calendar"),
@@ -1237,10 +1387,13 @@ def _schema_snapshot(
     }
 
 
-def _running_run(dataset_code: DatasetCode) -> IngestionRun:
+def _running_run(
+    dataset_code: DatasetCode,
+    provider_code: ProviderCode = ProviderCode.BAOSTOCK,
+) -> IngestionRun:
     return IngestionRun(
         ingestion_id=uuid4(),
-        provider_code=ProviderCode.BAOSTOCK,
+        provider_code=provider_code,
         dataset_code=dataset_code,
         status=IngestionStatus.RUNNING,
         requested_at=NOW,
@@ -1258,11 +1411,16 @@ def _completed_run(run: IngestionRun, row_count: int = 1) -> IngestionRun:
     )
 
 
-def _manifest(ingestion_id: UUID, dataset: str, row_count: int = 1) -> RawManifest:
+def _manifest(
+    ingestion_id: UUID,
+    dataset: str,
+    row_count: int = 1,
+    provider: str = "baostock",
+) -> RawManifest:
     return RawManifest(
         raw_id=uuid4(),
         ingestion_id=ingestion_id,
-        object_path=f"baostock/{dataset}/2026-07-28/{ingestion_id}.jsonl",
+        object_path=f"{provider}/{dataset}/2026-07-28/{ingestion_id}.jsonl",
         file_format=RawFileFormat.JSONL,
         content_sha256="0" * 64,
         byte_size=10,
@@ -1438,6 +1596,9 @@ def _envelopes[
     | DailyBarRecord
     | CapitalRecord
     | ClassificationRecord
+    | BoardIndexRecord
+    | BoardIndexDailyBarRecord
+    | BoardIndexConstituentSnapshotRecord
 ](ingestion_id: UUID, records: list[RecordT]) -> list[IngestionEnvelope[RecordT]]:
     return [IngestionEnvelope(ingestion_id, record) for record in records]
 

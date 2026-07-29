@@ -8,6 +8,15 @@ from decimal import Decimal
 from typing import Protocol, cast
 from uuid import UUID, uuid4
 
+from market_data_center.domain.board_index import (
+    BoardIndexConstituentSnapshotRecord,
+    BoardIndexDailyBarRecord,
+    BoardIndexFinding,
+    BoardIndexProviderRecord,
+    BoardIndexRecord,
+    validate_board_index_constituent_snapshot,
+    validate_board_index_daily_bars,
+)
 from market_data_center.domain.calendar import calculate_trading_day_links
 from market_data_center.domain.capital import validate_capital
 from market_data_center.domain.classification import (
@@ -40,6 +49,7 @@ from market_data_center.domain.records import (
 )
 from market_data_center.domain.validation import validate_daily_bars
 from market_data_center.providers.akshare import normalize_akshare_raw
+from market_data_center.providers.akshare_ths import normalize_akshare_ths_raw
 from market_data_center.providers.baostock import normalize_baostock_raw
 from market_data_center.providers.contracts import ProviderError, ProviderRecord
 from market_data_center.providers.pytdx import normalize_pytdx_raw
@@ -104,6 +114,8 @@ class ReliabilityPersistence(Protocol):
 
     def known_trading_dates(self, dates: Collection[date]) -> set[date]: ...
 
+    def known_board_ids(self, board_ids: Collection[str]) -> set[str]: ...
+
     def trading_day_boundaries(
         self, start_date: date, end_date: date
     ) -> tuple[date | None, date | None]: ...
@@ -158,6 +170,29 @@ class ReliabilityPersistence(Protocol):
         quality_results: Sequence[QualityResult],
     ) -> None: ...
 
+    def commit_board_index_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest | None,
+        records: Sequence[IngestionEnvelope[BoardIndexRecord]],
+    ) -> None: ...
+
+    def commit_board_index_daily_bar_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest | None,
+        records: Sequence[IngestionEnvelope[BoardIndexDailyBarRecord]],
+        quality_results: Sequence[QualityResult],
+    ) -> None: ...
+
+    def commit_board_index_constituents_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest | None,
+        record: IngestionEnvelope[BoardIndexConstituentSnapshotRecord],
+        quality_results: Sequence[QualityResult],
+    ) -> None: ...
+
     def commit_rejected_batch(
         self,
         run: IngestionRun,
@@ -179,6 +214,7 @@ Normalizer = Callable[
 
 _NORMALIZERS: Mapping[ProviderCode, Normalizer] = {
     ProviderCode.AKSHARE: normalize_akshare_raw,
+    ProviderCode.AKSHARE_THS: normalize_akshare_ths_raw,
     ProviderCode.BAOSTOCK: normalize_baostock_raw,
     ProviderCode.PYTDX: normalize_pytdx_raw,
 }
@@ -374,19 +410,106 @@ class RawReplayService:
                 member_rejected,
             )
 
+        if source.dataset_code is DatasetCode.BOARD_INDEX:
+            if not records or any(not isinstance(record, BoardIndexRecord) for record in records):
+                raise ProviderError("board-index replay must contain BoardIndex records")
+            board_records = cast(tuple[BoardIndexRecord, ...], records)
+            completed = self._completed(run, len(board_records), len(board_records), 0)
+            if completed is not None:
+                self._persistence.commit_board_index_batch(
+                    completed,
+                    None,
+                    self._envelopes(completed.ingestion_id, board_records),
+                )
+            return self._summary(
+                source,
+                completed,
+                dry_run,
+                len(board_records),
+                len(board_records),
+                0,
+            )
+
+        if source.dataset_code is DatasetCode.BOARD_INDEX_DAILY_BAR:
+            if any(not isinstance(record, BoardIndexDailyBarRecord) for record in records):
+                raise ProviderError("board-index daily-bar replay contains an unexpected record")
+            board_bars = cast(tuple[BoardIndexDailyBarRecord, ...], records)
+            board_validation = validate_board_index_daily_bars(
+                board_bars,
+                known_board_ids=self._persistence.known_board_ids(
+                    {record.board_id for record in board_bars}
+                ),
+                known_trading_dates=self._persistence.known_trading_dates(
+                    {record.trade_date for record in board_bars}
+                ),
+            )
+            completed = self._completed(
+                run,
+                len(board_bars),
+                len(board_validation.accepted),
+                board_validation.rejected_rows,
+            )
+            if completed is not None:
+                self._persistence.commit_board_index_daily_bar_batch(
+                    completed,
+                    None,
+                    self._envelopes(completed.ingestion_id, board_validation.accepted),
+                    self._board_index_quality(completed, board_validation.findings),
+                )
+            return self._summary(
+                source,
+                completed,
+                dry_run,
+                len(board_bars),
+                len(board_validation.accepted),
+                board_validation.rejected_rows,
+            )
+
+        if source.dataset_code is DatasetCode.BOARD_INDEX_CONSTITUENT_SNAPSHOT:
+            if len(records) != 1 or not isinstance(records[0], BoardIndexConstituentSnapshotRecord):
+                raise ProviderError("board-index constituent replay must contain one snapshot")
+            board_members = records[0]
+            board_findings = validate_board_index_constituent_snapshot(
+                board_members,
+                known_board_ids=self._persistence.known_board_ids({board_members.board_id}),
+                known_symbols=self._persistence.known_symbols(set(board_members.members)),
+                known_trading_dates=self._persistence.known_trading_dates(
+                    {board_members.trade_date}
+                ),
+            )
+            fetched_count = max(len(board_members.members), 1)
+            accepted_count = 0 if board_findings else len(board_members.members)
+            rejected_count = fetched_count if board_findings else 0
+            completed = self._completed(run, fetched_count, accepted_count, rejected_count)
+            if completed is not None:
+                self._persistence.commit_board_index_constituents_batch(
+                    completed,
+                    None,
+                    IngestionEnvelope(completed.ingestion_id, board_members),
+                    self._board_index_quality(completed, board_findings),
+                )
+            return self._summary(
+                source,
+                completed,
+                dry_run,
+                fetched_count,
+                accepted_count,
+                rejected_count,
+            )
+
         daily_records = cast(tuple[DailyBarRecord, ...], records)
         known_symbols = self._persistence.known_symbols({record.symbol for record in daily_records})
         known_dates = self._persistence.known_trading_dates(
             {record.trade_date for record in daily_records}
         )
-        findings = validate_daily_bars(
+        daily_findings = validate_daily_bars(
             daily_records,
             known_symbols=known_symbols,
             known_trading_dates=known_dates,
         )
         blocked_keys = {
             (finding.symbol, finding.trade_date)
-            for finding in findings
+            for finding in daily_findings
             if finding.blocks_core_write
         }
         accepted = tuple(
@@ -413,7 +536,7 @@ class RawReplayService:
                         "trade_date": finding.trade_date.isoformat(),
                     },
                 )
-                for finding in findings
+                for finding in daily_findings
             )
             self._persistence.commit_daily_bar_batch(
                 completed,
@@ -440,6 +563,23 @@ class RawReplayService:
 
     def _classification_quality(
         self, run: IngestionRun, findings: Sequence[ClassificationFinding]
+    ) -> tuple[QualityResult, ...]:
+        return tuple(
+            QualityResult(
+                quality_result_id=self._uuid_factory(),
+                ingestion_id=run.ingestion_id,
+                dataset_code=run.dataset_code,
+                rule_code=finding.rule_code,
+                severity=QualitySeverity.ERROR,
+                status=QualityStatus.FAILED,
+                message=finding.message,
+                natural_key=finding.natural_key,
+            )
+            for finding in findings
+        )
+
+    def _board_index_quality(
+        self, run: IngestionRun, findings: Sequence[BoardIndexFinding]
     ) -> tuple[QualityResult, ...]:
         return tuple(
             QualityResult(
@@ -506,6 +646,7 @@ class RawReplayService:
         | DailyBarRecord
         | CapitalRecord
         | ClassificationRecord
+        | BoardIndexProviderRecord
     ](ingestion_id: UUID, records: Sequence[RecordT]) -> tuple[IngestionEnvelope[RecordT], ...]:
         return tuple(IngestionEnvelope(ingestion_id, record) for record in records)
 

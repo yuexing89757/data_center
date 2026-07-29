@@ -33,6 +33,11 @@ COUNT_QUERIES = {
     "classification_member_snapshot_item": (
         "select count(*) from classification.member_snapshot_item"
     ),
+    "board_index": "select count(*) from core.board_index",
+    "board_index_constituent_snapshot": (
+        "select count(*) from core.board_index_constituent_snapshot"
+    ),
+    "board_index_daily_bar": "select count(*) from core.board_index_daily_bar",
     "quality_result": "select count(*) from audit.quality_result",
     "daily_bar": "select count(*) from core.daily_bar",
     "daily_metric": "select count(*) from derived.daily_metric",
@@ -91,6 +96,12 @@ def capture_database_snapshot(database_url: str) -> DatabaseSnapshot:
                 select ingestion_id from core.trading_calendar
                 union all
                 select ingestion_id from core.daily_bar
+                union all
+                select ingestion_id from core.board_index
+                union all
+                select ingestion_id from core.board_index_daily_bar
+                union all
+                select ingestion_id from core.board_index_constituent_snapshot
                 union all
                 select ingestion_id from capital.share_capital
                 union all

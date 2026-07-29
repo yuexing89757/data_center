@@ -7,6 +7,9 @@ from uuid import UUID
 import pytest
 
 from market_data_center.domain import (
+    BoardIndexConstituentSnapshotRecord,
+    BoardIndexDailyBarRecord,
+    BoardIndexRecord,
     CalculatedTradingDay,
     CapitalRecord,
     ClassificationCatalogSnapshotRecord,
@@ -114,6 +117,9 @@ class StubReliabilityPersistence:
     def known_trading_dates(self, dates: Collection[date]) -> set[date]:
         return set(dates)
 
+    def known_board_ids(self, board_ids: Collection[str]) -> set[str]:
+        return set(board_ids)
+
     def trading_day_boundaries(
         self, start_date: date, end_date: date
     ) -> tuple[date | None, date | None]:
@@ -175,6 +181,32 @@ class StubReliabilityPersistence:
         quality_results: Sequence[QualityResult],
     ) -> None:
         self.classification_member_commits.append((run, manifest, record, quality_results))
+
+    def commit_board_index_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest | None,
+        records: Sequence[IngestionEnvelope[BoardIndexRecord]],
+    ) -> None:
+        return None
+
+    def commit_board_index_daily_bar_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest | None,
+        records: Sequence[IngestionEnvelope[BoardIndexDailyBarRecord]],
+        quality_results: Sequence[QualityResult],
+    ) -> None:
+        return None
+
+    def commit_board_index_constituents_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest | None,
+        record: IngestionEnvelope[BoardIndexConstituentSnapshotRecord],
+        quality_results: Sequence[QualityResult],
+    ) -> None:
+        return None
 
     def commit_rejected_batch(
         self,
