@@ -8,19 +8,59 @@ import psycopg
 from market_data_center.database_urls import psycopg_url
 from market_data_center.migrations import MIGRATION_DIR, apply_migrations
 
-TARGET_SCHEMAS = ("api_v1", "audit", "core", "ingestion")
+TARGET_SCHEMAS = (
+    "api_v1",
+    "audit",
+    "capital",
+    "classification",
+    "core",
+    "derived",
+    "ingestion",
+    "metrics",
+)
 EXPECTED_TABLES = {
     ("audit", "quality_result"),
+    ("capital", "distribution"),
+    ("capital", "rights_issue"),
+    ("capital", "share_capital"),
+    ("classification", "catalog_snapshot"),
+    ("classification", "definition_snapshot"),
+    ("classification", "member_interval"),
+    ("classification", "member_snapshot"),
+    ("classification", "member_snapshot_item"),
+    ("core", "board_index"),
+    ("core", "board_index_constituent_snapshot"),
+    ("core", "board_index_daily_bar"),
     ("core", "daily_bar"),
     ("core", "security"),
     ("core", "security_name_history"),
     ("core", "trading_calendar"),
+    ("derived", "adjusted_daily_bar"),
+    ("derived", "calculation_run"),
+    ("derived", "daily_metric"),
+    ("derived", "market_capitalization"),
     ("ingestion", "ingestion_run"),
     ("ingestion", "raw_manifest"),
+    ("metrics", "classification_daily_metric"),
 }
 EXPECTED_VIEWS = {
+    ("api_v1", "adjusted_daily_bars"),
+    ("api_v1", "board_index_constituents"),
+    ("api_v1", "board_index_daily_bars"),
+    ("api_v1", "board_indexes"),
+    ("api_v1", "calculation_runs"),
+    ("api_v1", "classification_catalog_snapshots"),
+    ("api_v1", "classification_daily_metrics"),
+    ("api_v1", "classification_member_intervals"),
+    ("api_v1", "classification_member_snapshot_status"),
+    ("api_v1", "classification_member_snapshots"),
     ("api_v1", "daily_bars"),
+    ("api_v1", "daily_metrics"),
+    ("api_v1", "distributions"),
+    ("api_v1", "market_capitalizations"),
+    ("api_v1", "rights_issues"),
     ("api_v1", "securities"),
+    ("api_v1", "share_capital"),
     ("api_v1", "trading_calendar"),
 }
 
