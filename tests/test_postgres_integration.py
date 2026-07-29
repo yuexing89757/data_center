@@ -16,6 +16,7 @@ from psycopg.errors import InsufficientPrivilege
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.exc import IntegrityError
 
+from market_data_center.derivation import DerivationService
 from market_data_center.domain import (
     CalculatedTradingDay,
     CapitalRecord,
@@ -47,7 +48,7 @@ from market_data_center.domain import (
     TradeStatus,
 )
 from market_data_center.migrations import MIGRATION_DIR, apply_migrations
-from market_data_center.persistence import PostgreSQLPersistence
+from market_data_center.persistence import PostgreSQLDerivedPersistence, PostgreSQLPersistence
 from market_data_center.quality_audit import audit_daily_bars
 from market_data_center.recovery import (
     backup_application_data,
@@ -121,6 +122,11 @@ def test_migrations_apply_to_empty_database_and_are_idempotent(
     assert ("api_v1", "classification_catalog_snapshots") in first_snapshot["views"]
     assert ("api_v1", "classification_member_snapshots") in first_snapshot["views"]
     assert ("api_v1", "classification_member_intervals") in first_snapshot["views"]
+    assert ("api_v1", "calculation_runs") in first_snapshot["views"]
+    assert ("api_v1", "adjusted_daily_bars") in first_snapshot["views"]
+    assert ("api_v1", "daily_metrics") in first_snapshot["views"]
+    assert ("api_v1", "market_capitalizations") in first_snapshot["views"]
+    assert ("api_v1", "classification_daily_metrics") in first_snapshot["views"]
 
 
 def test_replay_lineage_and_source_manifest_are_queryable(database_engine: Engine) -> None:
@@ -359,6 +365,110 @@ insert into classification.member_interval (
                 "valid_to": None,
             },
         )
+
+
+def test_derived_calculation_is_versioned_idempotent_and_revision_aware(
+    database_engine: Engine,
+) -> None:
+    _prepare_api_data(database_engine)
+    persistence = PostgreSQLPersistence(database_engine)
+    capital_run = _running_run(DatasetCode.CAPITAL)
+    persistence.create_ingestion_run(capital_run)
+    persistence.commit_capital_batch(
+        _completed_run(capital_run),
+        _manifest(capital_run.ingestion_id, "derived-capital"),
+        _envelopes(
+            capital_run.ingestion_id,
+            [
+                ShareCapitalRecord(
+                    symbol=SYMBOL,
+                    effective_date=date(2024, 1, 1),
+                    total_shares=1_000_000,
+                    restricted_shares=None,
+                    circulating_shares=900_000,
+                    listed_a_shares=900_000,
+                    change_reason="derived fixture",
+                    source_code="akshare",
+                )
+            ],
+        ),
+        [],
+    )
+    snapshot_date = date(2026, 7, 27)
+    catalog_run = _running_run(DatasetCode.CLASSIFICATION_CATALOG)
+    persistence.create_ingestion_run(catalog_run)
+    persistence.commit_classification_catalog_batch(
+        _completed_run(catalog_run),
+        _manifest(catalog_run.ingestion_id, "derived-catalog"),
+        IngestionEnvelope(
+            catalog_run.ingestion_id,
+            ClassificationCatalogSnapshotRecord(
+                namespace="eastmoney",
+                classification_type=ClassificationType.INDUSTRY,
+                snapshot_date=snapshot_date,
+                definitions=(ClassificationDefinition("BK0475", "银行"),),
+                source_code="akshare",
+            ),
+        ),
+        [],
+    )
+    member_run = _running_run(DatasetCode.CLASSIFICATION_MEMBERS)
+    persistence.create_ingestion_run(member_run)
+    persistence.commit_classification_members_batch(
+        _completed_run(member_run),
+        _manifest(member_run.ingestion_id, "derived-members"),
+        IngestionEnvelope(
+            member_run.ingestion_id,
+            ClassificationMemberSnapshotRecord(
+                namespace="eastmoney",
+                classification_type=ClassificationType.INDUSTRY,
+                classification_code="BK0475",
+                snapshot_date=snapshot_date,
+                members=(SYMBOL,),
+                source_code="akshare",
+            ),
+        ),
+        [],
+    )
+
+    service = DerivationService(PostgreSQLDerivedPersistence(database_engine))
+    first = service.recompute(snapshot_date, date(2026, 7, 29))
+    unchanged = service.recompute(snapshot_date, date(2026, 7, 29))
+
+    assert first.status == "succeeded"
+    assert first.output_rows == 15
+    assert unchanged.status == "unchanged"
+    assert unchanged.calculation_id == first.calculation_id
+
+    revision_run = _running_run(DatasetCode.DAILY_BAR)
+    persistence.create_ingestion_run(revision_run)
+    revised_bar = replace(
+        _daily_bar(date(2026, 7, 28)),
+        close=Decimal("10.60"),
+    )
+    persistence.commit_daily_bar_batch(
+        _completed_run(revision_run),
+        _manifest(revision_run.ingestion_id, "derived-daily-revision"),
+        _envelopes(revision_run.ingestion_id, [revised_bar]),
+        [],
+    )
+    revised = service.recompute(snapshot_date, date(2026, 7, 29))
+
+    assert revised.status == "succeeded"
+    assert revised.calculation_id != first.calculation_id
+    assert revised.input_hash != first.input_hash
+    with database_engine.connect() as connection:
+        counts = connection.execute(
+            text(
+                "select "
+                "(select count(*) from api_v1.calculation_runs where status = 'succeeded'), "
+                "(select count(*) from api_v1.adjusted_daily_bars), "
+                "(select count(*) from api_v1.daily_metrics), "
+                "(select count(*) from api_v1.market_capitalizations), "
+                "(select count(*) from api_v1.classification_daily_metrics)"
+            )
+        ).one()
+    assert tuple(counts) == (2, 12, 6, 6, 6)
 
 
 def test_stale_running_ingestions_are_recovered_atomically(database_engine: Engine) -> None:
@@ -944,7 +1054,16 @@ def _sqlalchemy_url(database_url: str) -> str:
 def _schema_snapshot(
     connection: psycopg.Connection[tuple[object, ...]],
 ) -> dict[str, list[tuple[object, ...]]]:
-    schemas = ("api_v1", "audit", "core", "ingestion")
+    schemas = (
+        "api_v1",
+        "audit",
+        "capital",
+        "classification",
+        "core",
+        "derived",
+        "ingestion",
+        "metrics",
+    )
     return {
         "relations": connection.execute(
             """

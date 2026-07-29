@@ -6,7 +6,7 @@
 
 ## 1. 当前领域范围
 
-当前已实现五个业务领域和一个采集审计边界：
+当前已实现七个业务领域和一个采集审计边界：
 
 | 边界 | 职责 | 当前实体 |
 | --- | --- | --- |
@@ -16,8 +16,10 @@
 | Market | 不复权日频量价事实 | `DailyBar` |
 | Capital | 股本和公司行为输入事实 | `ShareCapital`、`Distribution`、`RightsIssue` |
 | Classification | 分类目录和成员历史 | `ClassificationCatalogSnapshot`、`ClassificationMemberSnapshot`、`MemberInterval` |
+| Derived | 版本化证券级客观派生 | `CalculationRun`、`AdjustedDailyBar`、`DailyMetric`、`MarketCapitalization` |
+| Metrics | 分类横截面客观统计 | `ClassificationDailyMetric` |
 
-Capital 和 Classification 分别由 ADR-0007、ADR-0008 进入实现。Metrics 仍是未来候选领域，进入实现前必须创建新 ADR 和相应领域详设。
+Capital、Classification 和 Derived/Metrics 分别由 ADR-0007、ADR-0008、ADR-0009 进入实现。
 
 ## 2. 依赖方向
 
@@ -28,6 +30,8 @@ Security ────────────► Market
 Trading ─────────────► Market
 Security ────────────► Capital
 Security ────────────► Classification
+Market + Capital ────► Derived
+Derived + Market + Classification ──► Metrics
 ```
 
 - Ingestion 提供来源追溯，不包含业务事实语义。
@@ -35,6 +39,8 @@ Security ────────────► Classification
 - Market 通过 `symbol` 关联 Security，通过 `(market, trade_date)` 关联 Trading。
 - Capital 通过 `symbol` 关联 Security，不依赖 Market，也不发布复权行情。
 - Classification 通过 `symbol` 关联 Security；分类定义不是 Security，也不依赖 Market。
+- Derived 只依赖客观输入事实，Calculator 不访问数据库。
+- Metrics 只发布可重算的客观横截面统计，不包含主观市场解释。
 - 禁止基础领域反向依赖行情或未来统计领域。
 
 ## 3. 数据流
@@ -108,6 +114,8 @@ Provider DTO 不包含 `ingestion_id`。Pipeline 在创建采集批次后，将�
 | `core` | 标准事实 | 否 |
 | `capital` | 股本与公司行为输入事实 | 否 |
 | `classification` | 分类目录、成分快照和有效区间 | 否 |
+| `derived` | 计算批次、复权行情、日指标和市值 | 否 |
+| `metrics` | 分类横截面客观统计 | 否 |
 | `audit` | 数据质量和审计 | 否 |
 | `api_v1` | 稳定只读 View/RPC | 是 |
 
