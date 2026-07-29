@@ -4,6 +4,8 @@ A phase-one A-share daily market data pipeline using Python 3.12 and a self-host
 
 ## Development
 
+GitHub Issues are the project's only task backlog and planning system. Linear is not used or synchronized.
+
 ```bash
 uv sync --all-groups
 uv run ruff format --check .
