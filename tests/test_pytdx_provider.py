@@ -5,7 +5,14 @@ from pathlib import Path
 
 import pytest
 
-from market_data_center.domain import ClassificationType, DatasetCode, TradeStatus
+from market_data_center.domain import (
+    ClassificationCatalogSnapshotRecord,
+    ClassificationMemberSnapshotRecord,
+    ClassificationType,
+    DailyBarRecord,
+    DatasetCode,
+    TradeStatus,
+)
 from market_data_center.providers import (
     ProviderError,
     PytdxProvider,
@@ -100,6 +107,8 @@ def test_daily_bars_read_local_file_crop_sort_and_normalize_values(tmp_path: Pat
         legacy_rows,
         batch.request_params,
     )
+    assert isinstance(replayed[0], DailyBarRecord)
+    assert isinstance(replayed[1], DailyBarRecord)
     assert replayed[1].previous_close == replayed[0].close
 
 
@@ -133,6 +142,8 @@ def test_local_industry_catalog_and_members_are_provider_neutral(tmp_path: Path)
     members = provider.fetch_classification_members("industry", "T1001", date(2026, 7, 29))
 
     catalog_record = catalog.records[0]
+    assert isinstance(catalog_record, ClassificationCatalogSnapshotRecord)
+    assert isinstance(members.records[0], ClassificationMemberSnapshotRecord)
     assert catalog_record.namespace == "tdx"
     assert catalog_record.classification_type is ClassificationType.INDUSTRY
     assert [(item.code, item.name) for item in catalog_record.definitions] == [
@@ -160,6 +171,8 @@ def test_local_concept_catalog_members_and_raw_replay(tmp_path: Path) -> None:
         members.request_params,
     )
 
+    assert isinstance(catalog.records[0], ClassificationCatalogSnapshotRecord)
+    assert isinstance(members.records[0], ClassificationMemberSnapshotRecord)
     assert [(item.code, item.name) for item in catalog.records[0].definitions] == [
         ("880001", "测试概念")
     ]

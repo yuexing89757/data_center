@@ -903,7 +903,7 @@ def test_older_security_replay_preserves_current_fact_and_name_intervals(
         ).fetchall()
 
     assert current_name == "浦发银行新名"
-    assert history == [
+    assert [tuple(row) for row in history] == [
         ("浦发银行旧名", original_time.date(), original_time.date()),
         ("浦发银行新名", NOW.date(), None),
     ]
