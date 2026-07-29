@@ -567,7 +567,10 @@ def _map_security(row: Mapping[str, str]) -> SecurityRecord:
         exchange=exchange,
         name=row["name"].strip(),
         security_type=SecurityType.STOCK,
-        status=SecurityStatus.UNKNOWN,
+        # stock_info_a_code_name is the current A-share directory. Presence in
+        # this response establishes current listing status even though the
+        # endpoint does not provide IPO or delisting dates.
+        status=SecurityStatus.LISTED,
         ipo_date=None,
         delisting_date=None,
         source_code="akshare",
