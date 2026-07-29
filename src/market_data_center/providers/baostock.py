@@ -6,6 +6,7 @@ from decimal import Decimal, InvalidOperation
 from types import TracebackType
 from typing import Protocol, Self, cast
 
+from market_data_center.domain.ingestion import DatasetCode
 from market_data_center.domain.records import (
     DailyBarRecord,
     Exchange,
@@ -16,7 +17,12 @@ from market_data_center.domain.records import (
     TradeStatus,
     TradingDayRecord,
 )
-from market_data_center.providers.contracts import ProviderBatch, ProviderError, RawRow
+from market_data_center.providers.contracts import (
+    ProviderBatch,
+    ProviderError,
+    ProviderRecord,
+    RawRow,
+)
 
 DAILY_BAR_FIELDS = (
     "date",
@@ -161,6 +167,38 @@ class BaoStockProvider:
             schema_version="baostock.daily_bar.v1",
             record_factory=lambda: [_map_daily_bar(row) for row in raw_rows],
         )
+
+
+def normalize_baostock_raw(
+    dataset_code: DatasetCode,
+    schema_version: str,
+    raw_rows: Sequence[Mapping[str, str]],
+    request_params: Mapping[str, object],
+) -> tuple[ProviderRecord, ...]:
+    expected_schema = {
+        DatasetCode.SECURITY: "baostock.security.v1",
+        DatasetCode.TRADING_CALENDAR: "baostock.trading_calendar.v1",
+        DatasetCode.DAILY_BAR: "baostock.daily_bar.v1",
+    }[dataset_code]
+    if schema_version != expected_schema:
+        raise ProviderError(f"unsupported BaoStock Raw schema: {schema_version}")
+    if dataset_code is DatasetCode.SECURITY:
+        return tuple(_map_security(row) for row in raw_rows)
+    if dataset_code is DatasetCode.TRADING_CALENDAR:
+        start_date = _request_date(request_params, "start_date")
+        end_date = _request_date(request_params, "end_date")
+        return tuple(_calendar_records(raw_rows, start_date, end_date, "baostock"))
+    return tuple(_map_daily_bar(row) for row in raw_rows)
+
+
+def _request_date(request_params: Mapping[str, object], name: str) -> date:
+    value = request_params.get(name)
+    if not isinstance(value, str):
+        raise ProviderError(f"BaoStock replay request is missing {name}")
+    try:
+        return date.fromisoformat(value)
+    except ValueError as error:
+        raise ProviderError(f"BaoStock replay request has invalid {name}") from error
 
 
 def _calendar_records(

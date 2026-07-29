@@ -1,25 +1,35 @@
 """Transactional, idempotent PostgreSQL writes for phase-one facts."""
 
-from collections.abc import Collection, Iterable, Iterator, Sequence
+from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from datetime import date
+from datetime import date, datetime
 from json import dumps
+from typing import cast
 from uuid import UUID
 
-from sqlalchemy import Engine, bindparam, text
+from sqlalchemy import Connection, Engine, RowMapping, bindparam, text
 
 from market_data_center.domain.entities import CalculatedTradingDay
-from market_data_center.domain.ingestion import IngestionRun, QualityResult, RawManifest
+from market_data_center.domain.ingestion import (
+    DatasetCode,
+    IngestionRun,
+    ProviderCode,
+    QualityResult,
+    RawFileFormat,
+    RawManifest,
+    ReplaySource,
+)
 from market_data_center.domain.records import DailyBarRecord, IngestionEnvelope, SecurityRecord
 
 INSERT_INGESTION_RUN = text("""
 insert into ingestion.ingestion_run (
     ingestion_id, provider_code, dataset_code, status, requested_at, started_at,
-    finished_at, request_params, fetched_rows, accepted_rows, rejected_rows, error_summary
+    finished_at, request_params, fetched_rows, accepted_rows, rejected_rows, error_summary,
+    replayed_from_raw_id
 ) values (
     :ingestion_id, :provider_code, :dataset_code, :status, :requested_at, :started_at,
     :finished_at, cast(:request_params as jsonb), :fetched_rows, :accepted_rows,
-    :rejected_rows, :error_summary
+    :rejected_rows, :error_summary, :replayed_from_raw_id
 )
 """)
 
@@ -173,6 +183,7 @@ class PostgreSQLPersistence:
             "accepted_rows": run.accepted_rows,
             "rejected_rows": run.rejected_rows,
             "error_summary": run.error_summary,
+            "replayed_from_raw_id": run.replayed_from_raw_id,
         }
         with self._engine.begin() as connection:
             connection.execute(INSERT_INGESTION_RUN, parameters)
@@ -192,6 +203,109 @@ class PostgreSQLPersistence:
 
     def fail_ingestion_run(self, run: IngestionRun) -> None:
         self.update_ingestion_run(run)
+
+    def replay_source(self, ingestion_id: UUID) -> ReplaySource:
+        statement = text("""
+select
+    run.ingestion_id,
+    run.provider_code,
+    run.dataset_code,
+    run.requested_at,
+    run.request_params,
+    manifest.raw_id,
+    manifest.object_path,
+    manifest.file_format,
+    manifest.content_sha256,
+    manifest.byte_size,
+    manifest.row_count,
+    manifest.schema_version,
+    manifest.storage_backend
+from ingestion.ingestion_run run
+left join ingestion.raw_manifest manifest using (ingestion_id)
+where run.ingestion_id = :ingestion_id
+order by manifest.created_at
+""")
+        with self._engine.connect() as connection:
+            rows = connection.execute(statement, {"ingestion_id": ingestion_id}).mappings().all()
+        if not rows:
+            raise LookupError(f"ingestion run does not exist: {ingestion_id}")
+        if len(rows) > 1:
+            raise RuntimeError(f"ingestion run has multiple Raw manifests: {ingestion_id}")
+        return self._replay_source_from_row(rows[0])
+
+    def daily_bar_replay_sources(
+        self, symbol: str, start_date: date, end_date: date
+    ) -> list[ReplaySource]:
+        variants = _source_symbol_variants(symbol)
+        statement = text("""
+select
+    run.ingestion_id,
+    run.provider_code,
+    run.dataset_code,
+    run.requested_at,
+    run.request_params,
+    manifest.raw_id,
+    manifest.object_path,
+    manifest.file_format,
+    manifest.content_sha256,
+    manifest.byte_size,
+    manifest.row_count,
+    manifest.schema_version,
+    manifest.storage_backend
+from ingestion.ingestion_run run
+join ingestion.raw_manifest manifest using (ingestion_id)
+where run.dataset_code = 'daily_bar'
+  and run.status in ('succeeded', 'partial')
+  and run.request_params ->> 'source_symbol' in :source_symbols
+  and replace(run.request_params ->> 'start_date', '-', '') <= :end_key
+  and replace(run.request_params ->> 'end_date', '-', '') >= :start_key
+order by run.requested_at, manifest.created_at
+""").bindparams(bindparam("source_symbols", expanding=True))
+        with self._engine.connect() as connection:
+            rows = connection.execute(
+                statement,
+                {
+                    "source_symbols": variants,
+                    "start_key": start_date.strftime("%Y%m%d"),
+                    "end_key": end_date.strftime("%Y%m%d"),
+                },
+            ).mappings()
+            return [self._replay_source_from_row(row) for row in rows]
+
+    def stale_ingestion_run_ids(self, stale_before: datetime) -> list[UUID]:
+        statement = text("""
+select ingestion_id
+from ingestion.ingestion_run
+where status = 'running'
+  and started_at < :stale_before
+order by started_at, ingestion_id
+""")
+        with self._engine.connect() as connection:
+            return list(connection.execute(statement, {"stale_before": stale_before}).scalars())
+
+    def recover_stale_ingestion_runs(
+        self, stale_before: datetime, finished_at: datetime, reason: str
+    ) -> list[UUID]:
+        statement = text("""
+update ingestion.ingestion_run
+set status = 'failed',
+    finished_at = :finished_at,
+    error_summary = :reason
+where status = 'running'
+  and started_at < :stale_before
+returning ingestion_id
+""")
+        with self._engine.begin() as connection:
+            return list(
+                connection.execute(
+                    statement,
+                    {
+                        "stale_before": stale_before,
+                        "finished_at": finished_at,
+                        "reason": reason,
+                    },
+                ).scalars()
+            )
 
     def known_symbols(self, symbols: Collection[str]) -> set[str]:
         if not symbols:
@@ -307,11 +421,11 @@ where market = 'CN_A_SHARE'
     def commit_security_batch(
         self,
         run: IngestionRun,
-        manifest: RawManifest,
+        manifest: RawManifest | None,
         records: Sequence[IngestionEnvelope[SecurityRecord]],
     ) -> None:
         with self._engine.begin() as connection:
-            connection.execute(INSERT_RAW_MANIFEST, self._manifest_parameters(manifest))
+            self._insert_manifest(connection, manifest)
             if records:
                 self._ensure_envelope_ids(records, run.ingestion_id)
                 security_parameters = self._security_envelope_parameters(records)
@@ -326,11 +440,11 @@ where market = 'CN_A_SHARE'
     def commit_trading_calendar_batch(
         self,
         run: IngestionRun,
-        manifest: RawManifest,
+        manifest: RawManifest | None,
         records: Sequence[IngestionEnvelope[CalculatedTradingDay]],
     ) -> None:
         with self._engine.begin() as connection:
-            connection.execute(INSERT_RAW_MANIFEST, self._manifest_parameters(manifest))
+            self._insert_manifest(connection, manifest)
             if records:
                 self._ensure_envelope_ids(records, run.ingestion_id)
                 connection.execute(
@@ -342,12 +456,12 @@ where market = 'CN_A_SHARE'
     def commit_daily_bar_batch(
         self,
         run: IngestionRun,
-        manifest: RawManifest,
+        manifest: RawManifest | None,
         records: Sequence[IngestionEnvelope[DailyBarRecord]],
         quality_results: Sequence[QualityResult],
     ) -> None:
         with self._engine.begin() as connection:
-            connection.execute(INSERT_RAW_MANIFEST, self._manifest_parameters(manifest))
+            self._insert_manifest(connection, manifest)
             if quality_results:
                 connection.execute(INSERT_QUALITY_RESULT, self._quality_parameters(quality_results))
             if records:
@@ -358,11 +472,11 @@ where market = 'CN_A_SHARE'
     def commit_rejected_batch(
         self,
         run: IngestionRun,
-        manifest: RawManifest,
+        manifest: RawManifest | None,
         quality_results: Sequence[QualityResult],
     ) -> None:
         with self._engine.begin() as connection:
-            connection.execute(INSERT_RAW_MANIFEST, self._manifest_parameters(manifest))
+            self._insert_manifest(connection, manifest)
             if quality_results:
                 connection.execute(INSERT_QUALITY_RESULT, self._quality_parameters(quality_results))
             connection.execute(UPDATE_INGESTION_RUN, self._run_update_parameters(run))
@@ -392,6 +506,41 @@ where market = 'CN_A_SHARE'
             "row_count": manifest.row_count,
             "schema_version": manifest.schema_version,
         }
+
+    @classmethod
+    def _insert_manifest(cls, connection: Connection, manifest: RawManifest | None) -> None:
+        if manifest is not None:
+            connection.execute(INSERT_RAW_MANIFEST, cls._manifest_parameters(manifest))
+
+    @staticmethod
+    def _replay_source_from_row(row: RowMapping) -> ReplaySource:
+        raw_id = row["raw_id"]
+        manifest = (
+            RawManifest(
+                raw_id=cast(UUID, raw_id),
+                ingestion_id=cast(UUID, row["ingestion_id"]),
+                object_path=str(row["object_path"]),
+                file_format=RawFileFormat(str(row["file_format"])),
+                content_sha256=str(row["content_sha256"]),
+                byte_size=int(cast(int, row["byte_size"])),
+                row_count=int(cast(int, row["row_count"])),
+                schema_version=str(row["schema_version"]),
+                storage_backend=str(row["storage_backend"]),
+            )
+            if raw_id is not None
+            else None
+        )
+        request_params = row["request_params"]
+        if not isinstance(request_params, Mapping):
+            raise RuntimeError("ingestion request_params is not a mapping")
+        return ReplaySource(
+            source_ingestion_id=cast(UUID, row["ingestion_id"]),
+            provider_code=ProviderCode(str(row["provider_code"])),
+            dataset_code=DatasetCode(str(row["dataset_code"])),
+            requested_at=cast(datetime, row["requested_at"]),
+            request_params=cast(Mapping[str, object], request_params),
+            manifest=manifest,
+        )
 
     @staticmethod
     def _security_envelope_parameters(
@@ -494,3 +643,15 @@ where market = 'CN_A_SHARE'
             }
             for result in results
         ]
+
+
+def _source_symbol_variants(symbol: str) -> tuple[str, ...]:
+    try:
+        exchange, code = symbol.upper().split(":", maxsplit=1)
+        prefix = {"SSE": "sh", "SZSE": "sz", "BSE": "bj"}[exchange]
+    except (KeyError, ValueError) as error:
+        raise ValueError(f"unsupported standard symbol: {symbol}") from error
+    variants = {symbol.upper(), code, f"{prefix}.{code}"}
+    if exchange in {"SSE", "SZSE"}:
+        variants.add(f"{'1' if exchange == 'SSE' else '0'}.{code}")
+    return tuple(sorted(variants))

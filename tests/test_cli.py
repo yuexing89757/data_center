@@ -41,6 +41,29 @@ def test_daily_run_has_repair_window_defaults() -> None:
     assert args.shard_index == 0
 
 
+def test_reliability_commands_parse_without_a_provider() -> None:
+    replay = _parser().parse_args(
+        ["raw-replay", "--ingestion-id", "74b11082-4ec0-4ae4-826f-a80a96cb9985"]
+    )
+    stale = _parser().parse_args(["recover-stale-runs", "--dry-run"])
+    comparison = _parser().parse_args(
+        [
+            "compare-daily-bars",
+            "--symbol",
+            "SSE:600000",
+            "--start-date",
+            "2026-07-01",
+            "--end-date",
+            "2026-07-28",
+        ]
+    )
+
+    assert replay.provider == AUTO_PROVIDER_CODE
+    assert not replay.dry_run
+    assert stale.older_than_minutes == 60
+    assert comparison.symbol == "SSE:600000"
+
+
 def test_daily_run_orders_prerequisites_before_incremental_bars(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

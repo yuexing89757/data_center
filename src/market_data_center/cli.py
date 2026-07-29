@@ -3,7 +3,9 @@
 from argparse import ArgumentParser, Namespace
 from datetime import date, datetime, timedelta
 from functools import partial
+from json import dumps
 from sys import stderr
+from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import create_engine
@@ -20,6 +22,11 @@ from market_data_center.providers import (
     create_provider,
 )
 from market_data_center.raw_store import LocalRawStore
+from market_data_center.reliability import (
+    RawReplayService,
+    compare_daily_bar_sources,
+    recover_stale_runs,
+)
 from market_data_center.settings import WorkerSettings
 
 AUTO_PROVIDER_CODE = "auto"
@@ -35,6 +42,23 @@ def main() -> None:
     persistence = PostgreSQLPersistence(engine)
     raw_store = LocalRawStore(settings.raw_data_root)
 
+    if args.dataset in {"raw-replay", "recover-stale-runs", "compare-daily-bars"}:
+        try:
+            _run_reliability_command(args, persistence, raw_store)
+        except Exception as error:
+            print(
+                dumps(
+                    {
+                        "status": "failed",
+                        "operation": args.dataset,
+                        "error_type": type(error).__name__,
+                    },
+                    sort_keys=True,
+                ),
+                file=stderr,
+            )
+            raise SystemExit(1) from None
+        return
     if args.dataset == "daily-run":
         _run_daily_workflow(args, persistence, raw_store)
         return
@@ -47,6 +71,47 @@ def main() -> None:
             f"{run.dataset_code.value} {run.status.value} "
             f"provider={run.provider_code.value} ingestion_id={run.ingestion_id}"
         )
+
+
+def _run_reliability_command(
+    args: Namespace,
+    persistence: PostgreSQLPersistence,
+    raw_store: LocalRawStore,
+) -> None:
+    if args.dataset == "raw-replay":
+        summary = RawReplayService(
+            raw_store=raw_store,
+            persistence=persistence,
+        ).replay(UUID(args.ingestion_id), dry_run=args.dry_run)
+        print(dumps(summary.as_json(), ensure_ascii=False, sort_keys=True))
+        return
+    if args.dataset == "recover-stale-runs":
+        ingestion_ids = recover_stale_runs(
+            persistence,
+            older_than=timedelta(minutes=args.older_than_minutes),
+            dry_run=args.dry_run,
+        )
+        print(
+            dumps(
+                {
+                    "status": "dry_run" if args.dry_run else "recovered",
+                    "count": len(ingestion_ids),
+                    "ingestion_ids": [str(ingestion_id) for ingestion_id in ingestion_ids],
+                },
+                sort_keys=True,
+            )
+        )
+        return
+    start_date = date.fromisoformat(args.start_date)
+    end_date = date.fromisoformat(args.end_date)
+    report = compare_daily_bar_sources(
+        persistence,
+        raw_store,
+        symbol=args.symbol,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    print(dumps(report.as_json(), ensure_ascii=False, sort_keys=True))
 
 
 def _run_explicit(
@@ -352,6 +417,24 @@ def _parser() -> ArgumentParser:
     )
     daily_run.add_argument("--shard-count", type=int, default=1)
     daily_run.add_argument("--shard-index", type=int, default=0)
+
+    replay = subparsers.add_parser(
+        "raw-replay", help="validate and replay an immutable Raw ingestion batch"
+    )
+    replay.add_argument("--ingestion-id", required=True)
+    replay.add_argument("--dry-run", action="store_true")
+
+    stale = subparsers.add_parser(
+        "recover-stale-runs", help="fail ingestion runs left running beyond an age limit"
+    )
+    stale.add_argument("--older-than-minutes", type=int, default=60)
+    stale.add_argument("--dry-run", action="store_true")
+
+    comparison = subparsers.add_parser(
+        "compare-daily-bars", help="compare provider Raw daily bars without changing Core"
+    )
+    comparison.add_argument("--symbol", required=True, help="standard symbol such as SSE:600000")
+    _add_date_range(comparison)
     return parser
 
 
