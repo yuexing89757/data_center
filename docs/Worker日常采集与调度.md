@@ -69,4 +69,10 @@ Timer 每天北京时间 18:30 后运行，并设置最多 5 分钟随机延迟�
 
 `.github/workflows/production.yml` 提供人工触发的生产工作流。`check` 只核对 migration 版本、Schema、RLS、数据库事实和 PostgREST；`apply` 先应用尚未执行的 migration，再完成同一组检查。
 
+基础检查要求 Security、Trading Calendar、股票 Daily Bar、Raw 和成功批次非空，并探测当前全部 `api_v1` 视图。完成 THS 初始化后，使用严格模式验证板块定义、日 K 和成分快照也已进入数据库与 API：
+
+```bash
+uv run python scripts/smoke_check.py --require-board-index
+```
+
 GitHub `production` Environment 需要配置 `MIGRATION_DATABASE_URL`、`DATABASE_URL`、`SUPABASE_URL` 和 `SUPABASE_PUBLISHABLE_KEY`。仓库只引用 Secret 名称，不保存值。Environment 审批、备份确认和凭据轮换可在功能闭环完成后继续加固。

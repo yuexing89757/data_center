@@ -17,7 +17,7 @@ RTO 目标为 60 分钟，RPO 目标为 24 小时。上线后根据实际数据�
 
 ## 2. 应用数据备份
 
-仓库工具仅备份 Market Data Center 的 `audit`、`core`、`ingestion` 数据，不把凭据放入进程参数。备份默认写入已被 Git 忽略的 `backups/`。
+仓库工具备份 Market Data Center 的 `audit`、`capital`、`classification`、`core`、`derived`、`ingestion` 和 `metrics` 数据，不把凭据放入进程参数。备份默认写入已被 Git 忽略的 `backups/`。
 
 ```bash
 export SOURCE_DATABASE_URL='从密钥管理器注入'
