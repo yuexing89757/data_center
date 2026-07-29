@@ -10,6 +10,9 @@ from market_data_center.domain.records import TradingDayRecord
 
 def calculate_trading_day_links(
     records: Sequence[TradingDayRecord],
+    *,
+    previous_trading_day: date | None = None,
+    next_trading_day: date | None = None,
 ) -> list[CalculatedTradingDay]:
     """Add nearest previous/next trading dates to a complete natural-day sequence."""
     ordered = sorted(records, key=lambda record: record.trade_date)
@@ -26,15 +29,18 @@ def calculate_trading_day_links(
         if current != previous + timedelta(days=1):
             raise ValueError("calendar must contain every natural day in the requested range")
 
+    if previous_trading_day is not None and previous_trading_day >= dates[0]:
+        raise ValueError("previous trading-day boundary must precede the calendar range")
+    if next_trading_day is not None and next_trading_day <= dates[-1]:
+        raise ValueError("next trading-day boundary must follow the calendar range")
+
     previous_links: list[date | None] = []
-    previous_trading_day: date | None = None
     for record in ordered:
         previous_links.append(previous_trading_day)
         if record.is_trading_day:
             previous_trading_day = record.trade_date
 
     next_links: list[date | None] = [None] * len(ordered)
-    next_trading_day: date | None = None
     for index in range(len(ordered) - 1, -1, -1):
         record = ordered[index]
         next_links[index] = next_trading_day

@@ -1,0 +1,45 @@
+name: Production migration and smoke check
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Check the current deployment or apply repository migrations first
+        required: true
+        default: check
+        type: choice
+        options:
+          - check
+          - apply
+
+permissions:
+  contents: read
+
+concurrency:
+  group: market-data-center-production
+  cancel-in-progress: false
+
+jobs:
+  production:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    env:
+      MIGRATION_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: "3.12"
+      - run: uv sync --all-groups --locked
+      - name: Apply repository migrations
+        if: ${{ inputs.mode == 'apply' }}
+        run: uv run python scripts/apply_migrations.py apply
+      - name: Verify migration and schema state
+        run: uv run python scripts/apply_migrations.py check
+      - name: Verify database and PostgREST
+        run: uv run python scripts/smoke_check.py

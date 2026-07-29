@@ -6,7 +6,11 @@ from pathlib import Path
 import pytest
 
 from market_data_center.domain import TradeStatus
-from market_data_center.providers import ProviderError, PytdxProvider
+from market_data_center.providers import (
+    ProviderError,
+    ProviderRequestUnavailable,
+    PytdxProvider,
+)
 from market_data_center.providers.pytdx import LocalDailyBarRow
 
 
@@ -45,7 +49,7 @@ def test_standard_symbol_maps_to_local_file_prefix() -> None:
 
     assert provider.source_symbol("SSE:600000") == "sh.600000"
     assert provider.source_symbol("SZSE:000001") == "sz.000001"
-    with pytest.raises(ProviderError, match="unsupported pytdx symbol"):
+    with pytest.raises(ProviderRequestUnavailable, match="does not support BSE"):
         provider.source_symbol("BSE:430047")
 
 

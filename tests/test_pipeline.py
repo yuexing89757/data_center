@@ -10,6 +10,7 @@ import pytest
 from market_data_center.domain import (
     DailyBarRecord,
     Exchange,
+    IngestionEnvelope,
     IngestionRun,
     IngestionStatus,
     Market,
@@ -63,6 +64,7 @@ class StubProvider:
     source_code = "baostock"
     fail_security = False
     mismatched_source = False
+    fail_normalization = False
 
     def source_symbol(self, symbol: str) -> str:
         return symbol
@@ -70,6 +72,13 @@ class StubProvider:
     def fetch_securities(self) -> ProviderBatch[SecurityRecord]:
         if self.fail_security:
             raise RuntimeError("provider unavailable with secret detail")
+        if self.fail_normalization:
+            return ProviderBatch(
+                raw_rows=[{"code": "broken"}],
+                request_params={},
+                schema_version="security.v1",
+                record_factory=self._fail_record_normalization,
+            )
         security = _security()
         if self.mismatched_source:
             security = SecurityRecord(
@@ -89,6 +98,10 @@ class StubProvider:
             request_params={},
             schema_version="security.v1",
         )
+
+    @staticmethod
+    def _fail_record_normalization() -> list[SecurityRecord]:
+        raise ValueError("invalid source row with sensitive detail")
 
     def fetch_trading_calendar(
         self, start_date: date, end_date: date
@@ -115,18 +128,25 @@ class StubPersistence:
     def __init__(self) -> None:
         self.created: list[IngestionRun] = []
         self.failed: list[IngestionRun] = []
-        self.security_commits: list[tuple[IngestionRun, RawManifest, Sequence[SecurityRecord]]] = []
+        self.security_commits: list[
+            tuple[IngestionRun, RawManifest, Sequence[IngestionEnvelope[SecurityRecord]]]
+        ] = []
         self.calendar_commits: list[
-            tuple[IngestionRun, RawManifest, Sequence[CalculatedTradingDay]]
+            tuple[
+                IngestionRun,
+                RawManifest,
+                Sequence[IngestionEnvelope[CalculatedTradingDay]],
+            ]
         ] = []
         self.daily_commits: list[
             tuple[
                 IngestionRun,
                 RawManifest,
-                Sequence[DailyBarRecord],
+                Sequence[IngestionEnvelope[DailyBarRecord]],
                 Sequence[QualityResult],
             ]
         ] = []
+        self.rejected_commits: list[tuple[IngestionRun, RawManifest, Sequence[QualityResult]]] = []
         self.symbols: set[str] = {"SSE:600000"}
         self.trading_dates: set[date] = {date(2026, 7, 28)}
 
@@ -143,7 +163,7 @@ class StubPersistence:
         self,
         run: IngestionRun,
         manifest: RawManifest,
-        records: Sequence[SecurityRecord],
+        records: Sequence[IngestionEnvelope[SecurityRecord]],
     ) -> None:
         self.security_commits.append((run, manifest, records))
 
@@ -151,7 +171,7 @@ class StubPersistence:
         self,
         run: IngestionRun,
         manifest: RawManifest,
-        records: Sequence[CalculatedTradingDay],
+        records: Sequence[IngestionEnvelope[CalculatedTradingDay]],
     ) -> None:
         self.calendar_commits.append((run, manifest, records))
 
@@ -161,14 +181,27 @@ class StubPersistence:
     def known_trading_dates(self, dates: Collection[date]) -> set[date]:
         return self.trading_dates.intersection(dates)
 
+    def trading_day_boundaries(
+        self, start_date: date, end_date: date
+    ) -> tuple[date | None, date | None]:
+        return None, None
+
     def commit_daily_bar_batch(
         self,
         run: IngestionRun,
         manifest: RawManifest,
-        records: Sequence[DailyBarRecord],
+        records: Sequence[IngestionEnvelope[DailyBarRecord]],
         quality_results: Sequence[QualityResult],
     ) -> None:
         self.daily_commits.append((run, manifest, records, quality_results))
+
+    def commit_rejected_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest,
+        quality_results: Sequence[QualityResult],
+    ) -> None:
+        self.rejected_commits.append((run, manifest, quality_results))
 
 
 def _pipeline(
@@ -206,7 +239,7 @@ def test_daily_bar_reference_failure_is_recorded_and_blocked(tmp_path: Path) -> 
     assert run.status is IngestionStatus.FAILED
     assert run.accepted_rows == 0
     assert run.rejected_rows == 1
-    assert persistence.daily_commits[0][2] == []
+    assert not persistence.daily_commits[0][2]
     assert persistence.daily_commits[0][3][0].blocks_core_write
 
 
@@ -223,7 +256,7 @@ def test_provider_failure_marks_run_failed_without_leaking_message(tmp_path: Pat
     assert persistence.failed[0].error_summary == "RuntimeError: ingestion failed"
 
 
-def test_mismatched_record_source_fails_before_raw_or_core_write(tmp_path: Path) -> None:
+def test_mismatched_record_source_keeps_raw_but_blocks_core_write(tmp_path: Path) -> None:
     provider = StubProvider()
     provider.mismatched_source = True
     persistence = StubPersistence()
@@ -233,4 +266,23 @@ def test_mismatched_record_source_fails_before_raw_or_core_write(tmp_path: Path)
         pipeline.ingest_securities()
 
     assert persistence.security_commits == []
-    assert persistence.failed[0].status is IngestionStatus.FAILED
+    assert persistence.rejected_commits[0][0].status is IngestionStatus.FAILED
+
+
+def test_normalization_failure_keeps_raw_and_quality_evidence(tmp_path: Path) -> None:
+    provider = StubProvider()
+    provider.fail_normalization = True
+    persistence = StubPersistence()
+    pipeline = _pipeline(tmp_path, provider, persistence)
+
+    with pytest.raises(RuntimeError, match="normalization failed"):
+        pipeline.ingest_securities()
+
+    failed, manifest, quality_results = persistence.rejected_commits[0]
+    assert failed.status is IngestionStatus.FAILED
+    assert failed.fetched_rows == 1
+    assert failed.rejected_rows == 1
+    assert tmp_path.joinpath(*manifest.object_path.split("/")).exists()
+    assert quality_results[0].rule_code == "security.provider_normalization"
+    assert "sensitive detail" not in quality_results[0].message
+    assert persistence.security_commits == []

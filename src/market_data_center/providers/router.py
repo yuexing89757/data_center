@@ -6,7 +6,11 @@ from types import TracebackType
 from typing import Self
 
 from market_data_center.domain.ingestion import DatasetCode
-from market_data_center.providers.contracts import ManagedMarketDataProvider, ProviderError
+from market_data_center.providers.contracts import (
+    ManagedMarketDataProvider,
+    ProviderError,
+    ProviderRequestUnavailable,
+)
 from market_data_center.providers.registry import create_provider
 
 type ProviderFactory = Callable[[str], ManagedMarketDataProvider]
@@ -105,6 +109,9 @@ class ProviderRouter:
             try:
                 provider = self._get_provider(provider_code)
                 value = operation(provider)
+            except ProviderRequestUnavailable as error:
+                attempts.append(RoutingAttempt(provider_code, type(error).__name__, str(error)))
+                continue
             except ProviderError as error:
                 attempts.append(RoutingAttempt(provider_code, type(error).__name__, str(error)))
                 self._record_failure(provider_code)

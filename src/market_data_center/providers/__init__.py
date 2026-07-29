@@ -7,6 +7,7 @@ from market_data_center.providers.contracts import (
     MarketDataProvider,
     ProviderBatch,
     ProviderError,
+    ProviderRequestUnavailable,
 )
 from market_data_center.providers.pytdx import PytdxProvider
 from market_data_center.providers.registry import available_provider_codes, create_provider
@@ -26,6 +27,7 @@ __all__ = [
     "MarketDataProvider",
     "ProviderBatch",
     "ProviderError",
+    "ProviderRequestUnavailable",
     "ProviderRouter",
     "ProviderRoutingError",
     "PytdxProvider",

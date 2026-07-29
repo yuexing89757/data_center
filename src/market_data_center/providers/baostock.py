@@ -106,12 +106,11 @@ class BaoStockProvider:
     def fetch_securities(self) -> ProviderBatch[SecurityRecord]:
         result = _provider_call("query_stock_basic", self._client.query_stock_basic)
         raw_rows = _read_result(result, "query_stock_basic")
-        records = [_map_security(row) for row in raw_rows]
         return ProviderBatch(
-            records=records,
             raw_rows=raw_rows,
             request_params={},
             schema_version="baostock.security.v1",
+            record_factory=lambda: [_map_security(row) for row in raw_rows],
         )
 
     def fetch_trading_calendar(
@@ -125,25 +124,13 @@ class BaoStockProvider:
             ),
         )
         raw_rows = _read_result(result, "query_trade_dates")
-        by_date = {date.fromisoformat(row["calendar_date"]): row for row in raw_rows}
-        records: list[TradingDayRecord] = []
-        current = start_date
-        while current <= end_date:
-            row = by_date.get(current)
-            records.append(
-                TradingDayRecord(
-                    market=Market.CN_A_SHARE,
-                    trade_date=current,
-                    is_trading_day=row is not None and row["is_trading_day"] == "1",
-                    source_code=self.source_code,
-                )
-            )
-            current += timedelta(days=1)
         return ProviderBatch(
-            records=records,
             raw_rows=raw_rows,
             request_params={"start_date": start_date.isoformat(), "end_date": end_date.isoformat()},
             schema_version="baostock.trading_calendar.v1",
+            record_factory=lambda: _calendar_records(
+                raw_rows, start_date, end_date, self.source_code
+            ),
         )
 
     def fetch_daily_bars(
@@ -163,7 +150,6 @@ class BaoStockProvider:
         )
         raw_rows = _read_result(result, "query_history_k_data_plus")
         return ProviderBatch(
-            records=[_map_daily_bar(row) for row in raw_rows],
             raw_rows=raw_rows,
             request_params={
                 "source_symbol": source_symbol,
@@ -173,7 +159,31 @@ class BaoStockProvider:
                 "adjustflag": "3",
             },
             schema_version="baostock.daily_bar.v1",
+            record_factory=lambda: [_map_daily_bar(row) for row in raw_rows],
         )
+
+
+def _calendar_records(
+    raw_rows: Sequence[Mapping[str, str]],
+    start_date: date,
+    end_date: date,
+    source_code: str,
+) -> list[TradingDayRecord]:
+    by_date = {date.fromisoformat(row["calendar_date"]): row for row in raw_rows}
+    records: list[TradingDayRecord] = []
+    current = start_date
+    while current <= end_date:
+        row = by_date.get(current)
+        records.append(
+            TradingDayRecord(
+                market=Market.CN_A_SHARE,
+                trade_date=current,
+                is_trading_day=row is not None and row["is_trading_day"] == "1",
+                source_code=source_code,
+            )
+        )
+        current += timedelta(days=1)
+    return records
 
 
 def _read_result(result: BaoStockResult, operation: str) -> list[RawRow]:

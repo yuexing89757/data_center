@@ -1,12 +1,14 @@
 """Manual phase-one ingestion commands."""
 
 from argparse import ArgumentParser, Namespace
-from datetime import date
+from datetime import date, datetime, timedelta
 from functools import partial
 from sys import stderr
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import create_engine
 
+from market_data_center.database_urls import sqlalchemy_url
 from market_data_center.domain.ingestion import DatasetCode, IngestionRun
 from market_data_center.persistence import PostgreSQLPersistence
 from market_data_center.pipeline import IngestionPipeline
@@ -21,15 +23,21 @@ from market_data_center.raw_store import LocalRawStore
 from market_data_center.settings import WorkerSettings
 
 AUTO_PROVIDER_CODE = "auto"
+SHANGHAI_TIME_ZONE = ZoneInfo("Asia/Shanghai")
 
 
 def main() -> None:
     args = _parser().parse_args()
     settings = WorkerSettings()  # type: ignore[call-arg]
-    engine = create_engine(settings.database_url.get_secret_value(), pool_pre_ping=True)
+    engine = create_engine(
+        sqlalchemy_url(settings.database_url.get_secret_value()), pool_pre_ping=True
+    )
     persistence = PostgreSQLPersistence(engine)
     raw_store = LocalRawStore(settings.raw_data_root)
 
+    if args.dataset == "daily-run":
+        _run_daily_workflow(args, persistence, raw_store)
+        return
     if args.provider == AUTO_PROVIDER_CODE:
         run = _run_automatic(args, persistence, raw_store)
     else:
@@ -57,12 +65,7 @@ def _run_explicit(
                 raise SystemExit("shard-index must be in [0, shard-count)")
             start_date = date.fromisoformat(args.start_date)
             end_date = date.fromisoformat(args.end_date)
-            completed = persistence.symbols_with_daily_bars(start_date, end_date)
-            symbols = [
-                symbol
-                for index, symbol in enumerate(persistence.listed_stock_symbols())
-                if index % args.shard_count == args.shard_index and symbol not in completed
-            ]
+            symbols = _bulk_symbols(args, persistence, start_date, end_date)
             failures = 0
             for position, symbol in enumerate(symbols, start=1):
                 try:
@@ -130,12 +133,7 @@ def _run_automatic_bulk(
         raise SystemExit("shard-index must be in [0, shard-count)")
     start_date = date.fromisoformat(args.start_date)
     end_date = date.fromisoformat(args.end_date)
-    completed = persistence.symbols_with_daily_bars(start_date, end_date)
-    symbols = [
-        symbol
-        for index, symbol in enumerate(persistence.listed_stock_symbols())
-        if index % args.shard_count == args.shard_index and symbol not in completed
-    ]
+    symbols = _bulk_symbols(args, persistence, start_date, end_date)
     failures = 0
     for position, symbol in enumerate(symbols, start=1):
         try:
@@ -158,6 +156,96 @@ def _run_automatic_bulk(
             print(f"progress={position}/{len(symbols)} failures={failures}")
     if failures:
         raise SystemExit(f"bulk ingestion completed with {failures} failures")
+
+
+def _bulk_symbols(
+    args: Namespace,
+    persistence: PostgreSQLPersistence,
+    start_date: date,
+    end_date: date,
+) -> list[str]:
+    if end_date < start_date:
+        raise SystemExit("end-date must not precede start-date")
+    if not persistence.has_complete_calendar_range(start_date, end_date):
+        raise SystemExit(
+            "trading calendar is incomplete for the requested daily-bar range; "
+            "synchronize trading-calendar first"
+        )
+    missing = persistence.stock_symbols_missing_daily_bars(start_date, end_date)
+    symbols = [
+        symbol
+        for index, symbol in enumerate(missing)
+        if index % args.shard_count == args.shard_index
+    ]
+    if not symbols:
+        print(
+            f"daily-bars-bulk no incomplete symbols for "
+            f"{start_date.isoformat()}..{end_date.isoformat()}"
+        )
+    return symbols
+
+
+def _run_daily_workflow(
+    args: Namespace,
+    persistence: PostgreSQLPersistence,
+    raw_store: LocalRawStore,
+) -> None:
+    as_of_date = (
+        date.fromisoformat(args.as_of_date)
+        if args.as_of_date
+        else datetime.now(SHANGHAI_TIME_ZONE).date()
+    )
+    if args.bar_lookback_days < 1:
+        raise SystemExit("bar-lookback-days must be positive")
+    if args.calendar_lookback_days < args.bar_lookback_days:
+        raise SystemExit("calendar-lookback-days must be at least bar-lookback-days")
+
+    security_args = _derived_args(args, dataset="security")
+    calendar_args = _derived_args(
+        args,
+        dataset="trading-calendar",
+        start_date=(as_of_date - timedelta(days=args.calendar_lookback_days - 1)).isoformat(),
+        end_date=as_of_date.isoformat(),
+    )
+    _execute_operation(security_args, persistence, raw_store)
+    _execute_operation(calendar_args, persistence, raw_store)
+
+    bar_start_date = as_of_date - timedelta(days=args.bar_lookback_days - 1)
+    bar_end_date = persistence.latest_trading_date(bar_start_date, as_of_date)
+    if bar_end_date is None:
+        print(
+            f"daily-run no trading day for {bar_start_date.isoformat()}..{as_of_date.isoformat()}"
+        )
+        return
+    daily_bar_args = _derived_args(
+        args,
+        dataset="daily-bars-bulk",
+        start_date=bar_start_date.isoformat(),
+        end_date=bar_end_date.isoformat(),
+    )
+    _execute_operation(daily_bar_args, persistence, raw_store)
+
+
+def _execute_operation(
+    args: Namespace,
+    persistence: PostgreSQLPersistence,
+    raw_store: LocalRawStore,
+) -> None:
+    if args.provider == AUTO_PROVIDER_CODE:
+        run = _run_automatic(args, persistence, raw_store)
+    else:
+        run = _run_explicit(args, persistence, raw_store)
+    if run is not None:
+        print(
+            f"{run.dataset_code.value} {run.status.value} "
+            f"provider={run.provider_code.value} ingestion_id={run.ingestion_id}"
+        )
+
+
+def _derived_args(args: Namespace, **overrides: object) -> Namespace:
+    values = vars(args).copy()
+    values.update(overrides)
+    return Namespace(**values)
 
 
 def _ingest_automatic_daily_bar(
@@ -241,6 +329,29 @@ def _parser() -> ArgumentParser:
     _add_date_range(bulk)
     bulk.add_argument("--shard-count", type=int, default=1)
     bulk.add_argument("--shard-index", type=int, default=0)
+
+    daily_run = subparsers.add_parser(
+        "daily-run",
+        help="synchronize security, calendar, and an incremental daily-bar window",
+    )
+    daily_run.add_argument(
+        "--as-of-date",
+        help="inclusive YYYY-MM-DD; defaults to the current Asia/Shanghai date",
+    )
+    daily_run.add_argument(
+        "--bar-lookback-days",
+        type=int,
+        default=7,
+        help="calendar-day window used to repair missed daily bars (default: 7)",
+    )
+    daily_run.add_argument(
+        "--calendar-lookback-days",
+        type=int,
+        default=14,
+        help="calendar synchronization window ending at as-of-date (default: 14)",
+    )
+    daily_run.add_argument("--shard-count", type=int, default=1)
+    daily_run.add_argument("--shard-index", type=int, default=0)
     return parser
 
 

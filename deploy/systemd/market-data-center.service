@@ -1,0 +1,17 @@
+[Unit]
+Description=Market Data Center daily incremental ingestion
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=market-data-center
+Group=market-data-center
+WorkingDirectory=/opt/market-data-center
+EnvironmentFile=/etc/market-data-center/worker.env
+ExecStart=/opt/market-data-center/.venv/bin/market-data-center daily-run
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/market-data-center/raw

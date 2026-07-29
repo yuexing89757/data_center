@@ -51,7 +51,7 @@ def validate_daily_bars(
 
         natural_key = (record.symbol, record.trade_date)
         existing = seen.get(natural_key)
-        if existing is not None and existing != record:
+        if existing is not None:
             findings.append(
                 _finding(record, ValidationRule.DUPLICATE_NATURAL_KEY, QualitySeverity.ERROR)
             )

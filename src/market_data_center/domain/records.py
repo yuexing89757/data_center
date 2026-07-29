@@ -109,6 +109,6 @@ class DailyBarRecord:
 
 
 @dataclass(frozen=True, slots=True)
-class IngestionEnvelope[RecordT: SecurityRecord | TradingDayRecord | DailyBarRecord]:
+class IngestionEnvelope[RecordT]:
     ingestion_id: UUID
     record: RecordT

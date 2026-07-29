@@ -7,6 +7,8 @@ from json import dumps
 
 import psycopg
 
+from market_data_center.database_urls import psycopg_url
+
 
 @dataclass(frozen=True, slots=True)
 class SourceCount:
@@ -144,7 +146,7 @@ def audit_daily_bars(
 
     parameters = (start_date, end_date)
     with psycopg.connect(
-        database_url,
+        psycopg_url(database_url),
         connect_timeout=10,
         options="-c default_transaction_read_only=on",
     ) as connection:
