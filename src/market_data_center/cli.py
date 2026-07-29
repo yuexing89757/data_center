@@ -11,8 +11,13 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import create_engine
 
 from market_data_center.database_urls import sqlalchemy_url
+from market_data_center.derivation import (
+    DEFAULT_ALGORITHM_VERSION,
+    DerivationService,
+)
+from market_data_center.domain import CalculationMode
 from market_data_center.domain.ingestion import DatasetCode, IngestionRun
-from market_data_center.persistence import PostgreSQLPersistence
+from market_data_center.persistence import PostgreSQLDerivedPersistence, PostgreSQLPersistence
 from market_data_center.pipeline import IngestionPipeline
 from market_data_center.providers import (
     ManagedMarketDataProvider,
@@ -41,6 +46,30 @@ def main() -> None:
     )
     persistence = PostgreSQLPersistence(engine)
     raw_store = LocalRawStore(settings.raw_data_root)
+
+    if args.dataset == "derived-recompute":
+        try:
+            summary = DerivationService(PostgreSQLDerivedPersistence(engine)).recompute(
+                date.fromisoformat(args.start_date),
+                date.fromisoformat(args.end_date),
+                mode=CalculationMode(args.mode),
+                algorithm_version=args.algorithm_version,
+            )
+            print(dumps(summary.as_json(), ensure_ascii=False, sort_keys=True))
+        except Exception as error:
+            print(
+                dumps(
+                    {
+                        "status": "failed",
+                        "operation": args.dataset,
+                        "error_type": type(error).__name__,
+                    },
+                    sort_keys=True,
+                ),
+                file=stderr,
+            )
+            raise SystemExit(1) from None
+        return
 
     if args.dataset in {"raw-replay", "recover-stale-runs", "compare-daily-bars"}:
         try:
@@ -445,6 +474,22 @@ def _parser() -> ArgumentParser:
     )
     members.add_argument("--classification-type", choices=("industry", "concept"), required=True)
     members.add_argument("--classification-code", required=True, help="board code such as BK0475")
+
+    derived = subparsers.add_parser(
+        "derived-recompute",
+        help="calculate versioned adjusted bars and objective daily metrics",
+    )
+    _add_date_range(derived)
+    derived.add_argument(
+        "--mode",
+        choices=tuple(mode.value for mode in CalculationMode),
+        default=CalculationMode.INCREMENTAL.value,
+    )
+    derived.add_argument(
+        "--algorithm-version",
+        default=DEFAULT_ALGORITHM_VERSION,
+        help="immutable calculator contract version",
+    )
 
     bulk = subparsers.add_parser(
         "daily-bars-bulk", help="synchronize daily bars for every currently listed stock"

@@ -64,6 +64,25 @@ def test_reliability_commands_parse_without_a_provider() -> None:
     assert comparison.symbol == "SSE:600000"
 
 
+def test_derived_recompute_parses_versioned_full_or_incremental_mode() -> None:
+    args = _parser().parse_args(
+        [
+            "derived-recompute",
+            "--start-date",
+            "2026-01-01",
+            "--end-date",
+            "2026-07-29",
+            "--mode",
+            "full",
+            "--algorithm-version",
+            "1.1.0",
+        ]
+    )
+
+    assert args.mode == "full"
+    assert args.algorithm_version == "1.1.0"
+
+
 def test_daily_run_orders_prerequisites_before_incremental_bars(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

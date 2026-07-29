@@ -33,6 +33,14 @@ market-data-center classification-members --classification-type industry --class
 
 Industry and concept snapshots are provided by AKShare/东方财富. Snapshot and effective-interval semantics are documented in [ADR-0008](docs/adr/ADR-0008-Classification分类与成分历史.md).
 
+Versioned adjusted bars, returns, moving averages, market capitalization, and classification metrics are recalculated from Core facts:
+
+```bash
+market-data-center derived-recompute --start-date 2026-01-01 --end-date 2026-07-29 --mode incremental
+```
+
+`api_v1.daily_bars` remains unadjusted. Derived views include the calculation ID, algorithm version, calculation range, input hash, and calculation timestamp; see [ADR-0009](docs/adr/ADR-0009-版本化复权行情与客观Metrics.md).
+
 The daily incremental workflow and systemd timer are documented in [docs/Worker日常采集与调度.md](docs/Worker日常采集与调度.md).
 
 Verified Raw replay, stale-run recovery, and read-only cross-provider Daily Bar comparison are documented in [docs/Raw重放与运行恢复.md](docs/Raw重放与运行恢复.md).

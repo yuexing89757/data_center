@@ -1,6 +1,6 @@
 # Supabase 备份恢复与凭据轮换
 
-本文是第一阶段自托管 Supabase 的运维运行手册。凭据必须从密钥管理器注入环境变量或 Supabase 主机上的 `.env`，不得把数据库 URL、密码、JWT、API key 或备份内容写入 Git、Issue、PR、CI 日志和操作记录。
+本文是自托管 Supabase 的运维运行手册。应用数据备份覆盖 `audit`、`capital`、`classification`、`core`、`derived`、`ingestion` 和 `metrics` Schema。凭据必须从密钥管理器注入环境变量或 Supabase 主机上的 `.env`，不得把数据库 URL、密码、JWT、API key 或备份内容写入 Git、Issue、PR、CI 日志和操作记录。
 
 ## 1. 恢复目标
 

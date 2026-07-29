@@ -11,12 +11,37 @@ import psycopg
 
 from market_data_center.database_urls import psycopg_url
 
-APPLICATION_SCHEMAS = ("audit", "core", "ingestion")
+APPLICATION_SCHEMAS = (
+    "audit",
+    "capital",
+    "classification",
+    "core",
+    "derived",
+    "ingestion",
+    "metrics",
+)
 COUNT_QUERIES = {
+    "adjusted_daily_bar": "select count(*) from derived.adjusted_daily_bar",
+    "calculation_run": "select count(*) from derived.calculation_run",
+    "classification_catalog_snapshot": ("select count(*) from classification.catalog_snapshot"),
+    "classification_daily_metric": ("select count(*) from metrics.classification_daily_metric"),
+    "classification_definition_snapshot": (
+        "select count(*) from classification.definition_snapshot"
+    ),
+    "classification_member_interval": ("select count(*) from classification.member_interval"),
+    "classification_member_snapshot": ("select count(*) from classification.member_snapshot"),
+    "classification_member_snapshot_item": (
+        "select count(*) from classification.member_snapshot_item"
+    ),
     "quality_result": "select count(*) from audit.quality_result",
     "daily_bar": "select count(*) from core.daily_bar",
+    "daily_metric": "select count(*) from derived.daily_metric",
+    "distribution": "select count(*) from capital.distribution",
+    "market_capitalization": "select count(*) from derived.market_capitalization",
+    "rights_issue": "select count(*) from capital.rights_issue",
     "security": "select count(*) from core.security",
     "security_name_history": "select count(*) from core.security_name_history",
+    "share_capital": "select count(*) from capital.share_capital",
     "trading_calendar": "select count(*) from core.trading_calendar",
     "ingestion_run": "select count(*) from ingestion.ingestion_run",
     "raw_manifest": "select count(*) from ingestion.raw_manifest",
@@ -66,6 +91,22 @@ def capture_database_snapshot(database_url: str) -> DatabaseSnapshot:
                 select ingestion_id from core.trading_calendar
                 union all
                 select ingestion_id from core.daily_bar
+                union all
+                select ingestion_id from capital.share_capital
+                union all
+                select ingestion_id from capital.distribution
+                union all
+                select ingestion_id from capital.rights_issue
+                union all
+                select ingestion_id from classification.catalog_snapshot
+                union all
+                select ingestion_id from classification.definition_snapshot
+                union all
+                select ingestion_id from classification.member_snapshot
+                union all
+                select ingestion_id from classification.member_snapshot_item
+                union all
+                select ingestion_id from classification.member_interval
             ) facts
             left join ingestion.ingestion_run run using (ingestion_id)
             where run.ingestion_id is null
