@@ -1,0 +1,97 @@
+{
+  "schema_version": "1.0.0",
+  "transport": {
+    "kind": "postgrest_rpc",
+    "base_path": "/rest/v1/rpc",
+    "read_only": true
+  },
+  "tools": [
+    {
+      "name": "market_security_search",
+      "description": "Find standardized securities by symbol, code, or current name.",
+      "endpoint": "query_securities",
+      "read_only": true,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["p_query"],
+        "properties": {
+          "p_query": {"type": "string", "minLength": 1},
+          "p_limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20}
+        }
+      }
+    },
+    {
+      "name": "market_daily_bars",
+      "description": "Read unadjusted daily bars for one standardized symbol and closed date range.",
+      "endpoint": "query_daily_bars",
+      "read_only": true,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["p_symbol", "p_start_date", "p_end_date"],
+        "properties": {
+          "p_symbol": {"type": "string", "pattern": "^(SSE|SZSE|BSE):[0-9]{6}$"},
+          "p_start_date": {"type": "string", "format": "date"},
+          "p_end_date": {"type": "string", "format": "date"},
+          "p_limit": {"type": "integer", "minimum": 1, "maximum": 5000, "default": 1000}
+        }
+      }
+    },
+    {
+      "name": "market_adjusted_daily_bars",
+      "description": "Read forward- or backward-adjusted bars from one coherent calculation version.",
+      "endpoint": "query_adjusted_daily_bars",
+      "read_only": true,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["p_symbol", "p_start_date", "p_end_date"],
+        "properties": {
+          "p_symbol": {"type": "string", "pattern": "^(SSE|SZSE|BSE):[0-9]{6}$"},
+          "p_start_date": {"type": "string", "format": "date"},
+          "p_end_date": {"type": "string", "format": "date"},
+          "p_adjustment_type": {"type": "string", "enum": ["forward", "backward"], "default": "forward"},
+          "p_algorithm_version": {"type": "string", "default": "1.0.0"},
+          "p_calculation_id": {"type": ["string", "null"], "format": "uuid", "default": null},
+          "p_limit": {"type": "integer", "minimum": 1, "maximum": 5000, "default": 1000}
+        }
+      }
+    },
+    {
+      "name": "market_daily_snapshot",
+      "description": "Read raw close, return, moving averages, and market cap from one calculation version.",
+      "endpoint": "query_market_snapshot",
+      "read_only": true,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["p_trade_date"],
+        "properties": {
+          "p_trade_date": {"type": "string", "format": "date"},
+          "p_algorithm_version": {"type": "string", "default": "1.0.0"},
+          "p_calculation_id": {"type": ["string", "null"], "format": "uuid", "default": null},
+          "p_limit": {"type": "integer", "minimum": 1, "maximum": 5000, "default": 5000}
+        }
+      }
+    },
+    {
+      "name": "market_classification_members_as_of",
+      "description": "Read the latest complete classification membership snapshot not later than a date.",
+      "endpoint": "query_classification_members_as_of",
+      "read_only": true,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["p_namespace", "p_classification_type", "p_classification_code", "p_as_of_date"],
+        "properties": {
+          "p_namespace": {"type": "string", "minLength": 1},
+          "p_classification_type": {"type": "string", "enum": ["industry", "concept", "index"]},
+          "p_classification_code": {"type": "string", "minLength": 1},
+          "p_as_of_date": {"type": "string", "format": "date"},
+          "p_limit": {"type": "integer", "minimum": 1, "maximum": 5000, "default": 5000}
+        }
+      }
+    }
+  ]
+}

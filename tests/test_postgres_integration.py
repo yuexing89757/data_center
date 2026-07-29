@@ -14,7 +14,7 @@ import pytest
 from psycopg import sql
 from psycopg.errors import InsufficientPrivilege
 from sqlalchemy import Engine, create_engine, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from market_data_center.derivation import DerivationService
 from market_data_center.domain import (
@@ -127,6 +127,14 @@ def test_migrations_apply_to_empty_database_and_are_idempotent(
     assert ("api_v1", "daily_metrics") in first_snapshot["views"]
     assert ("api_v1", "market_capitalizations") in first_snapshot["views"]
     assert ("api_v1", "classification_daily_metrics") in first_snapshot["views"]
+    assert ("api_v1", "classification_member_snapshot_status") in first_snapshot["views"]
+    assert {
+        "query_securities",
+        "query_daily_bars",
+        "query_adjusted_daily_bars",
+        "query_market_snapshot",
+        "query_classification_members_as_of",
+    }.issubset({row[1] for row in first_snapshot["routines"]})
 
 
 def test_replay_lineage_and_source_manifest_are_queryable(database_engine: Engine) -> None:
@@ -469,6 +477,101 @@ def test_derived_calculation_is_versioned_idempotent_and_revision_aware(
             )
         ).one()
     assert tuple(counts) == (2, 12, 6, 6, 6)
+
+
+def test_postgrest_query_contracts_are_bounded_version_coherent_and_as_of(
+    database_engine: Engine,
+) -> None:
+    calculation_id = _prepare_query_contract_data(database_engine)
+
+    with database_engine.connect() as connection:
+        securities = (
+            connection.execute(
+                text("select symbol from api_v1.query_securities(:query, :limit)"),
+                {"query": "600000", "limit": 10},
+            )
+            .scalars()
+            .all()
+        )
+        raw_dates = (
+            connection.execute(
+                text("""
+                select trade_date
+                from api_v1.query_daily_bars(:symbol, :start_date, :end_date, :limit)
+            """),
+                {
+                    "symbol": SYMBOL,
+                    "start_date": date(2026, 7, 27),
+                    "end_date": date(2026, 7, 29),
+                    "limit": 2,
+                },
+            )
+            .scalars()
+            .all()
+        )
+        adjusted = connection.execute(
+            text("""
+                select trade_date, adjustment_type, calculation_id
+                from api_v1.query_adjusted_daily_bars(
+                    :symbol, :start_date, :end_date, 'forward', '1.0.0', null, 100
+                )
+            """),
+            {
+                "symbol": SYMBOL,
+                "start_date": date(2026, 7, 27),
+                "end_date": date(2026, 7, 29),
+            },
+        ).all()
+        snapshot = connection.execute(
+            text("""
+                select symbol, calculation_id
+                from api_v1.query_market_snapshot(:trade_date, '1.0.0', null, 100)
+            """),
+            {"trade_date": date(2026, 7, 28)},
+        ).one()
+        classification = connection.execute(
+            text("""
+                select snapshot_date, member_count, returned_count, members
+                from api_v1.query_classification_members_as_of(
+                    'eastmoney', 'industry', 'BK0475', :as_of_date, 100
+                )
+            """),
+            {"as_of_date": date(2026, 7, 29)},
+        ).one()
+
+    assert securities == [SYMBOL]
+    assert raw_dates == [date(2026, 7, 27), date(2026, 7, 28)]
+    assert [tuple(row) for row in adjusted] == [
+        (date(2026, 7, 27), "forward", calculation_id),
+        (date(2026, 7, 28), "forward", calculation_id),
+        (date(2026, 7, 29), "forward", calculation_id),
+    ]
+    assert tuple(snapshot) == (SYMBOL, calculation_id)
+    assert tuple(classification) == (date(2026, 7, 27), 1, 1, [SYMBOL])
+
+    with database_engine.connect() as connection, pytest.raises(DBAPIError) as error:
+        connection.execute(
+            text("select * from api_v1.query_daily_bars(:symbol, :start, :end, 5001)"),
+            {"symbol": SYMBOL, "start": date(2026, 7, 27), "end": date(2026, 7, 29)},
+        ).all()
+    assert getattr(error.value.orig, "sqlstate", None) == "22023"
+
+
+@pytest.mark.parametrize("client_role", ["anon", "authenticated"])
+def test_client_roles_can_execute_bounded_query_contracts(
+    migrated_database_url: str, database_engine: Engine, client_role: str
+) -> None:
+    _prepare_api_data(database_engine)
+
+    with psycopg.connect(migrated_database_url, autocommit=True) as connection:
+        connection.execute(sql.SQL("set role {}").format(sql.Identifier(client_role)))
+        rows = connection.execute(
+            "select symbol from api_v1.query_securities(%s, %s)",
+            ("600000", 10),
+        ).fetchall()
+        assert rows == [(SYMBOL,)]
+        with pytest.raises(InsufficientPrivilege):
+            connection.execute("select count(*) from core.security")
 
 
 def test_stale_running_ingestions_are_recovered_atomically(database_engine: Engine) -> None:
@@ -1122,6 +1225,15 @@ def _schema_snapshot(
             order by 1, 2
             """
         ).fetchall(),
+        "routines": connection.execute(
+            """
+            select n.nspname, p.proname, pg_get_function_identity_arguments(p.oid)
+            from pg_proc p
+            join pg_namespace n on n.oid = p.pronamespace
+            where n.nspname = 'api_v1'
+            order by 1, 2, 3
+            """
+        ).fetchall(),
     }
 
 
@@ -1252,6 +1364,72 @@ def _prepare_api_data(engine: Engine) -> None:
         _envelopes(daily_run.ingestion_id, daily_bars),
         [],
     )
+
+
+def _prepare_query_contract_data(engine: Engine) -> UUID:
+    _prepare_api_data(engine)
+    persistence = PostgreSQLPersistence(engine)
+    capital_run = _running_run(DatasetCode.CAPITAL)
+    persistence.create_ingestion_run(capital_run)
+    persistence.commit_capital_batch(
+        _completed_run(capital_run),
+        _manifest(capital_run.ingestion_id, "query-contract-capital"),
+        _envelopes(
+            capital_run.ingestion_id,
+            [
+                ShareCapitalRecord(
+                    symbol=SYMBOL,
+                    effective_date=date(2024, 1, 1),
+                    total_shares=1_000_000,
+                    restricted_shares=None,
+                    circulating_shares=900_000,
+                    listed_a_shares=900_000,
+                    change_reason="query contract fixture",
+                    source_code="akshare",
+                )
+            ],
+        ),
+        [],
+    )
+    catalog_run = _running_run(DatasetCode.CLASSIFICATION_CATALOG)
+    persistence.create_ingestion_run(catalog_run)
+    persistence.commit_classification_catalog_batch(
+        _completed_run(catalog_run),
+        _manifest(catalog_run.ingestion_id, "query-contract-catalog"),
+        IngestionEnvelope(
+            catalog_run.ingestion_id,
+            ClassificationCatalogSnapshotRecord(
+                namespace="eastmoney",
+                classification_type=ClassificationType.INDUSTRY,
+                snapshot_date=date(2026, 7, 27),
+                definitions=(ClassificationDefinition("BK0475", "银行"),),
+                source_code="akshare",
+            ),
+        ),
+        [],
+    )
+    member_run = _running_run(DatasetCode.CLASSIFICATION_MEMBERS)
+    persistence.create_ingestion_run(member_run)
+    persistence.commit_classification_members_batch(
+        _completed_run(member_run),
+        _manifest(member_run.ingestion_id, "query-contract-members"),
+        IngestionEnvelope(
+            member_run.ingestion_id,
+            ClassificationMemberSnapshotRecord(
+                namespace="eastmoney",
+                classification_type=ClassificationType.INDUSTRY,
+                classification_code="BK0475",
+                snapshot_date=date(2026, 7, 27),
+                members=(SYMBOL,),
+                source_code="akshare",
+            ),
+        ),
+        [],
+    )
+    summary = DerivationService(PostgreSQLDerivedPersistence(engine)).recompute(
+        date(2026, 7, 27), date(2026, 7, 29)
+    )
+    return summary.calculation_id
 
 
 def _envelopes[

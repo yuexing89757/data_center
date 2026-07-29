@@ -18,6 +18,7 @@ ADR 记录已经接受的架构决策。其优先级低于项目宪法，高于�
 
 ## 当前 ADR
 
+- `ADR-0010-PostgREST稳定查询与Agent工具契约.md`：确认继续使用有界 PostgREST RPC，定义版本一致性、权限、错误、兼容和 Agent 工具契约，不引入 FastAPI/MCP。
 - `ADR-0009-版本化复权行情与客观Metrics.md`：定义复权公式、算法版本、输入水位线/哈希、重算与客观 Metrics 语义。
 - `ADR-0008-Classification分类与成分历史.md`：定义分类命名空间、完整目录/成分快照、历史重建、有效区间和 AKShare 行业/概念接入。
 - `ADR-0007-Capital与公司行为基础事实.md`：定义股本、分红送转和配股输入事实的自然键、单位、修订语义与 AKShare 接入。
