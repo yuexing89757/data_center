@@ -5,9 +5,24 @@ from os import environ
 
 import psycopg
 
+from market_data_center.database_urls import psycopg_url
 from market_data_center.migrations import MIGRATION_DIR, apply_migrations
 
 TARGET_SCHEMAS = ("api_v1", "audit", "core", "ingestion")
+EXPECTED_TABLES = {
+    ("audit", "quality_result"),
+    ("core", "daily_bar"),
+    ("core", "security"),
+    ("core", "security_name_history"),
+    ("core", "trading_calendar"),
+    ("ingestion", "ingestion_run"),
+    ("ingestion", "raw_manifest"),
+}
+EXPECTED_VIEWS = {
+    ("api_v1", "daily_bars"),
+    ("api_v1", "securities"),
+    ("api_v1", "trading_calendar"),
+}
 
 
 def main() -> None:
@@ -19,7 +34,9 @@ def main() -> None:
         raise SystemExit("MIGRATION_DATABASE_URL is required")
 
     options = "-c default_transaction_read_only=on" if args.mode == "check" else ""
-    with psycopg.connect(database_url, connect_timeout=10, options=options) as connection:
+    with psycopg.connect(
+        psycopg_url(database_url), connect_timeout=10, options=options
+    ) as connection:
         if args.mode == "check":
             _check(connection)
         else:
@@ -77,6 +94,29 @@ def _check(connection: psycopg.Connection[tuple[object, ...]]) -> None:
     print(f"api_views={views}")
     print(f"rls_tables={rls_tables}")
     print(f"migration_versions={versions}")
+
+    actual_tables = {(str(schema), str(table)) for schema, table in tables}
+    actual_views = {(str(schema), str(view)) for schema, view in views}
+    actual_rls_tables = {(str(schema), str(table)) for schema, table in rls_tables}
+    actual_versions = {str(version) for (version,) in versions}
+    repository_versions = {
+        migration.stem.split("_", maxsplit=1)[0] for migration in MIGRATION_DIR.glob("*.sql")
+    }
+    failures: list[str] = []
+    if actual_tables != EXPECTED_TABLES:
+        failures.append("application table set differs from the accepted schema")
+    if actual_views != EXPECTED_VIEWS:
+        failures.append("api_v1 view set differs from the accepted contract")
+    if actual_rls_tables != EXPECTED_TABLES:
+        failures.append("not every internal application table has RLS enabled")
+    if not worker_role or not worker_role[0]:
+        failures.append("market_data_worker role is missing")
+    if not history_table or not history_table[0]:
+        failures.append("migration history table is missing")
+    if actual_versions != repository_versions:
+        failures.append("database migration versions differ from this repository")
+    if failures:
+        raise SystemExit("migration check failed: " + "; ".join(failures))
 
 
 if __name__ == "__main__":

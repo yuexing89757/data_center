@@ -21,10 +21,14 @@ from market_data_center.domain import (
     DailyBarRecord,
     DatasetCode,
     Exchange,
+    IngestionEnvelope,
     IngestionRun,
     IngestionStatus,
     Market,
     ProviderCode,
+    QualityResult,
+    QualitySeverity,
+    QualityStatus,
     RawFileFormat,
     RawManifest,
     SecurityRecord,
@@ -112,7 +116,7 @@ def test_security_batch_commit_is_atomic(database_engine: Engine) -> None:
     persistence.commit_security_batch(
         completed,
         _manifest(running.ingestion_id, "security"),
-        [_security()],
+        _envelopes(running.ingestion_id, [_security()]),
     )
 
     assert (
@@ -145,7 +149,7 @@ def test_trading_calendar_batch_commit_is_atomic(database_engine: Engine) -> Non
     persistence.commit_trading_calendar_batch(
         completed,
         _manifest(running.ingestion_id, "trading-calendar"),
-        [trading_day],
+        _envelopes(running.ingestion_id, [trading_day]),
     )
 
     assert (
@@ -170,7 +174,7 @@ def test_daily_bar_batch_commit_is_atomic(database_engine: Engine) -> None:
     persistence.commit_daily_bar_batch(
         completed,
         _manifest(running.ingestion_id, "daily-bar"),
-        [_daily_bar()],
+        _envelopes(running.ingestion_id, [_daily_bar()]),
         [],
     )
 
@@ -189,6 +193,64 @@ def test_daily_bar_batch_commit_is_atomic(database_engine: Engine) -> None:
     )
 
 
+def test_bulk_resume_requires_complete_eligible_trading_range(database_engine: Engine) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    _prepare_api_data(database_engine)
+
+    security_run = _running_run(DatasetCode.SECURITY)
+    persistence.create_ingestion_run(security_run)
+    second_security = replace(
+        _security(),
+        symbol="SZSE:000001",
+        code="000001",
+        exchange=Exchange.SZSE,
+        name="平安银行",
+        ipo_date=date(2026, 7, 28),
+    )
+    persistence.commit_security_batch(
+        _completed_run(security_run),
+        _manifest(security_run.ingestion_id, "resume-security"),
+        _envelopes(security_run.ingestion_id, [second_security]),
+    )
+
+    assert persistence.stock_symbols_missing_daily_bars(date(2026, 7, 27), date(2026, 7, 29)) == [
+        "SZSE:000001"
+    ]
+
+    first_bar_run = _running_run(DatasetCode.DAILY_BAR)
+    persistence.create_ingestion_run(first_bar_run)
+    persistence.commit_daily_bar_batch(
+        _completed_run(first_bar_run),
+        _manifest(first_bar_run.ingestion_id, "resume-first-bar"),
+        _envelopes(
+            first_bar_run.ingestion_id,
+            [replace(_daily_bar(date(2026, 7, 28)), symbol="SZSE:000001")],
+        ),
+        [],
+    )
+    assert persistence.stock_symbols_missing_daily_bars(date(2026, 7, 27), date(2026, 7, 29)) == [
+        "SZSE:000001"
+    ]
+
+    second_bar_run = _running_run(DatasetCode.DAILY_BAR)
+    persistence.create_ingestion_run(second_bar_run)
+    persistence.commit_daily_bar_batch(
+        _completed_run(second_bar_run),
+        _manifest(second_bar_run.ingestion_id, "resume-second-bar"),
+        _envelopes(
+            second_bar_run.ingestion_id,
+            [replace(_daily_bar(date(2026, 7, 29)), symbol="SZSE:000001")],
+        ),
+        [],
+    )
+    assert persistence.stock_symbols_missing_daily_bars(date(2026, 7, 27), date(2026, 7, 29)) == []
+    assert persistence.has_complete_calendar_range(date(2026, 7, 27), date(2026, 7, 29))
+    assert not persistence.has_complete_calendar_range(date(2026, 7, 26), date(2026, 7, 29))
+    assert persistence.latest_trading_date(date(2026, 7, 27), date(2026, 7, 30)) == date(
+        2026, 7, 29
+    )
+
+
 def test_failed_batch_rolls_back_raw_and_core_writes(database_engine: Engine) -> None:
     persistence = PostgreSQLPersistence(database_engine)
     running = _running_run(DatasetCode.SECURITY)
@@ -199,7 +261,7 @@ def test_failed_batch_rolls_back_raw_and_core_writes(database_engine: Engine) ->
         persistence.commit_security_batch(
             _completed_run(running),
             _manifest(running.ingestion_id, "invalid-security"),
-            [invalid_source],
+            _envelopes(running.ingestion_id, [invalid_source]),
         )
 
     assert _scalar(database_engine, "select count(*) from ingestion.raw_manifest") == 0
@@ -221,6 +283,47 @@ def test_failed_batch_rolls_back_raw_and_core_writes(database_engine: Engine) ->
         error_summary="IntegrityError: ingestion failed",
     )
     persistence.fail_ingestion_run(failed)
+    assert (
+        _scalar(
+            database_engine,
+            "select status from ingestion.ingestion_run where ingestion_id = :ingestion_id",
+            {"ingestion_id": running.ingestion_id},
+        )
+        == "failed"
+    )
+
+
+def test_rejected_normalization_batch_commits_raw_and_quality(database_engine: Engine) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    running = _running_run(DatasetCode.SECURITY)
+    persistence.create_ingestion_run(running)
+    failed = replace(
+        running,
+        status=IngestionStatus.FAILED,
+        finished_at=NOW,
+        fetched_rows=1,
+        rejected_rows=1,
+        error_summary="ProviderError: provider normalization failed",
+    )
+    quality_result = QualityResult(
+        quality_result_id=uuid4(),
+        ingestion_id=running.ingestion_id,
+        dataset_code=DatasetCode.SECURITY,
+        rule_code="security.provider_normalization",
+        severity=QualitySeverity.ERROR,
+        status=QualityStatus.FAILED,
+        message="provider response normalization failed",
+    )
+
+    persistence.commit_rejected_batch(
+        failed,
+        _manifest(running.ingestion_id, "rejected-security"),
+        [quality_result],
+    )
+
+    assert _scalar(database_engine, "select count(*) from ingestion.raw_manifest") == 1
+    assert _scalar(database_engine, "select count(*) from audit.quality_result") == 1
+    assert _scalar(database_engine, "select count(*) from core.security") == 0
     assert (
         _scalar(
             database_engine,
@@ -461,7 +564,7 @@ def test_daily_bar_quality_audit_excludes_pre_ipo_days_and_reports_active_gaps(
     persistence.commit_security_batch(
         _completed_run(running),
         _manifest(running.ingestion_id, "second-security"),
-        [security],
+        _envelopes(running.ingestion_id, [security]),
     )
 
     report = audit_daily_bars(
@@ -660,7 +763,7 @@ def _commit_security_prerequisite(persistence: PostgreSQLPersistence) -> None:
     persistence.commit_security_batch(
         _completed_run(running),
         _manifest(running.ingestion_id, "security-prerequisite"),
-        [_security()],
+        _envelopes(running.ingestion_id, [_security()]),
     )
 
 
@@ -678,7 +781,7 @@ def _commit_calendar_prerequisite(persistence: PostgreSQLPersistence) -> None:
     persistence.commit_trading_calendar_batch(
         _completed_run(running),
         _manifest(running.ingestion_id, "calendar-prerequisite"),
-        [trading_day],
+        _envelopes(running.ingestion_id, [trading_day]),
     )
 
 
@@ -703,7 +806,7 @@ def _prepare_api_data(engine: Engine) -> None:
     persistence.commit_trading_calendar_batch(
         _completed_run(calendar_run, len(trading_days)),
         _manifest(calendar_run.ingestion_id, "api-calendar"),
-        trading_days,
+        _envelopes(calendar_run.ingestion_id, trading_days),
     )
 
     daily_run = _running_run(DatasetCode.DAILY_BAR)
@@ -712,9 +815,15 @@ def _prepare_api_data(engine: Engine) -> None:
     persistence.commit_daily_bar_batch(
         _completed_run(daily_run, len(daily_bars)),
         _manifest(daily_run.ingestion_id, "api-daily-bar", len(daily_bars)),
-        daily_bars,
+        _envelopes(daily_run.ingestion_id, daily_bars),
         [],
     )
+
+
+def _envelopes[RecordT: SecurityRecord | CalculatedTradingDay | DailyBarRecord](
+    ingestion_id: UUID, records: list[RecordT]
+) -> list[IngestionEnvelope[RecordT]]:
+    return [IngestionEnvelope(ingestion_id, record) for record in records]
 
 
 def _view_columns(engine: Engine, view_name: str) -> list[str]:

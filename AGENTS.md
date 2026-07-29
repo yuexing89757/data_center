@@ -6,6 +6,7 @@
 - Phase 1 uses BaoStock by default, with AKShare and pytdx as explicit optional providers accepted by ADR-0002/ADR-0004.
 - Phase 1 uses self-hosted Supabase, SQL migrations and PostgREST.
 - Do not introduce FastAPI or adjusted-price facts without a new ADR. Automatic provider routing follows ADR-0005.
+- GitHub Issues are the only task-planning system of record. Do not create, read or synchronize Linear issues for this project.
 
 ## Commands
 

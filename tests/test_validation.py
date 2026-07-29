@@ -40,3 +40,16 @@ def test_reference_failures_block_daily_bar_write() -> None:
         ValidationRule.NON_TRADING_DATE,
     }
     assert all(finding.blocks_core_write for finding in findings)
+
+
+def test_identical_duplicate_natural_key_is_still_rejected() -> None:
+    record = _bar()
+
+    findings = validate_daily_bars(
+        [record, record],
+        known_symbols={record.symbol},
+        known_trading_dates={record.trade_date},
+    )
+
+    assert [finding.rule_code for finding in findings] == [ValidationRule.DUPLICATE_NATURAL_KEY]
+    assert findings[0].blocks_core_write

@@ -15,7 +15,12 @@ from market_data_center.domain.records import (
     TradeStatus,
     TradingDayRecord,
 )
-from market_data_center.providers.contracts import ProviderBatch, ProviderError, RawRow
+from market_data_center.providers.contracts import (
+    ProviderBatch,
+    ProviderError,
+    ProviderRequestUnavailable,
+    RawRow,
+)
 
 type LocalDailyBarRow = tuple[int, int, int, int, int, float, int, int]
 
@@ -79,28 +84,22 @@ class PytdxProvider:
         relative_path = Path(exchange) / "lday" / f"{exchange}{code}.day"
         file_path = self._vipdoc_path / relative_path
         if not file_path.is_file():
-            raise ProviderError(
+            raise ProviderRequestUnavailable(
                 f"pytdx local daily-bar file does not exist: {relative_path.as_posix()}"
             )
 
         raw_rows: list[RawRow] = []
-        records_by_date: dict[date, DailyBarRecord] = {}
         source_row_count = 0
+        start_key = int(start_date.strftime("%Y%m%d"))
+        end_key = int(end_date.strftime("%Y%m%d"))
         try:
             rows = self._reader.parse_data_by_file(str(file_path))
             for source_row in rows:
                 source_row_count += 1
                 raw_row = _raw_row(source_row)
-                record = _map_daily_bar(raw_row, symbol)
-                if not start_date <= record.trade_date <= end_date:
+                source_date = int(raw_row["date"])
+                if not start_key <= source_date <= end_key:
                     continue
-                existing = records_by_date.get(record.trade_date)
-                if existing is not None and existing != record:
-                    raise ProviderError(
-                        f"pytdx local file contains conflicting daily bars for {symbol} "
-                        f"on {record.trade_date.isoformat()}"
-                    )
-                records_by_date[record.trade_date] = record
                 raw_rows.append(raw_row)
         except ProviderError:
             raise
@@ -110,20 +109,20 @@ class PytdxProvider:
             ) from error
 
         if source_row_count == 0:
-            raise ProviderError(f"pytdx local daily-bar file is empty: {relative_path.as_posix()}")
+            raise ProviderRequestUnavailable(
+                f"pytdx local daily-bar file is empty: {relative_path.as_posix()}"
+            )
         market_latest_date = self._market_latest_date(exchange)
         if market_latest_date < end_date:
             raise ProviderError(
                 f"pytdx local {exchange} market data is stale: "
                 f"latest {market_latest_date.isoformat()}, requested through {end_date.isoformat()}"
             )
-        records = [records_by_date[trade_date] for trade_date in sorted(records_by_date)]
-        if not records:
-            raise ProviderError(
+        if not raw_rows:
+            raise ProviderRequestUnavailable(
                 f"pytdx local file has no daily bars in the requested range for {source_symbol}"
             )
         return ProviderBatch(
-            records=records,
             raw_rows=raw_rows,
             request_params={
                 "source_symbol": f"{exchange}.{code}",
@@ -133,6 +132,7 @@ class PytdxProvider:
                 "adjust": "none",
             },
             schema_version="pytdx.local_daily_bar.v1",
+            record_factory=lambda: _daily_bar_records(raw_rows, symbol),
         )
 
     def _market_latest_date(self, exchange: str) -> date:
@@ -195,10 +195,26 @@ def _map_daily_bar(row: Mapping[str, str], symbol: str) -> DailyBarRecord:
     )
 
 
+def _daily_bar_records(rows: Iterable[Mapping[str, str]], symbol: str) -> list[DailyBarRecord]:
+    records_by_date: dict[date, DailyBarRecord] = {}
+    for row in rows:
+        record = _map_daily_bar(row, symbol)
+        existing = records_by_date.get(record.trade_date)
+        if existing is not None and existing != record:
+            raise ProviderError(
+                f"pytdx local file contains conflicting daily bars for {symbol} "
+                f"on {record.trade_date.isoformat()}"
+            )
+        records_by_date[record.trade_date] = record
+    return [records_by_date[trade_date] for trade_date in sorted(records_by_date)]
+
+
 def _parse_source_symbol(value: str) -> tuple[str, str, str]:
     candidate = value.strip().upper()
     if ":" in candidate:
         exchange_name, code = candidate.split(":", maxsplit=1)
+        if exchange_name == "BSE":
+            raise ProviderRequestUnavailable(f"pytdx does not support BSE symbol: {value}")
         exchange = {"SSE": "sh", "SZSE": "sz"}.get(exchange_name)
     elif "." in candidate:
         prefix, code = candidate.split(".", maxsplit=1)

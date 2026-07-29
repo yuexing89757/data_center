@@ -15,7 +15,7 @@ Ingestion 管理一次外部数据采集的运行状态、Raw 对象清单和数
 | 字段 | 类型 | 约束与含义 |
 | --- | --- | --- |
 | `ingestion_id` | uuid | 主键 |
-| `provider_code` | text | 第一阶段固定 `baostock` |
+| `provider_code` | text | 实际执行来源：`baostock`、`akshare` 或 `pytdx` |
 | `dataset_code` | text | `security`、`trading_calendar`、`daily_bar` |
 | `status` | text | `pending`、`running`、`succeeded`、`failed`、`partial` |
 | `requested_at` | timestamptz | 请求创建时间 |
@@ -91,6 +91,8 @@ pending → running → succeeded
 
 状态变化必须与计数、结束时间在事务中一致更新。任务异常退出后，后续治理任务可以将长期 `running` 标记为 `failed`，但需记录原因。
 
+Provider 返回原始行后，Pipeline 先写不可变 Raw，再触发延迟标准化。标准化或来源一致性失败时，Pipeline 在一个事务中写入 Manifest、阻断级 QualityResult 和 failed 运行状态；该批次不写 Core。连接或请求阶段没有形成可用原始响应时，只记录 failed IngestionRun。
+
 ## 7. 第一阶段验收
 
 - 每次 CLI 执行创建唯一采集批次；
@@ -98,4 +100,5 @@ pending → running → succeeded
 - Manifest 的 SHA-256 与实际文件一致；
 - Core 事实的 `ingestion_id` 能关联到运行和 Raw；
 - 严重质量失败阻止对应事实入库；
+- 标准化失败仍可通过 IngestionRun、Raw Manifest 和 QualityResult 追溯；
 - API 客户端不能直接查询或修改 Ingestion/Audit 表。

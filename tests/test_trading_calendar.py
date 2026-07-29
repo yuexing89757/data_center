@@ -32,3 +32,19 @@ def test_calculator_rejects_natural_day_gap() -> None:
 
     with pytest.raises(ValueError, match="every natural day"):
         calculate_trading_day_links(records)
+
+
+def test_calendar_uses_persisted_boundaries_for_incremental_window() -> None:
+    records = [
+        TradingDayRecord(Market.CN_A_SHARE, date(2026, 7, 27), True, "baostock"),
+        TradingDayRecord(Market.CN_A_SHARE, date(2026, 7, 28), True, "baostock"),
+    ]
+
+    calculated = calculate_trading_day_links(
+        records,
+        previous_trading_day=date(2026, 7, 24),
+        next_trading_day=date(2026, 7, 29),
+    )
+
+    assert calculated[0].previous_trading_day == date(2026, 7, 24)
+    assert calculated[-1].next_trading_day == date(2026, 7, 29)

@@ -1,7 +1,6 @@
 """Provider boundary contracts shared by pipeline code."""
 
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping, Sequence
 from datetime import date
 from types import TracebackType
 from typing import Protocol, Self
@@ -14,6 +13,10 @@ type RawRow = Mapping[str, str]
 
 class ProviderError(RuntimeError):
     """Raised when a provider request or response is unsuccessful."""
+
+
+class ProviderRequestUnavailable(ProviderError):
+    """The provider is healthy but cannot serve this specific dataset request."""
 
 
 class MarketDataProvider(Protocol):
@@ -47,9 +50,35 @@ class ManagedMarketDataProvider(MarketDataProvider, Protocol):
     ) -> None: ...
 
 
-@dataclass(frozen=True, slots=True)
 class ProviderBatch[RecordT: ProviderRecord]:
-    records: Sequence[RecordT]
-    raw_rows: Sequence[RawRow]
-    request_params: Mapping[str, object]
-    schema_version: str
+    """Fetched raw payload with optional lazy provider-boundary normalization."""
+
+    def __init__(
+        self,
+        *,
+        raw_rows: Sequence[RawRow],
+        request_params: Mapping[str, object],
+        schema_version: str,
+        records: Sequence[RecordT] | None = None,
+        record_factory: Callable[[], Sequence[RecordT]] | None = None,
+    ) -> None:
+        if (records is None) == (record_factory is None):
+            raise ValueError("ProviderBatch requires exactly one record source")
+        self.raw_rows = raw_rows
+        self.request_params = request_params
+        self.schema_version = schema_version
+        self._records = records
+        self._record_factory = record_factory
+
+    @property
+    def records(self) -> Sequence[RecordT]:
+        if self._records is None:
+            if self._record_factory is None:  # pragma: no cover - constructor invariant
+                raise RuntimeError("ProviderBatch record factory is missing")
+            try:
+                self._records = tuple(self._record_factory())
+            except ProviderError:
+                raise
+            except Exception as error:
+                raise ProviderError("provider response normalization failed") from error
+        return self._records

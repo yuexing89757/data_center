@@ -1,18 +1,16 @@
 """Transactional, idempotent PostgreSQL writes for phase-one facts."""
 
-from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
+from collections.abc import Collection, Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from datetime import date
 from json import dumps
-from typing import Any
 from uuid import UUID
 
 from sqlalchemy import Engine, bindparam, text
-from sqlalchemy.sql.elements import TextClause
 
 from market_data_center.domain.entities import CalculatedTradingDay
 from market_data_center.domain.ingestion import IngestionRun, QualityResult, RawManifest
-from market_data_center.domain.records import DailyBarRecord, SecurityRecord
+from market_data_center.domain.records import DailyBarRecord, IngestionEnvelope, SecurityRecord
 
 INSERT_INGESTION_RUN = text("""
 insert into ingestion.ingestion_run (
@@ -195,54 +193,6 @@ class PostgreSQLPersistence:
     def fail_ingestion_run(self, run: IngestionRun) -> None:
         self.update_ingestion_run(run)
 
-    def insert_raw_manifest(self, manifest: RawManifest) -> None:
-        parameters = {
-            "raw_id": manifest.raw_id,
-            "ingestion_id": manifest.ingestion_id,
-            "storage_backend": manifest.storage_backend,
-            "object_path": manifest.object_path,
-            "file_format": manifest.file_format.value,
-            "content_sha256": manifest.content_sha256,
-            "byte_size": manifest.byte_size,
-            "row_count": manifest.row_count,
-            "schema_version": manifest.schema_version,
-        }
-        with self._engine.begin() as connection:
-            connection.execute(INSERT_RAW_MANIFEST, parameters)
-
-    def insert_quality_results(self, results: Iterable[QualityResult]) -> None:
-        parameters = [
-            {
-                "quality_result_id": result.quality_result_id,
-                "ingestion_id": result.ingestion_id,
-                "dataset_code": result.dataset_code.value,
-                "rule_code": result.rule_code,
-                "severity": result.severity.value,
-                "status": result.status.value,
-                "natural_key": dumps(result.natural_key, ensure_ascii=False)
-                if result.natural_key is not None
-                else None,
-                "message": result.message,
-                "details": dumps(dict(result.details), ensure_ascii=False),
-            }
-            for result in results
-        ]
-        self._execute_many(INSERT_QUALITY_RESULT, parameters)
-
-    def upsert_securities(self, records: Iterable[SecurityRecord], ingestion_id: UUID) -> None:
-        parameters = self._security_parameters(records, ingestion_id)
-        self._execute_many(UPSERT_SECURITY, parameters)
-
-    def upsert_trading_days(
-        self, records: Iterable[CalculatedTradingDay], ingestion_id: UUID
-    ) -> None:
-        parameters = self._trading_day_parameters(records, ingestion_id)
-        self._execute_many(UPSERT_TRADING_DAY, parameters)
-
-    def upsert_daily_bars(self, records: Iterable[DailyBarRecord], ingestion_id: UUID) -> None:
-        parameters = self._daily_bar_parameters(records, ingestion_id)
-        self._execute_many(UPSERT_DAILY_BAR, parameters)
-
     def known_symbols(self, symbols: Collection[str]) -> set[str]:
         if not symbols:
             return set()
@@ -262,17 +212,84 @@ order by symbol
         with self._engine.connect() as connection:
             return list(connection.execute(statement).scalars())
 
-    def symbols_with_daily_bars(self, start_date: date, end_date: date) -> set[str]:
+    def stock_symbols_missing_daily_bars(self, start_date: date, end_date: date) -> list[str]:
+        """Return listed stocks missing at least one eligible trading-day fact.
+
+        Eligibility follows the unified A-share calendar and the security listing
+        window.  Checking the complete range avoids treating a partially ingested
+        symbol as complete during a resumed bulk run.
+        """
         statement = text("""
-select distinct symbol from core.daily_bar
-where trade_date between :start_date and :end_date
+select s.symbol
+from core.security s
+join core.trading_calendar c
+  on c.market = 'CN_A_SHARE'
+ and c.is_trading_day
+ and c.trade_date between :start_date and :end_date
+ and (s.ipo_date is null or c.trade_date >= s.ipo_date)
+ and (s.delisting_date is null or c.trade_date <= s.delisting_date)
+left join core.daily_bar b
+  on b.symbol = s.symbol
+ and b.trade_date = c.trade_date
+where s.security_type = 'stock'
+  and s.status = 'listed'
+group by s.symbol
+having count(*) filter (where b.symbol is null) > 0
+order by s.symbol
 """)
         with self._engine.connect() as connection:
-            return set(
+            return list(
                 connection.execute(
                     statement, {"start_date": start_date, "end_date": end_date}
                 ).scalars()
             )
+
+    def has_complete_calendar_range(self, start_date: date, end_date: date) -> bool:
+        expected_days = (end_date - start_date).days + 1
+        if expected_days < 1:
+            return False
+        statement = text("""
+select count(*)
+from core.trading_calendar
+where market = 'CN_A_SHARE'
+  and trade_date between :start_date and :end_date
+""")
+        with self._engine.connect() as connection:
+            actual_days = connection.execute(
+                statement, {"start_date": start_date, "end_date": end_date}
+            ).scalar_one()
+        return int(actual_days) == expected_days
+
+    def trading_day_boundaries(
+        self, start_date: date, end_date: date
+    ) -> tuple[date | None, date | None]:
+        statement = text("""
+select
+    max(trade_date) filter (where trade_date < :start_date),
+    min(trade_date) filter (where trade_date > :end_date)
+from core.trading_calendar
+where market = 'CN_A_SHARE'
+  and is_trading_day
+  and (trade_date < :start_date or trade_date > :end_date)
+""")
+        with self._engine.connect() as connection:
+            row = connection.execute(
+                statement, {"start_date": start_date, "end_date": end_date}
+            ).one()
+        return row[0], row[1]
+
+    def latest_trading_date(self, start_date: date, end_date: date) -> date | None:
+        statement = text("""
+select max(trade_date)
+from core.trading_calendar
+where market = 'CN_A_SHARE'
+  and is_trading_day
+  and trade_date between :start_date and :end_date
+""")
+        with self._engine.connect() as connection:
+            return connection.execute(
+                statement, {"start_date": start_date, "end_date": end_date}
+            ).scalar_one_or_none()
 
     def known_trading_dates(self, dates: Collection[date]) -> set[date]:
         if not dates:
@@ -291,15 +308,16 @@ where market = 'CN_A_SHARE'
         self,
         run: IngestionRun,
         manifest: RawManifest,
-        records: Sequence[SecurityRecord],
+        records: Sequence[IngestionEnvelope[SecurityRecord]],
     ) -> None:
         with self._engine.begin() as connection:
             connection.execute(INSERT_RAW_MANIFEST, self._manifest_parameters(manifest))
             if records:
-                security_parameters = self._security_parameters(records, run.ingestion_id)
+                self._ensure_envelope_ids(records, run.ingestion_id)
+                security_parameters = self._security_envelope_parameters(records)
                 connection.execute(UPSERT_SECURITY, security_parameters)
-                name_parameters = self._security_name_parameters(
-                    records, run.ingestion_id, run.requested_at.date()
+                name_parameters = self._security_name_envelope_parameters(
+                    records, run.requested_at.date()
                 )
                 connection.execute(CLOSE_SECURITY_NAME, name_parameters)
                 connection.execute(INSERT_SECURITY_NAME, name_parameters)
@@ -309,14 +327,15 @@ where market = 'CN_A_SHARE'
         self,
         run: IngestionRun,
         manifest: RawManifest,
-        records: Sequence[CalculatedTradingDay],
+        records: Sequence[IngestionEnvelope[CalculatedTradingDay]],
     ) -> None:
         with self._engine.begin() as connection:
             connection.execute(INSERT_RAW_MANIFEST, self._manifest_parameters(manifest))
             if records:
+                self._ensure_envelope_ids(records, run.ingestion_id)
                 connection.execute(
                     UPSERT_TRADING_DAY,
-                    self._trading_day_parameters(records, run.ingestion_id),
+                    self._trading_day_envelope_parameters(records),
                 )
             connection.execute(UPDATE_INGESTION_RUN, self._run_update_parameters(run))
 
@@ -324,7 +343,7 @@ where market = 'CN_A_SHARE'
         self,
         run: IngestionRun,
         manifest: RawManifest,
-        records: Sequence[DailyBarRecord],
+        records: Sequence[IngestionEnvelope[DailyBarRecord]],
         quality_results: Sequence[QualityResult],
     ) -> None:
         with self._engine.begin() as connection:
@@ -332,9 +351,20 @@ where market = 'CN_A_SHARE'
             if quality_results:
                 connection.execute(INSERT_QUALITY_RESULT, self._quality_parameters(quality_results))
             if records:
-                connection.execute(
-                    UPSERT_DAILY_BAR, self._daily_bar_parameters(records, run.ingestion_id)
-                )
+                self._ensure_envelope_ids(records, run.ingestion_id)
+                connection.execute(UPSERT_DAILY_BAR, self._daily_bar_envelope_parameters(records))
+            connection.execute(UPDATE_INGESTION_RUN, self._run_update_parameters(run))
+
+    def commit_rejected_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest,
+        quality_results: Sequence[QualityResult],
+    ) -> None:
+        with self._engine.begin() as connection:
+            connection.execute(INSERT_RAW_MANIFEST, self._manifest_parameters(manifest))
+            if quality_results:
+                connection.execute(INSERT_QUALITY_RESULT, self._quality_parameters(quality_results))
             connection.execute(UPDATE_INGESTION_RUN, self._run_update_parameters(run))
 
     @staticmethod
@@ -364,80 +394,87 @@ where market = 'CN_A_SHARE'
         }
 
     @staticmethod
-    def _security_parameters(
-        records: Iterable[SecurityRecord], ingestion_id: UUID
+    def _security_envelope_parameters(
+        records: Iterable[IngestionEnvelope[SecurityRecord]],
     ) -> list[dict[str, object]]:
         return [
             {
-                "symbol": record.symbol,
-                "code": record.code,
-                "exchange": record.exchange.value,
-                "current_name": record.name,
-                "security_type": record.security_type.value,
-                "status": record.status.value,
-                "ipo_date": record.ipo_date,
-                "delisting_date": record.delisting_date,
-                "source_code": record.source_code,
-                "ingestion_id": ingestion_id,
+                "symbol": envelope.record.symbol,
+                "code": envelope.record.code,
+                "exchange": envelope.record.exchange.value,
+                "current_name": envelope.record.name,
+                "security_type": envelope.record.security_type.value,
+                "status": envelope.record.status.value,
+                "ipo_date": envelope.record.ipo_date,
+                "delisting_date": envelope.record.delisting_date,
+                "source_code": envelope.record.source_code,
+                "ingestion_id": envelope.ingestion_id,
             }
-            for record in records
+            for envelope in records
         ]
 
     @staticmethod
-    def _trading_day_parameters(
-        records: Iterable[CalculatedTradingDay], ingestion_id: UUID
+    def _security_name_envelope_parameters(
+        records: Iterable[IngestionEnvelope[SecurityRecord]], effective_from: date
     ) -> list[dict[str, object]]:
         return [
             {
-                "market": record.market.value,
-                "trade_date": record.trade_date,
-                "is_trading_day": record.is_trading_day,
-                "previous_trading_day": record.previous_trading_day,
-                "next_trading_day": record.next_trading_day,
-                "source_code": record.source_code,
-                "ingestion_id": ingestion_id,
-            }
-            for record in records
-        ]
-
-    @staticmethod
-    def _security_name_parameters(
-        records: Iterable[SecurityRecord], ingestion_id: UUID, effective_from: date
-    ) -> list[dict[str, object]]:
-        return [
-            {
-                "symbol": record.symbol,
-                "name": record.name,
+                "symbol": envelope.record.symbol,
+                "name": envelope.record.name,
                 "effective_from": effective_from,
-                "source_code": record.source_code,
-                "ingestion_id": ingestion_id,
+                "source_code": envelope.record.source_code,
+                "ingestion_id": envelope.ingestion_id,
             }
-            for record in records
+            for envelope in records
         ]
 
     @staticmethod
-    def _daily_bar_parameters(
-        records: Iterable[DailyBarRecord], ingestion_id: UUID
+    def _trading_day_envelope_parameters(
+        records: Iterable[IngestionEnvelope[CalculatedTradingDay]],
     ) -> list[dict[str, object]]:
         return [
             {
-                "symbol": record.symbol,
-                "trade_date": record.trade_date,
-                "market": record.market.value,
-                "open": record.open,
-                "high": record.high,
-                "low": record.low,
-                "close": record.close,
-                "previous_close": record.previous_close,
-                "volume": record.volume,
-                "amount": record.amount,
-                "trade_status": record.trade_status.value,
-                "is_st": record.is_st,
-                "source_code": record.source_code,
-                "ingestion_id": ingestion_id,
+                "market": envelope.record.market.value,
+                "trade_date": envelope.record.trade_date,
+                "is_trading_day": envelope.record.is_trading_day,
+                "previous_trading_day": envelope.record.previous_trading_day,
+                "next_trading_day": envelope.record.next_trading_day,
+                "source_code": envelope.record.source_code,
+                "ingestion_id": envelope.ingestion_id,
             }
-            for record in records
+            for envelope in records
         ]
+
+    @staticmethod
+    def _daily_bar_envelope_parameters(
+        records: Iterable[IngestionEnvelope[DailyBarRecord]],
+    ) -> list[dict[str, object]]:
+        return [
+            {
+                "symbol": envelope.record.symbol,
+                "trade_date": envelope.record.trade_date,
+                "market": envelope.record.market.value,
+                "open": envelope.record.open,
+                "high": envelope.record.high,
+                "low": envelope.record.low,
+                "close": envelope.record.close,
+                "previous_close": envelope.record.previous_close,
+                "volume": envelope.record.volume,
+                "amount": envelope.record.amount,
+                "trade_status": envelope.record.trade_status.value,
+                "is_st": envelope.record.is_st,
+                "source_code": envelope.record.source_code,
+                "ingestion_id": envelope.ingestion_id,
+            }
+            for envelope in records
+        ]
+
+    @staticmethod
+    def _ensure_envelope_ids[RecordT: SecurityRecord | CalculatedTradingDay | DailyBarRecord](
+        records: Iterable[IngestionEnvelope[RecordT]], ingestion_id: UUID
+    ) -> None:
+        if any(envelope.ingestion_id != ingestion_id for envelope in records):
+            raise ValueError("ingestion envelope does not match the batch run")
 
     @staticmethod
     def _quality_parameters(results: Iterable[QualityResult]) -> list[dict[str, object]]:
@@ -457,9 +494,3 @@ where market = 'CN_A_SHARE'
             }
             for result in results
         ]
-
-    def _execute_many(self, statement: TextClause, parameters: Sequence[Mapping[str, Any]]) -> None:
-        if not parameters:
-            return
-        with self._engine.begin() as connection:
-            connection.execute(statement, parameters)

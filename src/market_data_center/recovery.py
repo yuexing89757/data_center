@@ -9,6 +9,8 @@ from urllib.parse import parse_qs, unquote, urlsplit
 
 import psycopg
 
+from market_data_center.database_urls import psycopg_url
+
 APPLICATION_SCHEMAS = ("audit", "core", "ingestion")
 COUNT_QUERIES = {
     "quality_result": "select count(*) from audit.quality_result",
@@ -32,7 +34,7 @@ class DatabaseSnapshot:
 def capture_database_snapshot(database_url: str) -> DatabaseSnapshot:
     """Capture stable recovery invariants without returning credentials or row content."""
     with psycopg.connect(
-        database_url,
+        psycopg_url(database_url),
         connect_timeout=10,
         options="-c default_transaction_read_only=on",
     ) as connection:
@@ -142,7 +144,7 @@ def _count(connection: psycopg.Connection[tuple[object, ...]], statement: str) -
 
 
 def _postgres_environment(database_url: str) -> dict[str, str]:
-    parsed = urlsplit(database_url)
+    parsed = urlsplit(psycopg_url(database_url))
     if parsed.scheme not in {"postgres", "postgresql"} or not parsed.hostname:
         raise ValueError("database URL must use the postgres or postgresql scheme")
     if not parsed.username or parsed.password is None:
@@ -165,7 +167,7 @@ def _postgres_environment(database_url: str) -> dict[str, str]:
 
 
 def _database_name(database_url: str) -> str:
-    database = urlsplit(database_url).path.removeprefix("/")
+    database = urlsplit(psycopg_url(database_url)).path.removeprefix("/")
     if not database:
         raise ValueError("database URL must include a database name")
     return unquote(database)

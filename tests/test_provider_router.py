@@ -11,6 +11,7 @@ from market_data_center.providers import (
     ManagedMarketDataProvider,
     ProviderBatch,
     ProviderError,
+    ProviderRequestUnavailable,
     ProviderRouter,
     ProviderRoutingError,
 )
@@ -112,6 +113,21 @@ def test_router_opens_circuit_after_consecutive_failures() -> None:
     assert [provider.source_code for provider in factory.created].count("pytdx") == 2
 
 
+def test_request_specific_unavailability_does_not_open_provider_circuit() -> None:
+    factory = FakeFactory()
+
+    with ProviderRouter(provider_factory=factory, failure_threshold=1) as router:
+        first = router.route(DatasetCode.DAILY_BAR, _skip_pytdx_request)
+        second = router.route(DatasetCode.DAILY_BAR, _skip_pytdx_request)
+
+    assert first.provider_code == second.provider_code == "baostock"
+    assert all(
+        result.failed_attempts[0].error_type == "ProviderRequestUnavailable"
+        for result in (first, second)
+    )
+    assert [provider.source_code for provider in factory.created].count("pytdx") == 1
+
+
 def test_router_raises_summary_when_every_candidate_fails() -> None:
     with (
         ProviderRouter(provider_factory=FakeFactory()) as router,
@@ -137,6 +153,12 @@ def _fail_baostock(provider_code: str) -> str:
 def _fail_pytdx(provider: ManagedMarketDataProvider) -> str:
     if provider.source_code == "pytdx":
         raise ProviderError("local file unavailable")
+    return provider.source_code
+
+
+def _skip_pytdx_request(provider: ManagedMarketDataProvider) -> str:
+    if provider.source_code == "pytdx":
+        raise ProviderRequestUnavailable("symbol is outside local provider capability")
     return provider.source_code
 
 

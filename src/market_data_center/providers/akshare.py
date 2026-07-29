@@ -67,10 +67,10 @@ class AKShareProvider(AbstractContextManager["AKShareProvider"]):
         result = _provider_call("stock list", self._client.stock_info_a_code_name)
         rows = _rows(result, ("code", "name"), "stock list")
         return ProviderBatch(
-            records=[_map_security(row) for row in rows],
             raw_rows=rows,
             request_params={},
             schema_version="akshare.security.v1",
+            record_factory=lambda: [_map_security(row) for row in rows],
         )
 
     def fetch_trading_calendar(
@@ -79,26 +79,11 @@ class AKShareProvider(AbstractContextManager["AKShareProvider"]):
         _ensure_date_range(start_date, end_date)
         result = _provider_call("trading calendar", self._client.tool_trade_date_hist_sina)
         rows = _rows(result, ("trade_date",), "trading calendar")
-        trading_dates = {_parse_date(row["trade_date"]) for row in rows}
-        if not trading_dates or start_date < min(trading_dates) or end_date > max(trading_dates):
-            raise ProviderError("AKShare trading calendar does not cover the requested date range")
-        records: list[TradingDayRecord] = []
-        current = start_date
-        while current <= end_date:
-            records.append(
-                TradingDayRecord(
-                    market=Market.CN_A_SHARE,
-                    trade_date=current,
-                    is_trading_day=current in trading_dates,
-                    source_code=self.source_code,
-                )
-            )
-            current += timedelta(days=1)
         return ProviderBatch(
-            records=records,
             raw_rows=rows,
             request_params={"start_date": start_date.isoformat(), "end_date": end_date.isoformat()},
             schema_version="akshare.trading_calendar.v1",
+            record_factory=lambda: _calendar_records(rows, start_date, end_date, self.source_code),
         )
 
     def fetch_daily_bars(
@@ -122,7 +107,6 @@ class AKShareProvider(AbstractContextManager["AKShareProvider"]):
             "daily bars",
         )
         return ProviderBatch(
-            records=[_map_daily_bar(row) for row in rows],
             raw_rows=rows,
             request_params={
                 "source_symbol": code,
@@ -132,7 +116,32 @@ class AKShareProvider(AbstractContextManager["AKShareProvider"]):
                 "adjust": "",
             },
             schema_version="akshare.daily_bar.v1",
+            record_factory=lambda: [_map_daily_bar(row) for row in rows],
         )
+
+
+def _calendar_records(
+    rows: Sequence[Mapping[str, str]],
+    start_date: date,
+    end_date: date,
+    source_code: str,
+) -> list[TradingDayRecord]:
+    trading_dates = {_parse_date(row["trade_date"]) for row in rows}
+    if not trading_dates or start_date < min(trading_dates) or end_date > max(trading_dates):
+        raise ProviderError("AKShare trading calendar does not cover the requested date range")
+    records: list[TradingDayRecord] = []
+    current = start_date
+    while current <= end_date:
+        records.append(
+            TradingDayRecord(
+                market=Market.CN_A_SHARE,
+                trade_date=current,
+                is_trading_day=current in trading_dates,
+                source_code=source_code,
+            )
+        )
+        current += timedelta(days=1)
+    return records
 
 
 def _rows(result: TabularResult, required: Sequence[str], operation: str) -> list[RawRow]:

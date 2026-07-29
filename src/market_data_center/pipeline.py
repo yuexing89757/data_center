@@ -15,11 +15,16 @@ from market_data_center.domain.ingestion import (
     IngestionStatus,
     ProviderCode,
     QualityResult,
+    QualitySeverity,
     QualityStatus,
     RawFileFormat,
     RawManifest,
 )
-from market_data_center.domain.records import DailyBarRecord, SecurityRecord
+from market_data_center.domain.records import (
+    DailyBarRecord,
+    IngestionEnvelope,
+    SecurityRecord,
+)
 from market_data_center.domain.validation import validate_daily_bars
 from market_data_center.providers.contracts import (
     MarketDataProvider,
@@ -41,27 +46,42 @@ class PipelinePersistence(Protocol):
         self,
         run: IngestionRun,
         manifest: RawManifest,
-        records: Sequence[SecurityRecord],
+        records: Sequence[IngestionEnvelope[SecurityRecord]],
     ) -> None: ...
 
     def commit_trading_calendar_batch(
         self,
         run: IngestionRun,
         manifest: RawManifest,
-        records: Sequence[CalculatedTradingDay],
+        records: Sequence[IngestionEnvelope[CalculatedTradingDay]],
     ) -> None: ...
 
     def known_symbols(self, symbols: Collection[str]) -> set[str]: ...
 
     def known_trading_dates(self, dates: Collection[date]) -> set[date]: ...
 
+    def trading_day_boundaries(
+        self, start_date: date, end_date: date
+    ) -> tuple[date | None, date | None]: ...
+
     def commit_daily_bar_batch(
         self,
         run: IngestionRun,
         manifest: RawManifest,
-        records: Sequence[DailyBarRecord],
+        records: Sequence[IngestionEnvelope[DailyBarRecord]],
         quality_results: Sequence[QualityResult],
     ) -> None: ...
+
+    def commit_rejected_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest,
+        quality_results: Sequence[QualityResult],
+    ) -> None: ...
+
+
+class _RecordedProviderError(ProviderError):
+    """Provider failure whose Raw manifest and quality result are already committed."""
 
 
 class IngestionPipeline:
@@ -85,11 +105,14 @@ class IngestionPipeline:
             run = self._start_run(DatasetCode.SECURITY, {})
             try:
                 batch = self._provider.fetch_securities()
-                self._ensure_batch_source(batch)
-                manifest = self._store_raw(run, batch)
-                completed = self._completed_run(run, len(batch.raw_rows), len(batch.records), 0)
-                self._persistence.commit_security_batch(completed, manifest, batch.records)
+                manifest, records = self._stage_batch(run, batch)
+                completed = self._completed_run(run, len(batch.raw_rows), len(records), 0)
+                self._persistence.commit_security_batch(
+                    completed, manifest, self._envelopes(run.ingestion_id, records)
+                )
                 return completed
+            except _RecordedProviderError:
+                raise
             except Exception as error:
                 self._record_failure(run, error)
                 raise
@@ -100,12 +123,20 @@ class IngestionPipeline:
             run = self._start_run(DatasetCode.TRADING_CALENDAR, params)
             try:
                 batch = self._provider.fetch_trading_calendar(start_date, end_date)
-                self._ensure_batch_source(batch)
-                manifest = self._store_raw(run, batch)
-                calculated = calculate_trading_day_links(batch.records)
+                manifest, records = self._stage_batch(run, batch)
+                boundaries = self._persistence.trading_day_boundaries(start_date, end_date)
+                calculated = calculate_trading_day_links(
+                    records,
+                    previous_trading_day=boundaries[0],
+                    next_trading_day=boundaries[1],
+                )
                 completed = self._completed_run(run, len(batch.raw_rows), len(calculated), 0)
-                self._persistence.commit_trading_calendar_batch(completed, manifest, calculated)
+                self._persistence.commit_trading_calendar_batch(
+                    completed, manifest, self._envelopes(run.ingestion_id, calculated)
+                )
                 return completed
+            except _RecordedProviderError:
+                raise
             except Exception as error:
                 self._record_failure(run, error)
                 raise
@@ -122,9 +153,8 @@ class IngestionPipeline:
             run = self._start_run(DatasetCode.DAILY_BAR, params)
             try:
                 batch = self._provider.fetch_daily_bars(source_symbol, start_date, end_date)
-                self._ensure_batch_source(batch)
-                manifest = self._store_raw(run, batch)
-                records = list(batch.records)
+                manifest, normalized = self._stage_batch(run, batch)
+                records = list(normalized)
                 known_symbols = self._persistence.known_symbols(
                     {record.symbol for record in records}
                 )
@@ -169,9 +199,14 @@ class IngestionPipeline:
                     run, len(batch.raw_rows), len(accepted), rejected_rows
                 )
                 self._persistence.commit_daily_bar_batch(
-                    completed, manifest, accepted, quality_results
+                    completed,
+                    manifest,
+                    self._envelopes(run.ingestion_id, accepted),
+                    quality_results,
                 )
                 return completed
+            except _RecordedProviderError:
+                raise
             except Exception as error:
                 self._record_failure(run, error)
                 raise
@@ -205,14 +240,51 @@ class IngestionPipeline:
         )
         return self._manifest(run.ingestion_id, stored)
 
-    def _ensure_batch_source[RecordT: ProviderRecord](self, batch: ProviderBatch[RecordT]) -> None:
-        mismatched = sum(
-            record.source_code != self._provider.source_code for record in batch.records
-        )
+    def _stage_batch[RecordT: ProviderRecord](
+        self, run: IngestionRun, batch: ProviderBatch[RecordT]
+    ) -> tuple[RawManifest, tuple[RecordT, ...]]:
+        manifest = self._store_raw(run, batch)
+        try:
+            records = tuple(batch.records)
+            self._ensure_record_source(records)
+        except ProviderError as error:
+            self._record_normalization_failure(run, manifest, len(batch.raw_rows), error)
+            raise _RecordedProviderError(str(error)) from error
+        return manifest, records
+
+    def _ensure_record_source[RecordT: ProviderRecord](self, records: Sequence[RecordT]) -> None:
+        mismatched = sum(record.source_code != self._provider.source_code for record in records)
         if mismatched:
             raise ProviderError(
                 f"provider batch contains {mismatched} record(s) with a mismatched source_code"
             )
+
+    def _record_normalization_failure(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest,
+        fetched_rows: int,
+        error: ProviderError,
+    ) -> None:
+        failed = replace(
+            run,
+            status=IngestionStatus.FAILED,
+            finished_at=self._clock(),
+            fetched_rows=fetched_rows,
+            rejected_rows=fetched_rows,
+            error_summary=f"{type(error).__name__}: provider normalization failed",
+        )
+        result = QualityResult(
+            quality_result_id=self._uuid_factory(),
+            ingestion_id=run.ingestion_id,
+            dataset_code=run.dataset_code,
+            rule_code=f"{run.dataset_code.value}.provider_normalization",
+            severity=QualitySeverity.ERROR,
+            status=QualityStatus.FAILED,
+            message="provider response normalization failed",
+            details={"error_type": type(error).__name__},
+        )
+        self._persistence.commit_rejected_batch(failed, manifest, [result])
 
     def _manifest(self, ingestion_id: UUID, stored: StoredRawObject) -> RawManifest:
         return RawManifest(
@@ -225,6 +297,12 @@ class IngestionPipeline:
             row_count=stored.row_count,
             schema_version=stored.schema_version,
         )
+
+    @staticmethod
+    def _envelopes[RecordT: SecurityRecord | CalculatedTradingDay | DailyBarRecord](
+        ingestion_id: UUID, records: Sequence[RecordT]
+    ) -> tuple[IngestionEnvelope[RecordT], ...]:
+        return tuple(IngestionEnvelope(ingestion_id, record) for record in records)
 
     def _completed_run(
         self, run: IngestionRun, fetched_rows: int, accepted_rows: int, rejected_rows: int
