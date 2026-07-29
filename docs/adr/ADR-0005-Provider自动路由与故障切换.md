@@ -2,6 +2,7 @@
 
 - 状态：Accepted
 - 日期：2026-07-28
+- 实现澄清：2026-07-29 股票 Daily Bar 固定使用本地 pytdx
 - 决策者：项目所有者
 - 替代：ADR-0002、ADR-0004 中“禁止自动路由或回退”的局部决策
 
@@ -15,14 +16,14 @@
 2. 默认确定性路由顺序为：
    - Security：`baostock → akshare`；
    - Trading Calendar：`baostock → akshare`；
-   - Daily Bar：`pytdx → baostock → akshare`。
+   - Daily Bar：仅使用本地 `pytdx`，不再通过 BaoStock 或 AKShare 补缺口。
 3. CLI 默认使用 `--provider auto`；显式指定 `baostock`、`akshare` 或 `pytdx` 时完全绕过路由。
 4. 自动模式的股票输入使用标准 `symbol`（例如 `SSE:600000`）。Router 在每次尝试前调用具体 Adapter 的 `source_symbol`，来源代码不得越过 Adapter 边界。
 5. 只有 `ProviderError` 可触发自动切换，包括来源连接失败、上游错误码、字段或文件格式异常、本地文件缺失和数据陈旧。数据库、权限、Raw Store、编程错误等其他异常立即向上抛出，禁止用切源掩盖系统故障。
 6. 单次操作按固定顺序逐个尝试，每个来源最多一次；一个来源连续发生 3 次 `ProviderError` 后，在当前 Router 生命周期内熔断。成功一次即清零该来源连续失败计数。
 7. 发生 Provider 错误后释放该 Adapter 会话；下一次操作在未熔断时重新建立会话。Router 关闭时必须释放所有已创建的 Adapter。
 8. 每个 Pipeline 尝试使用具体 Provider 创建 IngestionRun。成功批次记录实际 `provider_code/source_code`；已经进入 Pipeline 的失败尝试记录为 failed ingestion run。创建或连接阶段失败至少输出结构化路由尝试信息。
-9. 一个成功批次只来自一个 Provider，不合并多个来源的部分结果。数据库仍只按领域自然键去重，来源不参与唯一键。
+9. 一个成功批次只来自一个 Provider，不合并多个来源的部分结果。数据库仍只按领域自然键去重，来源不参与唯一键。Daily Bar 以本地通达信文件实际存在的数据为准；个股停牌、文件未更新或本地缺失时保留缺口，不伪造 K 线，也不触发网络来源补数。
 10. Router 不修改 Provider 优先级来追逐偶然速度，也不在运行时发现未知来源；新增来源或改变默认顺序必须修改策略并补充测试/ADR。
 
 ## 后果

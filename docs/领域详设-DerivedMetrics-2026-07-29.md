@@ -38,6 +38,7 @@ Calculator 是纯函数。数据库读取、输入快照、计算批次、锁和
 - 前复权：`end_date` 的因子为 1，历史价格乘以后续事件因子；
 - 后复权：历史起点因子为 1，除权日起乘以事件因子的倒数；
 - 除权日的 adjusted previous close 使用上一交易日因子，保证事件边界可计算总收益；
+- `1.0.0` 要求事件日必须有行情；当前默认 `1.1.0` 在事件日无行情时对齐到第一条后续可用 Daily Bar，并把无前值的首条历史记录作为事件已生效后的因子锚点；
 - OHLC 和 previous close 调整；volume、amount 继续从 Core 读取，不复制到派生事实。
 
 ## 4. 日指标
@@ -47,7 +48,7 @@ Calculator 是纯函数。数据库读取、输入快照、计算批次、锁和
 - `total_return_1d`：前复权 close / 前复权 previous close - 1；
 - `moving_average_5`、`moving_average_10`、`moving_average_20`：前复权 close 的简单移动平均。
 
-窗口必须完整且无 NULL。Persistence 为请求区间内出现的证券加载截至 `end_date` 的完整历史，Calculator 用请求开始日前历史预热窗口，再裁剪输出。
+窗口必须完整且无 NULL。Persistence 加载请求区间、每只证券开始日前最近 20 条记录，以及用于后复权累计的历史公司行为事件日记录；Calculator 预热窗口后只输出请求区间。pytdx v1 遗留记录的 `previous_close` 为空时，读取边界使用同证券严格上一条 close 确定性补足，不改写 Core。
 
 ## 5. 市值
 
@@ -80,7 +81,7 @@ market-data-center derived-recompute \
   --start-date 2026-01-01 \
   --end-date 2026-07-29 \
   --mode incremental \
-  --algorithm-version 1.0.0
+  --algorithm-version 1.1.0
 ```
 
 `incremental` 对相同签名返回 `unchanged`；输入修订后保守重算整个请求区间并创建新版本。`full` 用于表达人工全量校验意图，但同样不会重复创建完全相同的成功签名。

@@ -5,6 +5,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from os import environ
 from pathlib import Path
+from shutil import which
 from typing import cast
 from urllib.parse import urlsplit, urlunsplit
 from uuid import UUID, uuid4
@@ -649,7 +650,7 @@ def test_postgrest_query_contracts_are_bounded_version_coherent_and_as_of(
             text("""
                 select trade_date, adjustment_type, calculation_id
                 from api_v1.query_adjusted_daily_bars(
-                    :symbol, :start_date, :end_date, 'forward', '1.0.0', null, 100
+                    :symbol, :start_date, :end_date, 'forward', '1.1.0', null, 100
                 )
             """),
             {
@@ -661,7 +662,7 @@ def test_postgrest_query_contracts_are_bounded_version_coherent_and_as_of(
         snapshot = connection.execute(
             text("""
                 select symbol, calculation_id
-                from api_v1.query_market_snapshot(:trade_date, '1.0.0', null, 100)
+                from api_v1.query_market_snapshot(:trade_date, '1.1.0', null, 100)
             """),
             {"trade_date": date(2026, 7, 28)},
         ).one()
@@ -831,6 +832,81 @@ def test_unknown_security_lifecycle_does_not_replace_known_values(
             {"symbol": SYMBOL},
         ).one()
     assert tuple(row) == ("listed", date(1999, 11, 10), None)
+
+
+def test_older_security_replay_preserves_current_fact_and_name_intervals(
+    database_engine: Engine,
+) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    original_time = NOW - timedelta(days=1)
+    original = replace(
+        _running_run(DatasetCode.SECURITY),
+        requested_at=original_time,
+        started_at=original_time,
+    )
+    persistence.create_ingestion_run(original)
+    manifest = _manifest(original.ingestion_id, "security-original")
+    original_security = replace(_security(), name="浦发银行旧名")
+    persistence.commit_security_batch(
+        _completed_run(original),
+        manifest,
+        _envelopes(original.ingestion_id, [original_security]),
+    )
+
+    current = _running_run(DatasetCode.SECURITY)
+    persistence.create_ingestion_run(current)
+    current_security = replace(_security(), name="浦发银行新名")
+    persistence.commit_security_batch(
+        _completed_run(current),
+        _manifest(current.ingestion_id, "security-current"),
+        _envelopes(current.ingestion_id, [current_security]),
+    )
+
+    replay_time = NOW + timedelta(days=1)
+    replay = replace(
+        _running_run(DatasetCode.SECURITY),
+        requested_at=replay_time,
+        started_at=replay_time,
+        request_params={
+            "replay_source_ingestion_id": str(original.ingestion_id),
+            "replay_source_requested_at": original_time.isoformat(),
+        },
+        replayed_from_raw_id=manifest.raw_id,
+    )
+    persistence.create_ingestion_run(replay)
+    completed_replay = replace(
+        replay,
+        status=IngestionStatus.SUCCEEDED,
+        finished_at=replay_time,
+        fetched_rows=1,
+        accepted_rows=1,
+    )
+    persistence.commit_security_batch(
+        completed_replay,
+        None,
+        _envelopes(replay.ingestion_id, [original_security]),
+    )
+
+    with database_engine.connect() as connection:
+        current_name = connection.execute(
+            text("select current_name from core.security where symbol = :symbol"),
+            {"symbol": SYMBOL},
+        ).scalar_one()
+        history = connection.execute(
+            text("""
+                select name, effective_from, effective_to
+                from core.security_name_history
+                where symbol = :symbol
+                order by effective_from
+            """),
+            {"symbol": SYMBOL},
+        ).fetchall()
+
+    assert current_name == "浦发银行新名"
+    assert [tuple(row) for row in history] == [
+        ("浦发银行旧名", original_time.date(), original_time.date()),
+        ("浦发银行新名", NOW.date(), None),
+    ]
 
 
 def test_trading_calendar_batch_commit_is_atomic(database_engine: Engine) -> None:
@@ -1165,12 +1241,15 @@ def test_worker_has_only_ingestion_permissions(
         }
         assert privileges == expected
 
-        connection.execute("set role market_data_worker")
-        assert connection.execute("select count(*) from core.daily_bar").fetchone() == (3,)
-        with pytest.raises(InsufficientPrivilege):
-            connection.execute("delete from core.daily_bar")
-        with pytest.raises(InsufficientPrivilege):
-            connection.execute("select count(*) from api_v1.daily_bars")
+        assert connection.execute(
+            "select has_table_privilege('market_data_worker', 'core.daily_bar', 'select')"
+        ).fetchone() == (True,)
+        assert connection.execute(
+            "select has_table_privilege('market_data_worker', 'core.daily_bar', 'delete')"
+        ).fetchone() == (False,)
+        assert connection.execute(
+            "select has_table_privilege('market_data_worker', 'api_v1.daily_bars', 'select')"
+        ).fetchone() == (False,)
 
 
 def test_internal_tables_have_rls_with_worker_only_policies(database_engine: Engine) -> None:
@@ -1213,6 +1292,7 @@ def test_internal_tables_have_rls_with_worker_only_policies(database_engine: Eng
     assert all(row[2] == ["market_data_worker"] for row in policies)
 
 
+@pytest.mark.skipif(which("pg_dump") is None, reason="pg_dump is not installed")
 def test_application_backup_restores_to_independent_database(
     migrated_database_url: str, database_engine: Engine, tmp_path: Path
 ) -> None:

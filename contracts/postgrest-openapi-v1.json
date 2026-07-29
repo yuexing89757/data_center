@@ -116,7 +116,7 @@
             "p_start_date": {"$ref": "#/components/schemas/Date"},
             "p_end_date": {"$ref": "#/components/schemas/Date"},
             "p_adjustment_type": {"type": "string", "enum": ["forward", "backward"], "default": "forward"},
-            "p_algorithm_version": {"type": "string", "default": "1.0.0"},
+            "p_algorithm_version": {"type": "string", "default": "1.1.0"},
             "p_calculation_id": {"$ref": "#/components/schemas/CalculationId"},
             "p_limit": {"$ref": "#/components/schemas/Limit5000"}
           }
@@ -130,7 +130,7 @@
           "required": ["p_trade_date"],
           "properties": {
             "p_trade_date": {"$ref": "#/components/schemas/Date"},
-            "p_algorithm_version": {"type": "string", "default": "1.0.0"},
+            "p_algorithm_version": {"type": "string", "default": "1.1.0"},
             "p_calculation_id": {"$ref": "#/components/schemas/CalculationId"},
             "p_limit": {"$ref": "#/components/schemas/Limit5000"}
           }

@@ -186,6 +186,38 @@ def test_corporate_action_without_matching_daily_bar_is_rejected() -> None:
         )
 
 
+def test_new_algorithm_defers_action_to_next_available_daily_bar() -> None:
+    output = calculate_adjusted_daily_bars(
+        (
+            _bar(DAY_1, close="10", previous_close="9"),
+            _bar(DAY_3, close="6", previous_close="10"),
+        ),
+        distributions=(_distribution(),),
+        rights_issues=(),
+        start_date=DAY_1,
+        end_date=DAY_3,
+        defer_missing_events=True,
+    )
+
+    backward = [item for item in output if item.adjustment_type is AdjustmentType.BACKWARD]
+    assert backward[-1].adjustment_factor != Decimal(1)
+
+
+def test_new_algorithm_anchors_an_event_on_the_first_loaded_bar() -> None:
+    first_bar = replace(_bar(DAY_2, close="5", previous_close="10"), previous_close=None)
+
+    output = calculate_adjusted_daily_bars(
+        (first_bar, _bar(DAY_3, close="6", previous_close="5")),
+        distributions=(_distribution(),),
+        rights_issues=(),
+        start_date=DAY_2,
+        end_date=DAY_3,
+        defer_missing_events=True,
+    )
+
+    assert {item.adjustment_factor for item in output} == {Decimal(1)}
+
+
 def test_corporate_action_before_loaded_price_history_is_ignored() -> None:
     old_action = replace(
         _distribution(),

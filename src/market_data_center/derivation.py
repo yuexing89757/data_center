@@ -17,7 +17,8 @@ from market_data_center.domain.derived import (
 )
 
 CALCULATION_CODE = "cn_a_share_daily_derived"
-DEFAULT_ALGORITHM_VERSION = "1.0.0"
+DEFAULT_ALGORITHM_VERSION = "1.1.0"
+SUPPORTED_ALGORITHM_VERSIONS = frozenset({"1.0.0", "1.1.0"})
 
 
 class DerivedPersistence(Protocol):
@@ -88,6 +89,8 @@ class DerivationService:
             raise ValueError("end_date must not precede start_date")
         if not algorithm_version.strip():
             raise ValueError("algorithm_version must not be blank")
+        if algorithm_version not in SUPPORTED_ALGORITHM_VERSIONS:
+            raise ValueError(f"unsupported algorithm_version: {algorithm_version}")
         with self._persistence.calculation_lock(
             CALCULATION_CODE, algorithm_version, start_date, end_date
         ):
@@ -126,7 +129,12 @@ class DerivationService:
             )
             self._persistence.create_calculation_run(run)
             try:
-                output = calculate_derived_facts(inputs, start_date=start_date, end_date=end_date)
+                output = calculate_derived_facts(
+                    inputs,
+                    start_date=start_date,
+                    end_date=end_date,
+                    defer_missing_events=algorithm_version == "1.1.0",
+                )
                 output_rows = _output_rows(output)
                 completed = run.succeeded(finished_at=self._clock(), output_rows=output_rows)
                 self._persistence.commit_calculation(completed, output)

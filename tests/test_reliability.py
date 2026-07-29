@@ -257,6 +257,7 @@ def test_raw_replay_reuses_verified_raw_lineage_without_new_manifest(tmp_path: P
 
     assert summary.status == "succeeded"
     assert persistence.created[0].replayed_from_raw_id == RAW_ID
+    assert persistence.created[0].request_params["replay_source_requested_at"] == NOW.isoformat()
     completed, replay_manifest, envelopes = persistence.security_commits[0]
     assert replay_manifest is None
     assert completed.ingestion_id == REPLAY_RUN_ID

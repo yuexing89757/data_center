@@ -21,7 +21,9 @@ from market_data_center.persistence import PostgreSQLDerivedPersistence, Postgre
 from market_data_center.pipeline import BoardIndexIngestionPipeline, IngestionPipeline
 from market_data_center.providers import (
     ManagedMarketDataProvider,
+    ProviderRequestUnavailable,
     ProviderRouter,
+    ProviderRoutingError,
     RoutedResult,
     available_board_index_provider_codes,
     available_provider_codes,
@@ -180,6 +182,7 @@ def _run_explicit(
             end_date = date.fromisoformat(args.end_date)
             symbols = _bulk_symbols(args, persistence, start_date, end_date)
             failures = 0
+            unavailable = 0
             for position, symbol in enumerate(symbols, start=1):
                 try:
                     pipeline.ingest_daily_bars(
@@ -187,11 +190,20 @@ def _run_explicit(
                         start_date,
                         end_date,
                     )
+                except ProviderRequestUnavailable as error:
+                    if getattr(args, "allow_unavailable", False):
+                        unavailable += 1
+                    else:
+                        failures += 1
+                        print(f"failed {symbol}: {type(error).__name__}", file=stderr)
                 except Exception as error:
                     failures += 1
                     print(f"failed {symbol}: {type(error).__name__}", file=stderr)
                 if position % 100 == 0 or position == len(symbols):
-                    print(f"progress={position}/{len(symbols)} failures={failures}")
+                    print(
+                        f"progress={position}/{len(symbols)} failures={failures} "
+                        f"unavailable={unavailable}"
+                    )
             if failures:
                 raise SystemExit(f"bulk ingestion completed with {failures} failures")
             return None
@@ -296,6 +308,7 @@ def _run_automatic_bulk(
     end_date = date.fromisoformat(args.end_date)
     symbols = _bulk_symbols(args, persistence, start_date, end_date)
     failures = 0
+    unavailable = 0
     for position, symbol in enumerate(symbols, start=1):
         try:
             routed = router.route(
@@ -310,11 +323,22 @@ def _run_automatic_bulk(
                 ),
             )
             _report_route(symbol, routed)
+        except ProviderRoutingError as error:
+            request_unavailable = error.attempts and all(
+                attempt.error_type == "ProviderRequestUnavailable" for attempt in error.attempts
+            )
+            if getattr(args, "allow_unavailable", False) and request_unavailable:
+                unavailable += 1
+            else:
+                failures += 1
+                print(f"failed {symbol}: {type(error).__name__}", file=stderr)
         except Exception as error:
             failures += 1
             print(f"failed {symbol}: {type(error).__name__}", file=stderr)
         if position % 100 == 0 or position == len(symbols):
-            print(f"progress={position}/{len(symbols)} failures={failures}")
+            print(
+                f"progress={position}/{len(symbols)} failures={failures} unavailable={unavailable}"
+            )
     if failures:
         raise SystemExit(f"bulk ingestion completed with {failures} failures")
 
@@ -350,7 +374,7 @@ def _run_daily_workflow(
     args: Namespace,
     persistence: PostgreSQLPersistence,
     raw_store: LocalRawStore,
-) -> None:
+) -> date | None:
     as_of_date = (
         date.fromisoformat(args.as_of_date)
         if args.as_of_date
@@ -358,8 +382,8 @@ def _run_daily_workflow(
     )
     if args.bar_lookback_days < 1:
         raise SystemExit("bar-lookback-days must be positive")
-    if args.calendar_lookback_days < args.bar_lookback_days:
-        raise SystemExit("calendar-lookback-days must be at least bar-lookback-days")
+    if args.calendar_lookback_days < 1:
+        raise SystemExit("calendar-lookback-days must be positive")
 
     security_args = _derived_args(args, dataset="security")
     calendar_args = _derived_args(
@@ -371,20 +395,23 @@ def _run_daily_workflow(
     _execute_operation(security_args, persistence, raw_store)
     _execute_operation(calendar_args, persistence, raw_store)
 
-    bar_start_date = as_of_date - timedelta(days=args.bar_lookback_days - 1)
-    bar_end_date = persistence.latest_trading_date(bar_start_date, as_of_date)
+    calendar_start_date = as_of_date - timedelta(days=args.calendar_lookback_days - 1)
+    bar_end_date = persistence.latest_trading_date(calendar_start_date, as_of_date)
     if bar_end_date is None:
         print(
-            f"daily-run no trading day for {bar_start_date.isoformat()}..{as_of_date.isoformat()}"
+            f"daily-run no trading day for {calendar_start_date.isoformat()}.."
+            f"{as_of_date.isoformat()}"
         )
-        return
+        return None
     daily_bar_args = _derived_args(
         args,
         dataset="daily-bars-bulk",
-        start_date=bar_start_date.isoformat(),
+        start_date=bar_end_date.isoformat(),
         end_date=bar_end_date.isoformat(),
+        allow_unavailable=True,
     )
     _execute_operation(daily_bar_args, persistence, raw_store)
+    return bar_end_date
 
 
 def _execute_operation(
@@ -597,8 +624,8 @@ def _parser() -> ArgumentParser:
     daily_run.add_argument(
         "--bar-lookback-days",
         type=int,
-        default=7,
-        help="calendar-day window used to repair missed daily bars (default: 7)",
+        default=1,
+        help="deprecated compatibility option; daily-run never repairs historical Daily Bars",
     )
     daily_run.add_argument(
         "--calendar-lookback-days",

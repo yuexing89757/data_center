@@ -550,6 +550,7 @@ class RawReplayService:
         now = self._clock()
         request_params = dict(source.request_params)
         request_params["replay_source_ingestion_id"] = str(source.source_ingestion_id)
+        request_params["replay_source_requested_at"] = source.requested_at.isoformat()
         return IngestionRun(
             ingestion_id=self._uuid_factory(),
             provider_code=source.provider_code,

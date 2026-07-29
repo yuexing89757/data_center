@@ -159,7 +159,7 @@ class AKShareProvider(AbstractContextManager["AKShareProvider"]):
         capital_frame = _provider_call(
             "share capital", lambda: self._client.stock_zh_a_gbjg_em(symbol=source_code)
         )
-        distribution_frame = _provider_call(
+        distribution_frame = _optional_table_call(
             "distribution plans", lambda: self._client.stock_fhps_detail_em(symbol=code)
         )
         rights_frame = _provider_call(
@@ -440,7 +440,7 @@ def _map_rights_issue(row: Mapping[str, str], symbol: str) -> RightsIssueRecord:
         listing_date=_optional_date(row.get("配股上市日"), reject_placeholder=True),
         rights_ratio=_required_decimal(row.get("配股方案"), "配股方案") / Decimal(10),
         rights_price=_required_decimal(row.get("配股价格"), "配股价格"),
-        base_shares=_integer(row.get("基准股本")),
+        base_shares=_integer(row.get("基准股本")) or None,
         proceeds=_decimal(row.get("募集资金合计")),
         source_code="akshare",
     )
@@ -549,6 +549,31 @@ def _provider_call[ResultT](operation: str, call: Callable[[], ResultT]) -> Resu
         raise
     except Exception as error:
         raise ProviderError(f"AKShare {operation} request failed") from error
+
+
+def _optional_table_call(operation: str, call: Callable[[], TabularResult]) -> TabularResult:
+    try:
+        return call()
+    except TypeError as error:
+        # stock_fhps_detail_em indexes a missing result before it can return an
+        # empty DataFrame.  For this optional endpoint that means "no plans";
+        # do not discard the independently fetched share-capital facts.
+        if str(error) == "'NoneType' object is not subscriptable":
+            return _EmptyTable()
+        raise ProviderError(f"AKShare {operation} request failed") from error
+    except ProviderError:
+        raise
+    except Exception as error:
+        raise ProviderError(f"AKShare {operation} request failed") from error
+
+
+class _EmptyTable:
+    columns: tuple[str, ...] = ()
+
+    def to_dict(self, orient: str) -> object:
+        if orient != "records":
+            raise ValueError(f"unsupported orientation: {orient}")
+        return []
 
 
 def _raw_value(value: object) -> str:

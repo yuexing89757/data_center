@@ -41,7 +41,11 @@ class CalculationInputError(ValueError):
 
 
 def calculate_derived_facts(
-    inputs: DerivedCalculationInput, *, start_date: date, end_date: date
+    inputs: DerivedCalculationInput,
+    *,
+    start_date: date,
+    end_date: date,
+    defer_missing_events: bool = False,
 ) -> DerivedCalculationOutput:
     """Calculate adjusted prices and objective daily metrics without I/O."""
     if end_date < start_date:
@@ -65,6 +69,7 @@ def calculate_derived_facts(
             rights_issues=rights_issues.get(symbol, ()),
             start_date=bars[0].trade_date,
             end_date=end_date,
+            defer_missing_events=defer_missing_events,
         )
         symbol_adjusted = tuple(
             record for record in all_adjusted if record.trade_date >= start_date
@@ -120,12 +125,18 @@ def calculate_adjusted_daily_bars(
     rights_issues: Sequence[RightsIssueRecord],
     start_date: date,
     end_date: date,
+    defer_missing_events: bool = False,
 ) -> tuple[AdjustedDailyBarRecord, ...]:
     ordered = _validated_bars(bars)
     if not ordered:
         return ()
     symbol = ordered[0].symbol
-    event_factors = _event_factors(ordered, distributions, rights_issues)
+    event_factors = _event_factors(
+        ordered,
+        distributions,
+        rights_issues,
+        defer_missing_events=defer_missing_events,
+    )
     forward_factors: dict[date, Decimal] = {}
     backward_factors: dict[date, Decimal] = {}
 
@@ -351,6 +362,8 @@ def _event_factors(
     bars: Sequence[DailyBarRecord],
     distributions: Sequence[DistributionRecord],
     rights_issues: Sequence[RightsIssueRecord],
+    *,
+    defer_missing_events: bool,
 ) -> dict[date, Decimal]:
     first_bar_date = bars[0].trade_date
     last_bar_date = bars[-1].trade_date
@@ -380,27 +393,53 @@ def _event_factors(
         event["rights_value"] += rights_issue.rights_ratio * rights_issue.rights_price
 
     by_date = {bar.trade_date: bar for bar in bars}
-    factors: dict[date, Decimal] = {}
-    with localcontext() as context:
-        context.prec = 40
-        for ex_date, event in events.items():
-            bar = by_date.get(ex_date)
-            if bar is None:
+    aligned_events: dict[date, dict[str, Decimal]] = defaultdict(
+        lambda: {"cash": ZERO, "bonus": ZERO, "rights_ratio": ZERO, "rights_value": ZERO}
+    )
+    for ex_date, event in events.items():
+        effective_date = ex_date
+        if effective_date not in by_date:
+            if not defer_missing_events:
                 raise CalculationInputError(
                     f"corporate action date has no Daily Bar: {ex_date.isoformat()}"
                 )
+            next_date = next(
+                (bar.trade_date for bar in bars if bar.trade_date > ex_date),
+                None,
+            )
+            if next_date is None:
+                raise CalculationInputError(
+                    f"corporate action date has no subsequent Daily Bar: {ex_date.isoformat()}"
+                )
+            effective_date = next_date
+        aligned = aligned_events[effective_date]
+        for field, value in event.items():
+            aligned[field] += value
+
+    factors: dict[date, Decimal] = {}
+    with localcontext() as context:
+        context.prec = 40
+        for effective_date, event in aligned_events.items():
+            bar = by_date[effective_date]
             previous_close = bar.previous_close
+            if previous_close is None and defer_missing_events and effective_date == first_bar_date:
+                # The event is already reflected in the first price available
+                # to this calculation history.  It cannot adjust an earlier
+                # bar, so the backward series starts from this post-event
+                # boundary with factor 1.
+                continue
             if previous_close is None or previous_close <= 0:
                 raise CalculationInputError(
-                    f"corporate action date has no positive previous_close: {ex_date.isoformat()}"
+                    "corporate action date has no positive previous_close: "
+                    f"{effective_date.isoformat()}"
                 )
             theoretical = (previous_close - event["cash"] + event["rights_value"]) / (
                 ONE + event["bonus"] + event["rights_ratio"]
             )
             if theoretical <= 0:
                 message = "corporate action produces a non-positive ex-right price"
-                raise CalculationInputError(f"{message}: {ex_date.isoformat()}")
-            factors[ex_date] = theoretical / previous_close
+                raise CalculationInputError(f"{message}: {effective_date.isoformat()}")
+            factors[effective_date] = theoretical / previous_close
     return factors
 
 
