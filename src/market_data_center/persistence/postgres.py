@@ -9,6 +9,12 @@ from uuid import UUID
 
 from sqlalchemy import Connection, Engine, RowMapping, bindparam, text
 
+from market_data_center.domain.board_index import (
+    BoardIndexConstituentSnapshotRecord,
+    BoardIndexDailyBarRecord,
+    BoardIndexProviderRecord,
+    BoardIndexRecord,
+)
 from market_data_center.domain.classification import (
     ClassificationCatalogSnapshotRecord,
     ClassificationMemberSnapshotRecord,
@@ -288,6 +294,53 @@ insert into classification.member_snapshot_item (
 )
 """)
 
+UPSERT_BOARD_INDEX = text("""
+insert into core.board_index (
+    board_id, board_code, namespace, name, board_type, market, status,
+    source_code, ingestion_id
+) values (
+    :board_id, :board_code, :namespace, :name, :board_type, :market, :status,
+    :source_code, :ingestion_id
+)
+on conflict (board_id) do update set
+    name = excluded.name,
+    board_type = excluded.board_type,
+    market = excluded.market,
+    status = excluded.status,
+    source_code = excluded.source_code,
+    ingestion_id = excluded.ingestion_id
+where core.board_index.board_code = excluded.board_code
+  and core.board_index.namespace = excluded.namespace
+""")
+
+UPSERT_BOARD_INDEX_DAILY_BAR = text("""
+insert into core.board_index_daily_bar (
+    board_id, trade_date, market, open, high, low, close, volume, amount,
+    source_code, ingestion_id
+) values (
+    :board_id, :trade_date, :market, :open, :high, :low, :close, :volume, :amount,
+    :source_code, :ingestion_id
+)
+on conflict (board_id, trade_date) do update set
+    market = excluded.market,
+    open = excluded.open,
+    high = excluded.high,
+    low = excluded.low,
+    close = excluded.close,
+    volume = excluded.volume,
+    amount = excluded.amount,
+    source_code = excluded.source_code,
+    ingestion_id = excluded.ingestion_id
+""")
+
+INSERT_BOARD_INDEX_CONSTITUENT = text("""
+insert into core.board_index_constituent_snapshot (
+    board_id, trade_date, symbol, source_code, ingestion_id
+) values (
+    :board_id, :trade_date, :symbol, :source_code, :ingestion_id
+)
+""")
+
 
 class PostgreSQLPersistence:
     def __init__(self, engine: Engine) -> None:
@@ -456,6 +509,15 @@ returning ingestion_id
         )
         with self._engine.connect() as connection:
             return set(connection.execute(statement, {"symbols": list(symbols)}).scalars())
+
+    def known_board_ids(self, board_ids: Collection[str]) -> set[str]:
+        if not board_ids:
+            return set()
+        statement = text(
+            "select board_id from core.board_index where board_id in :board_ids"
+        ).bindparams(bindparam("board_ids", expanding=True))
+        with self._engine.connect() as connection:
+            return set(connection.execute(statement, {"board_ids": list(board_ids)}).scalars())
 
     def known_classification_snapshots(
         self, keys: Collection[tuple[str, ClassificationType, str, date]]
@@ -743,6 +805,68 @@ where namespace = :namespace
                     connection.execute(INSERT_CLASSIFICATION_MEMBER, members)
             connection.execute(UPDATE_INGESTION_RUN, self._run_update_parameters(run))
 
+    def commit_board_index_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest | None,
+        records: Sequence[IngestionEnvelope[BoardIndexRecord]],
+    ) -> None:
+        with self._engine.begin() as connection:
+            self._insert_manifest(connection, manifest)
+            if records:
+                self._ensure_envelope_ids(records, run.ingestion_id)
+                connection.execute(
+                    UPSERT_BOARD_INDEX,
+                    self._board_index_envelope_parameters(records),
+                )
+            connection.execute(UPDATE_INGESTION_RUN, self._run_update_parameters(run))
+
+    def commit_board_index_daily_bar_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest | None,
+        records: Sequence[IngestionEnvelope[BoardIndexDailyBarRecord]],
+        quality_results: Sequence[QualityResult],
+    ) -> None:
+        with self._engine.begin() as connection:
+            self._insert_manifest(connection, manifest)
+            if quality_results:
+                connection.execute(INSERT_QUALITY_RESULT, self._quality_parameters(quality_results))
+            if records:
+                self._ensure_envelope_ids(records, run.ingestion_id)
+                connection.execute(
+                    UPSERT_BOARD_INDEX_DAILY_BAR,
+                    self._board_index_daily_bar_envelope_parameters(records),
+                )
+            connection.execute(UPDATE_INGESTION_RUN, self._run_update_parameters(run))
+
+    def commit_board_index_constituents_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest | None,
+        record: IngestionEnvelope[BoardIndexConstituentSnapshotRecord],
+        quality_results: Sequence[QualityResult],
+    ) -> None:
+        self._ensure_single_envelope(record, run.ingestion_id)
+        with self._engine.begin() as connection:
+            self._insert_manifest(connection, manifest)
+            if quality_results:
+                connection.execute(INSERT_QUALITY_RESULT, self._quality_parameters(quality_results))
+            if not quality_results:
+                parameters = self._board_index_constituent_parameters(record)
+                header = cast(dict[str, object], parameters["header"])
+                members = cast(list[dict[str, object]], parameters["members"])
+                connection.execute(
+                    text("""
+delete from core.board_index_constituent_snapshot
+where board_id = :board_id and trade_date = :trade_date
+"""),
+                    header,
+                )
+                if members:
+                    connection.execute(INSERT_BOARD_INDEX_CONSTITUENT, members)
+            connection.execute(UPDATE_INGESTION_RUN, self._run_update_parameters(run))
+
     def commit_rejected_batch(
         self,
         run: IngestionRun,
@@ -998,13 +1122,71 @@ where namespace = :namespace
         return {"header": header, "members": members}
 
     @staticmethod
+    def _board_index_envelope_parameters(
+        records: Iterable[IngestionEnvelope[BoardIndexRecord]],
+    ) -> list[dict[str, object]]:
+        return [
+            {
+                "board_id": envelope.record.board_id,
+                "board_code": envelope.record.board_code,
+                "namespace": envelope.record.namespace,
+                "name": envelope.record.name,
+                "board_type": envelope.record.board_type.value,
+                "market": envelope.record.market.value,
+                "status": envelope.record.status.value,
+                "source_code": envelope.record.source_code,
+                "ingestion_id": envelope.ingestion_id,
+            }
+            for envelope in records
+        ]
+
+    @staticmethod
+    def _board_index_daily_bar_envelope_parameters(
+        records: Iterable[IngestionEnvelope[BoardIndexDailyBarRecord]],
+    ) -> list[dict[str, object]]:
+        return [
+            {
+                "board_id": envelope.record.board_id,
+                "trade_date": envelope.record.trade_date,
+                "market": envelope.record.market.value,
+                "open": envelope.record.open,
+                "high": envelope.record.high,
+                "low": envelope.record.low,
+                "close": envelope.record.close,
+                "volume": envelope.record.volume,
+                "amount": envelope.record.amount,
+                "source_code": envelope.record.source_code,
+                "ingestion_id": envelope.ingestion_id,
+            }
+            for envelope in records
+        ]
+
+    @staticmethod
+    def _board_index_constituent_parameters(
+        envelope: IngestionEnvelope[BoardIndexConstituentSnapshotRecord],
+    ) -> dict[str, object]:
+        record = envelope.record
+        header: dict[str, object] = {
+            "board_id": record.board_id,
+            "trade_date": record.trade_date,
+            "source_code": record.source_code,
+            "ingestion_id": envelope.ingestion_id,
+        }
+        members = [{"symbol": symbol, **header} for symbol in record.members]
+        return {"header": header, "members": members}
+
+    @staticmethod
     def _ensure_single_envelope(envelope: IngestionEnvelope[object], ingestion_id: UUID) -> None:
         if envelope.ingestion_id != ingestion_id:
             raise ValueError("ingestion envelope does not match the batch run")
 
     @staticmethod
     def _ensure_envelope_ids[
-        RecordT: SecurityRecord | CalculatedTradingDay | DailyBarRecord | CapitalRecord
+        RecordT: SecurityRecord
+        | CalculatedTradingDay
+        | DailyBarRecord
+        | CapitalRecord
+        | BoardIndexProviderRecord
     ](records: Iterable[IngestionEnvelope[RecordT]], ingestion_id: UUID) -> None:
         if any(envelope.ingestion_id != ingestion_id for envelope in records):
             raise ValueError("ingestion envelope does not match the batch run")

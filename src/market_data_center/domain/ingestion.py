@@ -12,6 +12,7 @@ from uuid import UUID
 class ProviderCode(StrEnum):
     BAOSTOCK = "baostock"
     AKSHARE = "akshare"
+    AKSHARE_THS = "akshare_ths"
     PYTDX = "pytdx"
 
 
@@ -22,6 +23,9 @@ class DatasetCode(StrEnum):
     CAPITAL = "capital"
     CLASSIFICATION_CATALOG = "classification_catalog"
     CLASSIFICATION_MEMBERS = "classification_members"
+    BOARD_INDEX = "board_index"
+    BOARD_INDEX_DAILY_BAR = "board_index_daily_bar"
+    BOARD_INDEX_CONSTITUENT_SNAPSHOT = "board_index_constituent_snapshot"
 
 
 class IngestionStatus(StrEnum):

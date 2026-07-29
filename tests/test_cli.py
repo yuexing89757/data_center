@@ -83,6 +83,27 @@ def test_derived_recompute_parses_versioned_full_or_incremental_mode() -> None:
     assert args.algorithm_version == "1.1.0"
 
 
+def test_board_index_commands_use_explicit_identity_and_current_snapshot() -> None:
+    directory = _parser().parse_args(["board-index"])
+    bars = _parser().parse_args(
+        [
+            "--provider",
+            "akshare_ths",
+            "board-index-daily-bar",
+            "--start-date",
+            "2026-07-01",
+            "--end-date",
+            "2026-07-29",
+        ]
+    )
+    members = _parser().parse_args(["board-index-constituents"])
+
+    assert directory.provider == AUTO_PROVIDER_CODE
+    assert bars.board_id == "THS:883423"
+    assert members.board_id == "THS:883423"
+    assert members.snapshot_date is None
+
+
 def test_daily_run_orders_prerequisites_before_incremental_bars(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

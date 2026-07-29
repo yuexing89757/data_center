@@ -21,8 +21,8 @@ uv run pytest -m integration
 - `symbol` 加 `trade_date` 闭区间查询；
 - `anon`、`authenticated` 可读取/执行 `api_v1` 查询契约，但不能读取
   内部 Schema 或写入 API View；
-- `market_data_worker` 只有采集所需的 `SELECT`、`INSERT`、`UPDATE`
-  权限，没有 `DELETE`，也不依赖公开 API；
+- `market_data_worker` 只有采集所需的表级权限；`DELETE` 仅授予完整快照替换所需的
+  Classification/BoardIndex 成员表，也不依赖公开 API；
 - 所有内部事实和审计表都启用 RLS，策略只授予
   `market_data_worker`；
 - `supabase/config.toml` 仅暴露 `api_v1`。

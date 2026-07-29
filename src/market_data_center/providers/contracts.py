@@ -5,6 +5,7 @@ from datetime import date
 from types import TracebackType
 from typing import Protocol, Self
 
+from market_data_center.domain.board_index import BoardIndexProviderRecord
 from market_data_center.domain.classification import ClassificationRecord
 from market_data_center.domain.records import (
     CapitalRecord,
@@ -14,7 +15,12 @@ from market_data_center.domain.records import (
 )
 
 type ProviderRecord = (
-    SecurityRecord | TradingDayRecord | DailyBarRecord | CapitalRecord | ClassificationRecord
+    SecurityRecord
+    | TradingDayRecord
+    | DailyBarRecord
+    | CapitalRecord
+    | ClassificationRecord
+    | BoardIndexProviderRecord
 )
 type RawRow = Mapping[str, str]
 
@@ -58,6 +64,33 @@ class MarketDataProvider(Protocol):
 class ManagedMarketDataProvider(MarketDataProvider, Protocol):
     """Provider adapter that owns optional client-session resources."""
 
+    def __enter__(self) -> Self: ...
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None: ...
+
+
+class BoardIndexProvider(Protocol):
+    """Dedicated capability boundary for third-party board indices."""
+
+    source_code: str
+
+    def fetch_board_indexes(self) -> "ProviderBatch[BoardIndexProviderRecord]": ...
+
+    def fetch_board_index_daily_bars(
+        self, board_id: str, start_date: date, end_date: date
+    ) -> "ProviderBatch[BoardIndexProviderRecord]": ...
+
+    def fetch_board_index_constituents(
+        self, board_id: str, snapshot_date: date
+    ) -> "ProviderBatch[BoardIndexProviderRecord]": ...
+
+
+class ManagedBoardIndexProvider(BoardIndexProvider, Protocol):
     def __enter__(self) -> Self: ...
 
     def __exit__(

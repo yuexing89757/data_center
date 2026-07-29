@@ -6,7 +6,7 @@
 
 ## 1. 当前领域范围
 
-当前已实现七个业务领域和一个采集审计边界：
+当前已实现八个业务领域和一个采集审计边界：
 
 | 边界 | 职责 | 当前实体 |
 | --- | --- | --- |
@@ -16,10 +16,11 @@
 | Market | 不复权日频量价事实 | `DailyBar` |
 | Capital | 股本和公司行为输入事实 | `ShareCapital`、`Distribution`、`RightsIssue` |
 | Classification | 分类目录和成员历史 | `ClassificationCatalogSnapshot`、`ClassificationMemberSnapshot`、`MemberInterval` |
+| BoardIndex | 第三方板块指数定义、不复权日 K 和逐日动态成分快照 | `BoardIndex`、`BoardIndexDailyBar`、`BoardIndexConstituentSnapshot` |
 | Derived | 版本化证券级客观派生 | `CalculationRun`、`AdjustedDailyBar`、`DailyMetric`、`MarketCapitalization` |
 | Metrics | 分类横截面客观统计 | `ClassificationDailyMetric` |
 
-Capital、Classification 和 Derived/Metrics 分别由 ADR-0007、ADR-0008、ADR-0009 进入实现。
+BoardIndex、Capital、Classification 和 Derived/Metrics 分别由 ADR-0003、ADR-0007、ADR-0008、ADR-0009 进入实现。
 
 ## 2. 依赖方向
 
@@ -30,6 +31,7 @@ Security ────────────► Market
 Trading ─────────────► Market
 Security ────────────► Capital
 Security ────────────► Classification
+Security + Trading ──► BoardIndex
 Market + Capital ────► Derived
 Derived + Market + Classification ──► Metrics
 ```
@@ -39,6 +41,7 @@ Derived + Market + Classification ──► Metrics
 - Market 通过 `symbol` 关联 Security，通过 `(market, trade_date)` 关联 Trading。
 - Capital 通过 `symbol` 关联 Security，不依赖 Market，也不发布复权行情。
 - Classification 通过 `symbol` 关联 Security；分类定义不是 Security，也不依赖 Market。
+- BoardIndex 定义不是 Security；其日 K 关联 Trading，其逐日成分只引用已知 Security。
 - Derived 只依赖客观输入事实，Calculator 不访问数据库。
 - Metrics 只发布可重算的客观横截面统计，不包含主观市场解释。
 - 禁止基础领域反向依赖行情或未来统计领域。
@@ -85,6 +88,7 @@ Provider 按数据集能力拆分接口：
 - `DailyBarProvider`。
 - `CapitalProvider`；
 - `ClassificationProvider`。
+- `BoardIndexProvider`。
 
 Provider 同时承担来源适配，输出标准 Record DTO。以下内容必须在 Provider 内完成：
 

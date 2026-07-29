@@ -1,5 +1,17 @@
 """Stable phase-one domain contracts."""
 
+from market_data_center.domain.board_index import (
+    BoardIndexConstituentSnapshotRecord,
+    BoardIndexDailyBarRecord,
+    BoardIndexDailyBarValidationResult,
+    BoardIndexFinding,
+    BoardIndexProviderRecord,
+    BoardIndexRecord,
+    BoardIndexStatus,
+    BoardIndexType,
+    validate_board_index_constituent_snapshot,
+    validate_board_index_daily_bars,
+)
 from market_data_center.domain.calendar import calculate_trading_day_links
 from market_data_center.domain.capital import (
     CapitalFinding,
@@ -68,6 +80,14 @@ from market_data_center.domain.validation import (
 __all__ = [
     "AdjustedDailyBarRecord",
     "AdjustmentType",
+    "BoardIndexConstituentSnapshotRecord",
+    "BoardIndexDailyBarRecord",
+    "BoardIndexDailyBarValidationResult",
+    "BoardIndexFinding",
+    "BoardIndexProviderRecord",
+    "BoardIndexRecord",
+    "BoardIndexStatus",
+    "BoardIndexType",
     "CalculatedTradingDay",
     "CalculationMode",
     "CalculationRun",
@@ -115,6 +135,8 @@ __all__ = [
     "calculate_trading_day_links",
     "capital_natural_key",
     "capital_natural_key_json",
+    "validate_board_index_constituent_snapshot",
+    "validate_board_index_daily_bars",
     "validate_capital",
     "validate_catalog",
     "validate_daily_bars",

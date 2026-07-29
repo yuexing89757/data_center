@@ -18,12 +18,14 @@ from market_data_center.derivation import (
 from market_data_center.domain import CalculationMode
 from market_data_center.domain.ingestion import DatasetCode, IngestionRun
 from market_data_center.persistence import PostgreSQLDerivedPersistence, PostgreSQLPersistence
-from market_data_center.pipeline import IngestionPipeline
+from market_data_center.pipeline import BoardIndexIngestionPipeline, IngestionPipeline
 from market_data_center.providers import (
     ManagedMarketDataProvider,
     ProviderRouter,
     RoutedResult,
+    available_board_index_provider_codes,
     available_provider_codes,
+    create_board_index_provider,
     create_provider,
 )
 from market_data_center.raw_store import LocalRawStore
@@ -35,6 +37,14 @@ from market_data_center.reliability import (
 from market_data_center.settings import WorkerSettings
 
 AUTO_PROVIDER_CODE = "auto"
+DEFAULT_BOARD_INDEX_PROVIDER_CODE = "akshare_ths"
+BOARD_INDEX_DATASETS = frozenset(
+    {
+        "board-index",
+        "board-index-daily-bar",
+        "board-index-constituents",
+    }
+)
 SHANGHAI_TIME_ZONE = ZoneInfo("Asia/Shanghai")
 
 
@@ -46,6 +56,15 @@ def main() -> None:
     )
     persistence = PostgreSQLPersistence(engine)
     raw_store = LocalRawStore(settings.raw_data_root)
+
+    if args.dataset in BOARD_INDEX_DATASETS:
+        board_run = _run_board_index_command(args, persistence, raw_store)
+        print(
+            f"{board_run.dataset_code.value} {board_run.status.value} "
+            f"provider={board_run.provider_code.value} "
+            f"ingestion_id={board_run.ingestion_id}"
+        )
+        return
 
     if args.dataset == "derived-recompute":
         try:
@@ -177,6 +196,41 @@ def _run_explicit(
                 raise SystemExit(f"bulk ingestion completed with {failures} failures")
             return None
         return _execute(args, pipeline)
+
+
+def _run_board_index_command(
+    args: Namespace,
+    persistence: PostgreSQLPersistence,
+    raw_store: LocalRawStore,
+) -> IngestionRun:
+    provider_code = (
+        DEFAULT_BOARD_INDEX_PROVIDER_CODE if args.provider == AUTO_PROVIDER_CODE else args.provider
+    )
+    if provider_code not in available_board_index_provider_codes():
+        raise SystemExit(
+            f"{provider_code} does not provide the BoardIndex capability; "
+            f"use {DEFAULT_BOARD_INDEX_PROVIDER_CODE}"
+        )
+    with create_board_index_provider(provider_code) as provider:
+        pipeline = BoardIndexIngestionPipeline(
+            provider=provider,
+            raw_store=raw_store,
+            persistence=persistence,
+        )
+        if args.dataset == "board-index":
+            return pipeline.ingest_board_indexes()
+        if args.dataset == "board-index-daily-bar":
+            return pipeline.ingest_board_index_daily_bars(
+                args.board_id,
+                date.fromisoformat(args.start_date),
+                date.fromisoformat(args.end_date),
+            )
+        snapshot_date = (
+            date.fromisoformat(args.snapshot_date)
+            if args.snapshot_date
+            else datetime.now(SHANGHAI_TIME_ZONE).date()
+        )
+        return pipeline.ingest_board_index_constituents(args.board_id, snapshot_date)
 
 
 def _run_automatic(
@@ -425,7 +479,11 @@ def _parser() -> ArgumentParser:
     parser = ArgumentParser(prog="market-data-center")
     parser.add_argument(
         "--provider",
-        choices=(AUTO_PROVIDER_CODE, *available_provider_codes()),
+        choices=(
+            AUTO_PROVIDER_CODE,
+            *available_provider_codes(),
+            *available_board_index_provider_codes(),
+        ),
         default=AUTO_PROVIDER_CODE,
         help="automatic routing or an explicit data provider (default: auto)",
     )
@@ -474,6 +532,36 @@ def _parser() -> ArgumentParser:
     )
     members.add_argument("--classification-type", choices=("industry", "concept"), required=True)
     members.add_argument("--classification-code", required=True, help="board code such as BK0475")
+
+    subparsers.add_parser(
+        "board-index",
+        help="synchronize the explicit third-party BoardIndex directory",
+    )
+
+    board_daily_bar = subparsers.add_parser(
+        "board-index-daily-bar",
+        help="synchronize unadjusted THS board-index daily bars",
+    )
+    board_daily_bar.add_argument(
+        "--board-id",
+        default="THS:883423",
+        help="explicit board identity (default: THS:883423)",
+    )
+    _add_date_range(board_daily_bar)
+
+    board_constituents = subparsers.add_parser(
+        "board-index-constituents",
+        help="capture today's complete THS board-index constituent snapshot",
+    )
+    board_constituents.add_argument(
+        "--board-id",
+        default="THS:883423",
+        help="explicit board identity (default: THS:883423)",
+    )
+    board_constituents.add_argument(
+        "--snapshot-date",
+        help="must be today's Asia/Shanghai date; defaults to today",
+    )
 
     derived = subparsers.add_parser(
         "derived-recompute",
