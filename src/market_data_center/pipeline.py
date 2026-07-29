@@ -8,6 +8,7 @@ from typing import Protocol
 from uuid import UUID, uuid4
 
 from market_data_center.domain.calendar import calculate_trading_day_links
+from market_data_center.domain.capital import validate_capital
 from market_data_center.domain.entities import CalculatedTradingDay
 from market_data_center.domain.ingestion import (
     DatasetCode,
@@ -21,6 +22,7 @@ from market_data_center.domain.ingestion import (
     RawManifest,
 )
 from market_data_center.domain.records import (
+    CapitalRecord,
     DailyBarRecord,
     IngestionEnvelope,
     SecurityRecord,
@@ -69,6 +71,14 @@ class PipelinePersistence(Protocol):
         run: IngestionRun,
         manifest: RawManifest,
         records: Sequence[IngestionEnvelope[DailyBarRecord]],
+        quality_results: Sequence[QualityResult],
+    ) -> None: ...
+
+    def commit_capital_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest,
+        records: Sequence[IngestionEnvelope[CapitalRecord]],
         quality_results: Sequence[QualityResult],
     ) -> None: ...
 
@@ -211,6 +221,52 @@ class IngestionPipeline:
                 self._record_failure(run, error)
                 raise
 
+    def ingest_capital(self, source_symbol: str, *, mode: str = "incremental") -> IngestionRun:
+        if mode not in {"backfill", "incremental"}:
+            raise ValueError("Capital mode must be backfill or incremental")
+        params = {"source_symbol": source_symbol, "mode": mode}
+        with self._persistence.task_lock(f"{self._provider.source_code}:capital:{source_symbol}"):
+            run = self._start_run(DatasetCode.CAPITAL, params)
+            try:
+                batch = self._provider.fetch_capital(source_symbol)
+                manifest, normalized = self._stage_batch(run, batch)
+                records = list(normalized)
+                known_symbols = self._persistence.known_symbols(
+                    {record.symbol for record in records}
+                )
+                validation = validate_capital(records, known_symbols=known_symbols)
+                quality_results = [
+                    QualityResult(
+                        quality_result_id=self._uuid_factory(),
+                        ingestion_id=run.ingestion_id,
+                        dataset_code=DatasetCode.CAPITAL,
+                        rule_code=finding.rule_code,
+                        severity=QualitySeverity.ERROR,
+                        status=QualityStatus.FAILED,
+                        message=finding.message,
+                        natural_key=finding.natural_key,
+                    )
+                    for finding in validation.findings
+                ]
+                completed = self._completed_run(
+                    run,
+                    len(batch.raw_rows),
+                    len(validation.accepted),
+                    validation.rejected_rows,
+                )
+                self._persistence.commit_capital_batch(
+                    completed,
+                    manifest,
+                    self._envelopes(run.ingestion_id, validation.accepted),
+                    quality_results,
+                )
+                return completed
+            except _RecordedProviderError:
+                raise
+            except Exception as error:
+                self._record_failure(run, error)
+                raise
+
     def _start_run(
         self, dataset_code: DatasetCode, request_params: Mapping[str, object]
     ) -> IngestionRun:
@@ -299,7 +355,7 @@ class IngestionPipeline:
         )
 
     @staticmethod
-    def _envelopes[RecordT: SecurityRecord | CalculatedTradingDay | DailyBarRecord](
+    def _envelopes[RecordT: SecurityRecord | CalculatedTradingDay | DailyBarRecord | CapitalRecord](
         ingestion_id: UUID, records: Sequence[RecordT]
     ) -> tuple[IngestionEnvelope[RecordT], ...]:
         return tuple(IngestionEnvelope(ingestion_id, record) for record in records)

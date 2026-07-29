@@ -19,6 +19,7 @@ class DatasetCode(StrEnum):
     SECURITY = "security"
     TRADING_CALENDAR = "trading_calendar"
     DAILY_BAR = "daily_bar"
+    CAPITAL = "capital"
 
 
 class IngestionStatus(StrEnum):

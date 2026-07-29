@@ -19,7 +19,15 @@ from market_data_center.domain.ingestion import (
     RawManifest,
     ReplaySource,
 )
-from market_data_center.domain.records import DailyBarRecord, IngestionEnvelope, SecurityRecord
+from market_data_center.domain.records import (
+    CapitalRecord,
+    DailyBarRecord,
+    DistributionRecord,
+    IngestionEnvelope,
+    RightsIssueRecord,
+    SecurityRecord,
+    ShareCapitalRecord,
+)
 
 INSERT_INGESTION_RUN = text("""
 insert into ingestion.ingestion_run (
@@ -143,6 +151,70 @@ on conflict (symbol, trade_date) do update set
     amount = excluded.amount,
     trade_status = excluded.trade_status,
     is_st = excluded.is_st,
+    source_code = excluded.source_code,
+    ingestion_id = excluded.ingestion_id
+""")
+
+UPSERT_SHARE_CAPITAL = text("""
+insert into capital.share_capital (
+    symbol, effective_date, total_shares, restricted_shares, circulating_shares,
+    listed_a_shares, change_reason, source_code, ingestion_id
+) values (
+    :symbol, :effective_date, :total_shares, :restricted_shares, :circulating_shares,
+    :listed_a_shares, :change_reason, :source_code, :ingestion_id
+)
+on conflict (symbol, effective_date) do update set
+    total_shares = excluded.total_shares,
+    restricted_shares = excluded.restricted_shares,
+    circulating_shares = excluded.circulating_shares,
+    listed_a_shares = excluded.listed_a_shares,
+    change_reason = excluded.change_reason,
+    source_code = excluded.source_code,
+    ingestion_id = excluded.ingestion_id
+""")
+
+UPSERT_DISTRIBUTION = text("""
+insert into capital.distribution (
+    symbol, report_period, announcement_date, record_date, ex_date,
+    cash_dividend_per_share, bonus_share_ratio, transfer_share_ratio,
+    status, source_code, ingestion_id
+) values (
+    :symbol, :report_period, :announcement_date, :record_date, :ex_date,
+    :cash_dividend_per_share, :bonus_share_ratio, :transfer_share_ratio,
+    :status, :source_code, :ingestion_id
+)
+on conflict (symbol, report_period) do update set
+    announcement_date = excluded.announcement_date,
+    record_date = excluded.record_date,
+    ex_date = excluded.ex_date,
+    cash_dividend_per_share = excluded.cash_dividend_per_share,
+    bonus_share_ratio = excluded.bonus_share_ratio,
+    transfer_share_ratio = excluded.transfer_share_ratio,
+    status = excluded.status,
+    source_code = excluded.source_code,
+    ingestion_id = excluded.ingestion_id
+""")
+
+UPSERT_RIGHTS_ISSUE = text("""
+insert into capital.rights_issue (
+    symbol, record_date, announcement_date, ex_date, payment_start_date,
+    payment_end_date, listing_date, rights_ratio, rights_price, base_shares,
+    proceeds, source_code, ingestion_id
+) values (
+    :symbol, :record_date, :announcement_date, :ex_date, :payment_start_date,
+    :payment_end_date, :listing_date, :rights_ratio, :rights_price, :base_shares,
+    :proceeds, :source_code, :ingestion_id
+)
+on conflict (symbol, record_date) do update set
+    announcement_date = excluded.announcement_date,
+    ex_date = excluded.ex_date,
+    payment_start_date = excluded.payment_start_date,
+    payment_end_date = excluded.payment_end_date,
+    listing_date = excluded.listing_date,
+    rights_ratio = excluded.rights_ratio,
+    rights_price = excluded.rights_price,
+    base_shares = excluded.base_shares,
+    proceeds = excluded.proceeds,
     source_code = excluded.source_code,
     ingestion_id = excluded.ingestion_id
 """)
@@ -469,6 +541,51 @@ where market = 'CN_A_SHARE'
                 connection.execute(UPSERT_DAILY_BAR, self._daily_bar_envelope_parameters(records))
             connection.execute(UPDATE_INGESTION_RUN, self._run_update_parameters(run))
 
+    def commit_capital_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest | None,
+        records: Sequence[IngestionEnvelope[CapitalRecord]],
+        quality_results: Sequence[QualityResult],
+    ) -> None:
+        with self._engine.begin() as connection:
+            self._insert_manifest(connection, manifest)
+            if quality_results:
+                connection.execute(INSERT_QUALITY_RESULT, self._quality_parameters(quality_results))
+            if records:
+                self._ensure_envelope_ids(records, run.ingestion_id)
+                share_capital = [
+                    cast(IngestionEnvelope[ShareCapitalRecord], envelope)
+                    for envelope in records
+                    if isinstance(envelope.record, ShareCapitalRecord)
+                ]
+                distributions = [
+                    cast(IngestionEnvelope[DistributionRecord], envelope)
+                    for envelope in records
+                    if isinstance(envelope.record, DistributionRecord)
+                ]
+                rights_issues = [
+                    cast(IngestionEnvelope[RightsIssueRecord], envelope)
+                    for envelope in records
+                    if isinstance(envelope.record, RightsIssueRecord)
+                ]
+                if share_capital:
+                    connection.execute(
+                        UPSERT_SHARE_CAPITAL,
+                        self._share_capital_envelope_parameters(share_capital),
+                    )
+                if distributions:
+                    connection.execute(
+                        UPSERT_DISTRIBUTION,
+                        self._distribution_envelope_parameters(distributions),
+                    )
+                if rights_issues:
+                    connection.execute(
+                        UPSERT_RIGHTS_ISSUE,
+                        self._rights_issue_envelope_parameters(rights_issues),
+                    )
+            connection.execute(UPDATE_INGESTION_RUN, self._run_update_parameters(run))
+
     def commit_rejected_batch(
         self,
         run: IngestionRun,
@@ -619,9 +736,72 @@ where market = 'CN_A_SHARE'
         ]
 
     @staticmethod
-    def _ensure_envelope_ids[RecordT: SecurityRecord | CalculatedTradingDay | DailyBarRecord](
-        records: Iterable[IngestionEnvelope[RecordT]], ingestion_id: UUID
-    ) -> None:
+    def _share_capital_envelope_parameters(
+        records: Iterable[IngestionEnvelope[ShareCapitalRecord]],
+    ) -> list[dict[str, object]]:
+        return [
+            {
+                "symbol": envelope.record.symbol,
+                "effective_date": envelope.record.effective_date,
+                "total_shares": envelope.record.total_shares,
+                "restricted_shares": envelope.record.restricted_shares,
+                "circulating_shares": envelope.record.circulating_shares,
+                "listed_a_shares": envelope.record.listed_a_shares,
+                "change_reason": envelope.record.change_reason,
+                "source_code": envelope.record.source_code,
+                "ingestion_id": envelope.ingestion_id,
+            }
+            for envelope in records
+        ]
+
+    @staticmethod
+    def _distribution_envelope_parameters(
+        records: Iterable[IngestionEnvelope[DistributionRecord]],
+    ) -> list[dict[str, object]]:
+        return [
+            {
+                "symbol": envelope.record.symbol,
+                "report_period": envelope.record.report_period,
+                "announcement_date": envelope.record.announcement_date,
+                "record_date": envelope.record.record_date,
+                "ex_date": envelope.record.ex_date,
+                "cash_dividend_per_share": envelope.record.cash_dividend_per_share,
+                "bonus_share_ratio": envelope.record.bonus_share_ratio,
+                "transfer_share_ratio": envelope.record.transfer_share_ratio,
+                "status": envelope.record.status.value,
+                "source_code": envelope.record.source_code,
+                "ingestion_id": envelope.ingestion_id,
+            }
+            for envelope in records
+        ]
+
+    @staticmethod
+    def _rights_issue_envelope_parameters(
+        records: Iterable[IngestionEnvelope[RightsIssueRecord]],
+    ) -> list[dict[str, object]]:
+        return [
+            {
+                "symbol": envelope.record.symbol,
+                "record_date": envelope.record.record_date,
+                "announcement_date": envelope.record.announcement_date,
+                "ex_date": envelope.record.ex_date,
+                "payment_start_date": envelope.record.payment_start_date,
+                "payment_end_date": envelope.record.payment_end_date,
+                "listing_date": envelope.record.listing_date,
+                "rights_ratio": envelope.record.rights_ratio,
+                "rights_price": envelope.record.rights_price,
+                "base_shares": envelope.record.base_shares,
+                "proceeds": envelope.record.proceeds,
+                "source_code": envelope.record.source_code,
+                "ingestion_id": envelope.ingestion_id,
+            }
+            for envelope in records
+        ]
+
+    @staticmethod
+    def _ensure_envelope_ids[
+        RecordT: SecurityRecord | CalculatedTradingDay | DailyBarRecord | CapitalRecord
+    ](records: Iterable[IngestionEnvelope[RecordT]], ingestion_id: UUID) -> None:
         if any(envelope.ingestion_id != ingestion_id for envelope in records):
             raise ValueError("ingestion envelope does not match the batch run")
 

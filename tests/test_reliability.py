@@ -8,6 +8,7 @@ import pytest
 
 from market_data_center.domain import (
     CalculatedTradingDay,
+    CapitalRecord,
     DailyBarRecord,
     DatasetCode,
     IngestionEnvelope,
@@ -58,6 +59,14 @@ class StubReliabilityPersistence:
                 IngestionRun,
                 RawManifest | None,
                 Sequence[IngestionEnvelope[DailyBarRecord]],
+                Sequence[QualityResult],
+            ]
+        ] = []
+        self.capital_commits: list[
+            tuple[
+                IngestionRun,
+                RawManifest | None,
+                Sequence[IngestionEnvelope[CapitalRecord]],
                 Sequence[QualityResult],
             ]
         ] = []
@@ -114,6 +123,15 @@ class StubReliabilityPersistence:
         quality_results: Sequence[QualityResult],
     ) -> None:
         self.daily_commits.append((run, manifest, records, quality_results))
+
+    def commit_capital_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest | None,
+        records: Sequence[IngestionEnvelope[CapitalRecord]],
+        quality_results: Sequence[QualityResult],
+    ) -> None:
+        self.capital_commits.append((run, manifest, records, quality_results))
 
     def commit_rejected_batch(
         self,
@@ -200,6 +218,43 @@ def test_raw_replay_dry_run_validates_without_database_writes(tmp_path: Path) ->
     assert summary.replay_ingestion_id is None
     assert persistence.created == []
     assert persistence.security_commits == []
+
+
+def test_raw_replay_normalizes_and_commits_capital_facts(tmp_path: Path) -> None:
+    store = LocalRawStore(tmp_path)
+    source = _source(
+        store,
+        provider=ProviderCode.AKSHARE,
+        dataset=DatasetCode.CAPITAL,
+        schema_version="akshare.capital.v1",
+        rows=[
+            {
+                "_capital_record_type": "share_capital",
+                "变更日期": "2024-01-15",
+                "总股本": "1000000",
+                "流通受限股份": "100000",
+                "已流通股份": "900000",
+                "已上市流通A股": "900000",
+                "变动原因": "回购",
+            }
+        ],
+        request_params={"source_symbol": "600000", "mode": "backfill"},
+    )
+    persistence = StubReliabilityPersistence(source)
+
+    summary = RawReplayService(
+        raw_store=store,
+        persistence=persistence,
+        clock=lambda: NOW,
+        uuid_factory=lambda: REPLAY_RUN_ID,
+    ).replay(SOURCE_RUN_ID)
+
+    assert summary.accepted_rows == 1
+    completed, replay_manifest, envelopes, findings = persistence.capital_commits[0]
+    assert completed.status is IngestionStatus.SUCCEEDED
+    assert replay_manifest is None
+    assert findings == ()
+    assert envelopes[0].record.symbol == "SSE:600000"
 
 
 def test_raw_replay_records_integrity_failure_without_copying_manifest(tmp_path: Path) -> None:

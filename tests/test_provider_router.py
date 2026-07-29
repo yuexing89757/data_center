@@ -4,7 +4,12 @@ from typing import Self
 
 import pytest
 
-from market_data_center.domain import DailyBarRecord, SecurityRecord, TradingDayRecord
+from market_data_center.domain import (
+    CapitalRecord,
+    DailyBarRecord,
+    SecurityRecord,
+    TradingDayRecord,
+)
 from market_data_center.domain.ingestion import DatasetCode
 from market_data_center.providers import (
     DEFAULT_PROVIDER_ROUTES,
@@ -51,6 +56,9 @@ class FakeProvider:
     ) -> ProviderBatch[DailyBarRecord]:
         raise NotImplementedError
 
+    def fetch_capital(self, source_symbol: str) -> ProviderBatch[CapitalRecord]:
+        raise NotImplementedError
+
 
 class FakeFactory:
     def __init__(self) -> None:
@@ -67,6 +75,7 @@ def test_default_routes_are_capability_specific_and_deterministic() -> None:
         DatasetCode.SECURITY: ("baostock", "akshare"),
         DatasetCode.TRADING_CALENDAR: ("baostock", "akshare"),
         DatasetCode.DAILY_BAR: ("pytdx", "baostock", "akshare"),
+        DatasetCode.CAPITAL: ("akshare",),
     }
 
 

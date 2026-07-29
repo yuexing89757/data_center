@@ -10,6 +10,7 @@ from typing import Protocol, Self, cast
 
 from market_data_center.domain.ingestion import DatasetCode
 from market_data_center.domain.records import (
+    CapitalRecord,
     DailyBarRecord,
     Market,
     SecurityRecord,
@@ -136,6 +137,9 @@ class PytdxProvider:
             schema_version="pytdx.local_daily_bar.v1",
             record_factory=lambda: _daily_bar_records(raw_rows, symbol),
         )
+
+    def fetch_capital(self, source_symbol: str) -> ProviderBatch[CapitalRecord]:
+        raise ProviderRequestUnavailable("pytdx local files do not provide Capital facts")
 
     def _market_latest_date(self, exchange: str) -> date:
         sentinel_code = {"sh": "000001", "sz": "399001"}[exchange]
