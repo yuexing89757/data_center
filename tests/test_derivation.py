@@ -95,16 +95,23 @@ def test_derivation_service_records_version_watermark_and_outputs() -> None:
         START_DATE,
         END_DATE,
         mode=CalculationMode.FULL,
-        algorithm_version="1.2.0",
+        algorithm_version="1.0.0",
     )
 
     assert summary.status == "succeeded"
     assert summary.output_rows == 3
     assert persistence.created[0].input_watermark == {"daily_bar": NOW.isoformat()}
     run, output = persistence.committed[0]
-    assert run.algorithm_version == "1.2.0"
+    assert run.algorithm_version == "1.0.0"
     assert len(output.adjusted_daily_bars) == 2
     assert len(output.daily_metrics) == 1
+
+
+def test_derivation_service_rejects_an_unknown_algorithm_version() -> None:
+    service = DerivationService(StubDerivedPersistence())
+
+    with pytest.raises(ValueError, match="unsupported algorithm_version"):
+        service.recompute(START_DATE, END_DATE, algorithm_version="1.2.0")
 
 
 def test_incremental_recompute_skips_identical_input_signature() -> None:

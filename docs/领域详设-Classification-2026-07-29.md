@@ -14,7 +14,7 @@ Classification 保存外部分类体系的版本化目录、完整成分快照�
 
 | 字段 | 含义 |
 | --- | --- |
-| `namespace` | 分类体系命名空间；首期为 `eastmoney` |
+| `namespace` | 分类体系命名空间；东方财富为 `eastmoney`，本地通达信为 `tdx` |
 | `classification_type` | `industry`、`concept` 或 `index` |
 | `classification_code` | 命名空间内的分类代码 |
 
@@ -66,7 +66,9 @@ AKShare Adapter 使用四个东方财富接口：
 - `stock_board_concept_name_em`
 - `stock_board_concept_cons_em`
 
-Raw Schema 分别为 `akshare.classification_catalog.v1` 和 `akshare.classification_members.v1`。请求参数保留类型、代码和上海日期以支持确定性重放。BaoStock 和本地 pytdx 明确声明不提供该能力；自动 Router 对两个 Classification 数据集只选择 AKShare。
+Raw Schema 分别为 `akshare.classification_catalog.v1` 和 `akshare.classification_members.v1`。请求参数保留类型、代码和上海日期以支持确定性重放。
+
+本地 pytdx Adapter 读取通达信安装目录中的 `T0002/hq_cache/tdxhy.cfg`、`tdxzs.cfg`、`tdxzs3.cfg` 和 `infoharbor_block.dat`，生成 `namespace=tdx` 的行业和概念完整快照。Raw Schema 为 `pytdx.local_classification_catalog.v1` 和 `pytdx.local_classification_members.v1`。自动 Router 对 Classification 优先使用本地 pytdx，文件不可用时才回退 AKShare；BaoStock 不提供该能力。
 
 ## 7. CLI 顺序
 

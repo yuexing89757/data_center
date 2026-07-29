@@ -283,12 +283,87 @@ with target_symbols as (
     select distinct symbol
     from core.daily_bar
     where trade_date between :start_date and :end_date
+), target_bars as (
+    select bar.symbol, bar.trade_date, bar.market, bar.open, bar.high, bar.low,
+           bar.close,
+           coalesce(bar.previous_close, (
+               select prior.close
+               from core.daily_bar prior
+               where prior.symbol = bar.symbol
+                 and prior.trade_date < bar.trade_date
+               order by prior.trade_date desc
+               limit 1
+           )) as previous_close,
+           bar.volume, bar.amount,
+           bar.trade_status, bar.is_st, bar.source_code
+    from core.daily_bar bar
+    join target_symbols target using (symbol)
+    where bar.trade_date between :start_date and :end_date
+), warmup_bars as (
+    select bar.symbol, bar.trade_date, bar.market, bar.open, bar.high, bar.low,
+           bar.close, bar.previous_close, bar.volume, bar.amount,
+           bar.trade_status, bar.is_st, bar.source_code
+    from target_symbols target
+    cross join lateral (
+        select candidate.symbol, candidate.trade_date, candidate.market,
+               candidate.open, candidate.high, candidate.low, candidate.close,
+               coalesce(candidate.previous_close, (
+                   select prior.close
+                   from core.daily_bar prior
+                   where prior.symbol = candidate.symbol
+                     and prior.trade_date < candidate.trade_date
+                   order by prior.trade_date desc
+                   limit 1
+               )) as previous_close,
+               candidate.volume, candidate.amount, candidate.trade_status,
+               candidate.is_st, candidate.source_code
+        from core.daily_bar candidate
+        where candidate.symbol = target.symbol
+          and candidate.trade_date < :start_date
+        order by candidate.trade_date desc
+        limit 20
+    ) bar
+), event_dates as (
+    select distribution.symbol, distribution.ex_date as trade_date
+    from capital.distribution distribution
+    join target_symbols target using (symbol)
+    where distribution.status = 'implemented'
+      and distribution.ex_date is not null
+      and distribution.ex_date <= :end_date
+    union
+    select rights.symbol, rights.ex_date as trade_date
+    from capital.rights_issue rights
+    join target_symbols target using (symbol)
+    where rights.ex_date is not null
+      and rights.ex_date <= :end_date
+), event_bars as (
+    select bar.symbol, bar.trade_date, bar.market, bar.open, bar.high, bar.low,
+           bar.close,
+           coalesce(bar.previous_close, (
+               select prior.close
+               from core.daily_bar prior
+               where prior.symbol = bar.symbol
+                 and prior.trade_date < bar.trade_date
+               order by prior.trade_date desc
+               limit 1
+           )) as previous_close,
+           bar.volume, bar.amount,
+           bar.trade_status, bar.is_st, bar.source_code
+    from core.daily_bar bar
+    join event_dates event
+      on event.symbol = bar.symbol and event.trade_date = bar.trade_date
 )
 select symbol, trade_date, market, open, high, low, close, previous_close,
        volume, amount, trade_status, is_st, source_code
-from core.daily_bar
-where trade_date <= :end_date
-  and symbol in (select symbol from target_symbols)
+from target_bars
+union
+select symbol, trade_date, market, open, high, low, close, previous_close,
+       volume, amount, trade_status, is_st, source_code
+from warmup_bars
+union
+select symbol, trade_date, market, open, high, low, close, previous_close,
+       volume, amount, trade_status, is_st, source_code
+from event_bars
 order by symbol, trade_date
 """)
 

@@ -104,14 +104,26 @@ on conflict (symbol) do update set
     ingestion_id = excluded.ingestion_id
 where core.security.code = excluded.code
   and core.security.exchange = excluded.exchange
+  and cast(:is_replay as boolean) = false
 """)
 
 CLOSE_SECURITY_NAME = text("""
 update core.security_name_history
 set effective_to = :effective_from - 1
 where symbol = :symbol
-  and effective_to is null
+  and effective_from < :effective_from
+  and (effective_to is null or effective_to >= :effective_from)
   and name <> :name
+""")
+
+UPDATE_SECURITY_NAME_SAME_DAY = text("""
+update core.security_name_history
+set name = :name,
+    source_code = :source_code,
+    ingestion_id = :ingestion_id
+where symbol = :symbol
+  and effective_from = :effective_from
+  and cast(:is_replay as boolean) = false
 """)
 
 INSERT_SECURITY_NAME = text("""
@@ -119,13 +131,30 @@ insert into core.security_name_history (
     symbol, name, effective_from, effective_to, source_code, ingestion_id
 )
 select
-    :symbol, :name, :effective_from, null, :source_code, :ingestion_id
+    :symbol,
+    :name,
+    :effective_from,
+    (
+        select min(future.effective_from) - 1
+        from core.security_name_history future
+        where future.symbol = :symbol
+          and future.effective_from > :effective_from
+    ),
+    :source_code,
+    :ingestion_id
 where not exists (
     select 1
     from core.security_name_history
     where symbol = :symbol
-      and effective_to is null
       and name = :name
+      and effective_from <= :effective_from
+      and (effective_to is null or effective_to >= :effective_from)
+)
+and not exists (
+    select 1
+    from core.security_name_history
+    where symbol = :symbol
+      and effective_from = :effective_from
 )
 on conflict (symbol, effective_from) do nothing
 """)
@@ -661,11 +690,17 @@ where market = 'CN_A_SHARE'
             self._insert_manifest(connection, manifest)
             if records:
                 self._ensure_envelope_ids(records, run.ingestion_id)
-                security_parameters = self._security_envelope_parameters(records)
+                is_replay = run.replayed_from_raw_id is not None
+                security_parameters = self._security_envelope_parameters(
+                    records, is_replay=is_replay
+                )
                 connection.execute(UPSERT_SECURITY, security_parameters)
                 name_parameters = self._security_name_envelope_parameters(
-                    records, run.requested_at.date()
+                    records,
+                    self._security_observation_date(run),
+                    is_replay=is_replay,
                 )
+                connection.execute(UPDATE_SECURITY_NAME_SAME_DAY, name_parameters)
                 connection.execute(CLOSE_SECURITY_NAME, name_parameters)
                 connection.execute(INSERT_SECURITY_NAME, name_parameters)
             connection.execute(UPDATE_INGESTION_RUN, self._run_update_parameters(run))
@@ -946,6 +981,8 @@ where board_id = :board_id and trade_date = :trade_date
     @staticmethod
     def _security_envelope_parameters(
         records: Iterable[IngestionEnvelope[SecurityRecord]],
+        *,
+        is_replay: bool = False,
     ) -> list[dict[str, object]]:
         return [
             {
@@ -959,13 +996,17 @@ where board_id = :board_id and trade_date = :trade_date
                 "delisting_date": envelope.record.delisting_date,
                 "source_code": envelope.record.source_code,
                 "ingestion_id": envelope.ingestion_id,
+                "is_replay": is_replay,
             }
             for envelope in records
         ]
 
     @staticmethod
     def _security_name_envelope_parameters(
-        records: Iterable[IngestionEnvelope[SecurityRecord]], effective_from: date
+        records: Iterable[IngestionEnvelope[SecurityRecord]],
+        effective_from: date,
+        *,
+        is_replay: bool,
     ) -> list[dict[str, object]]:
         return [
             {
@@ -974,9 +1015,22 @@ where board_id = :board_id and trade_date = :trade_date
                 "effective_from": effective_from,
                 "source_code": envelope.record.source_code,
                 "ingestion_id": envelope.ingestion_id,
+                "is_replay": is_replay,
             }
             for envelope in records
         ]
+
+    @staticmethod
+    def _security_observation_date(run: IngestionRun) -> date:
+        if run.replayed_from_raw_id is None:
+            return run.requested_at.date()
+        value = run.request_params.get("replay_source_requested_at")
+        if not isinstance(value, str):
+            raise ValueError("Security replay is missing replay_source_requested_at")
+        try:
+            return datetime.fromisoformat(value).date()
+        except ValueError as error:
+            raise ValueError("Security replay has invalid replay_source_requested_at") from error
 
     @staticmethod
     def _trading_day_envelope_parameters(

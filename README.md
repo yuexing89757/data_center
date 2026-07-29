@@ -1,6 +1,6 @@
 # Market Data Center
 
-A phase-one A-share daily market data pipeline using Python 3.12 and a self-hosted Supabase deployment. BaoStock is the default provider; AKShare is explicitly selectable, and pytdx reads local Shanghai/Shenzhen `.day` files for daily-bar supplementation.
+A phase-one A-share daily market data pipeline using Python 3.12 and a self-hosted Supabase deployment. Security and calendar use BaoStock/AKShare routing; stock Daily Bar uses only pytdx local Shanghai/Shenzhen/Beijing `.day` files.
 
 ## Development
 
@@ -31,9 +31,9 @@ market-data-center classification-catalog --classification-type industry
 market-data-center classification-members --classification-type industry --classification-code BK0475
 ```
 
-Industry and concept snapshots are provided by AKShare/东方财富. Snapshot and effective-interval semantics are documented in [ADR-0008](docs/adr/ADR-0008-Classification分类与成分历史.md).
+Industry and concept snapshots default to local TDX classification files, with AKShare as an explicit optional adapter. Snapshot and effective-interval semantics are documented in [ADR-0008](docs/adr/ADR-0008-Classification分类与成分历史.md).
 
-Versioned adjusted bars, returns, moving averages, market capitalization, and classification metrics are recalculated from Core facts:
+Versioned adjusted bars, returns, moving averages, market capitalization, and classification metrics can be recalculated manually from Core facts, but are not part of the current daily schedule:
 
 ```bash
 market-data-center derived-recompute --start-date 2026-01-01 --end-date 2026-07-29 --mode incremental
@@ -59,10 +59,10 @@ so historical snapshots are accumulated by daily runs and can be replayed from
 immutable Raw data. See [ADR-0003](docs/adr/ADR-0003-同花顺动态板块指数.md) and
 [the collection runbook](docs/同花顺动态板块指数采集.md).
 
-The daily incremental workflow and systemd timer are documented in [docs/Worker日常采集与调度.md](docs/Worker日常采集与调度.md).
+The daily local-TDX workflow and Windows scheduled task are documented in [docs/Worker日常采集与调度.md](docs/Worker日常采集与调度.md).
 
 Verified Raw replay, stale-run recovery, and read-only cross-provider Daily Bar comparison are documented in [docs/Raw重放与运行恢复.md](docs/Raw重放与运行恢复.md).
 
 Production migration and smoke verification can be started manually through the protected `Production migration and smoke check` GitHub Actions workflow.
 
-The CLI uses deterministic provider routing by default: BaoStock then AKShare for security/calendar, and local pytdx then BaoStock then AKShare for daily bars. Use `--provider baostock|akshare|pytdx` to bypass routing for reproducible diagnostics.
+The CLI uses deterministic provider routing by default: BaoStock then AKShare for security/calendar, and local pytdx only for daily bars. Missing local daily bars remain explicit gaps and are not filled from network providers. Use `--provider baostock|akshare|pytdx` to bypass routing for reproducible diagnostics.

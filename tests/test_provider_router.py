@@ -85,10 +85,10 @@ def test_default_routes_are_capability_specific_and_deterministic() -> None:
     assert DEFAULT_PROVIDER_ROUTES == {
         DatasetCode.SECURITY: ("baostock", "akshare"),
         DatasetCode.TRADING_CALENDAR: ("baostock", "akshare"),
-        DatasetCode.DAILY_BAR: ("pytdx", "baostock", "akshare"),
+        DatasetCode.DAILY_BAR: ("pytdx",),
         DatasetCode.CAPITAL: ("akshare",),
-        DatasetCode.CLASSIFICATION_CATALOG: ("akshare",),
-        DatasetCode.CLASSIFICATION_MEMBERS: ("akshare",),
+        DatasetCode.CLASSIFICATION_CATALOG: ("pytdx", "akshare"),
+        DatasetCode.CLASSIFICATION_MEMBERS: ("pytdx", "akshare"),
     }
 
 
@@ -125,7 +125,11 @@ def test_router_does_not_hide_non_provider_errors() -> None:
 def test_router_opens_circuit_after_consecutive_failures() -> None:
     factory = FakeFactory()
 
-    with ProviderRouter(provider_factory=factory, failure_threshold=2) as router:
+    with ProviderRouter(
+        routes={DatasetCode.DAILY_BAR: ("pytdx", "baostock")},
+        provider_factory=factory,
+        failure_threshold=2,
+    ) as router:
         first = router.route(DatasetCode.DAILY_BAR, _fail_pytdx)
         second = router.route(DatasetCode.DAILY_BAR, _fail_pytdx)
         third = router.route(DatasetCode.DAILY_BAR, _fail_pytdx)
@@ -138,7 +142,11 @@ def test_router_opens_circuit_after_consecutive_failures() -> None:
 def test_request_specific_unavailability_does_not_open_provider_circuit() -> None:
     factory = FakeFactory()
 
-    with ProviderRouter(provider_factory=factory, failure_threshold=1) as router:
+    with ProviderRouter(
+        routes={DatasetCode.DAILY_BAR: ("pytdx", "baostock")},
+        provider_factory=factory,
+        failure_threshold=1,
+    ) as router:
         first = router.route(DatasetCode.DAILY_BAR, _skip_pytdx_request)
         second = router.route(DatasetCode.DAILY_BAR, _skip_pytdx_request)
 

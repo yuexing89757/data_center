@@ -31,11 +31,11 @@ def test_cli_still_accepts_an_explicit_provider() -> None:
     assert args.provider == "pytdx"
 
 
-def test_daily_run_has_repair_window_defaults() -> None:
+def test_daily_run_has_current_day_defaults() -> None:
     args = _parser().parse_args(["daily-run"])
 
     assert args.as_of_date is None
-    assert args.bar_lookback_days == 7
+    assert args.bar_lookback_days == 1
     assert args.calendar_lookback_days == 14
     assert args.shard_count == 1
     assert args.shard_index == 0
@@ -142,24 +142,23 @@ def test_daily_run_orders_prerequisites_before_incremental_bars(
     ]
     assert calls[1].start_date == "2026-07-20"
     assert calls[1].end_date == "2026-07-29"
-    assert calls[2].start_date == "2026-07-27"
+    assert calls[2].start_date == "2026-07-29"
     assert calls[2].end_date == "2026-07-29"
+    assert calls[2].allow_unavailable
 
 
-def test_daily_run_rejects_calendar_window_shorter_than_bar_window() -> None:
+def test_daily_run_rejects_a_nonpositive_calendar_window() -> None:
     args = _parser().parse_args(
         [
             "daily-run",
             "--as-of-date",
             "2026-07-29",
-            "--bar-lookback-days",
-            "7",
             "--calendar-lookback-days",
-            "3",
+            "0",
         ]
     )
 
-    with pytest.raises(SystemExit, match="calendar-lookback-days"):
+    with pytest.raises(SystemExit, match="calendar-lookback-days must be positive"):
         _run_daily_workflow(
             args,
             cast(PostgreSQLPersistence, FakeDailyRunPersistence(date(2026, 7, 29))),
@@ -191,4 +190,5 @@ def test_daily_run_uses_latest_trading_day_on_weekend(
     )
 
     assert calls[-1].dataset == "daily-bars-bulk"
+    assert calls[-1].start_date == "2026-07-24"
     assert calls[-1].end_date == "2026-07-24"

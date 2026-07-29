@@ -52,7 +52,7 @@
           "p_start_date": {"type": "string", "format": "date"},
           "p_end_date": {"type": "string", "format": "date"},
           "p_adjustment_type": {"type": "string", "enum": ["forward", "backward"], "default": "forward"},
-          "p_algorithm_version": {"type": "string", "default": "1.0.0"},
+          "p_algorithm_version": {"type": "string", "default": "1.1.0"},
           "p_calculation_id": {"type": ["string", "null"], "format": "uuid", "default": null},
           "p_limit": {"type": "integer", "minimum": 1, "maximum": 5000, "default": 1000}
         }
@@ -69,7 +69,7 @@
         "required": ["p_trade_date"],
         "properties": {
           "p_trade_date": {"type": "string", "format": "date"},
-          "p_algorithm_version": {"type": "string", "default": "1.0.0"},
+          "p_algorithm_version": {"type": "string", "default": "1.1.0"},
           "p_calculation_id": {"type": ["string", "null"], "format": "uuid", "default": null},
           "p_limit": {"type": "integer", "minimum": 1, "maximum": 5000, "default": 5000}
         }

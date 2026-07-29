@@ -18,10 +18,10 @@ type ProviderFactory = Callable[[str], ManagedMarketDataProvider]
 DEFAULT_PROVIDER_ROUTES: Mapping[DatasetCode, tuple[str, ...]] = {
     DatasetCode.SECURITY: ("baostock", "akshare"),
     DatasetCode.TRADING_CALENDAR: ("baostock", "akshare"),
-    DatasetCode.DAILY_BAR: ("pytdx", "baostock", "akshare"),
+    DatasetCode.DAILY_BAR: ("pytdx",),
     DatasetCode.CAPITAL: ("akshare",),
-    DatasetCode.CLASSIFICATION_CATALOG: ("akshare",),
-    DatasetCode.CLASSIFICATION_MEMBERS: ("akshare",),
+    DatasetCode.CLASSIFICATION_CATALOG: ("pytdx", "akshare"),
+    DatasetCode.CLASSIFICATION_MEMBERS: ("pytdx", "akshare"),
 }
 
 

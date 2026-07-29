@@ -140,6 +140,20 @@ class EmptyRightsFakeClient(FakeClient):
         return FakeFrame(())
 
 
+class ZeroBaseSharesFakeClient(FakeClient):
+    def stock_history_dividend_detail(self, *, symbol: str, indicator: str) -> TabularResult:
+        frame = super().stock_history_dividend_detail(symbol=symbol, indicator=indicator)
+        rows = frame.to_dict(orient="records")
+        assert isinstance(rows, list)
+        rows[0]["基准股本"] = "0"
+        return FakeFrame(rows)
+
+
+class MissingDistributionFakeClient(FakeClient):
+    def stock_fhps_detail_em(self, *, symbol: str) -> TabularResult:
+        raise TypeError("'NoneType' object is not subscriptable")
+
+
 def test_security_mapping_marks_current_directory_members_as_listed() -> None:
     record = AKShareProvider(FakeClient()).fetch_securities().records[0]
 
@@ -201,6 +215,23 @@ def test_capital_mapping_accepts_an_empty_optional_rights_table() -> None:
     assert [type(record).__name__ for record in records] == [
         "ShareCapitalRecord",
         "DistributionRecord",
+    ]
+
+
+def test_capital_mapping_treats_zero_optional_base_shares_as_unknown() -> None:
+    records = AKShareProvider(ZeroBaseSharesFakeClient()).fetch_capital("000001").records
+
+    rights_issue = records[-1]
+    assert isinstance(rights_issue, RightsIssueRecord)
+    assert rights_issue.base_shares is None
+
+
+def test_capital_mapping_treats_akshare_missing_distribution_as_empty() -> None:
+    records = AKShareProvider(MissingDistributionFakeClient()).fetch_capital("688031").records
+
+    assert [type(record).__name__ for record in records] == [
+        "ShareCapitalRecord",
+        "RightsIssueRecord",
     ]
 
 

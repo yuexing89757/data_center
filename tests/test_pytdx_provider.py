@@ -5,13 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from market_data_center.domain import TradeStatus
+from market_data_center.domain import ClassificationType, DatasetCode, TradeStatus
 from market_data_center.providers import (
     ProviderError,
-    ProviderRequestUnavailable,
     PytdxProvider,
 )
-from market_data_center.providers.pytdx import LocalDailyBarRow
+from market_data_center.providers.pytdx import LocalDailyBarRow, normalize_pytdx_raw
 
 
 def _bar(trade_date: int, *, close: int = 1020, volume: int = 123_400) -> LocalDailyBarRow:
@@ -49,8 +48,21 @@ def test_standard_symbol_maps_to_local_file_prefix() -> None:
 
     assert provider.source_symbol("SSE:600000") == "sh.600000"
     assert provider.source_symbol("SZSE:000001") == "sz.000001"
-    with pytest.raises(ProviderRequestUnavailable, match="does not support BSE"):
-        provider.source_symbol("BSE:430047")
+    assert provider.source_symbol("BSE:920000") == "bj.920000"
+
+
+def test_bse_daily_bars_use_local_bj_files_and_market_sentinel(tmp_path: Path) -> None:
+    file_path = tmp_path / "bj" / "lday" / "bj920000.day"
+    file_path.parent.mkdir(parents=True)
+    file_path.touch()
+    (file_path.parent / "bj899050.day").touch()
+    reader = FakeReader([_bar(20260729)])
+    provider = PytdxProvider(reader, vipdoc_path=tmp_path)
+
+    batch = provider.fetch_daily_bars("bj.920000", date(2026, 7, 29), date(2026, 7, 29))
+
+    assert [record.symbol for record in batch.records] == ["BSE:920000"]
+    assert reader.requested_files == [str(file_path), str(file_path.parent / "bj899050.day")]
 
 
 def test_daily_bars_read_local_file_crop_sort_and_normalize_values(tmp_path: Path) -> None:
@@ -71,12 +83,24 @@ def test_daily_bars_read_local_file_crop_sort_and_normalize_values(tmp_path: Pat
     assert record.close == Decimal("10.20")
     assert record.volume == 123_400
     assert record.amount == Decimal("1258680.0")
-    assert record.previous_close is None
+    assert record.previous_close == Decimal("10.20")
     assert record.trade_status is TradeStatus.UNKNOWN
     assert record.is_st is None
     assert reader.requested_files[0] == str(tmp_path / "sh" / "lday" / "sh600000.day")
     assert len(batch.raw_rows) == 3
-    assert batch.schema_version == "pytdx.local_daily_bar.v1"
+    assert batch.schema_version == "pytdx.local_daily_bar.v2"
+
+    legacy_rows = tuple(
+        {key: value for key, value in row.items() if key != "previous_close"}
+        for row in batch.raw_rows
+    )
+    replayed = normalize_pytdx_raw(
+        DatasetCode.DAILY_BAR,
+        "pytdx.local_daily_bar.v1",
+        legacy_rows,
+        batch.request_params,
+    )
+    assert replayed[1].previous_close == replayed[0].close
 
 
 def test_daily_bars_reject_a_stale_local_file(tmp_path: Path) -> None:
@@ -100,3 +124,66 @@ def test_pytdx_rejects_unsupported_datasets(tmp_path: Path) -> None:
         provider.fetch_securities()
     with pytest.raises(ProviderError, match="trading calendar"):
         provider.fetch_trading_calendar(date(2026, 7, 1), date(2026, 7, 28))
+
+
+def test_local_industry_catalog_and_members_are_provider_neutral(tmp_path: Path) -> None:
+    provider = _classification_provider(tmp_path)
+
+    catalog = provider.fetch_classification_catalog("industry", date(2026, 7, 29))
+    members = provider.fetch_classification_members("industry", "T1001", date(2026, 7, 29))
+
+    catalog_record = catalog.records[0]
+    assert catalog_record.namespace == "tdx"
+    assert catalog_record.classification_type is ClassificationType.INDUSTRY
+    assert [(item.code, item.name) for item in catalog_record.definitions] == [
+        ("T1001", "银行"),
+        ("X500102", "股份制银行"),
+    ]
+    assert members.records[0].members == (
+        "SZSE:000001",
+        "SSE:600000",
+        "BSE:920000",
+    )
+    assert catalog.schema_version == "pytdx.local_classification_catalog.v1"
+    assert members.schema_version == "pytdx.local_classification_members.v1"
+
+
+def test_local_concept_catalog_members_and_raw_replay(tmp_path: Path) -> None:
+    provider = _classification_provider(tmp_path)
+
+    catalog = provider.fetch_classification_catalog("concept", date(2026, 7, 29))
+    members = provider.fetch_classification_members("concept", "880001", date(2026, 7, 29))
+    replayed = normalize_pytdx_raw(
+        DatasetCode.CLASSIFICATION_MEMBERS,
+        members.schema_version,
+        members.raw_rows,
+        members.request_params,
+    )
+
+    assert [(item.code, item.name) for item in catalog.records[0].definitions] == [
+        ("880001", "测试概念")
+    ]
+    assert members.records[0].members == (
+        "SZSE:000001",
+        "SSE:600000",
+        "BSE:920000",
+    )
+    assert replayed == tuple(members.records)
+
+
+def _classification_provider(tmp_path: Path) -> PytdxProvider:
+    vipdoc_path = tmp_path / "vipdoc"
+    vipdoc_path.mkdir()
+    hq_cache = tmp_path / "T0002" / "hq_cache"
+    hq_cache.mkdir(parents=True)
+    (hq_cache / "tdxzs.cfg").write_text("银行|880471|2|1|1|T1001\n", encoding="gb18030")
+    (hq_cache / "tdxzs3.cfg").write_text("股份制银行|881388|12|1|1|X500102\n", encoding="gb18030")
+    (hq_cache / "tdxhy.cfg").write_text(
+        "0|000001|T1001|||X500102\n1|600000|T1001|||X500102\n2|920000|T1001|||X500102\n",
+        encoding="gb18030",
+    )
+    (hq_cache / "infoharbor_block.dat").write_text(
+        "#GN_测试概念,3,880001,20200101,20260729,,\n0#000001,1#600000,2#920000\n",
+        encoding="gb18030",
+    )
+    return PytdxProvider(FakeReader([]), vipdoc_path=vipdoc_path)

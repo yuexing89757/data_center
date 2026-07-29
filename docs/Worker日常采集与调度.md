@@ -1,16 +1,17 @@
 # Worker 日常采集与调度
 
-第一阶段使用 `daily-run` 完成每天的功能闭环，不由 GitHub Actions 调度生产采集。一次运行按固定顺序执行：
+第一阶段使用 `daily-run` 完成每天的行情入库，不由 GitHub Actions 调度生产采集。一次运行按固定顺序执行：
 
 1. 同步证券主数据；
 2. 同步截至运行日的统一 A 股日历；
-3. 找出最近窗口内缺少至少一个有效交易日事实的上市股票；
-4. 只对这些股票执行 Daily Bar 采集，并通过自然键幂等写入。
+3. 确定截至运行日的最近交易日；
+4. 只对该交易日尚无事实的上市股票读取本地 pytdx Daily Bar，并通过自然键幂等写入。
+
+`daily-run` 不回看、不修复历史日 K，也不自动计算 Derived/Metrics。停牌或本地文件在当日没有记录的证券记为 `unavailable`，不会导致整批失败；文件损坏、市场哨兵陈旧、数据库错误仍会使任务失败。
 
 Provider 的原始响应先写入不可变 Raw 对象，再执行 Record DTO 标准化。若标准化失败，采集批次、Raw Manifest 和阻断级 `QualityResult` 会一起落库，Core 不写入该批次，因此错误来源仍可追溯和重放。
 
-默认 Daily Bar 修复窗口为最近 7 个自然日，日历窗口为最近 14 个自然日。周末或节假日运行时，如果窗口内数据已经完整，不会重复调用 Daily Bar Provider。IPO 前和退市后的日期不参与完整性判断。
-Daily Bar 请求的结束日取窗口内最近的实际交易日，因此周末和节假日不会把本地 pytdx 的正常休市误判为行情文件过期。
+默认日历窗口为最近 14 个自然日。周末或节假日运行时取窗口内最近的实际交易日，因此不会把本地 pytdx 的正常休市误判为行情文件过期。兼容参数 `--bar-lookback-days` 仅保留命令行兼容性，不再触发历史修复。
 
 ## 手工运行
 
@@ -19,7 +20,7 @@ Daily Bar 请求的结束日取窗口内最近的实际交易日，因此周末�
 ```bash
 market-data-center daily-run
 market-data-center daily-run --as-of-date 2026-07-29
-market-data-center daily-run --bar-lookback-days 14 --calendar-lookback-days 30
+market-data-center daily-run --calendar-lookback-days 30
 ```
 
 默认使用 ADR-0005 的自动路由。为了可复现诊断，可以显式使用支持全部三个数据集的 `baostock` 或 `akshare`：
@@ -28,42 +29,29 @@ market-data-center daily-run --bar-lookback-days 14 --calendar-lookback-days 30
 market-data-center --provider baostock daily-run --as-of-date 2026-07-29
 ```
 
-`pytdx` 只支持 Daily Bar，不能单独承担完整的 `daily-run`；自动路由仍可在 Daily Bar 步骤优先使用本地 pytdx。
-北交所代码、本地缺少单只股票文件或请求区间没有本地记录属于“当前请求不可用”，Router 会回退到 BaoStock/AKShare，但不会因此熔断 pytdx；只有 Provider 整体错误才累计连续失败。
+`pytdx` 只支持 Daily Bar，不能单独承担完整的 `daily-run`；自动模式在 Daily Bar 步骤固定使用本地 pytdx。个股停牌、本地文件未更新或文件缺失产生的缺口保持可见，不通过 BaoStock/AKShare 补数。
 
-首次全量回补继续使用 `daily-bars-bulk`。批量续跑现在按整个有效交易区间判断完整性，不会因为区间内已有一条记录就跳过仍有缺口的股票。
-如果请求范围的自然日日历尚未完整同步，批量命令会直接失败并提示先同步日历，不会把缺失日历误判为“没有待采集股票”。局部日历刷新会读取已存范围外最近的前后交易日，保持窗口边界链接连续。
+pytdx 还可从通达信 `T0002/hq_cache` 读取行业和概念完整快照，但 Security 和 Trading Calendar 仍由 BaoStock/AKShare 提供。分类成员引用尚未进入 Security 的代码时，整个成员快照按质量规则阻断，不能静默删掉未知成员。
 
-## systemd 部署
+`daily-bars-bulk` 仍保留为显式人工工具，但不进入日常调度。当前项目决策是不再补历史日 K；除非项目所有者再次明确要求，不运行该命令。
 
-仓库提供：
+## Windows 任务计划部署
 
-- `deploy/systemd/market-data-center.service`
-- `deploy/systemd/market-data-center.timer`
+pytdx 读取 `D:\new_tdx64` 的本地通达信目录，因此生产采集 Worker 必须运行在能访问该目录的 Windows 主机。旧 Linux systemd 单元已删除，仓库提供：
 
-默认安装约定：
+- `deploy/windows/run-daily.ps1`
+- `deploy/windows/register-daily-task.ps1`
 
-- 程序目录：`/opt/market-data-center`；
-- Raw 目录：`/var/lib/market-data-center/raw`；
-- 环境文件：`/etc/market-data-center/worker.env`；
-- 系统身份：`market-data-center`。
+项目根目录的未提交 `.env` 至少配置 `DATABASE_URL`、`RAW_DATA_ROOT` 和 `PYTDX_VIPDOC_PATH`。先安装依赖，再注册每天 18:30 的任务：
 
-`worker.env` 至少配置 `DATABASE_URL` 和 `RAW_DATA_ROOT=/var/lib/market-data-center/raw`。环境文件不得提交到 Git。
-`DATABASE_URL` 可以使用 `postgresql://` 或 `postgresql+psycopg://`；程序会在 psycopg 和 SQLAlchemy 边界选择正确的驱动格式。
-
-安装并验证：
-
-```bash
-sudo install -m 0644 deploy/systemd/market-data-center.service /etc/systemd/system/
-sudo install -m 0644 deploy/systemd/market-data-center.timer /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now market-data-center.timer
-systemctl list-timers market-data-center.timer
-sudo systemctl start market-data-center.service
-journalctl -u market-data-center.service --since today
+```powershell
+uv sync --all-groups
+powershell -ExecutionPolicy Bypass -File deploy/windows/register-daily-task.ps1
+Start-ScheduledTask -TaskName MarketDataCenter-Daily
+Get-ScheduledTaskInfo -TaskName MarketDataCenter-Daily
 ```
 
-Timer 每天北京时间 18:30 后运行，并设置最多 5 分钟随机延迟。`Persistent=true` 会在主机错过调度后补跑；Pipeline advisory lock 阻止同一 Provider、数据集和证券的并发重复执行。
+任务每天本地时间 18:30 运行，错过计划时在主机恢复后尽快启动，最长运行 4 小时。Pipeline advisory lock 阻止同一 Provider、数据集和证券的并发重复执行。通达信客户端仍负责在任务开始前更新本地行情文件。
 
 ## 生产 migration 与 smoke check
 

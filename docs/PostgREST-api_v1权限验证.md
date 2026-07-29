@@ -55,3 +55,8 @@ extra_search_path = ["extensions"]
 ```
 
 若配置包含任一内部 Schema，必须停止部署并修正。
+
+自托管环境还通过 migration 为 `authenticator` 角色设置等价的
+`pgrst.db_schemas=api_v1` 与 `pgrst.db_extra_search_path=extensions`，并发送
+PostgREST 配置/Schema 缓存重载通知。生产 smoke check 必须同时确认公开
+`api_v1` 返回 200、请求内部 `core` 返回 406。
