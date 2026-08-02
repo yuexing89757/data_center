@@ -27,6 +27,10 @@ from market_data_center.domain.classification import (
     validate_catalog,
     validate_member_snapshot,
 )
+from market_data_center.domain.deducted_profit import (
+    DeductedProfitRecord,
+    validate_deducted_profits,
+)
 from market_data_center.domain.entities import CalculatedTradingDay
 from market_data_center.domain.ingestion import (
     DatasetCode,
@@ -45,9 +49,14 @@ from market_data_center.domain.records import (
     IngestionEnvelope,
     SecurityRecord,
 )
+from market_data_center.domain.stock_daily_indicator import (
+    StockDailyIndicatorSnapshotRecord,
+    validate_stock_daily_indicators,
+)
 from market_data_center.domain.validation import validate_daily_bars
 from market_data_center.providers.contracts import (
     BoardIndexProvider,
+    DeductedProfitProvider,
     MarketDataProvider,
     ProviderBatch,
     ProviderError,
@@ -81,6 +90,8 @@ class PipelinePersistence(Protocol):
 
     def known_trading_dates(self, dates: Collection[date]) -> set[date]: ...
 
+    def latest_stock_daily_indicator_count_before(self, trade_date: date) -> int | None: ...
+
     def known_board_ids(self, board_ids: Collection[str]) -> set[str]: ...
 
     def trading_day_boundaries(
@@ -93,6 +104,21 @@ class PipelinePersistence(Protocol):
         manifest: RawManifest,
         records: Sequence[IngestionEnvelope[DailyBarRecord]],
         quality_results: Sequence[QualityResult],
+    ) -> None: ...
+
+    def commit_stock_daily_indicator_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest,
+        records: Sequence[IngestionEnvelope[StockDailyIndicatorSnapshotRecord]],
+        quality_results: Sequence[QualityResult],
+    ) -> None: ...
+
+    def commit_deducted_profit_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest,
+        records: Sequence[IngestionEnvelope[DeductedProfitRecord]],
     ) -> None: ...
 
     def commit_capital_batch(
@@ -331,6 +357,125 @@ class IngestionPipeline:
                 self._record_failure(run, error)
                 raise
 
+    def ingest_stock_daily_indicators(
+        self, source_symbol: str, start_date: date, end_date: date
+    ) -> IngestionRun:
+        params = {
+            "source_symbol": source_symbol,
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+        }
+        task_key = f"{self._provider.source_code}:stock_daily_indicator:{source_symbol}"
+        return self._ingest_stock_daily_indicator_batch(
+            params,
+            task_key,
+            lambda: self._provider.fetch_stock_daily_indicators(
+                source_symbol, start_date, end_date
+            ),
+        )
+
+    def ingest_stock_daily_indicator_snapshot(self, trade_date: date) -> IngestionRun:
+        params: dict[str, object] = {"trade_date": trade_date.isoformat()}
+        previous_count = self._persistence.latest_stock_daily_indicator_count_before(trade_date)
+        minimum_accepted_rows = (
+            max(1, (previous_count * 9 + 9) // 10) if previous_count is not None else 1
+        )
+        params["minimum_accepted_rows"] = minimum_accepted_rows
+        task_key = (
+            f"{self._provider.source_code}:stock_daily_indicator_snapshot:{trade_date.isoformat()}"
+        )
+        return self._ingest_stock_daily_indicator_batch(
+            params,
+            task_key,
+            lambda: self._provider.fetch_stock_daily_indicator_snapshot(trade_date),
+            minimum_accepted_rows=minimum_accepted_rows,
+        )
+
+    def ingest_deducted_profit_updates(self, as_of_date: date) -> IngestionRun:
+        params = {"as_of_date": as_of_date.isoformat()}
+        with self._persistence.task_lock(
+            f"{self._provider.source_code}:deducted_profit:{as_of_date.isoformat()}"
+        ):
+            run = self._start_run(DatasetCode.DEDUCTED_PROFIT, params)
+            try:
+                provider = cast(DeductedProfitProvider, self._provider)
+                batch = provider.fetch_deducted_profit_updates(as_of_date)
+                manifest, normalized = self._stage_batch(run, batch)
+                records = tuple(normalized)
+                validated = validate_deducted_profits(
+                    records,
+                    known_symbols=self._persistence.known_symbols(
+                        {record.symbol for record in records}
+                    ),
+                )
+                completed = self._completed_run(run, len(batch.raw_rows), len(validated), 0)
+                self._persistence.commit_deducted_profit_batch(
+                    completed,
+                    manifest,
+                    self._envelopes(run.ingestion_id, validated),
+                )
+                return completed
+            except _RecordedProviderError:
+                raise
+            except Exception as error:
+                self._record_failure(run, error)
+                raise
+
+    def _ingest_stock_daily_indicator_batch(
+        self,
+        params: Mapping[str, object],
+        task_key: str,
+        fetch: Callable[[], ProviderBatch[StockDailyIndicatorSnapshotRecord]],
+        minimum_accepted_rows: int = 0,
+    ) -> IngestionRun:
+        with self._persistence.task_lock(task_key):
+            run = self._start_run(DatasetCode.STOCK_DAILY_INDICATOR, params)
+            try:
+                batch = fetch()
+                manifest, normalized = self._stage_batch(run, batch)
+                records = list(normalized)
+                validation = validate_stock_daily_indicators(
+                    records,
+                    known_symbols=self._persistence.known_symbols(
+                        {record.symbol for record in records}
+                    ),
+                    known_trading_dates=self._persistence.known_trading_dates(
+                        {record.trade_date for record in records}
+                    ),
+                    minimum_accepted_rows=minimum_accepted_rows,
+                )
+                quality_results = [
+                    QualityResult(
+                        quality_result_id=self._uuid_factory(),
+                        ingestion_id=run.ingestion_id,
+                        dataset_code=DatasetCode.STOCK_DAILY_INDICATOR,
+                        rule_code=finding.rule_code,
+                        severity=QualitySeverity.ERROR,
+                        status=QualityStatus.FAILED,
+                        message=finding.message,
+                        natural_key=finding.natural_key,
+                    )
+                    for finding in validation.findings
+                ]
+                completed = self._completed_run(
+                    run,
+                    len(batch.raw_rows),
+                    len(validation.accepted),
+                    validation.rejected_rows,
+                )
+                self._persistence.commit_stock_daily_indicator_batch(
+                    completed,
+                    manifest,
+                    self._envelopes(run.ingestion_id, validation.accepted),
+                    quality_results,
+                )
+                return completed
+            except _RecordedProviderError:
+                raise
+            except Exception as error:
+                self._record_failure(run, error)
+                raise
+
     def ingest_classification_catalog(
         self, classification_type: str, *, snapshot_date: date | None = None
     ) -> IngestionRun:
@@ -548,6 +693,8 @@ class IngestionPipeline:
         | DailyBarRecord
         | CapitalRecord
         | ClassificationRecord
+        | StockDailyIndicatorSnapshotRecord
+        | DeductedProfitRecord
     ](ingestion_id: UUID, records: Sequence[RecordT]) -> tuple[IngestionEnvelope[RecordT], ...]:
         return tuple(IngestionEnvelope(ingestion_id, record) for record in records)
 

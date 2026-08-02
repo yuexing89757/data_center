@@ -26,6 +26,7 @@ from market_data_center.providers.router import (
     RoutedResult,
     RoutingAttempt,
 )
+from market_data_center.providers.tushare import TushareProvider
 
 __all__ = [
     "DEFAULT_PROVIDER_ROUTES",
@@ -44,6 +45,7 @@ __all__ = [
     "PytdxProvider",
     "RoutedResult",
     "RoutingAttempt",
+    "TushareProvider",
     "available_board_index_provider_codes",
     "available_provider_codes",
     "create_board_index_provider",

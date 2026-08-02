@@ -9,6 +9,7 @@ from market_data_center.providers import (
     BaoStockProvider,
     ProviderError,
     PytdxProvider,
+    TushareProvider,
     available_board_index_provider_codes,
     available_provider_codes,
     create_board_index_provider,
@@ -17,7 +18,7 @@ from market_data_center.providers import (
 
 
 def test_registry_exposes_stable_provider_codes() -> None:
-    assert available_provider_codes() == ("akshare", "baostock", "pytdx")
+    assert available_provider_codes() == ("akshare", "baostock", "pytdx", "tushare")
     assert available_board_index_provider_codes() == ("akshare_ths",)
 
 
@@ -25,7 +26,9 @@ def test_registry_builds_each_adapter(tmp_path: Path, monkeypatch: MonkeyPatch) 
     assert isinstance(create_provider("akshare"), AKShareProvider)
     assert isinstance(create_provider("baostock"), BaoStockProvider)
     monkeypatch.setenv("PYTDX_VIPDOC_PATH", str(tmp_path))
+    monkeypatch.setenv("TUSHARE_TOKEN", "test-token")
     assert isinstance(create_provider("pytdx"), PytdxProvider)
+    assert isinstance(create_provider("tushare"), TushareProvider)
     assert isinstance(create_board_index_provider("akshare_ths"), AKShareTHSProvider)
 
 

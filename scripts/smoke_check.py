@@ -30,6 +30,7 @@ API_VIEWS = (
     "rights_issues",
     "securities",
     "share_capital",
+    "stock_daily_indicators",
     "trading_calendar",
 )
 BASE_REQUIRED_METRICS = {

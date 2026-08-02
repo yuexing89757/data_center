@@ -1,7 +1,10 @@
 """Manual phase-one ingestion commands."""
 
 from argparse import ArgumentParser, Namespace
-from datetime import date, datetime, timedelta
+from calendar import monthrange
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import UTC, date, datetime, timedelta
 from functools import partial
 from json import dumps
 from sys import stderr
@@ -16,8 +19,19 @@ from market_data_center.derivation import (
     DerivationService,
 )
 from market_data_center.domain import CalculationMode
-from market_data_center.domain.ingestion import DatasetCode, IngestionRun
-from market_data_center.persistence import PostgreSQLDerivedPersistence, PostgreSQLPersistence
+from market_data_center.domain.ingestion import DatasetCode, IngestionRun, IngestionStatus
+from market_data_center.domain.operations import TriggerSource, WorkflowCode
+from market_data_center.domain.stock_pool import (
+    MAINBOARD_LIMIT_DOWN_POOL,
+    MAINBOARD_LIMIT_UP_POOL,
+)
+from market_data_center.operations_service import WorkflowExecution, WorkflowExecutionService
+from market_data_center.persistence import (
+    PostgreSQLDerivedPersistence,
+    PostgreSQLOperationsPersistence,
+    PostgreSQLPersistence,
+    PostgreSQLStockPoolPersistence,
+)
 from market_data_center.pipeline import BoardIndexIngestionPipeline, IngestionPipeline
 from market_data_center.providers import (
     ManagedMarketDataProvider,
@@ -37,6 +51,7 @@ from market_data_center.reliability import (
     recover_stale_runs,
 )
 from market_data_center.settings import WorkerSettings
+from market_data_center.stock_pool_service import StockPoolService
 
 AUTO_PROVIDER_CODE = "auto"
 DEFAULT_BOARD_INDEX_PROVIDER_CODE = "akshare_ths"
@@ -50,8 +65,22 @@ BOARD_INDEX_DATASETS = frozenset(
 SHANGHAI_TIME_ZONE = ZoneInfo("Asia/Shanghai")
 
 
+@dataclass(frozen=True, slots=True)
+class StockDailyIndicatorWorkflowResult:
+    as_of_date: date
+    calendar_run: IngestionRun
+    snapshot_run: IngestionRun
+    cutoff_date: date
+    deleted_rows: int
+
+
 def main() -> None:
     args = _parser().parse_args()
+    if args.dataset == "worker":
+        from market_data_center.scheduler import run_worker
+
+        run_worker(check=args.check)
+        return
     settings = WorkerSettings()  # type: ignore[call-arg]
     engine = create_engine(
         sqlalchemy_url(settings.database_url.get_secret_value()), pool_pre_ping=True
@@ -92,6 +121,52 @@ def main() -> None:
             raise SystemExit(1) from None
         return
 
+    if args.dataset == "stock-pool-check":
+        try:
+            if args.version is not None and args.version < 1:
+                raise ValueError("stock-pool version must be positive")
+            snapshot = PostgreSQLStockPoolPersistence(engine).inspect_ready_snapshot(
+                args.pool_code,
+                date.fromisoformat(args.effective_trade_date),
+                args.version,
+            )
+            print(dumps(snapshot, ensure_ascii=False, sort_keys=True, default=str))
+        except Exception as error:
+            print(
+                dumps(
+                    {
+                        "status": "failed",
+                        "operation": args.dataset,
+                        "error_type": type(error).__name__,
+                    },
+                    sort_keys=True,
+                ),
+                file=stderr,
+            )
+            raise SystemExit(1) from None
+        return
+
+    if args.dataset == "stock-pools-build":
+        execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
+            WorkflowCode.STOCK_POOL,
+            datetime.now(UTC).replace(second=0, microsecond=0),
+            TriggerSource.MANUAL,
+        )
+        try:
+            pool_summary = execution.step(
+                "build_stock_pools",
+                1,
+                lambda: StockPoolService(PostgreSQLStockPoolPersistence(engine)).build(
+                    date.fromisoformat(args.basis_trade_date)
+                ),
+            )
+        except BaseException as error:
+            execution.fail(error)
+            raise
+        execution.succeed()
+        print(dumps(_stock_pool_summary_json(pool_summary), sort_keys=True))
+        return
+
     if args.dataset in {"raw-replay", "recover-stale-runs", "compare-daily-bars"}:
         try:
             _run_reliability_command(args, persistence, raw_store)
@@ -110,8 +185,71 @@ def main() -> None:
             raise SystemExit(1) from None
         return
     if args.dataset == "daily-run":
-        _run_daily_workflow(args, persistence, raw_store)
+        execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
+            WorkflowCode.DAILY_MARKET,
+            datetime.now(UTC).replace(second=0, microsecond=0),
+            TriggerSource.MANUAL,
+        )
+        try:
+            run_daily_workflow(args, persistence, raw_store, execution=execution)
+        except BaseException as error:
+            execution.fail(error)
+            raise
+        execution.succeed()
         return
+    if args.dataset == "stock-daily-indicators-daily":
+        execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
+            WorkflowCode.STOCK_DAILY_INDICATOR,
+            datetime.now(UTC).replace(second=0, microsecond=0),
+            TriggerSource.MANUAL,
+        )
+        try:
+            run_stock_daily_indicator_workflow(args, persistence, raw_store, execution=execution)
+        except BaseException as error:
+            execution.fail(error)
+            raise
+        execution.succeed()
+        return
+    if args.dataset == "stock-daily-indicator-retention":
+        cutoff_date = date.fromisoformat(args.cutoff_date)
+        deleted = persistence.delete_stock_daily_indicators_before(cutoff_date)
+        print(f"stock-daily-indicator-retention cutoff={cutoff_date.isoformat()} deleted={deleted}")
+        return
+    if args.dataset == "deducted-profit-daily":
+        if args.provider != "tushare":
+            raise SystemExit("deducted-profit-daily requires --provider tushare")
+        execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
+            WorkflowCode.DEDUCTED_PROFIT,
+            datetime.now(UTC).replace(second=0, microsecond=0),
+            TriggerSource.MANUAL,
+        )
+        try:
+            run = execution.step(
+                "deducted_profit",
+                1,
+                lambda: _run_explicit(args, persistence, raw_store),
+            )
+        except BaseException as error:
+            execution.fail(error)
+            raise
+        execution.succeed()
+        if run is None:
+            raise RuntimeError("deducted-profit workflow returned no ingestion run")
+        print(
+            f"{run.dataset_code.value} {run.status.value} "
+            f"provider={run.provider_code.value} ingestion_id={run.ingestion_id}"
+        )
+        return
+    if (
+        args.dataset
+        in {
+            "stock-daily-indicator",
+            "stock-daily-indicators-bulk",
+            "deducted-profit-daily",
+        }
+        and args.provider == AUTO_PROVIDER_CODE
+    ):
+        raise SystemExit(f"{args.dataset} requires --provider tushare")
     if args.provider == AUTO_PROVIDER_CODE:
         run = _run_automatic(args, persistence, raw_store)
     else:
@@ -370,10 +508,12 @@ def _bulk_symbols(
     return symbols
 
 
-def _run_daily_workflow(
+def run_daily_workflow(
     args: Namespace,
     persistence: PostgreSQLPersistence,
     raw_store: LocalRawStore,
+    *,
+    execution: WorkflowExecution | None = None,
 ) -> date | None:
     as_of_date = (
         date.fromisoformat(args.as_of_date)
@@ -392,8 +532,15 @@ def _run_daily_workflow(
         start_date=(as_of_date - timedelta(days=args.calendar_lookback_days - 1)).isoformat(),
         end_date=as_of_date.isoformat(),
     )
-    _execute_operation(security_args, persistence, raw_store)
-    _execute_operation(calendar_args, persistence, raw_store)
+    _execute_workflow_step(
+        execution, "security", 1, lambda: _execute_operation(security_args, persistence, raw_store)
+    )
+    _execute_workflow_step(
+        execution,
+        "trading_calendar",
+        2,
+        lambda: _execute_operation(calendar_args, persistence, raw_store),
+    )
 
     calendar_start_date = as_of_date - timedelta(days=args.calendar_lookback_days - 1)
     bar_end_date = persistence.latest_trading_date(calendar_start_date, as_of_date)
@@ -410,15 +557,102 @@ def _run_daily_workflow(
         end_date=bar_end_date.isoformat(),
         allow_unavailable=True,
     )
-    _execute_operation(daily_bar_args, persistence, raw_store)
+    _execute_workflow_step(
+        execution,
+        "daily_bar",
+        3,
+        lambda: _execute_operation(daily_bar_args, persistence, raw_store),
+    )
     return bar_end_date
+
+
+def run_stock_daily_indicator_workflow(
+    args: Namespace,
+    persistence: PostgreSQLPersistence,
+    raw_store: LocalRawStore,
+    *,
+    execution: WorkflowExecution | None = None,
+) -> StockDailyIndicatorWorkflowResult | None:
+    if args.provider != "tushare":
+        raise SystemExit("stock-daily-indicators-daily requires --provider tushare")
+    as_of_date = (
+        date.fromisoformat(args.as_of_date)
+        if args.as_of_date
+        else datetime.now(SHANGHAI_TIME_ZONE).date()
+    )
+    calendar_args = _derived_args(
+        args,
+        dataset="trading-calendar",
+        start_date=as_of_date.isoformat(),
+        end_date=as_of_date.isoformat(),
+    )
+    calendar_run = _execute_workflow_step(
+        execution,
+        "trading_calendar",
+        1,
+        lambda: _execute_operation(calendar_args, persistence, raw_store),
+    )
+    if calendar_run is None or calendar_run.status is not IngestionStatus.SUCCEEDED:
+        raise RuntimeError("trading calendar synchronization did not succeed")
+    if persistence.latest_trading_date(as_of_date, as_of_date) != as_of_date:
+        print(f"stock-daily-indicators-daily market closed on {as_of_date.isoformat()}")
+        return None
+
+    snapshot_args = _derived_args(
+        args,
+        dataset="stock-daily-indicators-bulk",
+        trade_date=as_of_date.isoformat(),
+    )
+    snapshot_run = _execute_workflow_step(
+        execution,
+        "stock_daily_indicator",
+        2,
+        lambda: _execute_operation(snapshot_args, persistence, raw_store),
+    )
+    allowed_statuses = {IngestionStatus.SUCCEEDED, IngestionStatus.PARTIAL}
+    if (
+        snapshot_run is None
+        or snapshot_run.status not in allowed_statuses
+        or snapshot_run.accepted_rows <= 0
+    ):
+        raise RuntimeError("stock daily indicator snapshot is not safe for retention")
+    cutoff_date = _one_month_before(as_of_date)
+    deleted = _execute_workflow_step(
+        execution,
+        "retention",
+        3,
+        lambda: persistence.delete_stock_daily_indicators_before(cutoff_date),
+    )
+    print(f"stock-daily-indicator-retention cutoff={cutoff_date.isoformat()} deleted={deleted}")
+    return StockDailyIndicatorWorkflowResult(
+        as_of_date=as_of_date,
+        calendar_run=calendar_run,
+        snapshot_run=snapshot_run,
+        cutoff_date=cutoff_date,
+        deleted_rows=deleted,
+    )
+
+
+def _one_month_before(value: date) -> date:
+    year = value.year if value.month > 1 else value.year - 1
+    month = value.month - 1 if value.month > 1 else 12
+    return value.replace(year=year, month=month, day=min(value.day, monthrange(year, month)[1]))
+
+
+def _execute_workflow_step[T](
+    execution: WorkflowExecution | None,
+    job_code: str,
+    sequence_no: int,
+    operation: Callable[[], T],
+) -> T:
+    return operation() if execution is None else execution.step(job_code, sequence_no, operation)
 
 
 def _execute_operation(
     args: Namespace,
     persistence: PostgreSQLPersistence,
     raw_store: LocalRawStore,
-) -> None:
+) -> IngestionRun | None:
     if args.provider == AUTO_PROVIDER_CODE:
         run = _run_automatic(args, persistence, raw_store)
     else:
@@ -428,6 +662,7 @@ def _execute_operation(
             f"{run.dataset_code.value} {run.status.value} "
             f"provider={run.provider_code.value} ingestion_id={run.ingestion_id}"
         )
+    return run
 
 
 def _derived_args(args: Namespace, **overrides: object) -> Namespace:
@@ -484,6 +719,21 @@ def _execute(args: Namespace, pipeline: IngestionPipeline) -> IngestionRun:
         return pipeline.ingest_securities()
     if args.dataset == "capital":
         return pipeline.ingest_capital(args.source_symbol, mode=args.mode)
+    if args.dataset == "stock-daily-indicator":
+        return pipeline.ingest_stock_daily_indicators(
+            args.source_symbol,
+            date.fromisoformat(args.start_date),
+            date.fromisoformat(args.end_date),
+        )
+    if args.dataset == "stock-daily-indicators-bulk":
+        return pipeline.ingest_stock_daily_indicator_snapshot(date.fromisoformat(args.trade_date))
+    if args.dataset == "deducted-profit-daily":
+        as_of_date = (
+            date.fromisoformat(args.as_of_date)
+            if args.as_of_date
+            else datetime.now(SHANGHAI_TIME_ZONE).date()
+        )
+        return pipeline.ingest_deducted_profit_updates(as_of_date)
     if args.dataset == "classification-catalog":
         return pipeline.ingest_classification_catalog(
             args.classification_type,
@@ -530,6 +780,27 @@ def _parser() -> ArgumentParser:
         ),
     )
     _add_date_range(daily_bar)
+
+    daily_indicator = subparsers.add_parser(
+        "stock-daily-indicator",
+        help="synchronize Tushare daily valuation, share, and market-value snapshots",
+    )
+    daily_indicator.add_argument(
+        "--source-symbol",
+        required=True,
+        help="Tushare symbol such as 600000.SH; requires --provider tushare",
+    )
+    _add_date_range(daily_indicator)
+
+    daily_indicator_bulk = subparsers.add_parser(
+        "stock-daily-indicators-bulk",
+        help="synchronize one complete Tushare daily indicator market snapshot",
+    )
+    daily_indicator_bulk.add_argument(
+        "--trade-date",
+        required=True,
+        help="trading date YYYY-MM-DD",
+    )
 
     capital = subparsers.add_parser(
         "capital", help="reconcile share-capital, distribution, and rights-issue history"
@@ -636,6 +907,74 @@ def _parser() -> ArgumentParser:
     daily_run.add_argument("--shard-count", type=int, default=1)
     daily_run.add_argument("--shard-index", type=int, default=0)
 
+    worker = subparsers.add_parser(
+        "worker",
+        help="run the long-lived collection worker with embedded scheduling",
+    )
+    worker.add_argument(
+        "--check",
+        action="store_true",
+        help="run a read-only worker health check and exit",
+    )
+
+    daily_indicator_daily = subparsers.add_parser(
+        "stock-daily-indicators-daily",
+        help="synchronize today's Tushare market snapshot and enforce one-month Core retention",
+    )
+    daily_indicator_daily.add_argument(
+        "--as-of-date",
+        help="YYYY-MM-DD; defaults to the current Asia/Shanghai date",
+    )
+
+    daily_indicator_retention = subparsers.add_parser(
+        "stock-daily-indicator-retention",
+        help="delete Core stock daily indicators before an explicit cutoff date",
+    )
+    daily_indicator_retention.add_argument(
+        "--cutoff-date",
+        required=True,
+        help="delete rows with trade_date before this YYYY-MM-DD date",
+    )
+
+    deducted_profit = subparsers.add_parser(
+        "deducted-profit-daily",
+        help="discover and synchronize newly disclosed or revised deducted-profit facts",
+    )
+    deducted_profit.add_argument(
+        "--as-of-date",
+        help="YYYY-MM-DD disclosure discovery date; defaults to Asia/Shanghai today",
+    )
+
+    stock_pools = subparsers.add_parser(
+        "stock-pools-build",
+        help="build immutable main-board previous-day limit-up and limit-down pools",
+    )
+    stock_pools.add_argument(
+        "--basis-trade-date",
+        required=True,
+        help="exact price-limit event trading date YYYY-MM-DD",
+    )
+
+    stock_pool_check = subparsers.add_parser(
+        "stock-pool-check",
+        help="read one exact ready stock-pool snapshot without date fallback",
+    )
+    stock_pool_check.add_argument(
+        "--pool-code",
+        choices=(MAINBOARD_LIMIT_UP_POOL, MAINBOARD_LIMIT_DOWN_POOL),
+        required=True,
+    )
+    stock_pool_check.add_argument(
+        "--effective-trade-date",
+        required=True,
+        help="exact effective trading date YYYY-MM-DD",
+    )
+    stock_pool_check.add_argument(
+        "--version",
+        type=int,
+        help="optional exact positive snapshot version; defaults to latest ready version",
+    )
+
     replay = subparsers.add_parser(
         "raw-replay", help="validate and replay an immutable Raw ingestion batch"
     )
@@ -659,3 +998,19 @@ def _parser() -> ArgumentParser:
 def _add_date_range(parser: ArgumentParser) -> None:
     parser.add_argument("--start-date", required=True, help="inclusive YYYY-MM-DD")
     parser.add_argument("--end-date", required=True, help="inclusive YYYY-MM-DD")
+
+
+def _stock_pool_summary_json(summary: object) -> dict[str, object]:
+    return {
+        name: (
+            [str(item) for item in value]
+            if isinstance(value, tuple)
+            else value.isoformat()
+            if isinstance(value, (date, datetime))
+            else str(value)
+            if isinstance(value, UUID)
+            else value
+        )
+        for name in summary.__slots__  # type: ignore[attr-defined]
+        for value in (getattr(summary, name),)
+    }

@@ -35,23 +35,97 @@ pytdx 还可从通达信 `T0002/hq_cache` 读取行业和概念完整快照，�
 
 `daily-bars-bulk` 仍保留为显式人工工具，但不进入日常调度。当前项目决策是不再补历史日 K；除非项目所有者再次明确要求，不运行该命令。
 
-## Windows 任务计划部署
+## 跨平台调度
 
-pytdx 读取 `D:\new_tdx64` 的本地通达信目录，因此生产采集 Worker 必须运行在能访问该目录的 Windows 主机。旧 Linux systemd 单元已删除，仓库提供：
+全部生产定时任务由统一的 `market-data-center worker` 进程负责，APScheduler 只是其内部
+组件：工作日 18:30 执行普通 `daily-run`，
+19:00 执行 Tushare 每日指标，并每小时恢复超时停留在 `running` 的采集批次。单线程执行器
+保证任务不重叠，PostgreSQL advisory lock 保证同一时刻只有一个 Scheduler 实例持有主锁。
 
-- `deploy/windows/run-daily.ps1`
-- `deploy/windows/register-daily-task.ps1`
+每天 20:00（包括周末）执行扣非净利润增量同步。该任务按披露变化发现受影响证券，不按
+交易日触发，也不进行全市场历史回填；详见 ADR-0020。
 
-项目根目录的未提交 `.env` 至少配置 `DATABASE_URL`、`RAW_DATA_ROOT` 和 `PYTDX_VIPDOC_PATH`。先安装依赖，再注册每天 18:30 的任务：
+周一至周五 19:30 构建沪深主板昨日涨停与昨日跌停两份不可变股票池。触发时间不是依赖
+完成的证明：任务还会检查 basis 当日 `daily_market`、`stock_daily_indicator` WorkflowRun
+均成功，并校验精确交易日、日 K、每日指标和 lineage；缺失时失败且不回退旧快照。
 
-```powershell
-uv sync --all-groups
-powershell -ExecutionPolicy Bypass -File deploy/windows/register-daily-task.ps1
-Start-ScheduledTask -TaskName MarketDataCenter-Daily
-Get-ScheduledTaskInfo -TaskName MarketDataCenter-Daily
+pytdx 只要求 `PYTDX_VIPDOC_PATH` 指向可读的 `vipdoc` 目录，不依赖 Windows API。在 Linux
+上可将通达信数据以只读卷挂载到 `/mnt/tdx/vipdoc`；通达信数据的外部更新仍由部署环境负责。
+Raw 与 JobStore 必须使用持久目录，例如：
+
+```dotenv
+PYTDX_VIPDOC_PATH=/mnt/tdx/vipdoc
+RAW_DATA_ROOT=/var/lib/market-data-center/raw
+SCHEDULER_STORE_PATH=/var/lib/market-data-center/scheduler/jobs.sqlite
 ```
 
-任务每天本地时间 18:30 运行，错过计划时在主机恢复后尽快启动，最长运行 4 小时。Pipeline advisory lock 阻止同一 Provider、数据集和证券的并发重复执行。通达信客户端仍负责在任务开始前更新本地行情文件。
+## 股票每日指标定时采集
+
+Tushare 每日指标由 APScheduler 进程在周一至周五 19:00 触发。Worker 先用 Tushare 同步
+当日交易日历；当日休市时直接跳过，开市时按 `trade_date` 一次获取全市场快照。采集
+成功或部分成功后，删除 Core 中早于一个自然月截止日的每日指标。Raw、Manifest、
+IngestionRun 和 QualityResult 不删除。
+
+项目根目录的 `.env` 必须配置 `DATABASE_URL` 和 `TUSHARE_TOKEN`。应用最新 migration
+并安装依赖后可直接前台启动：
+
+```bash
+uv sync --all-groups
+uv run market-data-center worker
+```
+
+Worker 内部使用 `data/scheduler/jobs.sqlite` 持久化任务状态。Linux 部署将项目安装在
+`/opt/market-data-center`，复制 `deploy/linux/market-data-center-worker.service` 到
+`/etc/systemd/system/` 后执行：
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now market-data-center-worker
+sudo systemctl status market-data-center-worker
+```
+
+只读健康检查可用于 systemd、容器或外部监控探针：
+
+```bash
+uv run market-data-center worker --check
+```
+
+退出码 `0` 表示全部启用任务均已持久化、没有超过一小时的陈旧运行，且最近每日指标快照
+不为空且不超过十天；否则退出码为 `1`，并输出 JSON 诊断信息。
+
+Worker 运行时还提供仅绑定本机 loopback 的只读任务页面：
+
+```text
+http://127.0.0.1:8765/admin/scheduled-tasks
+```
+
+页面与安全边界详见 `docs/Worker本地只读管理页面.md`。
+
+容器部署需要将 `data/scheduler` 和 Raw 根目录挂载为持久卷，并以
+`market-data-center worker` 作为容器主进程。不要同时启动多个 Worker 实例；
+现有 PostgreSQL advisory lock 是最后的重复执行保护，不替代单实例部署约束。
+
+手工执行同一工作流或显式清理：
+
+```powershell
+uv run market-data-center --provider tushare stock-daily-indicators-daily
+uv run market-data-center stock-daily-indicator-retention --cutoff-date 2026-07-01
+```
+
+物理清理只影响 `core.stock_daily_indicator` 且使用排他截止日，即保留截止日当天；
+详见 ADR-0015。
+
+## PostgreSQL 集成测试
+
+不得在生产数据库上执行集成测试。`deploy/testing/compose.yml` 提供临时 PostgreSQL 17；
+测试夹具会为每组用例创建独立数据库，脚本结束时删除容器和临时卷：
+
+```bash
+./deploy/testing/run-postgres-integration.sh
+```
+
+Windows 使用 `deploy/testing/run-postgres-integration.ps1`。两者都会设置仅限本地测试的
+`TEST_DATABASE_URL` 并执行 `uv run pytest -m integration`。
 
 ## 生产 migration 与 smoke check
 

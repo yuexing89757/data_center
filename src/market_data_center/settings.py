@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,3 +11,30 @@ class WorkerSettings(BaseSettings):
 
     database_url: SecretStr
     raw_data_root: Path = Path("data/raw")
+
+
+class TushareSettings(BaseSettings):
+    """Credentials for the optional Tushare provider."""
+
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    tushare_token: SecretStr
+
+
+class SchedulerSettings(BaseSettings):
+    """Embedded scheduling configuration for the collection Worker."""
+
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    scheduler_store_path: Path = Path("data/scheduler/jobs.sqlite")
+    scheduler_timezone: str = "Asia/Shanghai"
+    daily_run_hour: int = 18
+    daily_run_minute: int = 30
+    stock_daily_indicator_hour: int = 19
+    stock_daily_indicator_minute: int = 0
+    stock_pool_hour: int = 19
+    stock_pool_minute: int = 30
+    deducted_profit_hour: int = 20
+    deducted_profit_minute: int = 0
+    scheduler_misfire_grace_seconds: int = 21_600
+    worker_admin_port: int = Field(default=8765, ge=1, le=65_535)

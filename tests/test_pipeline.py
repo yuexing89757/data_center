@@ -21,6 +21,7 @@ from market_data_center.domain import (
     ClassificationRecord,
     ClassificationType,
     DailyBarRecord,
+    DatasetCode,
     Exchange,
     IngestionEnvelope,
     IngestionRun,
@@ -32,6 +33,7 @@ from market_data_center.domain import (
     SecurityStatus,
     SecurityType,
     ShareCapitalRecord,
+    StockDailyIndicatorSnapshotRecord,
     TradeStatus,
     TradingDayRecord,
 )
@@ -82,6 +84,34 @@ def _share_capital() -> ShareCapitalRecord:
         circulating_shares=900_000,
         listed_a_shares=900_000,
         change_reason="test",
+        source_code="baostock",
+    )
+
+
+def _stock_daily_indicator() -> StockDailyIndicatorSnapshotRecord:
+    from market_data_center.domain import PriceLimitStatus
+
+    return StockDailyIndicatorSnapshotRecord(
+        symbol="SSE:600000",
+        trade_date=date(2026, 7, 28),
+        market=Market.CN_A_SHARE,
+        close=Decimal("10.5"),
+        turnover_rate_pct=Decimal("1.2"),
+        free_float_turnover_rate_pct=Decimal("1.5"),
+        volume_ratio=Decimal("1.1"),
+        pe=Decimal("8"),
+        pe_ttm=Decimal("7.9"),
+        pb=Decimal("0.8"),
+        ps=Decimal("2"),
+        ps_ttm=Decimal("1.9"),
+        dividend_yield_pct=Decimal("3"),
+        dividend_yield_ttm_pct=Decimal("3.1"),
+        total_shares=10_000_000,
+        circulating_shares=8_000_000,
+        free_float_shares=6_000_000,
+        total_market_value=Decimal("105000000"),
+        circulating_market_value=Decimal("84000000"),
+        price_limit_status=PriceLimitStatus.RISE,
         source_code="baostock",
     )
 
@@ -155,6 +185,26 @@ class StubProvider:
             raw_rows=[{"_capital_record_type": "share_capital", "symbol": source_symbol}],
             request_params={"source_symbol": source_symbol},
             schema_version="capital.v1",
+        )
+
+    def fetch_stock_daily_indicators(
+        self, source_symbol: str, start_date: date, end_date: date
+    ) -> ProviderBatch[StockDailyIndicatorSnapshotRecord]:
+        return ProviderBatch(
+            records=[_stock_daily_indicator()],
+            raw_rows=[{"ts_code": source_symbol, "trade_date": start_date.isoformat()}],
+            request_params={"source_symbol": source_symbol},
+            schema_version="stock-daily-indicator.v1",
+        )
+
+    def fetch_stock_daily_indicator_snapshot(
+        self, trade_date: date
+    ) -> ProviderBatch[StockDailyIndicatorSnapshotRecord]:
+        return ProviderBatch(
+            records=[_stock_daily_indicator()],
+            raw_rows=[{"trade_date": trade_date.isoformat()}],
+            request_params={"trade_date": trade_date.isoformat()},
+            schema_version="stock-daily-indicator.v1",
         )
 
     def fetch_classification_catalog(
@@ -288,6 +338,14 @@ class StubPersistence:
                 Sequence[QualityResult],
             ]
         ] = []
+        self.stock_daily_indicator_commits: list[
+            tuple[
+                IngestionRun,
+                RawManifest,
+                Sequence[IngestionEnvelope[StockDailyIndicatorSnapshotRecord]],
+                Sequence[QualityResult],
+            ]
+        ] = []
         self.classification_catalog_commits: list[
             tuple[
                 IngestionRun,
@@ -331,6 +389,7 @@ class StubPersistence:
         self.symbols: set[str] = {"SSE:600000"}
         self.trading_dates: set[date] = {date(2026, 7, 28)}
         self.board_ids: set[str] = {"THS:883423"}
+        self.previous_stock_daily_indicator_count: int | None = 1
 
     def task_lock(self, task_key: str) -> AbstractContextManager[None]:
         return nullcontext()
@@ -363,6 +422,9 @@ class StubPersistence:
     def known_trading_dates(self, dates: Collection[date]) -> set[date]:
         return self.trading_dates.intersection(dates)
 
+    def latest_stock_daily_indicator_count_before(self, trade_date: date) -> int | None:
+        return self.previous_stock_daily_indicator_count
+
     def known_board_ids(self, board_ids: Collection[str]) -> set[str]:
         return self.board_ids.intersection(board_ids)
 
@@ -388,6 +450,15 @@ class StubPersistence:
         quality_results: Sequence[QualityResult],
     ) -> None:
         self.capital_commits.append((run, manifest, records, quality_results))
+
+    def commit_stock_daily_indicator_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest,
+        records: Sequence[IngestionEnvelope[StockDailyIndicatorSnapshotRecord]],
+        quality_results: Sequence[QualityResult],
+    ) -> None:
+        self.stock_daily_indicator_commits.append((run, manifest, records, quality_results))
 
     def known_classification_snapshots(
         self, keys: Collection[tuple[str, ClassificationType, str, date]]
@@ -483,6 +554,50 @@ def test_capital_pipeline_commits_validated_envelopes(tmp_path: Path) -> None:
     assert persistence.created[0].request_params["mode"] == "backfill"
     assert len(persistence.capital_commits) == 1
     assert persistence.capital_commits[0][2][0].record == _share_capital()
+
+
+def test_stock_daily_indicator_pipeline_commits_validated_snapshot(tmp_path: Path) -> None:
+    persistence = StubPersistence()
+    pipeline = _pipeline(tmp_path, StubProvider(), persistence)
+
+    run = pipeline.ingest_stock_daily_indicators("600000", date(2026, 7, 28), date(2026, 7, 28))
+
+    assert run.status is IngestionStatus.SUCCEEDED
+    assert run.dataset_code is DatasetCode.STOCK_DAILY_INDICATOR
+    assert run.accepted_rows == 1
+    assert persistence.stock_daily_indicator_commits[0][2][0].record.free_float_shares == 6_000_000
+
+
+def test_stock_daily_indicator_pipeline_commits_full_market_snapshot(tmp_path: Path) -> None:
+    persistence = StubPersistence()
+    pipeline = _pipeline(tmp_path, StubProvider(), persistence)
+
+    run = pipeline.ingest_stock_daily_indicator_snapshot(date(2026, 7, 28))
+
+    assert run.status is IngestionStatus.SUCCEEDED
+    assert run.accepted_rows == 1
+    assert persistence.created[0].request_params == {
+        "trade_date": "2026-07-28",
+        "minimum_accepted_rows": 1,
+    }
+    assert persistence.stock_daily_indicator_commits[0][1].row_count == 1
+
+
+def test_stock_daily_indicator_pipeline_blocks_historical_coverage_collapse(
+    tmp_path: Path,
+) -> None:
+    persistence = StubPersistence()
+    persistence.previous_stock_daily_indicator_count = 10
+    pipeline = _pipeline(tmp_path, StubProvider(), persistence)
+
+    run = pipeline.ingest_stock_daily_indicator_snapshot(date(2026, 7, 28))
+
+    assert run.status is IngestionStatus.FAILED
+    assert run.accepted_rows == 0
+    assert run.rejected_rows == 1
+    _, _, records, findings = persistence.stock_daily_indicator_commits[0]
+    assert records == ()
+    assert findings[-1].rule_code.endswith("incomplete_market_snapshot")
 
 
 def test_classification_pipeline_commits_catalog_before_members(tmp_path: Path) -> None:

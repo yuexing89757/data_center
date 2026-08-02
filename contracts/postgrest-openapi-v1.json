@@ -61,6 +61,25 @@
           "404": {"description": "No snapshot exists as of the requested date"}
         }
       }
+    },
+    "/rpc/query_deducted_profits_as_of": {
+      "post": {
+        "operationId": "queryDeductedProfitsAsOf",
+        "summary": "Read latest point-in-time deducted-profit facts",
+        "requestBody": {"$ref": "#/components/requestBodies/DeductedProfitsAsOf"},
+        "responses": {"200": {"description": "Bounded latest announced profit facts"}}
+      }
+    },
+    "/rpc/query_stock_pool_snapshot": {
+      "post": {
+        "operationId": "queryStockPoolSnapshot",
+        "summary": "Read one exact immutable ready stock-pool snapshot",
+        "requestBody": {"$ref": "#/components/requestBodies/StockPoolSnapshot"},
+        "responses": {
+          "200": {"description": "Snapshot metadata and frozen member details"},
+          "404": {"description": "No exact ready snapshot exists; no date fallback"}
+        }
+      }
     }
   },
   "components": {
@@ -147,6 +166,43 @@
             "p_classification_type": {"type": "string", "enum": ["industry", "concept", "index"]},
             "p_classification_code": {"type": "string", "minLength": 1},
             "p_as_of_date": {"$ref": "#/components/schemas/Date"},
+            "p_limit": {"$ref": "#/components/schemas/Limit5000"}
+          }
+        }}}
+      },
+      "DeductedProfitsAsOf": {
+        "required": true,
+        "content": {"application/json": {"schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["p_as_of_date"],
+          "properties": {
+            "p_as_of_date": {"$ref": "#/components/schemas/Date"},
+            "p_symbols": {
+              "type": ["array", "null"],
+              "items": {"$ref": "#/components/schemas/StandardSymbol"},
+              "maxItems": 500
+            },
+            "p_limit": {"type": "integer", "minimum": 1, "maximum": 2000, "default": 500}
+          }
+        }}}
+      },
+      "StockPoolSnapshot": {
+        "required": true,
+        "content": {"application/json": {"schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["p_pool_code", "p_effective_trade_date"],
+          "properties": {
+            "p_pool_code": {
+              "type": "string",
+              "enum": [
+                "CN_A_PREVIOUS_DAY_MAINBOARD_LIMIT_UP",
+                "CN_A_PREVIOUS_DAY_MAINBOARD_LIMIT_DOWN"
+              ]
+            },
+            "p_effective_trade_date": {"$ref": "#/components/schemas/Date"},
+            "p_version": {"type": ["integer", "null"], "minimum": 1, "default": null},
             "p_limit": {"$ref": "#/components/schemas/Limit5000"}
           }
         }}}

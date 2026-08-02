@@ -1,0 +1,26 @@
+[Unit]
+Description=Market Data Center collection worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=market-data-center
+Group=market-data-center
+WorkingDirectory=/opt/market-data-center
+EnvironmentFile=/opt/market-data-center/.env
+ExecStart=/opt/market-data-center/.venv/bin/market-data-center worker
+Restart=always
+RestartSec=10
+KillSignal=SIGTERM
+TimeoutStopSec=300
+StateDirectory=market-data-center
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/market-data-center
+
+[Install]
+WantedBy=multi-user.target

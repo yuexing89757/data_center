@@ -24,6 +24,44 @@ The repeatable Daily Bar coverage, invariant, source, and lineage audit is docum
 
 Capital history is synchronized with `market-data-center capital --source-symbol SSE:600000 --mode backfill` and reconciled later with `--mode incremental`. Its accepted boundary is documented in [ADR-0007](docs/adr/ADR-0007-Capital与公司行为基础事实.md).
 
+Tushare stock daily indicators support both a single-symbol range and one complete
+trade-date snapshot. Prefer the bulk command for routine market-wide ingestion:
+
+```bash
+market-data-center --provider tushare stock-daily-indicators-bulk --trade-date 2026-07-31
+```
+
+The scheduled workflow synchronizes the actual trading day, collects the complete snapshot,
+and then retains one calendar month in Core while preserving Raw and audit lineage:
+
+```bash
+market-data-center --provider tushare stock-daily-indicators-daily
+```
+
+Run the unified cross-platform collection Worker as the single supervised application process:
+
+```bash
+market-data-center worker
+```
+
+APScheduler runs inside the Worker and persists scheduling state in
+`data/scheduler/jobs.sqlite`; mount that directory when running in a container. A systemd unit
+is provided under `deploy/linux/`. No separate Scheduler application is deployed.
+
+While the Worker is running, its loopback-only, read-only task page is available at
+`http://127.0.0.1:8765/admin/scheduled-tasks`; see
+[the local administration page runbook](docs/Worker本地只读管理页面.md).
+
+Deducted-profit facts are discovered incrementally from Tushare disclosures every calendar day
+at 20:00. The 2000-point path uses `disclosure_date` plus per-affected-symbol `fina_indicator`;
+it does not require VIP access or perform an implicit history backfill. Consumers use the bounded
+`query_deducted_profits_as_of` PostgREST RPC.
+
+Main-board previous-day limit-up and limit-down pools are calculated from internal unadjusted
+Daily Bars and exact daily indicators at 19:30 on trading days. Consumers read one immutable,
+exact-date snapshot through `query_stock_pool_snapshot`; the API never falls back to an older
+effective date. See `docs/领域详设-StockPool-2026-08-02.md`.
+
 Classification uses complete, Shanghai-date snapshots. Capture the catalog before its members:
 
 ```bash
@@ -59,7 +97,16 @@ so historical snapshots are accumulated by daily runs and can be replayed from
 immutable Raw data. See [ADR-0003](docs/adr/ADR-0003-同花顺动态板块指数.md) and
 [the collection runbook](docs/同花顺动态板块指数采集.md).
 
-The daily local-TDX workflow and Windows scheduled task are documented in [docs/Worker日常采集与调度.md](docs/Worker日常采集与调度.md).
+The daily local-TDX workflow and cross-platform APScheduler deployment are documented in [docs/Worker日常采集与调度.md](docs/Worker日常采集与调度.md).
+
+Run PostgreSQL integration tests against a disposable local database (never production):
+
+```bash
+./deploy/testing/run-postgres-integration.sh
+```
+
+On Windows use `deploy/testing/run-postgres-integration.ps1`. Both scripts start the
+Compose service, run the integration marker, and remove the temporary volume afterward.
 
 Verified Raw replay, stale-run recovery, and read-only cross-provider Daily Bar comparison are documented in [docs/Raw重放与运行恢复.md](docs/Raw重放与运行恢复.md).
 

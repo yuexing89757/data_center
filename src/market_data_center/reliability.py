@@ -28,6 +28,10 @@ from market_data_center.domain.classification import (
     validate_catalog,
     validate_member_snapshot,
 )
+from market_data_center.domain.deducted_profit import (
+    DeductedProfitRecord,
+    validate_deducted_profits,
+)
 from market_data_center.domain.entities import CalculatedTradingDay
 from market_data_center.domain.ingestion import (
     DatasetCode,
@@ -47,12 +51,17 @@ from market_data_center.domain.records import (
     SecurityRecord,
     TradingDayRecord,
 )
+from market_data_center.domain.stock_daily_indicator import (
+    StockDailyIndicatorSnapshotRecord,
+    validate_stock_daily_indicators,
+)
 from market_data_center.domain.validation import validate_daily_bars
 from market_data_center.providers.akshare import normalize_akshare_raw
 from market_data_center.providers.akshare_ths import normalize_akshare_ths_raw
 from market_data_center.providers.baostock import normalize_baostock_raw
 from market_data_center.providers.contracts import ProviderError, ProviderRecord
 from market_data_center.providers.pytdx import normalize_pytdx_raw
+from market_data_center.providers.tushare import normalize_tushare_raw
 from market_data_center.raw_store import LocalRawStore, RawIntegrityError
 
 
@@ -142,6 +151,21 @@ class ReliabilityPersistence(Protocol):
         quality_results: Sequence[QualityResult],
     ) -> None: ...
 
+    def commit_stock_daily_indicator_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest | None,
+        records: Sequence[IngestionEnvelope[StockDailyIndicatorSnapshotRecord]],
+        quality_results: Sequence[QualityResult],
+    ) -> None: ...
+
+    def commit_deducted_profit_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest | None,
+        records: Sequence[IngestionEnvelope[DeductedProfitRecord]],
+    ) -> None: ...
+
     def commit_capital_batch(
         self,
         run: IngestionRun,
@@ -217,6 +241,7 @@ _NORMALIZERS: Mapping[ProviderCode, Normalizer] = {
     ProviderCode.AKSHARE_THS: normalize_akshare_ths_raw,
     ProviderCode.BAOSTOCK: normalize_baostock_raw,
     ProviderCode.PYTDX: normalize_pytdx_raw,
+    ProviderCode.TUSHARE: normalize_tushare_raw,
 }
 
 
@@ -344,6 +369,69 @@ class RawReplayService:
                 len(validation.accepted),
                 validation.rejected_rows,
             )
+
+        if source.dataset_code is DatasetCode.STOCK_DAILY_INDICATOR:
+            indicator_records = cast(tuple[StockDailyIndicatorSnapshotRecord, ...], records)
+            indicator_validation = validate_stock_daily_indicators(
+                indicator_records,
+                known_symbols=self._persistence.known_symbols(
+                    {record.symbol for record in indicator_records}
+                ),
+                known_trading_dates=self._persistence.known_trading_dates(
+                    {record.trade_date for record in indicator_records}
+                ),
+            )
+            completed = self._completed(
+                run,
+                len(indicator_records),
+                len(indicator_validation.accepted),
+                indicator_validation.rejected_rows,
+            )
+            if completed is not None:
+                quality_results = tuple(
+                    QualityResult(
+                        quality_result_id=self._uuid_factory(),
+                        ingestion_id=completed.ingestion_id,
+                        dataset_code=DatasetCode.STOCK_DAILY_INDICATOR,
+                        rule_code=finding.rule_code,
+                        severity=QualitySeverity.ERROR,
+                        status=QualityStatus.FAILED,
+                        message=finding.message,
+                        natural_key=finding.natural_key,
+                    )
+                    for finding in indicator_validation.findings
+                )
+                self._persistence.commit_stock_daily_indicator_batch(
+                    completed,
+                    None,
+                    self._envelopes(completed.ingestion_id, indicator_validation.accepted),
+                    quality_results,
+                )
+            return self._summary(
+                source,
+                completed,
+                dry_run,
+                len(indicator_records),
+                len(indicator_validation.accepted),
+                indicator_validation.rejected_rows,
+            )
+
+        if source.dataset_code is DatasetCode.DEDUCTED_PROFIT:
+            profit_records = cast(tuple[DeductedProfitRecord, ...], records)
+            validated = validate_deducted_profits(
+                profit_records,
+                known_symbols=self._persistence.known_symbols(
+                    {record.symbol for record in profit_records}
+                ),
+            )
+            completed = self._completed(run, len(profit_records), len(validated), 0)
+            if completed is not None:
+                self._persistence.commit_deducted_profit_batch(
+                    completed,
+                    None,
+                    self._envelopes(completed.ingestion_id, validated),
+                )
+            return self._summary(source, completed, dry_run, len(profit_records), len(validated), 0)
 
         if source.dataset_code is DatasetCode.CLASSIFICATION_CATALOG:
             if len(records) != 1 or not isinstance(records[0], ClassificationCatalogSnapshotRecord):
@@ -648,6 +736,8 @@ class RawReplayService:
         | CapitalRecord
         | ClassificationRecord
         | BoardIndexProviderRecord
+        | StockDailyIndicatorSnapshotRecord
+        | DeductedProfitRecord
     ](ingestion_id: UUID, records: Sequence[RecordT]) -> tuple[IngestionEnvelope[RecordT], ...]:
         return tuple(IngestionEnvelope(ingestion_id, record) for record in records)
 

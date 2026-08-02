@@ -92,6 +92,49 @@
           "p_limit": {"type": "integer", "minimum": 1, "maximum": 5000, "default": 5000}
         }
       }
+    },
+    {
+      "name": "market_deducted_profits_as_of",
+      "description": "Read latest deducted-profit facts known and announced by an as-of date.",
+      "endpoint": "query_deducted_profits_as_of",
+      "read_only": true,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["p_as_of_date"],
+        "properties": {
+          "p_as_of_date": {"type": "string", "format": "date"},
+          "p_symbols": {
+            "type": ["array", "null"],
+            "items": {"type": "string", "pattern": "^(SSE|SZSE|BSE):[0-9]{6}$"},
+            "maxItems": 500
+          },
+          "p_limit": {"type": "integer", "minimum": 1, "maximum": 2000, "default": 500}
+        }
+      }
+    },
+    {
+      "name": "market_stock_pool_snapshot",
+      "description": "Read one exact immutable ready stock-pool snapshot; never falls back to another effective date.",
+      "endpoint": "query_stock_pool_snapshot",
+      "read_only": true,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["p_pool_code", "p_effective_trade_date"],
+        "properties": {
+          "p_pool_code": {
+            "type": "string",
+            "enum": [
+              "CN_A_PREVIOUS_DAY_MAINBOARD_LIMIT_UP",
+              "CN_A_PREVIOUS_DAY_MAINBOARD_LIMIT_DOWN"
+            ]
+          },
+          "p_effective_trade_date": {"type": "string", "format": "date"},
+          "p_version": {"type": ["integer", "null"], "minimum": 1, "default": null},
+          "p_limit": {"type": "integer", "minimum": 1, "maximum": 5000, "default": 5000}
+        }
+      }
     }
   ]
 }

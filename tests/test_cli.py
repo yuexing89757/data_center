@@ -1,12 +1,20 @@
 from argparse import Namespace
 from datetime import date
 from pathlib import Path
+from types import SimpleNamespace
 from typing import cast
 
 import pytest
 
 import market_data_center.cli as cli
-from market_data_center.cli import AUTO_PROVIDER_CODE, _parser, _run_daily_workflow
+from market_data_center.cli import (
+    AUTO_PROVIDER_CODE,
+    _one_month_before,
+    _parser,
+    run_daily_workflow,
+    run_stock_daily_indicator_workflow,
+)
+from market_data_center.domain import IngestionRun, IngestionStatus
 from market_data_center.persistence import PostgreSQLPersistence
 from market_data_center.raw_store import LocalRawStore
 
@@ -14,9 +22,14 @@ from market_data_center.raw_store import LocalRawStore
 class FakeDailyRunPersistence:
     def __init__(self, latest_trading_date: date | None) -> None:
         self._latest_trading_date = latest_trading_date
+        self.deleted_before: list[date] = []
 
     def latest_trading_date(self, start_date: date, end_date: date) -> date | None:
         return self._latest_trading_date
+
+    def delete_stock_daily_indicators_before(self, cutoff_date: date) -> int:
+        self.deleted_before.append(cutoff_date)
+        return 12
 
 
 def test_cli_uses_automatic_routing_by_default() -> None:
@@ -29,6 +42,173 @@ def test_cli_still_accepts_an_explicit_provider() -> None:
     args = _parser().parse_args(["--provider", "pytdx", "security"])
 
     assert args.provider == "pytdx"
+
+
+def test_stock_daily_indicator_bulk_parses_one_trade_date() -> None:
+    args = _parser().parse_args(
+        [
+            "--provider",
+            "tushare",
+            "stock-daily-indicators-bulk",
+            "--trade-date",
+            "2026-07-31",
+        ]
+    )
+
+    assert args.provider == "tushare"
+    assert args.trade_date == "2026-07-31"
+
+
+def test_stock_pool_commands_require_exact_dates_and_known_pool_codes() -> None:
+    build = _parser().parse_args(["stock-pools-build", "--basis-trade-date", "2026-07-31"])
+    check = _parser().parse_args(
+        [
+            "stock-pool-check",
+            "--pool-code",
+            "CN_A_PREVIOUS_DAY_MAINBOARD_LIMIT_DOWN",
+            "--effective-trade-date",
+            "2026-08-03",
+            "--version",
+            "2",
+        ]
+    )
+
+    assert build.basis_trade_date == "2026-07-31"
+    assert check.effective_trade_date == "2026-08-03"
+    assert check.version == 2
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (date(2026, 8, 31), date(2026, 7, 31)),
+        (date(2026, 3, 31), date(2026, 2, 28)),
+        (date(2026, 1, 30), date(2025, 12, 30)),
+    ],
+)
+def test_one_month_retention_cutoff_uses_calendar_month(value: date, expected: date) -> None:
+    assert _one_month_before(value) == expected
+
+
+def test_stock_daily_indicator_daily_collects_then_enforces_retention(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[Namespace] = []
+    persistence = FakeDailyRunPersistence(date(2026, 7, 31))
+
+    def record_run(
+        args: Namespace,
+        persistence: PostgreSQLPersistence,
+        raw_store: LocalRawStore,
+    ) -> IngestionRun:
+        calls.append(args)
+        return cast(
+            IngestionRun,
+            SimpleNamespace(status=IngestionStatus.SUCCEEDED, accepted_rows=1),
+        )
+
+    monkeypatch.setattr(cli, "_execute_operation", record_run)
+    args = _parser().parse_args(
+        [
+            "--provider",
+            "tushare",
+            "stock-daily-indicators-daily",
+            "--as-of-date",
+            "2026-07-31",
+        ]
+    )
+
+    result = run_stock_daily_indicator_workflow(
+        args,
+        cast(PostgreSQLPersistence, persistence),
+        cast(LocalRawStore, Path("unused")),
+    )
+
+    assert result is not None
+    assert result.as_of_date == date(2026, 7, 31)
+    assert result.cutoff_date == date(2026, 6, 30)
+    assert [call.dataset for call in calls] == [
+        "trading-calendar",
+        "stock-daily-indicators-bulk",
+    ]
+    assert persistence.deleted_before == [date(2026, 6, 30)]
+
+
+def test_stock_daily_indicator_daily_skips_closed_market_without_deleting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[Namespace] = []
+    persistence = FakeDailyRunPersistence(None)
+
+    def record_run(
+        args: Namespace,
+        persistence: PostgreSQLPersistence,
+        raw_store: LocalRawStore,
+    ) -> IngestionRun:
+        calls.append(args)
+        return cast(
+            IngestionRun,
+            SimpleNamespace(status=IngestionStatus.SUCCEEDED, accepted_rows=1),
+        )
+
+    monkeypatch.setattr(cli, "_execute_operation", record_run)
+    args = _parser().parse_args(
+        [
+            "--provider",
+            "tushare",
+            "stock-daily-indicators-daily",
+            "--as-of-date",
+            "2026-08-01",
+        ]
+    )
+
+    result = run_stock_daily_indicator_workflow(
+        args,
+        cast(PostgreSQLPersistence, persistence),
+        cast(LocalRawStore, Path("unused")),
+    )
+
+    assert result is None
+    assert [call.dataset for call in calls] == ["trading-calendar"]
+    assert persistence.deleted_before == []
+
+
+def test_stock_daily_indicator_daily_does_not_delete_after_failed_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    persistence = FakeDailyRunPersistence(date(2026, 7, 31))
+
+    def record_run(
+        args: Namespace,
+        persistence: PostgreSQLPersistence,
+        raw_store: LocalRawStore,
+    ) -> IngestionRun:
+        status = (
+            IngestionStatus.FAILED
+            if args.dataset == "stock-daily-indicators-bulk"
+            else IngestionStatus.SUCCEEDED
+        )
+        return cast(IngestionRun, SimpleNamespace(status=status, accepted_rows=0))
+
+    monkeypatch.setattr(cli, "_execute_operation", record_run)
+    args = _parser().parse_args(
+        [
+            "--provider",
+            "tushare",
+            "stock-daily-indicators-daily",
+            "--as-of-date",
+            "2026-07-31",
+        ]
+    )
+
+    with pytest.raises(RuntimeError, match="not safe for retention"):
+        run_stock_daily_indicator_workflow(
+            args,
+            cast(PostgreSQLPersistence, persistence),
+            cast(LocalRawStore, Path("unused")),
+        )
+
+    assert persistence.deleted_before == []
 
 
 def test_daily_run_has_current_day_defaults() -> None:
@@ -129,7 +309,7 @@ def test_daily_run_orders_prerequisites_before_incremental_bars(
         ]
     )
 
-    _run_daily_workflow(
+    run_daily_workflow(
         args,
         cast(PostgreSQLPersistence, FakeDailyRunPersistence(date(2026, 7, 29))),
         cast(LocalRawStore, Path("unused")),
@@ -147,6 +327,13 @@ def test_daily_run_orders_prerequisites_before_incremental_bars(
     assert calls[2].allow_unavailable
 
 
+def test_worker_command_exposes_embedded_scheduler_health_check() -> None:
+    args = _parser().parse_args(["worker", "--check"])
+
+    assert args.dataset == "worker"
+    assert args.check
+
+
 def test_daily_run_rejects_a_nonpositive_calendar_window() -> None:
     args = _parser().parse_args(
         [
@@ -159,7 +346,7 @@ def test_daily_run_rejects_a_nonpositive_calendar_window() -> None:
     )
 
     with pytest.raises(SystemExit, match="calendar-lookback-days must be positive"):
-        _run_daily_workflow(
+        run_daily_workflow(
             args,
             cast(PostgreSQLPersistence, FakeDailyRunPersistence(date(2026, 7, 29))),
             cast(LocalRawStore, Path("unused")),
@@ -183,7 +370,7 @@ def test_daily_run_uses_latest_trading_day_on_weekend(
         ["daily-run", "--as-of-date", "2026-07-26", "--bar-lookback-days", "7"]
     )
 
-    _run_daily_workflow(
+    run_daily_workflow(
         args,
         cast(PostgreSQLPersistence, FakeDailyRunPersistence(date(2026, 7, 24))),
         cast(LocalRawStore, Path("unused")),

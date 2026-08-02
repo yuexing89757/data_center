@@ -1,6 +1,6 @@
 # Supabase 备份恢复与凭据轮换
 
-本文是自托管 Supabase 的运维运行手册。应用数据备份覆盖 `audit`、`capital`、`classification`、`core`、`derived`、`ingestion` 和 `metrics` Schema。凭据必须从密钥管理器注入环境变量或 Supabase 主机上的 `.env`，不得把数据库 URL、密码、JWT、API key 或备份内容写入 Git、Issue、PR、CI 日志和操作记录。
+本文是自托管 Supabase 的运维运行手册。应用数据备份覆盖 `audit`、`capital`、`classification`、`core`、`derived`、`ingestion`、`metrics`、`operations` 和 `stock_pool` Schema。凭据必须从密钥管理器注入环境变量或 Supabase 主机上的 `.env`，不得把数据库 URL、密码、JWT、API key 或备份内容写入 Git、Issue、PR、CI 日志和操作记录。
 
 ## 1. 恢复目标
 
@@ -17,7 +17,7 @@ RTO 目标为 60 分钟，RPO 目标为 24 小时。上线后根据实际数据�
 
 ## 2. 应用数据备份
 
-仓库工具备份 Market Data Center 的 `audit`、`capital`、`classification`、`core`、`derived`、`ingestion` 和 `metrics` 数据，不把凭据放入进程参数。备份默认写入已被 Git 忽略的 `backups/`。
+仓库工具备份 Market Data Center 的 `audit`、`capital`、`classification`、`core`、`derived`、`ingestion`、`metrics`、`operations` 和 `stock_pool` 数据，不把凭据放入进程参数。备份默认写入已被 Git 忽略的 `backups/`。
 
 ```bash
 export SOURCE_DATABASE_URL='从密钥管理器注入'

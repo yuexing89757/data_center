@@ -1,12 +1,12 @@
 # 领域模型总纲 v3
 
 > 状态：有效  
-> 修订日期：2026-07-29
+> 修订日期：2026-08-02
 > 上级文档：`项目宪法-MarketDataCenter-2026-07-24.md`
 
 ## 1. 当前领域范围
 
-当前已实现八个业务领域和一个采集审计边界：
+当前已实现九个业务领域和一个采集审计边界：
 
 | 边界 | 职责 | 当前实体 |
 | --- | --- | --- |
@@ -14,13 +14,14 @@
 | Security | 证券身份、生命周期和名称历史 | `Security`、`SecurityNameHistory` |
 | Trading | A 股市场交易日历 | `TradingDay` |
 | Market | 不复权日频量价事实 | `DailyBar` |
+| StockDailyIndicator | 来源发布的每日估值、换手率、股本、市值和涨跌停状态快照 | `StockDailyIndicatorSnapshot` |
 | Capital | 股本和公司行为输入事实 | `ShareCapital`、`Distribution`、`RightsIssue` |
 | Classification | 分类目录和成员历史 | `ClassificationCatalogSnapshot`、`ClassificationMemberSnapshot`、`MemberInterval` |
 | BoardIndex | 第三方板块指数定义、不复权日 K 和逐日动态成分快照 | `BoardIndex`、`BoardIndexDailyBar`、`BoardIndexConstituentSnapshot` |
 | Derived | 版本化证券级客观派生 | `CalculationRun`、`AdjustedDailyBar`、`DailyMetric`、`MarketCapitalization` |
 | Metrics | 分类横截面客观统计 | `ClassificationDailyMetric` |
 
-BoardIndex、Capital、Classification 和 Derived/Metrics 分别由 ADR-0003、ADR-0007、ADR-0008、ADR-0009 进入实现。
+BoardIndex、Capital、Classification、Derived/Metrics 和 StockDailyIndicator 分别由 ADR-0003、ADR-0007、ADR-0008、ADR-0009、ADR-0014 进入实现。
 
 ## 2. 依赖方向
 
@@ -30,6 +31,7 @@ Ingestion ───────────────┐
 Security ────────────► Market
 Trading ─────────────► Market
 Security ────────────► Capital
+Security + Trading ──► StockDailyIndicator
 Security ────────────► Classification
 Security + Trading ──► BoardIndex
 Market + Capital ────► Derived
@@ -40,6 +42,7 @@ Derived + Market + Classification ──► Metrics
 - Security 和 Trading 不依赖 Market。
 - Market 通过 `symbol` 关联 Security，通过 `(market, trade_date)` 关联 Trading。
 - Capital 通过 `symbol` 关联 Security，不依赖 Market，也不发布复权行情。
+- StockDailyIndicator 通过 Security 和 Trading 保证引用完整性，不依赖或替代 DailyBar。
 - Classification 通过 `symbol` 关联 Security；分类定义不是 Security，也不依赖 Market。
 - BoardIndex 定义不是 Security；其日 K 关联 Trading，其逐日成分只引用已知 Security。
 - Derived 只依赖客观输入事实，Calculator 不访问数据库。
@@ -85,7 +88,8 @@ Provider 按数据集能力拆分接口：
 
 - `SecurityProvider`；
 - `TradingCalendarProvider`；
-- `DailyBarProvider`。
+- `DailyBarProvider`；
+- `StockDailyIndicatorProvider`；
 - `CapitalProvider`；
 - `ClassificationProvider`。
 - `BoardIndexProvider`。
@@ -139,3 +143,9 @@ Provider DTO 不包含 `ingestion_id`。Pipeline 在创建采集批次后，将�
 ## 8. 扩展纪律
 
 新增数据源时，先实现现有 Provider 契约和契约测试；新增领域时，先定义边界、事实、自然键、时间语义和 ADR。不得为了未来可能需求提前创建空领域包或空数据库表。
+
+## 9. 已接受、待实现领域
+
+ADR-0012 已接受 `RealtimeQuote` 股票实时五档领域。事实是带观察时间、来源时间和买卖
+一至五档的 append-only 快照；它不等于逐笔、十档或交易所 Level-2。当前尚未实现，
+首版只允许显式单次采集；在容量与数据授权完成前不得启动持续采集。

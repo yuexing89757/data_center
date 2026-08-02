@@ -11,6 +11,7 @@ from market_data_center.providers.contracts import (
     ProviderError,
 )
 from market_data_center.providers.pytdx import PytdxProvider
+from market_data_center.providers.tushare import TushareProvider
 
 type ProviderFactory = Callable[[], ManagedMarketDataProvider]
 type BoardIndexProviderFactory = Callable[[], ManagedBoardIndexProvider]
@@ -19,6 +20,7 @@ _PROVIDER_FACTORIES: dict[str, ProviderFactory] = {
     "akshare": AKShareProvider.default,
     "baostock": BaoStockProvider.default,
     "pytdx": PytdxProvider.default,
+    "tushare": TushareProvider.default,
 }
 
 _BOARD_INDEX_PROVIDER_FACTORIES: dict[str, BoardIndexProviderFactory] = {

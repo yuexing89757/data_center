@@ -20,6 +20,7 @@ from market_data_center.domain.classification import (
     ClassificationMemberSnapshotRecord,
     ClassificationType,
 )
+from market_data_center.domain.deducted_profit import DeductedProfitRecord
 from market_data_center.domain.entities import CalculatedTradingDay
 from market_data_center.domain.ingestion import (
     DatasetCode,
@@ -39,6 +40,7 @@ from market_data_center.domain.records import (
     SecurityRecord,
     ShareCapitalRecord,
 )
+from market_data_center.domain.stock_daily_indicator import StockDailyIndicatorSnapshotRecord
 
 INSERT_INGESTION_RUN = text("""
 insert into ingestion.ingestion_run (
@@ -196,6 +198,61 @@ on conflict (symbol, trade_date) do update set
     is_st = excluded.is_st,
     source_code = excluded.source_code,
     ingestion_id = excluded.ingestion_id
+""")
+
+UPSERT_STOCK_DAILY_INDICATOR = text("""
+insert into core.stock_daily_indicator (
+    symbol, trade_date, market, close, turnover_rate_pct,
+    free_float_turnover_rate_pct, volume_ratio, pe, pe_ttm, pb, ps, ps_ttm,
+    dividend_yield_pct, dividend_yield_ttm_pct, total_shares, circulating_shares,
+    free_float_shares, total_market_value, circulating_market_value,
+    price_limit_status, source_code, ingestion_id
+) values (
+    :symbol, :trade_date, :market, :close, :turnover_rate_pct,
+    :free_float_turnover_rate_pct, :volume_ratio, :pe, :pe_ttm, :pb, :ps, :ps_ttm,
+    :dividend_yield_pct, :dividend_yield_ttm_pct, :total_shares, :circulating_shares,
+    :free_float_shares, :total_market_value, :circulating_market_value,
+    :price_limit_status, :source_code, :ingestion_id
+)
+on conflict (symbol, trade_date) do update set
+    market = excluded.market,
+    close = excluded.close,
+    turnover_rate_pct = excluded.turnover_rate_pct,
+    free_float_turnover_rate_pct = excluded.free_float_turnover_rate_pct,
+    volume_ratio = excluded.volume_ratio,
+    pe = excluded.pe,
+    pe_ttm = excluded.pe_ttm,
+    pb = excluded.pb,
+    ps = excluded.ps,
+    ps_ttm = excluded.ps_ttm,
+    dividend_yield_pct = excluded.dividend_yield_pct,
+    dividend_yield_ttm_pct = excluded.dividend_yield_ttm_pct,
+    total_shares = excluded.total_shares,
+    circulating_shares = excluded.circulating_shares,
+    free_float_shares = excluded.free_float_shares,
+    total_market_value = excluded.total_market_value,
+    circulating_market_value = excluded.circulating_market_value,
+    price_limit_status = excluded.price_limit_status,
+    source_code = excluded.source_code,
+    ingestion_id = excluded.ingestion_id
+""")
+
+DELETE_STOCK_DAILY_INDICATORS_BEFORE = text("""
+delete from core.stock_daily_indicator
+where trade_date < :cutoff_date
+""")
+
+INSERT_DEDUCTED_PROFIT = text("""
+insert into core.deducted_profit (
+ symbol, report_period, announcement_date, actual_announcement_date,
+ cumulative_deducted_profit, quarterly_deducted_profit, update_flag,
+ revision_key, source_code, ingestion_id
+) values (
+ :symbol, :report_period, :announcement_date, :actual_announcement_date,
+ :cumulative_deducted_profit, :quarterly_deducted_profit, :update_flag,
+ :revision_key, :source_code, :ingestion_id
+)
+on conflict (symbol, report_period, revision_key) do nothing
 """)
 
 UPSERT_SHARE_CAPITAL = text("""
@@ -667,6 +724,39 @@ where market = 'CN_A_SHARE'
                 statement, {"start_date": start_date, "end_date": end_date}
             ).scalar_one_or_none()
 
+    def latest_stock_daily_indicator_count_before(self, trade_date: date) -> int | None:
+        statement = text("""
+select count(*)
+from core.stock_daily_indicator
+where trade_date = (
+    select max(trade_date)
+    from core.stock_daily_indicator
+    where trade_date < :trade_date
+)
+""")
+        with self._engine.connect() as connection:
+            count = connection.execute(statement, {"trade_date": trade_date}).scalar_one()
+        return count or None
+
+    def latest_stock_daily_indicator_snapshot(self) -> tuple[date, int] | None:
+        statement = text("""
+select trade_date, count(*)
+from core.stock_daily_indicator
+where trade_date = (select max(trade_date) from core.stock_daily_indicator)
+group by trade_date
+""")
+        with self._engine.connect() as connection:
+            row = connection.execute(statement).one_or_none()
+        return (row[0], row[1]) if row is not None else None
+
+    def delete_stock_daily_indicators_before(self, cutoff_date: date) -> int:
+        with self._engine.begin() as connection:
+            result = connection.execute(
+                DELETE_STOCK_DAILY_INDICATORS_BEFORE,
+                {"cutoff_date": cutoff_date},
+            )
+        return result.rowcount
+
     def known_trading_dates(self, dates: Collection[date]) -> set[date]:
         if not dates:
             return set()
@@ -735,6 +825,57 @@ where market = 'CN_A_SHARE'
             if records:
                 self._ensure_envelope_ids(records, run.ingestion_id)
                 connection.execute(UPSERT_DAILY_BAR, self._daily_bar_envelope_parameters(records))
+            connection.execute(UPDATE_INGESTION_RUN, self._run_update_parameters(run))
+
+    def commit_stock_daily_indicator_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest | None,
+        records: Sequence[IngestionEnvelope[StockDailyIndicatorSnapshotRecord]],
+        quality_results: Sequence[QualityResult],
+    ) -> None:
+        with self._engine.begin() as connection:
+            self._insert_manifest(connection, manifest)
+            if quality_results:
+                connection.execute(INSERT_QUALITY_RESULT, self._quality_parameters(quality_results))
+            if records:
+                self._ensure_envelope_ids(records, run.ingestion_id)
+                connection.execute(
+                    UPSERT_STOCK_DAILY_INDICATOR,
+                    self._stock_daily_indicator_envelope_parameters(records),
+                )
+            connection.execute(UPDATE_INGESTION_RUN, self._run_update_parameters(run))
+
+    def commit_deducted_profit_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest | None,
+        records: Sequence[IngestionEnvelope[DeductedProfitRecord]],
+    ) -> None:
+        with self._engine.begin() as connection:
+            self._insert_manifest(connection, manifest)
+            if records:
+                self._ensure_envelope_ids(records, run.ingestion_id)
+                connection.execute(
+                    INSERT_DEDUCTED_PROFIT,
+                    [
+                        {
+                            "symbol": record.record.symbol,
+                            "report_period": record.record.report_period,
+                            "announcement_date": record.record.announcement_date,
+                            "actual_announcement_date": record.record.actual_announcement_date,
+                            "cumulative_deducted_profit": (
+                                record.record.cumulative_deducted_profit
+                            ),
+                            "quarterly_deducted_profit": record.record.quarterly_deducted_profit,
+                            "update_flag": record.record.update_flag,
+                            "revision_key": record.record.revision_key,
+                            "source_code": record.record.source_code,
+                            "ingestion_id": record.ingestion_id,
+                        }
+                        for record in records
+                    ],
+                )
             connection.execute(UPDATE_INGESTION_RUN, self._run_update_parameters(run))
 
     def commit_capital_batch(
@@ -1074,6 +1215,38 @@ where board_id = :board_id and trade_date = :trade_date
         ]
 
     @staticmethod
+    def _stock_daily_indicator_envelope_parameters(
+        records: Iterable[IngestionEnvelope[StockDailyIndicatorSnapshotRecord]],
+    ) -> list[dict[str, object]]:
+        return [
+            {
+                "symbol": envelope.record.symbol,
+                "trade_date": envelope.record.trade_date,
+                "market": envelope.record.market.value,
+                "close": envelope.record.close,
+                "turnover_rate_pct": envelope.record.turnover_rate_pct,
+                "free_float_turnover_rate_pct": (envelope.record.free_float_turnover_rate_pct),
+                "volume_ratio": envelope.record.volume_ratio,
+                "pe": envelope.record.pe,
+                "pe_ttm": envelope.record.pe_ttm,
+                "pb": envelope.record.pb,
+                "ps": envelope.record.ps,
+                "ps_ttm": envelope.record.ps_ttm,
+                "dividend_yield_pct": envelope.record.dividend_yield_pct,
+                "dividend_yield_ttm_pct": envelope.record.dividend_yield_ttm_pct,
+                "total_shares": envelope.record.total_shares,
+                "circulating_shares": envelope.record.circulating_shares,
+                "free_float_shares": envelope.record.free_float_shares,
+                "total_market_value": envelope.record.total_market_value,
+                "circulating_market_value": envelope.record.circulating_market_value,
+                "price_limit_status": envelope.record.price_limit_status.value,
+                "source_code": envelope.record.source_code,
+                "ingestion_id": envelope.ingestion_id,
+            }
+            for envelope in records
+        ]
+
+    @staticmethod
     def _share_capital_envelope_parameters(
         records: Iterable[IngestionEnvelope[ShareCapitalRecord]],
     ) -> list[dict[str, object]]:
@@ -1244,6 +1417,8 @@ where board_id = :board_id and trade_date = :trade_date
         | DailyBarRecord
         | CapitalRecord
         | BoardIndexProviderRecord
+        | StockDailyIndicatorSnapshotRecord
+        | DeductedProfitRecord
     ](records: Iterable[IngestionEnvelope[RecordT]], ingestion_id: UUID) -> None:
         if any(envelope.ingestion_id != ingestion_id for envelope in records):
             raise ValueError("ingestion envelope does not match the batch run")

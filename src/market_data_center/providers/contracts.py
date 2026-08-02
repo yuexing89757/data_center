@@ -7,12 +7,14 @@ from typing import Protocol, Self
 
 from market_data_center.domain.board_index import BoardIndexProviderRecord
 from market_data_center.domain.classification import ClassificationRecord
+from market_data_center.domain.deducted_profit import DeductedProfitRecord
 from market_data_center.domain.records import (
     CapitalRecord,
     DailyBarRecord,
     SecurityRecord,
     TradingDayRecord,
 )
+from market_data_center.domain.stock_daily_indicator import StockDailyIndicatorSnapshotRecord
 
 type ProviderRecord = (
     SecurityRecord
@@ -21,6 +23,8 @@ type ProviderRecord = (
     | CapitalRecord
     | ClassificationRecord
     | BoardIndexProviderRecord
+    | StockDailyIndicatorSnapshotRecord
+    | DeductedProfitRecord
 )
 type RawRow = Mapping[str, str]
 
@@ -50,6 +54,14 @@ class MarketDataProvider(Protocol):
         self, source_symbol: str, start_date: date, end_date: date
     ) -> "ProviderBatch[DailyBarRecord]": ...
 
+    def fetch_stock_daily_indicators(
+        self, source_symbol: str, start_date: date, end_date: date
+    ) -> "ProviderBatch[StockDailyIndicatorSnapshotRecord]": ...
+
+    def fetch_stock_daily_indicator_snapshot(
+        self, trade_date: date
+    ) -> "ProviderBatch[StockDailyIndicatorSnapshotRecord]": ...
+
     def fetch_capital(self, source_symbol: str) -> "ProviderBatch[CapitalRecord]": ...
 
     def fetch_classification_catalog(
@@ -72,6 +84,14 @@ class ManagedMarketDataProvider(MarketDataProvider, Protocol):
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None: ...
+
+
+class DeductedProfitProvider(Protocol):
+    source_code: str
+
+    def fetch_deducted_profit_updates(
+        self, as_of_date: date
+    ) -> "ProviderBatch[DeductedProfitRecord]": ...
 
 
 class BoardIndexProvider(Protocol):

@@ -30,10 +30,12 @@ from market_data_center.domain.records import (
     TradeStatus,
     TradingDayRecord,
 )
+from market_data_center.domain.stock_daily_indicator import StockDailyIndicatorSnapshotRecord
 from market_data_center.providers.contracts import (
     ProviderBatch,
     ProviderError,
     ProviderRecord,
+    ProviderRequestUnavailable,
     RawRow,
 )
 
@@ -214,6 +216,16 @@ class AKShareProvider(AbstractContextManager["AKShareProvider"]):
             schema_version="akshare.capital.v1",
             record_factory=lambda: list(_map_capital_rows(rows, code)),
         )
+
+    def fetch_stock_daily_indicators(
+        self, source_symbol: str, start_date: date, end_date: date
+    ) -> ProviderBatch[StockDailyIndicatorSnapshotRecord]:
+        raise ProviderRequestUnavailable("AKShare does not provide accepted stock daily indicators")
+
+    def fetch_stock_daily_indicator_snapshot(
+        self, trade_date: date
+    ) -> ProviderBatch[StockDailyIndicatorSnapshotRecord]:
+        raise ProviderRequestUnavailable("AKShare does not provide accepted stock daily indicators")
 
     def fetch_classification_catalog(
         self, classification_type: str, snapshot_date: date

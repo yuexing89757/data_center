@@ -11,6 +11,9 @@ htmlcov/
 !.env.example
 data/raw/
 data/bulk/
+data/logs/
+data/scheduler/
+data/worker/
 backups/
 reports/
 dist/

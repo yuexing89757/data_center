@@ -19,6 +19,8 @@ APPLICATION_SCHEMAS = (
     "derived",
     "ingestion",
     "metrics",
+    "operations",
+    "stock_pool",
 )
 COUNT_QUERIES = {
     "adjusted_daily_bar": "select count(*) from derived.adjusted_daily_bar",
@@ -40,14 +42,23 @@ COUNT_QUERIES = {
     "board_index_daily_bar": "select count(*) from core.board_index_daily_bar",
     "quality_result": "select count(*) from audit.quality_result",
     "daily_bar": "select count(*) from core.daily_bar",
+    "daily_price_limit": "select count(*) from derived.daily_price_limit",
     "daily_metric": "select count(*) from derived.daily_metric",
+    "deducted_profit": "select count(*) from core.deducted_profit",
     "distribution": "select count(*) from capital.distribution",
     "market_capitalization": "select count(*) from derived.market_capitalization",
+    "job_execution": "select count(*) from operations.job_execution",
+    "price_limit_event": "select count(*) from derived.price_limit_event",
     "rights_issue": "select count(*) from capital.rights_issue",
     "security": "select count(*) from core.security",
     "security_name_history": "select count(*) from core.security_name_history",
     "share_capital": "select count(*) from capital.share_capital",
+    "stock_daily_indicator": "select count(*) from core.stock_daily_indicator",
+    "stock_pool_calculation_quality": ("select count(*) from stock_pool.calculation_quality"),
+    "stock_pool_member": "select count(*) from stock_pool.member",
+    "stock_pool_snapshot": "select count(*) from stock_pool.snapshot",
     "trading_calendar": "select count(*) from core.trading_calendar",
+    "workflow_run": "select count(*) from operations.workflow_run",
     "ingestion_run": "select count(*) from ingestion.ingestion_run",
     "raw_manifest": "select count(*) from ingestion.raw_manifest",
 }
@@ -102,6 +113,10 @@ def capture_database_snapshot(database_url: str) -> DatabaseSnapshot:
                 select ingestion_id from core.board_index_daily_bar
                 union all
                 select ingestion_id from core.board_index_constituent_snapshot
+                union all
+                select ingestion_id from core.stock_daily_indicator
+                union all
+                select ingestion_id from core.deducted_profit
                 union all
                 select ingestion_id from capital.share_capital
                 union all

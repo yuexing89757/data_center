@@ -34,6 +34,7 @@ from market_data_center.domain import (
     CorporateActionStatus,
     DailyBarRecord,
     DatasetCode,
+    DeductedProfitRecord,
     DistributionRecord,
     Exchange,
     IngestionEnvelope,
@@ -52,9 +53,12 @@ from market_data_center.domain import (
     SecurityType,
     ShareCapitalRecord,
     TradeStatus,
+    deducted_profit_revision_key,
 )
+from market_data_center.domain.operations import ExecutionStatus, TriggerSource, WorkflowCode
 from market_data_center.migrations import MIGRATION_DIR, apply_migrations
 from market_data_center.persistence import PostgreSQLDerivedPersistence, PostgreSQLPersistence
+from market_data_center.persistence.operations_postgres import PostgreSQLOperationsPersistence
 from market_data_center.quality_audit import audit_daily_bars
 from market_data_center.recovery import (
     backup_application_data,
@@ -143,7 +147,164 @@ def test_migrations_apply_to_empty_database_and_are_idempotent(
         "query_adjusted_daily_bars",
         "query_market_snapshot",
         "query_classification_members_as_of",
+        "query_deducted_profits_as_of",
+        "query_stock_pool_snapshot",
     }.issubset({row[1] for row in first_snapshot["routines"]})
+
+
+def test_operations_repository_records_attempts_steps_and_stale_recovery(
+    database_engine: Engine,
+) -> None:
+    persistence = PostgreSQLOperationsPersistence(database_engine)
+    scheduled_for = datetime(2026, 8, 2, 10, tzinfo=UTC)
+    first = persistence.start_workflow(
+        WorkflowCode.DAILY_MARKET, scheduled_for, TriggerSource.SCHEDULED
+    )
+    job = persistence.start_job(first.workflow_run_id, "security", 1)
+    persistence.finish_job(
+        job.finish(
+            ExecutionStatus.SUCCEEDED,
+            job.started_at + timedelta(seconds=2),
+            fetched_rows=10,
+            accepted_rows=10,
+        )
+    )
+    persistence.finish_workflow(
+        first.finish(
+            ExecutionStatus.SUCCEEDED,
+            first.started_at + timedelta(seconds=3),
+            accepted_rows=10,
+        )
+    )
+    retry = persistence.start_workflow(
+        WorkflowCode.DAILY_MARKET, scheduled_for, TriggerSource.MANUAL
+    )
+
+    recovered = persistence.recover_stale(datetime.now(UTC) + timedelta(minutes=1))
+    history = persistence.recent_workflows()
+
+    assert retry.attempt == 2
+    assert recovered == 1
+    assert history[0].status is ExecutionStatus.FAILED
+    assert history[0].error_summary == "worker_interrupted_or_timed_out"
+
+
+def test_stock_pool_rpc_requires_exact_ready_date_and_preserves_empty_snapshot(
+    database_engine: Engine,
+) -> None:
+    calculation_id = uuid4()
+    snapshot_id = uuid4()
+    basis = date(2026, 7, 31)
+    effective = date(2026, 8, 3)
+    with database_engine.begin() as connection:
+        connection.execute(
+            text("""
+insert into derived.calculation_run (
+ calculation_id, calculation_code, algorithm_version, mode, start_date, end_date,
+ status, input_watermark, input_hash, requested_at, calculated_at, finished_at, output_rows
+) values (
+ :calculation_id, 'cn_a_mainboard_price_limit_pools', '1.0.0', 'incremental',
+ :basis, :basis, 'succeeded', '{}'::jsonb, :input_hash, now(), now(), now(), 0
+)
+"""),
+            {"calculation_id": calculation_id, "basis": basis, "input_hash": "0" * 64},
+        )
+        connection.execute(
+            text("""
+insert into stock_pool.snapshot (
+ snapshot_id, calculation_id, pool_code, basis_trade_date, effective_trade_date,
+ version, status, member_count, candidate_count, rejected_count, content_hash,
+ input_hash, rule_version, algorithm_version, generated_at
+) values (
+ :snapshot_id, :calculation_id, 'CN_A_PREVIOUS_DAY_MAINBOARD_LIMIT_UP',
+ :basis, :effective, 1, 'ready', 0, 10, 0, :content_hash,
+ :input_hash, 'CN_MAINBOARD_2026_07_06', '1.0.0', now()
+)
+"""),
+            {
+                "snapshot_id": snapshot_id,
+                "calculation_id": calculation_id,
+                "basis": basis,
+                "effective": effective,
+                "content_hash": "1" * 64,
+                "input_hash": "0" * 64,
+            },
+        )
+
+    with database_engine.connect() as connection:
+        payload = connection.execute(
+            text("select api_v1.query_stock_pool_snapshot(:code, :effective, null, 5000)"),
+            {"code": "CN_A_PREVIOUS_DAY_MAINBOARD_LIMIT_UP", "effective": effective},
+        ).scalar_one()
+
+    assert payload["snapshot_id"] == str(snapshot_id)
+    assert payload["member_count"] == 0
+    assert payload["members"] == []
+
+    with database_engine.connect() as connection, pytest.raises(DBAPIError) as error:
+        connection.execute(
+            text("select api_v1.query_stock_pool_snapshot(:code, :effective, null, 5000)"),
+            {
+                "code": "CN_A_PREVIOUS_DAY_MAINBOARD_LIMIT_UP",
+                "effective": effective - timedelta(days=1),
+            },
+        ).scalar_one()
+    assert getattr(error.value.orig, "sqlstate", None) == "P0002"
+
+
+def test_deducted_profit_is_idempotent_and_as_of_excludes_later_observation(
+    database_engine: Engine,
+) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    security_run = _running_run(DatasetCode.SECURITY)
+    persistence.create_ingestion_run(security_run)
+    persistence.commit_security_batch(
+        _completed_run(security_run),
+        _manifest(security_run.ingestion_id, "security"),
+        _envelopes(security_run.ingestion_id, [_security()]),
+    )
+    values = {
+        "symbol": SYMBOL,
+        "report_period": date(2025, 6, 30),
+        "announcement_date": date(2025, 8, 2),
+        "actual_announcement_date": date(2025, 8, 2),
+        "cumulative_deducted_profit": Decimal("123.45"),
+        "quarterly_deducted_profit": Decimal("23.45"),
+        "update_flag": "1",
+    }
+    record = DeductedProfitRecord(
+        **values,
+        revision_key=deducted_profit_revision_key(**values),
+        source_code="tushare",
+    )
+    run = _running_run(DatasetCode.DEDUCTED_PROFIT, ProviderCode.TUSHARE)
+    persistence.create_ingestion_run(run)
+    completed = _completed_run(run, row_count=1)
+    envelope = IngestionEnvelope(run.ingestion_id, record)
+    persistence.commit_deducted_profit_batch(
+        completed,
+        _manifest(run.ingestion_id, "profit", provider="tushare"),
+        [envelope],
+    )
+
+    with database_engine.connect() as connection:
+        past = connection.execute(
+            text("select * from api_v1.query_deducted_profits_as_of(:as_of, null, 10)"),
+            {"as_of": date(2025, 8, 2)},
+        ).all()
+        current = (
+            connection.execute(
+                text("select * from api_v1.query_deducted_profits_as_of(:as_of, null, 10)"),
+                {"as_of": date.today()},
+            )
+            .mappings()
+            .all()
+        )
+        count = connection.execute(text("select count(*) from core.deducted_profit")).scalar_one()
+
+    assert past == []
+    assert count == 1
+    assert current[0]["cumulative_deducted_profit_positive"] is True
 
 
 def test_replay_lineage_and_source_manifest_are_queryable(database_engine: Engine) -> None:
@@ -1028,6 +1189,41 @@ def test_bulk_resume_requires_complete_eligible_trading_range(database_engine: E
     )
 
 
+def test_stock_daily_indicator_retention_uses_explicit_exclusive_cutoff(
+    database_engine: Engine,
+) -> None:
+    _prepare_api_data(database_engine)
+    persistence = PostgreSQLPersistence(database_engine)
+    running = _running_run(DatasetCode.STOCK_DAILY_INDICATOR)
+    persistence.create_ingestion_run(running)
+    with database_engine.begin() as connection:
+        connection.execute(
+            text("""
+                insert into core.stock_daily_indicator (
+                    symbol, trade_date, market, price_limit_status, source_code, ingestion_id
+                ) values (
+                    :symbol, :trade_date, 'CN_A_SHARE', 'unknown', 'tushare', :ingestion_id
+                )
+            """),
+            [
+                {
+                    "symbol": SYMBOL,
+                    "trade_date": trade_date,
+                    "ingestion_id": running.ingestion_id,
+                }
+                for trade_date in (date(2026, 7, 27), date(2026, 7, 28), date(2026, 7, 29))
+            ],
+        )
+
+    deleted = persistence.delete_stock_daily_indicators_before(date(2026, 7, 28))
+
+    assert deleted == 1
+    assert _scalar(database_engine, "select count(*) from core.stock_daily_indicator") == 2
+    assert _scalar(
+        database_engine, "select min(trade_date) from core.stock_daily_indicator"
+    ) == date(2026, 7, 28)
+
+
 def test_failed_batch_rolls_back_raw_and_core_writes(database_engine: Engine) -> None:
     persistence = PostgreSQLPersistence(database_engine)
     running = _running_run(DatasetCode.SECURITY)
@@ -1183,6 +1379,9 @@ def test_client_roles_can_only_read_api_v1(
         denied_statements = (
             "select count(*) from core.daily_bar",
             "select count(*) from core.board_index",
+            "select count(*) from derived.daily_price_limit",
+            "select count(*) from stock_pool.snapshot",
+            "select count(*) from operations.workflow_run",
             "select count(*) from ingestion.ingestion_run",
             "select count(*) from audit.quality_result",
             """
@@ -1433,6 +1632,8 @@ def _schema_snapshot(
         "derived",
         "ingestion",
         "metrics",
+        "operations",
+        "stock_pool",
     )
     return {
         "relations": connection.execute(

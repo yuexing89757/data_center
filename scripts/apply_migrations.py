@@ -17,6 +17,8 @@ TARGET_SCHEMAS = (
     "derived",
     "ingestion",
     "metrics",
+    "operations",
+    "stock_pool",
 )
 EXPECTED_TABLES = {
     ("audit", "quality_result"),
@@ -32,16 +34,25 @@ EXPECTED_TABLES = {
     ("core", "board_index_constituent_snapshot"),
     ("core", "board_index_daily_bar"),
     ("core", "daily_bar"),
+    ("core", "deducted_profit"),
     ("core", "security"),
     ("core", "security_name_history"),
+    ("core", "stock_daily_indicator"),
     ("core", "trading_calendar"),
     ("derived", "adjusted_daily_bar"),
     ("derived", "calculation_run"),
     ("derived", "daily_metric"),
     ("derived", "market_capitalization"),
+    ("derived", "daily_price_limit"),
+    ("derived", "price_limit_event"),
     ("ingestion", "ingestion_run"),
     ("ingestion", "raw_manifest"),
     ("metrics", "classification_daily_metric"),
+    ("operations", "job_execution"),
+    ("operations", "workflow_run"),
+    ("stock_pool", "calculation_quality"),
+    ("stock_pool", "member"),
+    ("stock_pool", "snapshot"),
 }
 EXPECTED_VIEWS = {
     ("api_v1", "adjusted_daily_bars"),
@@ -61,6 +72,7 @@ EXPECTED_VIEWS = {
     ("api_v1", "rights_issues"),
     ("api_v1", "securities"),
     ("api_v1", "share_capital"),
+    ("api_v1", "stock_daily_indicators"),
     ("api_v1", "trading_calendar"),
 }
 

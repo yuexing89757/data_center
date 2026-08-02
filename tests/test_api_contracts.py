@@ -8,6 +8,8 @@ EXPECTED_ENDPOINTS = {
     "query_adjusted_daily_bars",
     "query_market_snapshot",
     "query_classification_members_as_of",
+    "query_deducted_profits_as_of",
+    "query_stock_pool_snapshot",
 }
 
 
