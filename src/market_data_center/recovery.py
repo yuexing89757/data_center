@@ -20,9 +20,13 @@ APPLICATION_SCHEMAS = (
     "ingestion",
     "metrics",
     "operations",
+    "realtime",
     "stock_pool",
 )
 COUNT_QUERIES = {
+    "auction_collection_round": "select count(*) from realtime.auction_collection_round",
+    "auction_collection_session": "select count(*) from realtime.auction_collection_session",
+    "auction_quote_metric": "select count(*) from derived.auction_quote_metric",
     "adjusted_daily_bar": "select count(*) from derived.adjusted_daily_bar",
     "calculation_run": "select count(*) from derived.calculation_run",
     "classification_catalog_snapshot": ("select count(*) from classification.catalog_snapshot"),
@@ -61,6 +65,7 @@ COUNT_QUERIES = {
     "workflow_run": "select count(*) from operations.workflow_run",
     "ingestion_run": "select count(*) from ingestion.ingestion_run",
     "raw_manifest": "select count(*) from ingestion.raw_manifest",
+    "five_level_quote_snapshot": "select count(*) from realtime.five_level_quote_snapshot",
 }
 
 

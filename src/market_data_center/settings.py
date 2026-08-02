@@ -38,3 +38,19 @@ class SchedulerSettings(BaseSettings):
     deducted_profit_minute: int = 0
     scheduler_misfire_grace_seconds: int = 21_600
     worker_admin_port: int = Field(default=8765, ge=1, le=65_535)
+    auction_collection_enabled: bool = False
+    auction_collection_hour: int = Field(default=9, ge=0, le=23)
+    auction_collection_minute: int = Field(default=15, ge=0, le=59)
+    auction_collection_cadence_seconds: int = Field(default=5, ge=1, le=60)
+
+
+class PytdxHqSettings(BaseSettings):
+    """Explicit network endpoint and bounded realtime quote settings."""
+
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    pytdx_hq_host: SecretStr
+    pytdx_hq_port: int = Field(default=7709, ge=1, le=65_535)
+    pytdx_hq_timeout_seconds: float = Field(default=2.0, gt=0, le=4.0)
+    pytdx_hq_batch_size: int = Field(default=80, ge=1, le=80)
+    pytdx_hq_max_retries: int = Field(default=1, ge=0, le=1)

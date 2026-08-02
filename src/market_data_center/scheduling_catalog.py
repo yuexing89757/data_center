@@ -9,6 +9,7 @@ STOCK_DAILY_INDICATOR_JOB_ID = "stock-daily-indicators-daily"
 STALE_RUN_RECOVERY_JOB_ID = "recover-stale-ingestion-runs"
 DEDUCTED_PROFIT_JOB_ID = "deducted-profit-daily"
 STOCK_POOL_JOB_ID = "mainboard-price-limit-stock-pools-daily"
+AUCTION_COLLECTION_JOB_ID = "opening-auction-limit-up-quotes"
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,7 +55,7 @@ WORKFLOW_DEFINITIONS = (
         "stale_run_recovery",
         "陈旧运行恢复",
         "恢复超时停留在 running 的采集和工作流记录。",
-        ("recover_ingestion_runs", "recover_workflow_runs"),
+        ("recover_ingestion_runs", "recover_workflow_runs", "recover_auction_sessions"),
     ),
     WorkflowDefinition(
         "deducted_profit",
@@ -68,6 +69,12 @@ WORKFLOW_DEFINITIONS = (
         "在日 K 与每日指标成功后构建下一交易日生效的不可变涨跌停股票池。",
         ("build_stock_pools",),
     ),
+    WorkflowDefinition(
+        "auction_collection",
+        "集合竞价涨停池五档采集",
+        "冻结当日精确涨停池快照, 并在 09:15-09:25 内按固定节奏采集。",
+        ("collect_auction_quotes",),
+    ),
 )
 
 
@@ -75,6 +82,22 @@ def job_definitions(settings: SchedulerSettings) -> tuple[JobDefinition, ...]:
     timezone = settings.scheduler_timezone
     timeout = settings.scheduler_misfire_grace_seconds
     return (
+        JobDefinition(
+            AUCTION_COLLECTION_JOB_ID,
+            "集合竞价涨停池五档采集",
+            "单次启动十分钟会话, 仅采集精确 ready 的昨日涨停池。",
+            "auction_collection",
+            "cron",
+            f"周一至周五 {settings.auction_collection_hour:02d}:"
+            f"{settings.auction_collection_minute:02d}",
+            timezone,
+            settings.auction_collection_enabled,
+            timeout,
+            "进程恢复仅续采当前及未来轮次, 过去轮次记为缺失, 不回填。",
+            day_of_week="mon-fri",
+            hour=settings.auction_collection_hour,
+            minute=settings.auction_collection_minute,
+        ),
         JobDefinition(
             DAILY_RUN_JOB_ID,
             "日 K 与基础数据更新",

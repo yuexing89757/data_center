@@ -9,6 +9,7 @@ from market_data_center.scheduler import (
     check_scheduler_health,
 )
 from market_data_center.scheduling_catalog import (
+    AUCTION_COLLECTION_JOB_ID,
     DAILY_RUN_JOB_ID,
     DEDUCTED_PROFIT_JOB_ID,
     STALE_RUN_RECOVERY_JOB_ID,
@@ -44,6 +45,21 @@ def test_scheduler_registers_persistent_single_instance_market_job(tmp_path: Pat
     assert stock_pool is not None
     assert str(stock_pool.trigger) == "cron[day_of_week='mon-fri', hour='19', minute='30']"
     assert store_path.parent.is_dir()
+    assert scheduler.get_job(AUCTION_COLLECTION_JOB_ID) is None
+
+
+def test_scheduler_registers_one_auction_session_job_only_when_enabled(tmp_path: Path) -> None:
+    scheduler = build_scheduler(
+        SchedulerSettings(
+            scheduler_store_path=tmp_path / "auction.sqlite",
+            auction_collection_enabled=True,
+        )
+    )
+
+    auction = scheduler.get_job(AUCTION_COLLECTION_JOB_ID)
+    assert auction is not None
+    assert str(auction.trigger) == "cron[day_of_week='mon-fri', hour='9', minute='15']"
+    assert auction.max_instances == 1
 
 
 class HealthPersistence:

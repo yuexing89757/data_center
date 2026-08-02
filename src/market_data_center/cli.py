@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy import create_engine
 
+from market_data_center.auction_service import AuctionCollectionService
 from market_data_center.database_urls import sqlalchemy_url
 from market_data_center.derivation import (
     DEFAULT_ALGORITHM_VERSION,
@@ -32,6 +33,7 @@ from market_data_center.persistence import (
     PostgreSQLPersistence,
     PostgreSQLStockPoolPersistence,
 )
+from market_data_center.persistence.auction_postgres import PostgreSQLAuctionPersistence
 from market_data_center.pipeline import BoardIndexIngestionPipeline, IngestionPipeline
 from market_data_center.providers import (
     ManagedMarketDataProvider,
@@ -87,6 +89,27 @@ def main() -> None:
     )
     persistence = PostgreSQLPersistence(engine)
     raw_store = LocalRawStore(settings.raw_data_root)
+
+    if args.dataset == "auction-quotes-preflight":
+        trade_date = date.fromisoformat(args.trade_date)
+        repository = PostgreSQLAuctionPersistence(engine)
+
+        class _NoNetworkProvider:
+            source_code = "preflight"
+
+            def fetch_five_level_quotes(self, symbols: object) -> object:
+                del symbols
+                raise AssertionError("preflight must not access a quote provider")
+
+        report = AuctionCollectionService(
+            repository,
+            _NoNetworkProvider(),  # type: ignore[arg-type]
+            raw_store,
+            cadence_seconds=args.cadence_seconds,
+            max_retries=0,
+        ).preflight(trade_date)
+        print(dumps(report, ensure_ascii=False, sort_keys=True))
+        return
 
     if args.dataset in BOARD_INDEX_DATASETS:
         board_run = _run_board_index_command(args, persistence, raw_store)
@@ -964,6 +987,13 @@ def _parser() -> ArgumentParser:
         choices=(MAINBOARD_LIMIT_UP_POOL, MAINBOARD_LIMIT_DOWN_POOL),
         required=True,
     )
+
+    auction_preflight = subparsers.add_parser(
+        "auction-quotes-preflight",
+        help="read-only check of calendar, exact frozen pool, and expected collection size",
+    )
+    auction_preflight.add_argument("--trade-date", required=True, help="exact YYYY-MM-DD")
+    auction_preflight.add_argument("--cadence-seconds", type=int, default=5)
     stock_pool_check.add_argument(
         "--effective-trade-date",
         required=True,

@@ -18,17 +18,21 @@ from apscheduler.triggers.cron import CronTrigger  # type: ignore[import-untyped
 from apscheduler.triggers.interval import IntervalTrigger  # type: ignore[import-untyped]
 from sqlalchemy import URL, create_engine
 
+from market_data_center.auction_service import AuctionCollectionService
 from market_data_center.cli import run_daily_workflow, run_stock_daily_indicator_workflow
 from market_data_center.database_urls import sqlalchemy_url
 from market_data_center.domain.operations import TriggerSource, WorkflowCode
 from market_data_center.operations_service import WorkflowExecutionService
 from market_data_center.persistence import PostgreSQLPersistence
+from market_data_center.persistence.auction_postgres import PostgreSQLAuctionPersistence
 from market_data_center.persistence.operations_postgres import PostgreSQLOperationsPersistence
 from market_data_center.persistence.stock_pool_postgres import PostgreSQLStockPoolPersistence
 from market_data_center.pipeline import IngestionPipeline
+from market_data_center.providers.pytdx_hq import PytdxHqProvider
 from market_data_center.raw_store import LocalRawStore
 from market_data_center.reliability import recover_stale_runs
 from market_data_center.scheduling_catalog import (
+    AUCTION_COLLECTION_JOB_ID,
     DAILY_RUN_JOB_ID,
     DEDUCTED_PROFIT_JOB_ID,
     STALE_RUN_RECOVERY_JOB_ID,
@@ -37,7 +41,7 @@ from market_data_center.scheduling_catalog import (
     JobDefinition,
     job_definitions,
 )
-from market_data_center.settings import SchedulerSettings, WorkerSettings
+from market_data_center.settings import PytdxHqSettings, SchedulerSettings, WorkerSettings
 from market_data_center.stock_pool_service import StockPoolService
 
 SCHEDULER_LOCK_KEY = "market-data-center:scheduler"
@@ -191,14 +195,22 @@ def run_stale_recovery_job() -> None:
                     datetime.now(UTC) - timedelta(minutes=60)
                 ),
             )
+            auction_count = execution.step(
+                "recover_auction_sessions",
+                3,
+                lambda: PostgreSQLAuctionPersistence(engine).recover_expired_sessions(
+                    datetime.now(UTC)
+                ),
+            )
         except BaseException as error:
             execution.fail(error)
             raise
         execution.succeed()
         LOGGER.info(
-            "recovered stale runs ingestion_count=%d workflow_count=%d",
+            "recovered stale runs ingestion_count=%d workflow_count=%d auction_count=%d",
             len(ingestion_ids),
             workflow_count,
+            auction_count,
         )
     finally:
         engine.dispose()
@@ -279,6 +291,45 @@ def run_stock_pool_job() -> None:
         engine.dispose()
 
 
+def run_auction_collection_job() -> None:
+    """Collect one bounded opening-auction session for today's exact limit-up pool."""
+    settings = WorkerSettings()  # type: ignore[call-arg]
+    scheduling = SchedulerSettings()
+    quote_settings = PytdxHqSettings()  # type: ignore[call-arg]
+    engine = create_engine(
+        sqlalchemy_url(settings.database_url.get_secret_value()), pool_pre_ping=True
+    )
+    try:
+        operations = PostgreSQLOperationsPersistence(engine)
+        execution = WorkflowExecutionService(operations).start(
+            WorkflowCode.AUCTION_COLLECTION,
+            _scheduled_fire_time(
+                scheduling.auction_collection_hour,
+                scheduling.auction_collection_minute,
+                scheduling.scheduler_timezone,
+            ),
+            TriggerSource.SCHEDULED,
+        )
+        try:
+            trade_date = datetime.now(ZoneInfo(scheduling.scheduler_timezone)).date()
+            with PytdxHqProvider(quote_settings) as provider:
+                service = AuctionCollectionService(
+                    PostgreSQLAuctionPersistence(engine),
+                    provider,
+                    LocalRawStore(settings.raw_data_root),
+                    cadence_seconds=scheduling.auction_collection_cadence_seconds,
+                    max_retries=quote_settings.pytdx_hq_max_retries,
+                    retry_budget_seconds=quote_settings.pytdx_hq_timeout_seconds,
+                )
+                execution.step("collect_auction_quotes", 1, lambda: service.collect(trade_date))
+        except BaseException as error:
+            execution.fail(error)
+            raise
+        execution.succeed()
+    finally:
+        engine.dispose()
+
+
 def _scheduled_fire_time(
     hour: int,
     minute: int,
@@ -313,6 +364,7 @@ def build_scheduler(settings: SchedulerSettings | None = None) -> BlockingSchedu
         STALE_RUN_RECOVERY_JOB_ID: run_stale_recovery_job,
         DEDUCTED_PROFIT_JOB_ID: run_deducted_profit_job,
         STOCK_POOL_JOB_ID: run_stock_pool_job,
+        AUCTION_COLLECTION_JOB_ID: run_auction_collection_job,
     }
     for definition in job_definitions(settings):
         if not definition.enabled:

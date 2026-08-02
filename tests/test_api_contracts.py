@@ -10,6 +10,7 @@ EXPECTED_ENDPOINTS = {
     "query_classification_members_as_of",
     "query_deducted_profits_as_of",
     "query_stock_pool_snapshot",
+    "query_auction_quotes",
 }
 
 

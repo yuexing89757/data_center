@@ -18,6 +18,7 @@ TARGET_SCHEMAS = (
     "ingestion",
     "metrics",
     "operations",
+    "realtime",
     "stock_pool",
 )
 EXPECTED_TABLES = {
@@ -45,11 +46,15 @@ EXPECTED_TABLES = {
     ("derived", "market_capitalization"),
     ("derived", "daily_price_limit"),
     ("derived", "price_limit_event"),
+    ("derived", "auction_quote_metric"),
     ("ingestion", "ingestion_run"),
     ("ingestion", "raw_manifest"),
     ("metrics", "classification_daily_metric"),
     ("operations", "job_execution"),
     ("operations", "workflow_run"),
+    ("realtime", "auction_collection_round"),
+    ("realtime", "auction_collection_session"),
+    ("realtime", "five_level_quote_snapshot"),
     ("stock_pool", "calculation_quality"),
     ("stock_pool", "member"),
     ("stock_pool", "snapshot"),

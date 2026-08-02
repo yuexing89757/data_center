@@ -135,6 +135,25 @@
           "p_limit": {"type": "integer", "minimum": 1, "maximum": 5000, "default": 5000}
         }
       }
+    },
+    {
+      "name": "market_auction_quotes",
+      "description": "Read bounded authenticated opening-auction quote samples by exact trade date or session.",
+      "endpoint": "query_auction_quotes",
+      "read_only": true,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "p_trade_date": {"type": ["string", "null"], "format": "date"},
+          "p_session_id": {"type": ["string", "null"], "format": "uuid"},
+          "p_symbol": {"type": ["string", "null"], "pattern": "^(SSE|SZSE):[0-9]{6}$"},
+          "p_start": {"type": ["string", "null"], "format": "date-time"},
+          "p_end": {"type": ["string", "null"], "format": "date-time"},
+          "p_limit": {"type": "integer", "minimum": 1, "maximum": 5000, "default": 1000}
+        },
+        "anyOf": [{"required": ["p_trade_date"]}, {"required": ["p_session_id"]}]
+      }
     }
   ]
 }

@@ -4,6 +4,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import TypeVar
 
+from market_data_center.domain.auction import AuctionCollectionSummary
 from market_data_center.domain.ingestion import IngestionRun, IngestionStatus
 from market_data_center.domain.operations import (
     ExecutionStatus,
@@ -106,6 +107,14 @@ def safe_error_summary(error: BaseException) -> str:
 
 
 def _result_statistics(result: object) -> tuple[int, int, int, ExecutionStatus]:
+    if isinstance(result, AuctionCollectionSummary):
+        status = {
+            "succeeded": ExecutionStatus.SUCCEEDED,
+            "partial": ExecutionStatus.PARTIAL,
+            "failed": ExecutionStatus.FAILED,
+            "skipped": ExecutionStatus.SUCCEEDED,
+        }[result.status]
+        return result.expected_quotes, result.successful_quotes, result.failed_quotes, status
     if isinstance(result, StockPoolBuildSummary):
         return (
             result.candidate_count,

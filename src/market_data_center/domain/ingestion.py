@@ -15,6 +15,7 @@ class ProviderCode(StrEnum):
     AKSHARE_THS = "akshare_ths"
     PYTDX = "pytdx"
     TUSHARE = "tushare"
+    PYTDX_HQ = "pytdx_hq"
 
 
 class DatasetCode(StrEnum):
@@ -29,6 +30,7 @@ class DatasetCode(StrEnum):
     BOARD_INDEX_CONSTITUENT_SNAPSHOT = "board_index_constituent_snapshot"
     STOCK_DAILY_INDICATOR = "stock_daily_indicator"
     DEDUCTED_PROFIT = "deducted_profit"
+    FIVE_LEVEL_QUOTE = "five_level_quote"
 
 
 class IngestionStatus(StrEnum):

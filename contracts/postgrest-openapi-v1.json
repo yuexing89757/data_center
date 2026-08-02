@@ -80,6 +80,15 @@
           "404": {"description": "No exact ready snapshot exists; no date fallback"}
         }
       }
+    },
+    "/rpc/query_auction_quotes": {
+      "post": {
+        "operationId": "queryAuctionQuotes",
+        "summary": "Read bounded opening-auction quote samples",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {"$ref": "#/components/requestBodies/AuctionQuotes"},
+        "responses": {"200": {"description": "Authenticated quote samples and safe metrics"}}
+      }
     }
   },
   "components": {
@@ -205,6 +214,22 @@
             "p_version": {"type": ["integer", "null"], "minimum": 1, "default": null},
             "p_limit": {"$ref": "#/components/schemas/Limit5000"}
           }
+        }}}
+      },
+      "AuctionQuotes": {
+        "required": true,
+        "content": {"application/json": {"schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "p_trade_date": {"type": ["string", "null"], "format": "date"},
+            "p_session_id": {"type": ["string", "null"], "format": "uuid"},
+            "p_symbol": {"type": ["string", "null"], "pattern": "^(SSE|SZSE):[0-9]{6}$"},
+            "p_start": {"type": ["string", "null"], "format": "date-time"},
+            "p_end": {"type": ["string", "null"], "format": "date-time"},
+            "p_limit": {"type": "integer", "minimum": 1, "maximum": 5000, "default": 1000}
+          },
+          "anyOf": [{"required": ["p_trade_date"]}, {"required": ["p_session_id"]}]
         }}}
       }
     }

@@ -1,5 +1,20 @@
 # 领域详设：RealtimeQuote 股票实时五档 v0
 
+> 集合竞价采集落地决策：`adr/ADR-0022-集合竞价涨停池五档快照采集.md`（Accepted）
+
+## 集合竞价采集边界（v1）
+
+- `AuctionCollectionSession` 冻结当日精确 ready 的
+  `CN_A_PREVIOUS_DAY_MAINBOARD_LIMIT_UP` snapshot ID/version；不回退旧日期，也不采跌停池。
+- 上海时间 09:15:00 至 09:25:00（含端点）每 5 秒一轮，共 121 轮；APScheduler
+  只注册一个 09:15 会话任务，轮询在会话内部完成。
+- 阶段明确记录为 09:15–09:20 可撤单、09:20–09:25 不可撤单、09:25 最终撮合附近。
+- `scheduled_at`、Worker 的 `collected_at` 与可选 provider `source_timestamp` 分开保存；
+  pytdx 不能提供可靠完整日期时不得拼造 source 时间。
+- pytdx 集合竞价档位暂标记 `auction_indicative`。在下一交易日 live validation
+  证明其为标准连续五档前，spread/depth/imbalance/seal amount 均保持 NULL。
+- 进程恢复只续采当前及未来轮次；过去轮次计入失败/缺失，禁止生成补采快照。
+
 > 状态：有效，尚未实现
 > 日期：2026-08-02
 > 上级决策：`adr/ADR-0012-股票实时五档行情.md`（Accepted）

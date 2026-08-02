@@ -25,6 +25,7 @@ class WorkflowCode(StrEnum):
     STALE_RUN_RECOVERY = "stale_run_recovery"
     DEDUCTED_PROFIT = "deducted_profit"
     STOCK_POOL = "stock_pool"
+    AUCTION_COLLECTION = "auction_collection"
 
 
 @dataclass(frozen=True, slots=True)

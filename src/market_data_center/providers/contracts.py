@@ -1,6 +1,7 @@
 """Provider boundary contracts shared by pipeline code."""
 
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from datetime import date
 from types import TracebackType
 from typing import Protocol, Self
@@ -8,6 +9,7 @@ from typing import Protocol, Self
 from market_data_center.domain.board_index import BoardIndexProviderRecord
 from market_data_center.domain.classification import ClassificationRecord
 from market_data_center.domain.deducted_profit import DeductedProfitRecord
+from market_data_center.domain.realtime_quote import FiveLevelQuoteSnapshotRecord
 from market_data_center.domain.records import (
     CapitalRecord,
     DailyBarRecord,
@@ -25,6 +27,7 @@ type ProviderRecord = (
     | BoardIndexProviderRecord
     | StockDailyIndicatorSnapshotRecord
     | DeductedProfitRecord
+    | FiveLevelQuoteSnapshotRecord
 )
 type RawRow = Mapping[str, str]
 
@@ -92,6 +95,21 @@ class DeductedProfitProvider(Protocol):
     def fetch_deducted_profit_updates(
         self, as_of_date: date
     ) -> "ProviderBatch[DeductedProfitRecord]": ...
+
+
+@dataclass(frozen=True, slots=True)
+class RealtimeQuoteFetch:
+    raw_rows: tuple[RawRow, ...]
+    records: tuple[FiveLevelQuoteSnapshotRecord, ...]
+    requested_symbols: tuple[str, ...]
+    failed_symbols: tuple[str, ...]
+    schema_version: str
+
+
+class RealtimeQuoteProvider(Protocol):
+    source_code: str
+
+    def fetch_five_level_quotes(self, symbols: Sequence[str]) -> RealtimeQuoteFetch: ...
 
 
 class BoardIndexProvider(Protocol):
