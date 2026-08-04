@@ -26,6 +26,9 @@
   depend directly on `core`, `capital`, `classification`, `derived`, `metrics`, `ingestion`,
   or `audit`. Keep `contracts/postgrest-openapi-v1.json` and
   `contracts/agent-tools-v1.json` synchronized with public contract changes.
+- External reads: ADR-0011 accepts a separate FastAPI process protected by API key. It may
+  call only bounded `api_v1` RPCs, must not access internal schemas directly, and must not
+  write data or trigger ingestion. Keep `contracts/fastapi-openapi-v1.json` synchronized.
 - Raw data: immutable Parquet/JSONL objects in the configured Worker filesystem, with
   manifests and ingestion lineage in PostgreSQL. Never edit Raw objects in place or commit
   Raw market data.
@@ -113,6 +116,14 @@ uv run ruff format --check .
 uv run ruff check .
 uv run mypy src
 uv run pytest
+
+# Separate ADR-0011 read-only API process.
+uv run market-data-api
+
+# Local read-only API (requires FASTAPI_API_KEY and a DATABASE_URL or
+# FASTAPI_DATABASE_URL in .env). Runs in a separate process from the
+# ingestion worker.
+uv run market-data-api
 ```
 
 PostgreSQL integration tests require an isolated disposable database supplied through

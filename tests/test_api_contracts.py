@@ -1,5 +1,12 @@
 from json import dumps, loads
 from pathlib import Path
+from typing import cast
+
+from pydantic import SecretStr
+
+from market_data_center.public_api import create_app
+from market_data_center.public_api.queries import PublicQueryService
+from market_data_center.settings import ApiSettings
 
 CONTRACT_ROOT = Path(__file__).parents[1] / "contracts"
 EXPECTED_ENDPOINTS = {
@@ -62,6 +69,7 @@ def test_public_contracts_do_not_name_internal_schemas_or_contain_secrets() -> N
         [
             _load("postgrest-openapi-v1.json"),
             _load("agent-tools-v1.json"),
+            _load("fastapi-openapi-v1.json"),
         ],
         ensure_ascii=False,
     ).lower()
@@ -78,3 +86,18 @@ def test_public_contracts_do_not_name_internal_schemas_or_contain_secrets() -> N
         )
     )
     assert all(secret not in contracts for secret in ("password", "secret key", "jwt secret"))
+
+
+def test_fastapi_openapi_contract_matches_the_application() -> None:
+    settings = ApiSettings(
+        database_url=SecretStr("unused"),
+        fastapi_api_key=SecretStr("contract-api-key-000000000"),
+    )
+
+    assert (
+        _load("fastapi-openapi-v1.json")
+        == create_app(
+            settings=settings,
+            query_service=cast(PublicQueryService, object()),
+        ).openapi()
+    )

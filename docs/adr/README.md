@@ -31,7 +31,8 @@ ADR 记录已经接受的架构决策。其优先级低于项目宪法，高于�
 - `ADR-0013-Tushare基础数据源接入.md`：允许显式选择 Tushare 获取证券目录、交易日历和未复权股票日 K，固定凭据、单位、Raw 重放与默认路由边界。
 - `ADR-0012-股票实时五档行情.md`：定义可追溯的股票买卖五档采样快照、Provider
   边界、单位、校验、存储、单次采集与 authenticated-only 查询。
-- `ADR-0010-PostgREST稳定查询与Agent工具契约.md`：确认继续使用有界 PostgREST RPC，定义版本一致性、权限、错误、兼容和 Agent 工具契约，不引入 FastAPI/MCP。
+- `ADR-0011-FastAPI外部只读接口.md`：在既有 `api_v1` 有界 RPC 之上增加外部只读 FastAPI、API Key、健康检查和独立部署；不触发采集或衍生指标计算。
+- `ADR-0010-PostgREST稳定查询与Agent工具契约.md`：其“不引入 FastAPI”决定已被 ADR-0011 替代；有界 RPC、版本一致性、权限、错误和兼容契约继续沿用。
 - `ADR-0009-版本化复权行情与客观Metrics.md`：定义复权公式、算法版本、输入水位线/哈希、重算与客观 Metrics 语义。
 - `ADR-0008-Classification分类与成分历史.md`：定义分类命名空间、完整目录/成分快照、历史重建、有效区间和 AKShare 行业/概念接入。
 - `ADR-0007-Capital与公司行为基础事实.md`：定义股本、分红送转和配股输入事实的自然键、单位、修订语义与 AKShare 接入。
