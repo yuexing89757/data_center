@@ -2,6 +2,18 @@
 
 A phase-one A-share daily market data pipeline using Python 3.12 and a self-hosted Supabase deployment. Security and calendar use BaoStock/AKShare routing; stock Daily Bar uses only pytdx local Shanghai/Shenzhen/Beijing `.day` files.
 
+## Windows deployment
+
+Install `uv`, then run the root deployment script. On the first run it creates `.env`; fill `DATABASE_URL`, `RAW_DATA_ROOT`, and `PYTDX_VIPDOC_PATH`, then run the same command again:
+
+```powershell
+.\deploy.cmd
+```
+
+The command installs the locked production dependencies, validates the worker, and creates or updates the `MarketDataCenter-Daily` task for 18:30. Later upgrades use the same command after pulling or unpacking the new release. Use `-RunNow` for an immediate first collection or `-SkipTask` when only installing the worker.
+
+See [INSTALL-WINDOWS.md](INSTALL-WINDOWS.md) for the Chinese installation and verification guide.
+
 ## Development
 
 GitHub Issues are the project's only task backlog and planning system. Linear is not used or synchronized.
@@ -14,7 +26,7 @@ uv run mypy src
 uv run pytest
 ```
 
-The project currently has no FastAPI or MCP service. Read queries are provided by bounded Supabase PostgREST views and RPCs under `api_v1`.
+External read-only HTTP queries are provided by FastAPI on top of the bounded Supabase `api_v1` RPC contract. Start it with `serve-api.cmd`; see [the Chinese API guide](docs/FastAPI外部接口.md). MCP remains deferred.
 
 Configuration is loaded from environment variables. Copy `.env.example` locally and replace placeholders; never commit the resulting `.env` file.
 
