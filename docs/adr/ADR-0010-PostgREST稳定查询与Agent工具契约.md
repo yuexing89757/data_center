@@ -1,6 +1,6 @@
 # ADR-0010：PostgREST 稳定查询与 Agent 工具契约
 
-- 状态：Accepted
+- 状态：Superseded（服务层决策由 ADR-0011 替代；RPC 契约继续沿用）
 - 日期：2026-07-29
 - 关联 Issue：#13
 
