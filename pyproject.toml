@@ -4,26 +4,30 @@ build-backend = "hatchling.build"
 
 [project]
 name = "market-data-center"
-version = "0.1.0"
+version = "0.2.0"
 description = "Traceable A-share daily market data pipeline"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "akshare>=1.17.0",
   "baostock>=0.8.9",
+  "fastapi>=0.116",
   "pandas>=2.2",
   "pyarrow>=17",
   "pydantic-settings>=2.6",
   "psycopg[binary]>=3.2",
   "pytdx>=1.72",
   "sqlalchemy>=2.0",
+  "uvicorn>=0.35",
 ]
 
 [project.scripts]
 market-data-center = "market_data_center.cli:main"
+market-data-api = "market_data_center.public_api:run"
 
 [dependency-groups]
 dev = [
+  "httpx2>=0.1",
   "mypy>=1.13",
   "pytest>=8.3",
   "pytest-cov>=6.0",
