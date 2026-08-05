@@ -1,16 +1,12 @@
 [CmdletBinding()]
 param(
-    [string]$TaskName = "MarketDataCenter-Daily",
-    [datetime]$At = "18:30",
-    [switch]$SkipTask,
-    [switch]$RunNow
+    [switch]$Check
 )
 
 $ErrorActionPreference = "Stop"
 $projectPath = $PSScriptRoot
 $envFile = Join-Path $projectPath ".env"
 $envExample = Join-Path $projectPath ".env.example"
-$registerScript = Join-Path $projectPath "deploy\windows\register-daily-task.ps1"
 $worker = Join-Path $projectPath ".venv\Scripts\market-data-center.exe"
 $api = Join-Path $projectPath ".venv\Scripts\market-data-api.exe"
 
@@ -105,14 +101,10 @@ try {
         throw "API validation failed with exit code $LASTEXITCODE."
     }
 
-    if (-not $SkipTask) {
-        & $registerScript -ProjectPath $projectPath -TaskName $TaskName -At $At
-    }
-
-    if ($RunNow) {
-        & $worker daily-run
+    if ($Check) {
+        & $worker worker --check
         if ($LASTEXITCODE -ne 0) {
-            throw "Initial daily run failed with exit code $LASTEXITCODE."
+            throw "Worker health check failed with exit code $LASTEXITCODE."
         }
     }
 }
@@ -122,7 +114,8 @@ finally {
 
 Write-Host "Deployment completed."
 Write-Host "Worker: $worker"
-Write-Host "API: $api"
-if (-not $SkipTask) {
-    Write-Host "Scheduled task: $TaskName at $($At.ToString('HH:mm'))"
-}
+Write-Host "API:    $api"
+Write-Host "Start services with: .\serve.cmd  (API + long-lived worker)"
+Write-Host "All scheduled jobs (daily-run, indicators, stock pools, ...) are"
+Write-Host "driven by the worker's in-process APScheduler; no Windows Task"
+Write-Host "Scheduler entry is registered."

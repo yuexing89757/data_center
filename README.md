@@ -4,13 +4,21 @@ A phase-one A-share daily market data pipeline using Python 3.12 and a self-host
 
 ## Windows deployment
 
-Install `uv`, then run the root deployment script. On the first run it creates `.env`; fill `DATABASE_URL`, `RAW_DATA_ROOT`, and `PYTDX_VIPDOC_PATH`, then run the same command again:
+Install `uv`, then prepare the environment with the root deployment script. On the first run it creates `.env`; fill `DATABASE_URL`, `RAW_DATA_ROOT`, and `PYTDX_VIPDOC_PATH`, then run the same command again:
 
 ```powershell
 .\deploy.cmd
 ```
 
-The command installs the locked production dependencies, validates the worker, and creates or updates the `MarketDataCenter-Daily` task for 18:30. Later upgrades use the same command after pulling or unpacking the new release. Use `-RunNow` for an immediate first collection or `-SkipTask` when only installing the worker.
+The command installs the locked production dependencies and validates the worker and API executables. It does **not** register any Windows Task Scheduler entry. Use `-Check` to additionally run a read-only worker health check.
+
+Start the long-lived API and worker services with:
+
+```powershell
+.\serve.cmd
+```
+
+This launches the FastAPI read-only API (`http://127.0.0.1:8000`) and the `market-data-center worker` process in separate console windows. The worker hosts an in-process APScheduler that drives every scheduled job — daily-run, stock daily indicators, stock pools, deducted profit, stale-run recovery and the optional auction collection. Job fire times are configured in `.env` (`DAILY_RUN_HOUR`/`DAILY_RUN_MINUTE`, etc.). Stop each service with Ctrl+C in its window.
 
 See [INSTALL-WINDOWS.md](INSTALL-WINDOWS.md) for the Chinese installation and verification guide.
 

@@ -42,36 +42,30 @@ PYTDX_VIPDOC_PATH=D:\new_tdx64\vipdoc
 
 - 按 `uv.lock` 安装生产依赖；
 - 创建 `.venv` 和 `market-data-center.exe`；
-- 创建 `market-data-api.exe` 并检查两个命令行程序是否可运行；
-- 创建或更新每天 18:30 运行的 `MarketDataCenter-Daily` 计划任务。
+- 创建 `market-data-api.exe` 并检查两个命令行程序是否可运行。
+
+脚本**不再注册 Windows 计划任务**。所有定时采集（日 K、每日指标、涨跌停股票池、扣非净利润等）都由 worker 进程内置的 APScheduler 调度，触发时间在 `.env` 中配置（如 `DAILY_RUN_HOUR`/`DAILY_RUN_MINUTE`）。
 
 ## 验证
 
-启动只读 API：
+启动 API 与常驻 worker：
 
 ```powershell
-.\serve-api.cmd
+.\serve.cmd
 ```
 
-浏览器打开 `http://127.0.0.1:8000/docs` 查看接口文档。业务请求必须携带 `.env` 中配置的 `X-API-Key`。
+该命令会分别启动 FastAPI 只读 API（`http://127.0.0.1:8000`）和 `market-data-center worker` 两个常驻进程。浏览器打开 `http://127.0.0.1:8000/docs` 查看接口文档，业务请求必须携带 `.env` 中配置的 `X-API-Key`。worker 窗口会输出 APScheduler 的调度日志；到点会自动触发各定时任务。停止服务时在各自窗口按 Ctrl+C。
 
-查看任务状态：
+只读健康检查（不启动常驻进程）：
 
 ```powershell
-Get-ScheduledTask -TaskName MarketDataCenter-Daily
-Get-ScheduledTaskInfo -TaskName MarketDataCenter-Daily
+.\deploy.cmd -Check
 ```
 
-需要立即采集一次时执行：
+需要立即手动跑一次采集（不经过 worker 调度）时：
 
 ```powershell
-.\deploy.cmd -RunNow
-```
-
-只安装程序、不创建计划任务：
-
-```powershell
-.\deploy.cmd -SkipTask
+.\.venv\Scripts\market-data-center.exe daily-run --as-of-date 2026-08-05
 ```
 
 ## 更新版本
