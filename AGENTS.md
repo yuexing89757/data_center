@@ -32,10 +32,12 @@
 - Raw data: immutable Parquet/JSONL objects in the configured Worker filesystem, with
   manifests and ingestion lineage in PostgreSQL. Never edit Raw objects in place or commit
   Raw market data.
-- Scheduling: `market-data-center worker` is the single long-lived collection process;
-  APScheduler is an internal component of that Worker. systemd, containers, or an equivalent
-  supervisor only keep the Worker alive. Do not add a separate Scheduler product entrypoint or
-  operating-system task definitions. GitHub Actions do not collect production market data.
+- Scheduling (constitution principle 11, ADR-0017): all scheduled jobs run inside the
+  `market-data-center worker` process via APScheduler. Never register operating-system-level
+  scheduled tasks (Windows Task Scheduler, cron, etc.) as collection triggers — not in code,
+  deploy scripts, documentation, or agent-generated instructions. New jobs are added to the
+  Worker's job catalog only; the OS layer's sole job is to keep the Worker process alive
+  (boot start, crash restart).
 - Local administration: the Worker may expose the ADR-0018 read-only task page on hard-coded
   IPv4 loopback. It is not a public API: do not add remote binding, task mutations, serialized
   JobStore state, secrets, or database paths to it.
@@ -116,9 +118,6 @@ uv run ruff format --check .
 uv run ruff check .
 uv run mypy src
 uv run pytest
-
-# Separate ADR-0011 read-only API process.
-uv run market-data-api
 
 # Local read-only API (requires FASTAPI_API_KEY and a DATABASE_URL or
 # FASTAPI_DATABASE_URL in .env). Runs in a separate process from the
