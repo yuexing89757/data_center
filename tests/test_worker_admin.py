@@ -1,6 +1,7 @@
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from sqlite3 import connect
+from types import SimpleNamespace
 from typing import cast
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -89,7 +90,7 @@ def test_admin_page_distinguishes_persistence_from_worker_liveness(tmp_path: Pat
         worker_running=False,
     ).decode()
 
-    assert "Worker: <strong>未运行</strong>" in page
+    assert "Worker</span><strong>未运行</strong>" in page
     assert "日 K 与基础数据更新" in page
     assert "周一至周五 18:30 (Asia/Shanghai)" in page
     assert "已持久化" in page
@@ -118,10 +119,51 @@ def test_admin_http_is_loopback_read_only_and_sets_security_headers(tmp_path: Pa
             assert response.status == 200
             assert response.headers["Cache-Control"] == "no-store"
             assert response.headers["X-Frame-Options"] == "DENY"
-            assert "Worker: <strong>正在运行</strong>" in response.read().decode()
+            assert "Worker</span><strong>正在运行</strong>" in response.read().decode()
         with pytest.raises(HTTPError) as error:
             urlopen(Request(f"http://{host}:{port}{ADMIN_PATH}", method="POST"))
         assert error.value.code == 405
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_admin_page_localizes_datetimes_and_badges_status(tmp_path: Path) -> None:
+    store_path = tmp_path / "jobs.sqlite"
+    _job_store(store_path)
+    settings = SchedulerSettings(scheduler_store_path=store_path)
+
+    def _v(value: str) -> SimpleNamespace:
+        return SimpleNamespace(value=value)
+
+    class WithHistory:
+        def recent_workflows(self, limit: int = 10) -> tuple[object, ...]:
+            del limit
+            run = SimpleNamespace(
+                workflow_code=_v("daily_market"),
+                status=_v("succeeded"),
+                attempt=1,
+                trigger_source=_v("scheduled"),
+                started_at=datetime(2026, 8, 5, 16, 27, 47, tzinfo=UTC),
+                finished_at=datetime(2026, 8, 5, 16, 28, 15, tzinfo=UTC),
+                accepted_rows=8892,
+                rejected_rows=0,
+                error_summary=None,
+            )
+            return (run,)
+
+    page = render_scheduled_tasks_page(
+        settings,
+        cast(PostgreSQLPersistence, AdminPersistence()),
+        worker_running=True,
+        operations_persistence=cast(PostgreSQLOperationsPersistence, WithHistory()),
+    ).decode()
+
+    # UTC ISO timestamps with microseconds must not leak; Asia/Shanghai renders.
+    assert "2026-08-05T16:27:47" not in page
+    assert "2026-08-06 00:27:47" in page  # 16:27 UTC -> 00:27+08 next day
+    assert "2026-08-06 00:28:15" in page
+    # Status is wrapped in a colored badge.
+    assert '<span class="badge badge-ok">succeeded</span>' in page
+    # Scheduled next-run times are also localized (not ISO with offset).
+    assert "+08:00" not in page
