@@ -154,7 +154,7 @@ def _rejection_reason(candidate: StockPoolCandidate) -> str | None:
         return "stock_pool.no_limit_initial_listing_stage"
     if candidate.prior_five_bar_count != 5:
         return "stock_pool.unproven_continuous_listing_stage"
-    if candidate.trade_status is not TradeStatus.TRADING:
+    if candidate.trade_status not in (TradeStatus.TRADING, TradeStatus.UNKNOWN):
         return "stock_pool.not_trading"
     if candidate.previous_close is None or candidate.previous_close <= 0 or candidate.close is None:
         return "stock_pool.missing_price"

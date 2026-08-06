@@ -71,6 +71,16 @@ def test_calculator_builds_symmetric_pools_with_exchange_rounding() -> None:
     assert output.rejected_count == 0
 
 
+def test_calculator_accepts_unknown_trade_status() -> None:
+    """pytdx local bars carry trade_status=unknown; the pool must still admit them."""
+    candidate = replace(_candidate(), trade_status=TradeStatus.UNKNOWN)
+
+    output = calculate_mainboard_stock_pools(StockPoolBuildInput(BASIS, EFFECTIVE, (candidate,)))
+
+    assert output.rejected_count == 0
+    assert {member.symbol for member in output.members} == {candidate.symbol}
+
+
 def test_current_rule_treats_st_and_regular_mainboard_as_ten_percent() -> None:
     regular = _candidate()
     st = replace(_candidate("SSE:600001"), is_st=True)

@@ -311,7 +311,7 @@ select s.symbol, s.code, s.exchange, s.security_type, s.status, s.ipo_date,
        ) end as listing_trading_day_number,
        (select count(*) from core.daily_bar p
         where p.symbol=s.symbol and p.trade_date in (select trade_date from prior_five_dates)
-          and p.trade_status='trading') as prior_five_bar_count,
+          and p.trade_status in ('trading','unknown')) as prior_five_bar_count,
        b.trade_status, b.previous_close, b.open, b.high, b.low, b.close, b.is_st,
        b.ingestion_id as daily_bar_ingestion_id,
        i.ingestion_id as indicator_ingestion_id,

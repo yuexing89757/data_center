@@ -21,7 +21,8 @@ from market_data_center.settings import SchedulerSettings
 
 def test_scheduler_registers_persistent_single_instance_market_job(tmp_path: Path) -> None:
     store_path = tmp_path / "scheduler" / "jobs.sqlite"
-    scheduler = build_scheduler(SchedulerSettings(scheduler_store_path=store_path))
+    settings = SchedulerSettings(scheduler_store_path=store_path, auction_collection_enabled=False)
+    scheduler = build_scheduler(settings)
 
     daily_run = scheduler.get_job(DAILY_RUN_JOB_ID)
     assert daily_run is not None
@@ -98,7 +99,7 @@ def test_scheduler_health_requires_jobs_fresh_snapshot_and_no_stale_runs(tmp_pat
             STOCK_POOL_JOB_ID,
         ),
     )
-    settings = SchedulerSettings(scheduler_store_path=store_path)
+    settings = SchedulerSettings(scheduler_store_path=store_path, auction_collection_enabled=False)
 
     healthy = check_scheduler_health(
         settings,
