@@ -14,6 +14,7 @@ data/bulk/
 data/logs/
 data/scheduler/
 data/worker/
+data/pytdx_hq_pool.json
 backups/
 reports/
 dist/
