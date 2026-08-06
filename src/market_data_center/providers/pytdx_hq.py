@@ -1,11 +1,14 @@
 """Network pytdx five-level quote adapter with Decimal protocol decoding."""
 
+import json
 from collections import OrderedDict
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
 from datetime import UTC, datetime
 from decimal import Decimal
 from itertools import batched
+from logging import getLogger
+from pathlib import Path
 from struct import unpack
 from types import TracebackType
 from typing import Protocol, Self, cast
@@ -42,6 +45,49 @@ class ManagedQuoteClient(QuoteClient, Protocol):
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None: ...
+
+
+LOGGER = getLogger(__name__)
+
+
+def _resolve_hosts(settings: PytdxHqSettings) -> list[tuple[str, int]]:
+    """Resolve candidate HQ endpoints, preferring the pool file.
+
+    Reads the JSON pool produced by ``scripts/probe_pytdx_hq_hosts.py``
+    (entries shaped as ``{"ip","port",...}`` already sorted by latency).
+    Falls back to the single ``PYTDX_HQ_HOST``/``PYTDX_HQ_PORT`` setting
+    when the pool is absent or unreadable. Raises ``ProviderError`` when
+    neither source yields a usable endpoint.
+    """
+    pool_hosts = _read_pool(settings.pytdx_hq_pool_path)
+    if pool_hosts:
+        return pool_hosts
+    if settings.pytdx_hq_host is not None:
+        host = settings.pytdx_hq_host.get_secret_value().strip()
+        if host:
+            return [(host, settings.pytdx_hq_port)]
+    raise ProviderError(
+        "pytdx_hq has no endpoints: set PYTDX_HQ_HOST or run "
+        "scripts/probe_pytdx_hq_hosts.py to build the pool"
+    )
+
+
+def _read_pool(path: Path) -> list[tuple[str, int]]:
+    """Parse the HQ pool file into [(ip, port), ...]; empty list on any failure."""
+    if not path.is_file():
+        return []
+    try:
+        entries = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        LOGGER.warning("pytdx_hq pool file unreadable: %s", path)
+        return []
+    hosts: list[tuple[str, int]] = []
+    for entry in entries:
+        ip = str(entry.get("ip", "")).strip()
+        port = int(entry.get("port", 0))
+        if ip and 0 < port <= 65_535:
+            hosts.append((ip, port))
+    return hosts
 
 
 class _DecimalSecurityQuotesCmd(GetSecurityQuotesCmd):  # type: ignore[misc]
@@ -103,17 +149,31 @@ class _DecimalSecurityQuotesCmd(GetSecurityQuotesCmd):  # type: ignore[misc]
 
 
 class _NetworkQuoteClient(AbstractContextManager["_NetworkQuoteClient"]):
-    def __init__(self, host: str, port: int, timeout_seconds: float) -> None:
-        self._host = host
-        self._port = port
+    def __init__(self, hosts: Sequence[tuple[str, int]], timeout_seconds: float) -> None:
+        if not hosts:
+            raise ProviderError("pytdx_hq has no candidate hosts")
+        self._hosts = tuple(hosts)
         self._timeout = timeout_seconds
         self._api = TdxHq_API(heartbeat=True, raise_exception=True)
+        self._connected_host: tuple[str, int] | None = None
+
+    @property
+    def connected_host(self) -> tuple[str, int] | None:
+        return self._connected_host
 
     def __enter__(self) -> "_NetworkQuoteClient":
-        connected = self._api.connect(self._host, self._port, time_out=self._timeout)
-        if not connected:
-            raise ProviderError("pytdx_hq connection failed")
-        return self
+        errors: list[str] = []
+        for host, port in self._hosts:
+            try:
+                connected = self._api.connect(host, port, time_out=self._timeout)
+            except Exception as error:
+                errors.append(f"{host}:{port} ({type(error).__name__})")
+                continue
+            if connected:
+                self._connected_host = (host, port)
+                return self
+            errors.append(f"{host}:{port}")
+        raise ProviderError("pytdx_hq connection failed; tried " + ", ".join(errors))
 
     def __exit__(
         self,
@@ -122,6 +182,7 @@ class _NetworkQuoteClient(AbstractContextManager["_NetworkQuoteClient"]):
         traceback: TracebackType | None,
     ) -> None:
         self._api.disconnect()
+        self._connected_host = None
 
     def fetch(self, requests: Sequence[tuple[int, str]]) -> Sequence[Mapping[str, object]]:
         if self._api.client is None:
@@ -147,8 +208,7 @@ class PytdxHqProvider(AbstractContextManager["PytdxHqProvider"]):
         self._settings = settings
         self._client_factory = client_factory or (
             lambda: _NetworkQuoteClient(
-                settings.pytdx_hq_host.get_secret_value(),
-                settings.pytdx_hq_port,
+                _resolve_hosts(settings),
                 settings.pytdx_hq_timeout_seconds,
             )
         )

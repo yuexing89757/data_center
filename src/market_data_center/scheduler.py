@@ -295,7 +295,7 @@ def run_auction_collection_job() -> None:
     """Collect one bounded opening-auction session for today's exact limit-up pool."""
     settings = WorkerSettings()  # type: ignore[call-arg]
     scheduling = SchedulerSettings()
-    quote_settings = PytdxHqSettings()  # type: ignore[call-arg]
+    quote_settings = PytdxHqSettings()
     engine = create_engine(
         sqlalchemy_url(settings.database_url.get_secret_value()), pool_pre_ping=True
     )
