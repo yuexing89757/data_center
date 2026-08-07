@@ -18,6 +18,7 @@ ADR 记录已经接受的架构决策。其优先级低于项目宪法，高于�
 
 ## 当前 ADR
 
+- `ADR-0023-可转债领域.md`：新增 `convertible_bond` 独立 schema（基础条款/每日行情/转股价调整/赎回事件），复用 core.security 但不复用 core.daily_bar；Tushare cb_* 主源。
 - `ADR-0022-集合竞价涨停池五档快照采集.md`：冻结当日涨停池，由单个 Worker 会话在 09:15–09:25 有界采样，并以 live validation 门禁防止误解竞价档位。
 - `ADR-0021-沪深主板涨跌停事实与通用股票池.md`：内部未复权日 K 与每日指标确定性计算对称涨跌停事实和不可变股票池，不依赖第三方榜单。
 - `ADR-0020-扣非净利润点时事实与增量同步.md`：以 disclosure_date 发现增量、fina_indicator 拉取金额，保留修订点时历史并提供有界 as-of 查询。
