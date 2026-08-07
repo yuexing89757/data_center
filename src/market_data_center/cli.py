@@ -757,6 +757,14 @@ def _execute(args: Namespace, pipeline: IngestionPipeline) -> IngestionRun:
             else datetime.now(SHANGHAI_TIME_ZONE).date()
         )
         return pipeline.ingest_deducted_profit_updates(as_of_date)
+    if args.dataset == "convertible-bond":
+        return pipeline.ingest_convertible_bonds()
+    if args.dataset == "convertible-bond-daily-bar":
+        return pipeline.ingest_convertible_bond_daily_bars(
+            args.source_symbol,
+            date.fromisoformat(args.start_date),
+            date.fromisoformat(args.end_date),
+        )
     if args.dataset == "classification-catalog":
         return pipeline.ingest_classification_catalog(
             args.classification_type,
@@ -842,6 +850,17 @@ def _parser() -> ArgumentParser:
         default="incremental",
         help="record operational intent; both modes reconcile the provider's complete history",
     )
+
+    subparsers.add_parser(
+        "convertible-bond", help="synchronize convertible bond basic terms (full market)"
+    )
+    cb_daily_bar = subparsers.add_parser(
+        "convertible-bond-daily-bar", help="synchronize convertible bond daily bars for one symbol"
+    )
+    cb_daily_bar.add_argument(
+        "--source-symbol", required=True, help="standard symbol such as SSE:113527"
+    )
+    _add_date_range(cb_daily_bar)
 
     catalog = subparsers.add_parser(
         "classification-catalog", help="capture a complete industry or concept catalog snapshot"

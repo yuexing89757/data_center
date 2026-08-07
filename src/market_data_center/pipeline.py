@@ -27,6 +27,10 @@ from market_data_center.domain.classification import (
     validate_catalog,
     validate_member_snapshot,
 )
+from market_data_center.domain.convertible_bond import (
+    ConvertibleBondRecord,
+    validate_convertible_bond,
+)
 from market_data_center.domain.deducted_profit import (
     DeductedProfitRecord,
     validate_deducted_profits,
@@ -56,6 +60,7 @@ from market_data_center.domain.stock_daily_indicator import (
 from market_data_center.domain.validation import validate_daily_bars
 from market_data_center.providers.contracts import (
     BoardIndexProvider,
+    ConvertibleBondProvider,
     DeductedProfitProvider,
     MarketDataProvider,
     ProviderBatch,
@@ -126,6 +131,14 @@ class PipelinePersistence(Protocol):
         run: IngestionRun,
         manifest: RawManifest,
         records: Sequence[IngestionEnvelope[CapitalRecord]],
+        quality_results: Sequence[QualityResult],
+    ) -> None: ...
+
+    def commit_convertible_bond_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest,
+        records: Sequence[IngestionEnvelope[ConvertibleBondRecord]],
         quality_results: Sequence[QualityResult],
     ) -> None: ...
 
@@ -345,6 +358,102 @@ class IngestionPipeline:
                     validation.rejected_rows,
                 )
                 self._persistence.commit_capital_batch(
+                    completed,
+                    manifest,
+                    self._envelopes(run.ingestion_id, validation.accepted),
+                    quality_results,
+                )
+                return completed
+            except _RecordedProviderError:
+                raise
+            except Exception as error:
+                self._record_failure(run, error)
+                raise
+
+    def ingest_convertible_bonds(self) -> IngestionRun:
+        params: dict[str, object] = {}
+        with self._persistence.task_lock(f"{self._provider.source_code}:convertible_bond"):
+            run = self._start_run(DatasetCode.CONVERTIBLE_BOND, params)
+            try:
+                provider = cast(ConvertibleBondProvider, self._provider)
+                batch = provider.fetch_convertible_bonds()
+                manifest, normalized = self._stage_batch(run, batch)
+                records = list(normalized)
+                known_symbols = self._persistence.known_symbols(
+                    {record.symbol for record in records}
+                )
+                validation = validate_convertible_bond(records, known_symbols=known_symbols)
+                quality_results = [
+                    QualityResult(
+                        quality_result_id=self._uuid_factory(),
+                        ingestion_id=run.ingestion_id,
+                        dataset_code=DatasetCode.CONVERTIBLE_BOND,
+                        rule_code=finding.rule_code,
+                        severity=QualitySeverity.ERROR,
+                        status=QualityStatus.FAILED,
+                        message=finding.message,
+                        natural_key=finding.natural_key,
+                    )
+                    for finding in validation.findings
+                ]
+                completed = self._completed_run(
+                    run,
+                    len(batch.raw_rows),
+                    len(validation.accepted),
+                    len(validation.rejected_records),
+                )
+                self._persistence.commit_convertible_bond_batch(
+                    completed,
+                    manifest,
+                    self._envelopes(run.ingestion_id, validation.accepted),
+                    quality_results,
+                )
+                return completed
+            except _RecordedProviderError:
+                raise
+            except Exception as error:
+                self._record_failure(run, error)
+                raise
+
+    def ingest_convertible_bond_daily_bars(
+        self, source_symbol: str, start_date: date, end_date: date
+    ) -> IngestionRun:
+        params = {"source_symbol": source_symbol, "start_date": start_date, "end_date": end_date}
+        with self._persistence.task_lock(
+            f"{self._provider.source_code}:convertible_bond_daily_bar:{source_symbol}"
+        ):
+            run = self._start_run(DatasetCode.CONVERTIBLE_BOND_DAILY_BAR, params)
+            try:
+                provider = cast(ConvertibleBondProvider, self._provider)
+                batch = provider.fetch_convertible_bond_daily_bars(
+                    source_symbol, start_date, end_date
+                )
+                manifest, normalized = self._stage_batch(run, batch)
+                records = list(normalized)
+                known_symbols = self._persistence.known_symbols(
+                    {record.symbol for record in records}
+                )
+                validation = validate_convertible_bond(records, known_symbols=known_symbols)
+                quality_results = [
+                    QualityResult(
+                        quality_result_id=self._uuid_factory(),
+                        ingestion_id=run.ingestion_id,
+                        dataset_code=DatasetCode.CONVERTIBLE_BOND_DAILY_BAR,
+                        rule_code=finding.rule_code,
+                        severity=QualitySeverity.ERROR,
+                        status=QualityStatus.FAILED,
+                        message=finding.message,
+                        natural_key=finding.natural_key,
+                    )
+                    for finding in validation.findings
+                ]
+                completed = self._completed_run(
+                    run,
+                    len(batch.raw_rows),
+                    len(validation.accepted),
+                    len(validation.rejected_records),
+                )
+                self._persistence.commit_convertible_bond_batch(
                     completed,
                     manifest,
                     self._envelopes(run.ingestion_id, validation.accepted),
@@ -695,6 +804,7 @@ class IngestionPipeline:
         | ClassificationRecord
         | StockDailyIndicatorSnapshotRecord
         | DeductedProfitRecord
+        | ConvertibleBondRecord
     ](ingestion_id: UUID, records: Sequence[RecordT]) -> tuple[IngestionEnvelope[RecordT], ...]:
         return tuple(IngestionEnvelope(ingestion_id, record) for record in records)
 

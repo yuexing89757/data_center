@@ -1,6 +1,6 @@
 """Convertible bond domain records, natural keys and validation."""
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -194,7 +194,7 @@ class ConvertibleBondValidationResult:
 def validate_convertible_bond(
     records: Sequence[ConvertibleBondRecord],
     *,
-    known_symbols: frozenset[str],
+    known_symbols: Collection[str],
 ) -> ConvertibleBondValidationResult:
     """Validate natural-key uniqueness and known-symbol membership."""
     groups: dict[tuple[str, ...], list[ConvertibleBondRecord]] = {}
