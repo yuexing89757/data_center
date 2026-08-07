@@ -20,6 +20,13 @@ from market_data_center.domain.classification import (
     ClassificationMemberSnapshotRecord,
     ClassificationType,
 )
+from market_data_center.domain.convertible_bond import (
+    ConvertibleBondBasicRecord,
+    ConvertibleBondCallEventRecord,
+    ConvertibleBondConvertPriceRevisionRecord,
+    ConvertibleBondDailyBarRecord,
+    ConvertibleBondRecord,
+)
 from market_data_center.domain.deducted_profit import DeductedProfitRecord
 from market_data_center.domain.entities import CalculatedTradingDay
 from market_data_center.domain.ingestion import (
@@ -428,6 +435,106 @@ insert into core.board_index_constituent_snapshot (
 ) values (
     :board_id, :trade_date, :symbol, :source_code, :ingestion_id
 )
+""")
+
+UPSERT_CB_BOND = text("""
+insert into convertible_bond.bond (
+    symbol, bond_code, bond_short_name, bond_full_name, underlying_symbol, exchange,
+    par_value, issue_size, issue_date, value_date, maturity_years, maturity_date,
+    convert_price_initial, convert_price, convert_start_date, convert_end_date,
+    coupon_rate, redeem_clause, sell_back_clause, lifecycle_status,
+    source_code, ingestion_id
+) values (
+    :symbol, :bond_code, :bond_short_name, :bond_full_name, :underlying_symbol, :exchange,
+    :par_value, :issue_size, :issue_date, :value_date, :maturity_years, :maturity_date,
+    :convert_price_initial, :convert_price, :convert_start_date, :convert_end_date,
+    :coupon_rate, :redeem_clause, :sell_back_clause, :lifecycle_status,
+    :source_code, :ingestion_id
+)
+on conflict (symbol) do update set
+    bond_code = excluded.bond_code,
+    bond_short_name = excluded.bond_short_name,
+    bond_full_name = excluded.bond_full_name,
+    underlying_symbol = excluded.underlying_symbol,
+    exchange = excluded.exchange,
+    par_value = excluded.par_value,
+    issue_size = excluded.issue_size,
+    issue_date = excluded.issue_date,
+    value_date = excluded.value_date,
+    maturity_years = excluded.maturity_years,
+    maturity_date = excluded.maturity_date,
+    convert_price_initial = excluded.convert_price_initial,
+    convert_price = excluded.convert_price,
+    convert_start_date = excluded.convert_start_date,
+    convert_end_date = excluded.convert_end_date,
+    coupon_rate = excluded.coupon_rate,
+    redeem_clause = excluded.redeem_clause,
+    sell_back_clause = excluded.sell_back_clause,
+    lifecycle_status = excluded.lifecycle_status,
+    source_code = excluded.source_code,
+    ingestion_id = excluded.ingestion_id
+""")
+
+UPSERT_CB_DAILY_BAR = text("""
+insert into convertible_bond.daily_bar (
+    symbol, trade_date, market, open, high, low, close, previous_close, volume, amount,
+    pct_chg, convert_value, convert_premium_pct, convert_price, remain_size,
+    trade_status, source_code, ingestion_id
+) values (
+    :symbol, :trade_date, :market, :open, :high, :low, :close, :previous_close, :volume, :amount,
+    :pct_chg, :convert_value, :convert_premium_pct, :convert_price, :remain_size,
+    :trade_status, :source_code, :ingestion_id
+)
+on conflict (symbol, trade_date) do update set
+    open = excluded.open,
+    high = excluded.high,
+    low = excluded.low,
+    close = excluded.close,
+    previous_close = excluded.previous_close,
+    volume = excluded.volume,
+    amount = excluded.amount,
+    pct_chg = excluded.pct_chg,
+    convert_value = excluded.convert_value,
+    convert_premium_pct = excluded.convert_premium_pct,
+    convert_price = excluded.convert_price,
+    remain_size = excluded.remain_size,
+    trade_status = excluded.trade_status,
+    source_code = excluded.source_code,
+    ingestion_id = excluded.ingestion_id
+""")
+
+UPSERT_CB_CONVERT_PRICE_REVISION = text("""
+insert into convertible_bond.convert_price_revision (
+    symbol, effective_date, convert_price_before, convert_price_after,
+    revision_reason, announcement_date, source_code, ingestion_id
+) values (
+    :symbol, :effective_date, :convert_price_before, :convert_price_after,
+    :revision_reason, :announcement_date, :source_code, :ingestion_id
+)
+on conflict (symbol, effective_date) do update set
+    convert_price_before = excluded.convert_price_before,
+    convert_price_after = excluded.convert_price_after,
+    revision_reason = excluded.revision_reason,
+    announcement_date = excluded.announcement_date,
+    source_code = excluded.source_code,
+    ingestion_id = excluded.ingestion_id
+""")
+
+UPSERT_CB_CALL_EVENT = text("""
+insert into convertible_bond.call_event (
+    symbol, event_type, announcement_date, trigger_date, record_date, call_price,
+    status, source_code, ingestion_id
+) values (
+    :symbol, :event_type, :announcement_date, :trigger_date, :record_date, :call_price,
+    :status, :source_code, :ingestion_id
+)
+on conflict (symbol, event_type, announcement_date) do update set
+    trigger_date = excluded.trigger_date,
+    record_date = excluded.record_date,
+    call_price = excluded.call_price,
+    status = excluded.status,
+    source_code = excluded.source_code,
+    ingestion_id = excluded.ingestion_id
 """)
 
 
@@ -923,6 +1030,61 @@ where market = 'CN_A_SHARE'
                     )
             connection.execute(UPDATE_INGESTION_RUN, self._run_update_parameters(run))
 
+    def commit_convertible_bond_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest | None,
+        records: Sequence[IngestionEnvelope[ConvertibleBondRecord]],
+        quality_results: Sequence[QualityResult],
+    ) -> None:
+        with self._engine.begin() as connection:
+            self._insert_manifest(connection, manifest)
+            if quality_results:
+                connection.execute(INSERT_QUALITY_RESULT, self._quality_parameters(quality_results))
+            if records:
+                self._ensure_envelope_ids(records, run.ingestion_id)
+                basics = [
+                    cast(IngestionEnvelope[ConvertibleBondBasicRecord], e)
+                    for e in records
+                    if isinstance(e.record, ConvertibleBondBasicRecord)
+                ]
+                bars = [
+                    cast(IngestionEnvelope[ConvertibleBondDailyBarRecord], e)
+                    for e in records
+                    if isinstance(e.record, ConvertibleBondDailyBarRecord)
+                ]
+                revisions = [
+                    cast(IngestionEnvelope[ConvertibleBondConvertPriceRevisionRecord], e)
+                    for e in records
+                    if isinstance(e.record, ConvertibleBondConvertPriceRevisionRecord)
+                ]
+                events = [
+                    cast(IngestionEnvelope[ConvertibleBondCallEventRecord], e)
+                    for e in records
+                    if isinstance(e.record, ConvertibleBondCallEventRecord)
+                ]
+                if basics:
+                    connection.execute(
+                        UPSERT_CB_BOND,
+                        self._cb_bond_envelope_parameters(basics),
+                    )
+                if bars:
+                    connection.execute(
+                        UPSERT_CB_DAILY_BAR,
+                        self._cb_daily_bar_envelope_parameters(bars),
+                    )
+                if revisions:
+                    connection.execute(
+                        UPSERT_CB_CONVERT_PRICE_REVISION,
+                        self._cb_revision_envelope_parameters(revisions),
+                    )
+                if events:
+                    connection.execute(
+                        UPSERT_CB_CALL_EVENT,
+                        self._cb_call_event_envelope_parameters(events),
+                    )
+            connection.execute(UPDATE_INGESTION_RUN, self._run_update_parameters(run))
+
     def commit_classification_catalog_batch(
         self,
         run: IngestionRun,
@@ -1247,6 +1409,104 @@ where board_id = :board_id and trade_date = :trade_date
         ]
 
     @staticmethod
+    @staticmethod
+    def _cb_bond_envelope_parameters(
+        records: Iterable[IngestionEnvelope[ConvertibleBondBasicRecord]],
+    ) -> list[dict[str, object]]:
+        return [
+            {
+                "symbol": e.record.symbol,
+                "bond_code": e.record.bond_code,
+                "bond_short_name": e.record.bond_short_name,
+                "bond_full_name": e.record.bond_full_name,
+                "underlying_symbol": e.record.underlying_symbol,
+                "exchange": e.record.exchange,
+                "par_value": e.record.par_value,
+                "issue_size": e.record.issue_size,
+                "issue_date": e.record.issue_date,
+                "value_date": e.record.value_date,
+                "maturity_years": e.record.maturity_years,
+                "maturity_date": e.record.maturity_date,
+                "convert_price_initial": e.record.convert_price_initial,
+                "convert_price": e.record.convert_price,
+                "convert_start_date": e.record.convert_start_date,
+                "convert_end_date": e.record.convert_end_date,
+                "coupon_rate": e.record.coupon_rate,
+                "redeem_clause": e.record.redeem_clause,
+                "sell_back_clause": e.record.sell_back_clause,
+                "lifecycle_status": e.record.lifecycle_status,
+                "source_code": e.record.source_code,
+                "ingestion_id": e.ingestion_id,
+            }
+            for e in records
+        ]
+
+    @staticmethod
+    def _cb_daily_bar_envelope_parameters(
+        records: Iterable[IngestionEnvelope[ConvertibleBondDailyBarRecord]],
+    ) -> list[dict[str, object]]:
+        return [
+            {
+                "symbol": e.record.symbol,
+                "trade_date": e.record.trade_date,
+                "market": e.record.market,
+                "open": e.record.open,
+                "high": e.record.high,
+                "low": e.record.low,
+                "close": e.record.close,
+                "previous_close": e.record.previous_close,
+                "volume": e.record.volume,
+                "amount": e.record.amount,
+                "pct_chg": e.record.pct_chg,
+                "convert_value": e.record.convert_value,
+                "convert_premium_pct": e.record.convert_premium_pct,
+                "convert_price": e.record.convert_price,
+                "remain_size": e.record.remain_size,
+                "trade_status": e.record.trade_status,
+                "source_code": e.record.source_code,
+                "ingestion_id": e.ingestion_id,
+            }
+            for e in records
+        ]
+
+    @staticmethod
+    def _cb_revision_envelope_parameters(
+        records: Iterable[IngestionEnvelope[ConvertibleBondConvertPriceRevisionRecord]],
+    ) -> list[dict[str, object]]:
+        return [
+            {
+                "symbol": e.record.symbol,
+                "effective_date": e.record.effective_date,
+                "convert_price_before": e.record.convert_price_before,
+                "convert_price_after": e.record.convert_price_after,
+                "revision_reason": e.record.revision_reason,
+                "announcement_date": e.record.announcement_date,
+                "source_code": e.record.source_code,
+                "ingestion_id": e.ingestion_id,
+            }
+            for e in records
+        ]
+
+    @staticmethod
+    def _cb_call_event_envelope_parameters(
+        records: Iterable[IngestionEnvelope[ConvertibleBondCallEventRecord]],
+    ) -> list[dict[str, object]]:
+        return [
+            {
+                "symbol": e.record.symbol,
+                "event_type": e.record.event_type,
+                "announcement_date": e.record.announcement_date,
+                "trigger_date": e.record.trigger_date,
+                "record_date": e.record.record_date,
+                "call_price": e.record.call_price,
+                "status": e.record.status,
+                "source_code": e.record.source_code,
+                "ingestion_id": e.ingestion_id,
+            }
+            for e in records
+        ]
+
+    @staticmethod
     def _share_capital_envelope_parameters(
         records: Iterable[IngestionEnvelope[ShareCapitalRecord]],
     ) -> list[dict[str, object]]:
@@ -1419,6 +1679,7 @@ where board_id = :board_id and trade_date = :trade_date
         | BoardIndexProviderRecord
         | StockDailyIndicatorSnapshotRecord
         | DeductedProfitRecord
+        | ConvertibleBondRecord
     ](records: Iterable[IngestionEnvelope[RecordT]], ingestion_id: UUID) -> None:
         if any(envelope.ingestion_id != ingestion_id for envelope in records):
             raise ValueError("ingestion envelope does not match the batch run")
