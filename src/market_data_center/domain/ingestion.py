@@ -31,6 +31,8 @@ class DatasetCode(StrEnum):
     STOCK_DAILY_INDICATOR = "stock_daily_indicator"
     DEDUCTED_PROFIT = "deducted_profit"
     FIVE_LEVEL_QUOTE = "five_level_quote"
+    CONVERTIBLE_BOND = "convertible_bond"
+    CONVERTIBLE_BOND_DAILY_BAR = "convertible_bond_daily_bar"
 
 
 class IngestionStatus(StrEnum):

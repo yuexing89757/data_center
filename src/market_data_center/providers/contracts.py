@@ -8,6 +8,7 @@ from typing import Protocol, Self
 
 from market_data_center.domain.board_index import BoardIndexProviderRecord
 from market_data_center.domain.classification import ClassificationRecord
+from market_data_center.domain.convertible_bond import ConvertibleBondRecord
 from market_data_center.domain.deducted_profit import DeductedProfitRecord
 from market_data_center.domain.realtime_quote import FiveLevelQuoteSnapshotRecord
 from market_data_center.domain.records import (
@@ -28,6 +29,7 @@ type ProviderRecord = (
     | StockDailyIndicatorSnapshotRecord
     | DeductedProfitRecord
     | FiveLevelQuoteSnapshotRecord
+    | ConvertibleBondRecord
 )
 type RawRow = Mapping[str, str]
 
@@ -95,6 +97,18 @@ class DeductedProfitProvider(Protocol):
     def fetch_deducted_profit_updates(
         self, as_of_date: date
     ) -> "ProviderBatch[DeductedProfitRecord]": ...
+
+
+class ConvertibleBondProvider(Protocol):
+    """Dedicated capability boundary for convertible bond facts."""
+
+    source_code: str
+
+    def fetch_convertible_bonds(self) -> "ProviderBatch[ConvertibleBondRecord]": ...
+
+    def fetch_convertible_bond_daily_bars(
+        self, source_symbol: str, start_date: date, end_date: date
+    ) -> "ProviderBatch[ConvertibleBondRecord]": ...
 
 
 @dataclass(frozen=True, slots=True)

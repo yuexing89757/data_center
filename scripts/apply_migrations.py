@@ -13,6 +13,7 @@ TARGET_SCHEMAS = (
     "audit",
     "capital",
     "classification",
+    "convertible_bond",
     "core",
     "derived",
     "ingestion",
@@ -58,6 +59,10 @@ EXPECTED_TABLES = {
     ("stock_pool", "calculation_quality"),
     ("stock_pool", "member"),
     ("stock_pool", "snapshot"),
+    ("convertible_bond", "bond"),
+    ("convertible_bond", "call_event"),
+    ("convertible_bond", "convert_price_revision"),
+    ("convertible_bond", "daily_bar"),
 }
 EXPECTED_VIEWS = {
     ("api_v1", "adjusted_daily_bars"),
@@ -70,6 +75,8 @@ EXPECTED_VIEWS = {
     ("api_v1", "classification_member_intervals"),
     ("api_v1", "classification_member_snapshot_status"),
     ("api_v1", "classification_member_snapshots"),
+    ("api_v1", "convertible_bond_daily_bars"),
+    ("api_v1", "convertible_bonds"),
     ("api_v1", "daily_bars"),
     ("api_v1", "daily_metrics"),
     ("api_v1", "distributions"),

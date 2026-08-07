@@ -23,6 +23,8 @@ API_VIEWS = (
     "classification_member_intervals",
     "classification_member_snapshot_status",
     "classification_member_snapshots",
+    "convertible_bond_daily_bars",
+    "convertible_bonds",
     "daily_bars",
     "daily_metrics",
     "distributions",
