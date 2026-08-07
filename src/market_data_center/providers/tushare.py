@@ -14,6 +14,11 @@ from urllib.request import Request, urlopen
 from pydantic import ValidationError
 
 from market_data_center.domain.classification import ClassificationRecord
+from market_data_center.domain.convertible_bond import (
+    ConvertibleBondBasicRecord,
+    ConvertibleBondDailyBarRecord,
+    ConvertibleBondRecord,
+)
 from market_data_center.domain.deducted_profit import (
     DeductedProfitRecord,
     deducted_profit_revision_key,
@@ -94,6 +99,40 @@ DEDUCTED_PROFIT_FIELDS = (
     "profit_dedt",
     "q_dtprofit",
     "update_flag",
+)
+CB_BASIC_FIELDS = (
+    "ts_code",
+    "bond_id",
+    "bond_short_name",
+    "bond_full_name",
+    "list_date",
+    "delist_date",
+    "maturity_date",
+    "par",
+    "issue_size",
+    "value_date",
+    "maturity",
+    "convert_price_initial",
+    "convert_price",
+    "stock_ts_code",
+    "redeem_clause",
+    "sell_back_clause",
+)
+CB_DAILY_FIELDS = (
+    "ts_code",
+    "trade_date",
+    "pre_close",
+    "open",
+    "high",
+    "low",
+    "close",
+    "pct_chg",
+    "vol",
+    "amount",
+    "convert_value",
+    "convert_pct",
+    "convert_price",
+    "remain_size",
 )
 
 
@@ -375,6 +414,45 @@ class TushareProvider(AbstractContextManager["TushareProvider"]):
             ],
         )
 
+    def fetch_convertible_bonds(self) -> ProviderBatch[ConvertibleBondRecord]:
+        result = _provider_call(
+            "cb_basic",
+            partial(self._client.query, "cb_basic", params={}, fields=CB_BASIC_FIELDS),
+        )
+        rows = _rows(result, CB_BASIC_FIELDS, "cb_basic")
+        return ProviderBatch(
+            raw_rows=rows,
+            request_params={},
+            schema_version="tushare.convertible_bond.v1",
+            record_factory=lambda: [_map_cb_basic(row) for row in rows],
+        )
+
+    def fetch_convertible_bond_daily_bars(
+        self, source_symbol: str, start_date: date, end_date: date
+    ) -> ProviderBatch[ConvertibleBondRecord]:
+        ts_code = self.source_symbol(source_symbol)
+        result = _provider_call(
+            "cb_daily",
+            partial(
+                self._client.query,
+                "cb_daily",
+                params={
+                    "ts_code": ts_code,
+                    "start_date": start_date.strftime("%Y%m%d"),
+                    "end_date": end_date.strftime("%Y%m%d"),
+                },
+                fields=CB_DAILY_FIELDS,
+            ),
+        )
+        rows = _rows(result, CB_DAILY_FIELDS, "cb_daily")
+        rows.sort(key=lambda row: row["trade_date"])
+        return ProviderBatch(
+            raw_rows=rows,
+            request_params={"ts_code": ts_code},
+            schema_version="tushare.convertible_bond_daily_bar.v1",
+            record_factory=lambda: [_map_cb_daily_bar(row) for row in rows],
+        )
+
     def fetch_classification_catalog(
         self, classification_type: str, snapshot_date: date
     ) -> ProviderBatch[ClassificationRecord]:
@@ -398,6 +476,8 @@ def normalize_tushare_raw(
         DatasetCode.DAILY_BAR: "tushare.daily_bar.v1",
         DatasetCode.STOCK_DAILY_INDICATOR: "tushare.stock_daily_indicator.v1",
         DatasetCode.DEDUCTED_PROFIT: "tushare.deducted_profit.v1",
+        DatasetCode.CONVERTIBLE_BOND: "tushare.convertible_bond.v1",
+        DatasetCode.CONVERTIBLE_BOND_DAILY_BAR: "tushare.convertible_bond_daily_bar.v1",
     }.get(dataset_code)
     if expected is None or schema_version != expected:
         raise ProviderError(f"unsupported Tushare Raw schema: {schema_version}")
@@ -423,6 +503,12 @@ def normalize_tushare_raw(
             for row in raw_rows
             if row.get("row_type") == "fina_indicator"
             and (row["ts_code"], row["end_date"]) in disclosures
+        )
+    if dataset_code is DatasetCode.CONVERTIBLE_BOND:
+        return tuple(_map_cb_basic(row) for row in raw_rows)
+    if dataset_code is DatasetCode.CONVERTIBLE_BOND_DAILY_BAR:
+        return tuple(
+            _map_cb_daily_bar(row) for row in sorted(raw_rows, key=lambda row: row["trade_date"])
         )
     return tuple(_map_daily_bar(row) for row in sorted(raw_rows, key=lambda row: row["trade_date"]))
 
@@ -527,6 +613,76 @@ def _map_daily_bar(row: Mapping[str, str]) -> DailyBarRecord:
         amount=amount_thousand * 1000 if amount_thousand is not None else None,
         trade_status=TradeStatus.TRADING,
         is_st=None,
+        source_code="tushare",
+    )
+
+
+def _map_cb_basic(row: Mapping[str, str]) -> ConvertibleBondBasicRecord:
+    _, _, symbol = _normalize_symbol(row["ts_code"])
+    underlying_symbol: str
+    stock_code = row.get("stock_ts_code", "").strip()
+    if stock_code:
+        _, _, underlying_symbol = _normalize_symbol(stock_code)
+    else:
+        raise ProviderError(f"cb_basic row for {symbol} is missing stock_ts_code")
+    list_date = _optional_date(row.get("list_date"))
+    delist_date = _optional_date(row.get("delist_date"))
+    if delist_date is not None:
+        lifecycle = "delisted"
+    elif list_date is not None:
+        lifecycle = "listed"
+    else:
+        lifecycle = "pending_list"
+    return ConvertibleBondBasicRecord(
+        symbol=symbol,
+        bond_code=symbol.split(":")[1],
+        bond_short_name=row["bond_short_name"].strip(),
+        bond_full_name=row["bond_full_name"].strip(),
+        underlying_symbol=underlying_symbol,
+        exchange=symbol.split(":")[0],
+        par_value=_decimal(row.get("par")) or Decimal("100"),
+        issue_size=_decimal(row.get("issue_size")),
+        issue_date=None,
+        value_date=_optional_date(row.get("value_date")),
+        maturity_years=_optional_int(row.get("maturity")),
+        maturity_date=_optional_date(row.get("maturity_date")),
+        convert_price_initial=_decimal(row.get("convert_price_initial")),
+        convert_price=_decimal(row.get("convert_price")),
+        convert_start_date=None,
+        convert_end_date=None,
+        coupon_rate=None,
+        redeem_clause=row.get("redeem_clause"),
+        sell_back_clause=row.get("sell_back_clause"),
+        lifecycle_status=lifecycle,
+        source_code="tushare",
+    )
+
+
+def _map_cb_daily_bar(row: Mapping[str, str]) -> ConvertibleBondDailyBarRecord:
+    _, _, symbol = _normalize_symbol(row["ts_code"])
+    # Tushare cb_daily.vol is in lots (1 lot = 10 bonds); normalize to 张.
+    volume_lots = _decimal(row.get("vol"))
+    volume = int(volume_lots * 10) if volume_lots is not None else None
+    # Tushare amount is in thousands of CNY.
+    amount_thousand = _decimal(row.get("amount"))
+    amount = amount_thousand * 1000 if amount_thousand is not None else None
+    return ConvertibleBondDailyBarRecord(
+        symbol=symbol,
+        trade_date=_parse_date(row["trade_date"]),
+        market=Market.CN_A_SHARE,
+        open=_decimal(row.get("open")),
+        high=_decimal(row.get("high")),
+        low=_decimal(row.get("low")),
+        close=_decimal(row.get("close")),
+        previous_close=_decimal(row.get("pre_close")),
+        volume=volume,
+        amount=amount,
+        pct_chg=_decimal(row.get("pct_chg")),
+        convert_value=_decimal(row.get("convert_value")),
+        convert_premium_pct=_decimal(row.get("convert_pct")),
+        convert_price=_decimal(row.get("convert_price")),
+        remain_size=_decimal(row.get("remain_size")),
+        trade_status="trading",
         source_code="tushare",
     )
 
@@ -661,6 +817,15 @@ def _optional_date(value: str | None) -> date | None:
     if value is None or not value.strip():
         return None
     return _parse_date(value)
+
+
+def _optional_int(value: str | None) -> int | None:
+    if value is None or not value.strip():
+        return None
+    try:
+        return int(float(value))
+    except ValueError as error:
+        raise ProviderError(f"invalid Tushare integer: {value}") from error
 
 
 def _decimal(value: str | None) -> Decimal | None:
