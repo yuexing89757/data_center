@@ -83,7 +83,7 @@ where market='CN_A_SHARE' and trade_date=:basis and is_trading_day
             dependencies = self._dependency_runs(connection, basis_trade_date)
             if set(dependencies) != {"daily_market", "stock_daily_indicator"}:
                 raise StockPoolDependencyNotReady(
-                    "exact successful daily market and indicator workflows are required"
+                    "exact succeeded-or-partial daily market and indicator workflows are required"
                 )
             rows = connection.execute(_SELECT_CANDIDATES, {"basis": basis_trade_date}).mappings()
             candidates = tuple(_candidate(row) for row in rows)
@@ -104,7 +104,7 @@ where market='CN_A_SHARE' and trade_date=:basis and is_trading_day
 select distinct on (workflow_code) workflow_code, workflow_run_id::text
 from operations.workflow_run
 where workflow_code in ('daily_market','stock_daily_indicator')
-  and status='succeeded'
+  and status in ('succeeded','partial')
   and (scheduled_for at time zone 'Asia/Shanghai')::date=:basis
 order by workflow_code, finished_at desc
 """),
