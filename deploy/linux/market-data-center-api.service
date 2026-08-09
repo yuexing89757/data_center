@@ -1,0 +1,31 @@
+[Unit]
+Description=Market Data Center read-only API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=market-data-api
+Group=market-data-api
+WorkingDirectory=/home/project-api
+EnvironmentFile=/etc/market-data-center/api.env
+ExecStartPre=/home/project-api/.venv/bin/python /home/project-api/scripts/check_fastapi_release.py --require-loopback
+ExecStart=/home/project-api/.venv/bin/market-data-api
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=30
+TimeoutStopSec=30
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

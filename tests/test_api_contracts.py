@@ -90,8 +90,8 @@ def test_public_contracts_do_not_name_internal_schemas_or_contain_secrets() -> N
 
 def test_fastapi_openapi_contract_matches_the_application() -> None:
     settings = ApiSettings(
-        database_url=SecretStr("unused"),
-        fastapi_api_key=SecretStr("contract-api-key-000000000"),
+        fastapi_database_url=SecretStr("unused"),
+        fastapi_api_key=SecretStr("contract-api-key-0000000000000000"),
     )
 
     assert (

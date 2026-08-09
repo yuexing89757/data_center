@@ -91,3 +91,35 @@ def test_postgres_only_release_check_flags_are_accepted() -> None:
     assert migration.stderr.strip() == "MIGRATION_DATABASE_URL is required"
     assert smoke.returncode != 0
     assert smoke.stderr.strip() == "DATABASE_URL is required"
+
+
+def test_linux_fastapi_unit_is_independent_and_loopback_only() -> None:
+    unit = (PROJECT_ROOT / "deploy/linux/market-data-center-api.service").read_text(
+        encoding="utf-8"
+    )
+    template = (PROJECT_ROOT / "deploy/linux/market-data-center-api.env.example").read_text(
+        encoding="utf-8"
+    )
+
+    assert "User=market-data-api" in unit
+    assert "WorkingDirectory=/home/project-api" in unit
+    assert "EnvironmentFile=/etc/market-data-center/api.env" in unit
+    assert "market-data-center worker" not in unit
+    assert "ProtectHome=read-only" in unit
+    assert "FASTAPI_HOST=127.0.0.1" in template
+    assert "FASTAPI_DATABASE_URL=" in template
+    assert "DATABASE_URL=" not in template.replace("FASTAPI_DATABASE_URL=", "")
+    assert "SUPABASE" not in template
+
+
+def test_fastapi_reader_migration_has_only_the_published_contract() -> None:
+    migration = (MIGRATION_DIR / "20260809000100_create_fastapi_reader_role.sql").read_text(
+        encoding="utf-8"
+    )
+
+    assert "create role market_data_api nologin" in migration
+    assert "query_securities" in migration
+    assert "query_daily_bars" in migration
+    assert "query_classification_members_as_of" in migration
+    assert "market_data_worker" not in migration
+    assert not re.search(r"(?im)^grant\s+(insert|update|delete|all)", migration)

@@ -51,6 +51,9 @@ def create_app(
             sqlalchemy_url(configured.resolved_database_url()),
             pool_pre_ping=True,
             pool_recycle=1800,
+            connect_args={
+                "options": "-c default_transaction_read_only=on -c statement_timeout=5000"
+            },
         )
         query_service = PostgreSQLPublicQueryService(owned_engine)
 

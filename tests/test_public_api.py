@@ -1,8 +1,9 @@
 from datetime import date
 from decimal import Decimal
 
+import pytest
 from fastapi.testclient import TestClient
-from pydantic import SecretStr
+from pydantic import SecretStr, ValidationError
 
 from market_data_center.domain import (
     ClassificationType,
@@ -23,7 +24,7 @@ from market_data_center.public_api.queries import (
 )
 from market_data_center.settings import ApiSettings
 
-API_KEY = "test-api-key-000000000000"
+API_KEY = "test-api-key-00000000000000000000"
 
 
 class FakeQueryService:
@@ -99,7 +100,7 @@ class FakeQueryService:
 
 def _client(service: FakeQueryService) -> TestClient:
     settings = ApiSettings(
-        database_url=SecretStr("unused"),
+        fastapi_database_url=SecretStr("unused"),
         fastapi_api_key=SecretStr(API_KEY),
     )
     return TestClient(create_app(settings=settings, query_service=service))
@@ -107,6 +108,17 @@ def _client(service: FakeQueryService) -> TestClient:
 
 def _headers() -> dict[str, str]:
     return {"X-API-Key": API_KEY}
+
+
+def test_api_settings_never_fall_back_to_worker_database_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", "postgresql://worker-credential-must-not-be-used")
+    monkeypatch.delenv("FASTAPI_DATABASE_URL", raising=False)
+    monkeypatch.setenv("FASTAPI_API_KEY", API_KEY)
+
+    with pytest.raises(ValidationError):
+        ApiSettings(_env_file=None)  # type: ignore[call-arg]
 
 
 def test_health_and_readiness_are_public() -> None:

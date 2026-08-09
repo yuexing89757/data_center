@@ -6,8 +6,8 @@ A phase-one A-share daily market data pipeline using Python 3.12 and PostgreSQL.
 
 Build the committed Linux source package with
 `uv run python scripts/build_release.py --platform linux`. The production shape is one
-systemd-supervised `market-data-center worker` plus PostgreSQL. Supabase, PostgREST, and
-the optional HTTP API are excluded; no OS-level collection schedule is registered. See
+systemd-supervised `market-data-center worker` plus PostgreSQL. The independently
+packaged HTTP API is not enabled by the Worker release; no OS-level collection schedule is registered. See
 [the minimal production release runbook](docs/最小生产发布运行手册.md) for installation,
 release gates, read-only smoke checks, and rollback boundaries. Packaging does not prove that
 production backup restore or credential rotation has passed.
@@ -44,7 +44,11 @@ uv run mypy src
 uv run pytest
 ```
 
-External read-only HTTP queries are provided by FastAPI on top of the bounded Supabase `api_v1` RPC contract. Start it with `serve-api.cmd`; see [the Chinese API guide](docs/FastAPI外部接口.md). MCP remains deferred.
+External read-only HTTP queries are provided by an independent FastAPI process that connects
+directly to PostgreSQL and calls only bounded `api_v1` functions. The initial deployment may reuse
+the existing Supabase-hosted PostgreSQL without using Supabase URLs, keys, Auth, Studio, or PostgREST.
+See [the API guide](docs/FastAPI外部接口.md) and
+[Linux runbook](docs/Standalone-PostgreSQL-FastAPI-Linux.md). MCP remains deferred.
 
 Configuration is loaded from environment variables. Copy `.env.example` locally and replace placeholders; never commit the resulting `.env` file.
 
@@ -109,7 +113,9 @@ market-data-center derived-recompute --start-date 2026-01-01 --end-date 2026-07-
 
 `api_v1.daily_bars` remains unadjusted. Derived views include the calculation ID, algorithm version, calculation range, input hash, and calculation timestamp; see [ADR-0009](docs/adr/ADR-0009-版本化复权行情与客观Metrics.md).
 
-Stable consumer and Agent reads use bounded Supabase PostgREST RPCs. The checked-in contracts are [OpenAPI v1](contracts/postgrest-openapi-v1.json) and [Agent tools v1](contracts/agent-tools-v1.json). ADR-0010 keeps FastAPI and MCP deferred because current queries remain inside PostgreSQL/PostgREST.
+The external HTTP contract is [FastAPI OpenAPI v1](contracts/fastapi-openapi-v1.json). FastAPI
+executes bounded PostgreSQL `api_v1` functions directly; consumers never receive database,
+provider, lineage, Raw, or secret fields.
 
 The third-party dynamic board index `THS:883423` is isolated from Security and
 ordinary Daily Bar facts. Synchronize its explicit directory before bars and

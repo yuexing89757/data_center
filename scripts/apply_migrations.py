@@ -1,4 +1,4 @@
-"""Apply repository SQL migrations to a self-hosted Supabase database."""
+"""Apply repository SQL migrations to PostgreSQL."""
 
 from argparse import ArgumentParser
 from os import environ
@@ -133,6 +133,9 @@ def _check(
     worker_role = connection.execute(
         "select exists(select 1 from pg_roles where rolname = 'market_data_worker')"
     ).fetchone()
+    api_role = connection.execute(
+        "select exists(select 1 from pg_roles where rolname = 'market_data_api')"
+    ).fetchone()
     history_table = connection.execute(
         "select to_regclass('supabase_migrations.schema_migrations')"
     ).fetchone()
@@ -167,6 +170,7 @@ def _check(
     print(f"target_schemas={schemas}")
     print(f"target_tables={tables}")
     print(f"worker_role_exists={worker_role[0] if worker_role else False}")
+    print(f"api_role_exists={api_role[0] if api_role else False}")
     print(f"migration_history={history_table[0] if history_table else None}")
     if include_api_views:
         print(f"api_views={views}")
@@ -189,6 +193,8 @@ def _check(
         failures.append("not every internal application table has RLS enabled")
     if not worker_role or not worker_role[0]:
         failures.append("market_data_worker role is missing")
+    if not api_role or not api_role[0]:
+        failures.append("market_data_api role is missing")
     if not history_table or not history_table[0]:
         failures.append("migration history table is missing")
     if actual_versions != repository_versions:

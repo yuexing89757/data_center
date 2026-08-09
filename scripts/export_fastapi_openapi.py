@@ -15,8 +15,8 @@ CONTRACT_PATH = Path(__file__).parents[1] / "contracts" / "fastapi-openapi-v1.js
 
 def main() -> None:
     settings = ApiSettings(
-        database_url=SecretStr("unused"),
-        fastapi_api_key=SecretStr("contract-api-key-000000000"),
+        fastapi_database_url=SecretStr("unused"),
+        fastapi_api_key=SecretStr("contract-api-key-0000000000000000"),
     )
     schema = create_app(
         settings=settings,
