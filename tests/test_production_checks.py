@@ -103,6 +103,8 @@ def test_linux_fastapi_unit_is_independent_and_loopback_only() -> None:
 
     assert "User=market-data-api" in unit
     assert "WorkingDirectory=/home/project-api" in unit
+    assert "Environment=PYTHONPATH=/home/project-api/src" in unit
+    assert "python -m market_data_center.public_api" in unit
     assert "EnvironmentFile=/etc/market-data-center/api.env" in unit
     assert "market-data-center worker" not in unit
     assert "ProtectHome=read-only" in unit

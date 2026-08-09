@@ -9,8 +9,9 @@ User=market-data-api
 Group=market-data-api
 WorkingDirectory=/home/project-api
 EnvironmentFile=/etc/market-data-center/api.env
+Environment=PYTHONPATH=/home/project-api/src
 ExecStartPre=/home/project-api/.venv/bin/python /home/project-api/scripts/check_fastapi_release.py --require-loopback
-ExecStart=/home/project-api/.venv/bin/market-data-api
+ExecStart=/home/project-api/.venv/bin/python -m market_data_center.public_api
 Restart=on-failure
 RestartSec=10
 TimeoutStartSec=30
