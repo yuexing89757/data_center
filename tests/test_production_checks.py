@@ -1,4 +1,7 @@
+import os
 import re
+import subprocess
+import sys
 from pathlib import Path
 from runpy import run_path
 from typing import Any, cast
@@ -60,3 +63,31 @@ def test_view_count_rejects_names_outside_the_manifest() -> None:
         assert "unsupported api_v1 view" in str(error)
     else:
         raise AssertionError("unsafe view name was accepted")
+
+
+def test_postgres_only_release_check_flags_are_accepted() -> None:
+    environment = os.environ.copy()
+    environment.pop("DATABASE_URL", None)
+    environment.pop("MIGRATION_DATABASE_URL", None)
+
+    migration = subprocess.run(
+        [sys.executable, "scripts/apply_migrations.py", "check", "--postgres-only"],
+        cwd=PROJECT_ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    smoke = subprocess.run(
+        [sys.executable, "scripts/smoke_check.py", "--postgres-only"],
+        cwd=PROJECT_ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert migration.returncode != 0
+    assert migration.stderr.strip() == "MIGRATION_DATABASE_URL is required"
+    assert smoke.returncode != 0
+    assert smoke.stderr.strip() == "DATABASE_URL is required"

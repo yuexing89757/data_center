@@ -1,6 +1,16 @@
 # Market Data Center
 
-A phase-one A-share daily market data pipeline using Python 3.12 and a self-hosted Supabase deployment. Security and calendar use BaoStock/AKShare routing; stock Daily Bar uses only pytdx local Shanghai/Shenzhen/Beijing `.day` files.
+A phase-one A-share daily market data pipeline using Python 3.12 and PostgreSQL. Security and calendar use BaoStock/AKShare routing; stock Daily Bar uses only pytdx local Shanghai/Shenzhen/Beijing `.day` files.
+
+## Minimal Linux production release
+
+Build the committed Linux source package with
+`uv run python scripts/build_release.py --platform linux`. The production shape is one
+systemd-supervised `market-data-center worker` plus PostgreSQL. Supabase, PostgREST, and
+the optional HTTP API are excluded; no OS-level collection schedule is registered. See
+[the minimal production release runbook](docs/最小生产发布运行手册.md) for installation,
+release gates, read-only smoke checks, and rollback boundaries. Packaging does not prove that
+production backup restore or credential rotation has passed.
 
 ## Windows deployment
 

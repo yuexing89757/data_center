@@ -1,4 +1,4 @@
-"""Build a reproducible Windows source-distribution zip.
+"""Build a source release from the current committed snapshot.
 
 The archive contains exactly the files ``git ls-files`` reports for the
 current commit, so the package always matches a committed snapshot:
@@ -8,20 +8,22 @@ filenames survive on every Windows codepage.
 
 Usage::
 
-    uv run python scripts/build_release.py
+    uv run python scripts/build_release.py --platform linux
 
 Pass ``--allow-dirty`` only for local experimentation; official builds
 must run against a clean tree so the package matches a real commit.
 
-The output overwrites ``dist/market-data-center-{version}-windows.zip``.
-The ``dist/`` directory stays git-ignored; the archive is a build
-artifact, not a committed file.
+The output overwrites the platform-specific archive in ``dist/``. That
+directory stays git-ignored; archives are build artifacts, not committed files.
 """
 
 from __future__ import annotations
 
+import argparse
+import hashlib
 import subprocess
 import sys
+import tarfile
 import tomllib
 import zipfile
 from pathlib import Path
@@ -61,17 +63,39 @@ def _add_file(archive: zipfile.ZipFile, relative: str) -> None:
         archive.writestr(info, handle.read())
 
 
+def _build_linux_tar(version: str, files: list[str]) -> Path:
+    output = DIST / f"market-data-center-{version}-linux.tar.gz"
+    prefix = f"market-data-center-{version}"
+    with tarfile.open(output, "w:gz") as archive:
+        for relative in files:
+            archive.add(ROOT / relative, arcname=f"{prefix}/{relative}", recursive=False)
+    return output
+
+
 def main() -> None:
-    allow_dirty = "--allow-dirty" in sys.argv[1:]
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--platform", choices=("linux", "windows"), default="windows")
+    parser.add_argument("--allow-dirty", action="store_true")
+    args = parser.parse_args()
+    allow_dirty = args.allow_dirty
     _require_clean_tree(allow_dirty=allow_dirty)
     version = _read_version()
     files = _tracked_files()
     DIST.mkdir(exist_ok=True)
-    output = DIST / f"market-data-center-{version}-windows.zip"
-    with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
-        for relative in files:
-            _add_file(archive, relative)
-    print(f"Wrote {output.relative_to(ROOT)} ({len(files)} files, version {version}).")
+    if args.platform == "linux":
+        output = _build_linux_tar(version, files)
+    else:
+        output = DIST / f"market-data-center-{version}-windows.zip"
+        with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
+            for relative in files:
+                _add_file(archive, relative)
+    digest = hashlib.sha256(output.read_bytes()).hexdigest()
+    checksum = output.with_name(output.name + ".sha256")
+    checksum.write_text(f"{digest}  {output.name}\n", encoding="ascii")
+    print(
+        f"Wrote {output.relative_to(ROOT)} and {checksum.relative_to(ROOT)} "
+        f"({len(files)} files, version {version})."
+    )
 
 
 if __name__ == "__main__":

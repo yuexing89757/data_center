@@ -57,11 +57,18 @@ def main() -> None:
         action="store_true",
         help="require THS board catalog, daily bars, and a constituent snapshot",
     )
+    parser.add_argument(
+        "--postgres-only",
+        action="store_true",
+        help="check Worker facts and lineage without api_v1 or PostgREST probes",
+    )
     args = parser.parse_args()
     database_url = environ.get("DATABASE_URL")
     if not database_url:
         raise SystemExit("DATABASE_URL is required")
-    metrics, orphan_facts, api_rows = _database_smoke(database_url)
+    metrics, orphan_facts, api_rows = _database_smoke(
+        database_url, include_api_views=not args.postgres_only
+    )
 
     print(f"metrics={metrics}")
     print(f"orphan_facts={orphan_facts}")
@@ -74,6 +81,9 @@ def main() -> None:
         raise SystemExit(f"required production facts are empty: {', '.join(empty_required)}")
     if orphan_facts != 0:
         raise SystemExit("traceability smoke check failed")
+    if args.postgres_only:
+        return
+
     required_api_views = {"securities", "trading_calendar", "daily_bars"}
     if args.require_board_index:
         required_api_views.update(
@@ -101,7 +111,9 @@ def main() -> None:
             )
 
 
-def _database_smoke(database_url: str) -> tuple[dict[str, int], int, dict[str, int]]:
+def _database_smoke(
+    database_url: str, *, include_api_views: bool = True
+) -> tuple[dict[str, int], int, dict[str, int]]:
     with psycopg.connect(
         psycopg_url(database_url),
         connect_timeout=10,
@@ -189,7 +201,9 @@ def _database_smoke(database_url: str) -> tuple[dict[str, int], int, dict[str, i
             left join ingestion.ingestion_run run using (ingestion_id)
             where run.ingestion_id is null
         """).fetchone()
-        api_rows = {view: _view_count(connection, view) for view in API_VIEWS}
+        api_rows = (
+            {view: _view_count(connection, view) for view in API_VIEWS} if include_api_views else {}
+        )
     if orphan_row is None:
         raise RuntimeError("smoke check query returned no row")
     return metrics, int(orphan_row[0]), api_rows

@@ -12,13 +12,17 @@ dependencies = [
   "akshare>=1.17.0",
   "apscheduler==3.11.3",
   "baostock>=0.8.9",
-  "fastapi>=0.116",
   "pandas>=2.2",
   "pyarrow>=17",
   "pydantic-settings>=2.6",
   "psycopg[binary]>=3.2",
   "pytdx>=1.72",
   "sqlalchemy>=2.0",
+]
+
+[project.optional-dependencies]
+api = [
+  "fastapi>=0.116",
   "uvicorn>=0.35",
 ]
 
@@ -28,11 +32,13 @@ market-data-api = "market_data_center.public_api:run"
 
 [dependency-groups]
 dev = [
+  "fastapi>=0.116",
   "httpx2>=0.1",
   "mypy>=1.13",
   "pytest>=8.3",
   "pytest-cov>=6.0",
   "ruff>=0.8",
+  "uvicorn>=0.35",
 ]
 
 [tool.hatch.build.targets.wheel]

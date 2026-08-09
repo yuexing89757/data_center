@@ -92,7 +92,14 @@ EXPECTED_VIEWS = {
 def main() -> None:
     parser = ArgumentParser()
     parser.add_argument("mode", choices=("check", "apply"))
+    parser.add_argument(
+        "--postgres-only",
+        action="store_true",
+        help="exclude api_v1 view checks from a read-only PostgreSQL worker release check",
+    )
     args = parser.parse_args()
+    if args.postgres_only and args.mode != "check":
+        parser.error("--postgres-only is valid only with check")
     database_url = environ.get("MIGRATION_DATABASE_URL")
     if not database_url:
         raise SystemExit("MIGRATION_DATABASE_URL is required")
@@ -102,12 +109,14 @@ def main() -> None:
         psycopg_url(database_url), connect_timeout=10, options=options
     ) as connection:
         if args.mode == "check":
-            _check(connection)
+            _check(connection, include_api_views=not args.postgres_only)
         else:
             apply_migrations(connection, sorted(MIGRATION_DIR.glob("*.sql")))
 
 
-def _check(connection: psycopg.Connection[tuple[object, ...]]) -> None:
+def _check(
+    connection: psycopg.Connection[tuple[object, ...]], *, include_api_views: bool = True
+) -> None:
     schemas = connection.execute(
         "select nspname from pg_namespace where nspname = any(%s) order by 1",
         (list(TARGET_SCHEMAS),),
@@ -127,14 +136,18 @@ def _check(connection: psycopg.Connection[tuple[object, ...]]) -> None:
     history_table = connection.execute(
         "select to_regclass('supabase_migrations.schema_migrations')"
     ).fetchone()
-    views = connection.execute(
-        """
-        select schemaname, viewname
-        from pg_views
-        where schemaname = 'api_v1'
-        order by viewname
-        """
-    ).fetchall()
+    views = (
+        connection.execute(
+            """
+            select schemaname, viewname
+            from pg_views
+            where schemaname = 'api_v1'
+            order by viewname
+            """
+        ).fetchall()
+        if include_api_views
+        else []
+    )
     rls_tables = connection.execute(
         """
         select schemaname, tablename
@@ -155,7 +168,8 @@ def _check(connection: psycopg.Connection[tuple[object, ...]]) -> None:
     print(f"target_tables={tables}")
     print(f"worker_role_exists={worker_role[0] if worker_role else False}")
     print(f"migration_history={history_table[0] if history_table else None}")
-    print(f"api_views={views}")
+    if include_api_views:
+        print(f"api_views={views}")
     print(f"rls_tables={rls_tables}")
     print(f"migration_versions={versions}")
 
@@ -169,7 +183,7 @@ def _check(connection: psycopg.Connection[tuple[object, ...]]) -> None:
     failures: list[str] = []
     if actual_tables != EXPECTED_TABLES:
         failures.append("application table set differs from the accepted schema")
-    if actual_views != EXPECTED_VIEWS:
+    if include_api_views and actual_views != EXPECTED_VIEWS:
         failures.append("api_v1 view set differs from the accepted contract")
     if actual_rls_tables != EXPECTED_TABLES:
         failures.append("not every internal application table has RLS enabled")
