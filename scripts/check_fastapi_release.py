@@ -46,9 +46,23 @@ def main() -> None:
         forbidden = connection.execute(
             """
             select
-                has_table_privilege(current_user, 'core.security', 'INSERT'),
-                has_table_privilege(current_user, 'ingestion.ingestion_run', 'UPDATE'),
-                has_schema_privilege(current_user, 'core', 'CREATE')
+                has_table_privilege(
+                    current_user,
+                    (select c.oid from pg_class c join pg_namespace n on n.oid = c.relnamespace
+                     where n.nspname = 'core' and c.relname = 'security'),
+                    'INSERT'
+                ),
+                has_table_privilege(
+                    current_user,
+                    (select c.oid from pg_class c join pg_namespace n on n.oid = c.relnamespace
+                     where n.nspname = 'ingestion' and c.relname = 'ingestion_run'),
+                    'UPDATE'
+                ),
+                has_schema_privilege(
+                    current_user,
+                    (select oid from pg_namespace where nspname = 'core'),
+                    'CREATE'
+                )
             """
         ).fetchone()
         if forbidden != (False, False, False):
