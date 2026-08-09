@@ -289,6 +289,164 @@
         "title": "HealthResponse",
         "type": "object"
       },
+      "LimitUpPoolItem": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "free_float_market_cap_cny": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Free Float Market Cap Cny",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "code",
+          "name",
+          "free_float_market_cap_cny"
+        ],
+        "title": "LimitUpPoolItem",
+        "type": "object"
+      },
+      "LimitUpPoolOmissionReasons": {
+        "additionalProperties": false,
+        "properties": {
+          "missing_close": {
+            "minimum": 0.0,
+            "title": "Missing Close",
+            "type": "integer"
+          },
+          "missing_free_float_shares": {
+            "minimum": 0.0,
+            "title": "Missing Free Float Shares",
+            "type": "integer"
+          },
+          "missing_name": {
+            "minimum": 0.0,
+            "title": "Missing Name",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "missing_name",
+          "missing_close",
+          "missing_free_float_shares"
+        ],
+        "title": "LimitUpPoolOmissionReasons",
+        "type": "object"
+      },
+      "LimitUpPoolResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "algorithm_version": {
+            "title": "Algorithm Version",
+            "type": "string"
+          },
+          "calculation_id": {
+            "format": "uuid",
+            "title": "Calculation Id",
+            "type": "string"
+          },
+          "effective_trade_date": {
+            "format": "date",
+            "title": "Effective Trade Date",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "has_more": {
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "input_hash": {
+            "title": "Input Hash",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LimitUpPoolItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "omission_reasons": {
+            "$ref": "#/components/schemas/LimitUpPoolOmissionReasons"
+          },
+          "omitted_count": {
+            "minimum": 0.0,
+            "title": "Omitted Count",
+            "type": "integer"
+          },
+          "returned_count": {
+            "minimum": 0.0,
+            "title": "Returned Count",
+            "type": "integer"
+          },
+          "rule_version": {
+            "title": "Rule Version",
+            "type": "string"
+          },
+          "snapshot_id": {
+            "format": "uuid",
+            "title": "Snapshot Id",
+            "type": "string"
+          },
+          "total_candidate_count": {
+            "minimum": 0.0,
+            "title": "Total Candidate Count",
+            "type": "integer"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "valid_count": {
+            "minimum": 0.0,
+            "title": "Valid Count",
+            "type": "integer"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "snapshot_id",
+          "calculation_id",
+          "trade_date",
+          "effective_trade_date",
+          "version",
+          "rule_version",
+          "algorithm_version",
+          "input_hash",
+          "generated_at",
+          "total_candidate_count",
+          "valid_count",
+          "returned_count",
+          "omitted_count",
+          "has_more",
+          "omission_reasons",
+          "items"
+        ],
+        "title": "LimitUpPoolResponse",
+        "type": "object"
+      },
       "SecurityItem": {
         "additionalProperties": false,
         "properties": {
@@ -675,6 +833,114 @@
           }
         ],
         "summary": "Daily Bars",
+        "tags": [
+          "market-data"
+        ]
+      }
+    },
+    "/api/v1/limit-up-pool": {
+      "get": {
+        "description": "Returns the versioned pool whose stocks closed exactly at the deterministic upper price limit on trade_date. free_float_market_cap_cny is that date's unadjusted close multiplied by free-float shares. Invalid rows are omitted with grouped reason counts; valid rows are ordered by symbol before limit is applied. No value or date fallback is used.",
+        "operationId": "limit_up_pool_api_v1_limit_up_pool_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "trade_date",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "Trade Date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 5000,
+              "maximum": 5000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LimitUpPoolResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Get the exact-date mainboard limit-up pool",
         "tags": [
           "market-data"
         ]

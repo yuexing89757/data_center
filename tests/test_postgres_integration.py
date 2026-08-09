@@ -149,6 +149,7 @@ def test_migrations_apply_to_empty_database_and_are_idempotent(
         "query_classification_members_as_of",
         "query_deducted_profits_as_of",
         "query_stock_pool_snapshot",
+        "query_limit_up_pool",
         "query_auction_quotes",
     }.issubset({row[1] for row in first_snapshot["routines"]})
 

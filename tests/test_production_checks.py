@@ -125,3 +125,26 @@ def test_fastapi_reader_migration_has_only_the_published_contract() -> None:
     assert "query_classification_members_as_of" in migration
     assert "market_data_worker" not in migration
     assert not re.search(r"(?im)^grant\s+(insert|update|delete|all)", migration)
+
+
+def test_limit_up_api_migration_uses_exact_governed_inputs() -> None:
+    migration = (MIGRATION_DIR / "20260810000100_add_fastapi_limit_up_pool.sql").read_text(
+        encoding="utf-8"
+    )
+
+    assert "snapshot.basis_trade_date = p_trade_date" in migration
+    assert "event.close * indicator.free_float_shares" in migration
+    assert "core.security_name_history" in migration
+    assert "name_history.effective_from <= selected.basis_trade_date" in migration
+    assert "indicator.trade_date = selected.basis_trade_date" in migration
+    assert "close is not null and free_float_shares is not null" in migration
+    assert "circulating_market_value" not in migration
+    assert not re.search(r"\b(real|double precision|float[48]?)\b", migration.lower())
+    assert "count(*) filter (where name is null)" in migration
+    assert "count(*) filter (where close is null)" in migration
+    assert "count(*) filter (where free_float_shares is null)" in migration
+    assert "'omitted_count', omitted_count" in migration
+    assert "order by symbol\n        limit p_limit" in migration
+    assert "grant execute on function api_v1.query_limit_up_pool" in migration
+    assert "market_data_worker" not in migration
+    assert not re.search(r"(?im)^grant\s+(insert|update|delete|all)", migration)

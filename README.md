@@ -96,6 +96,11 @@ Daily Bars and exact daily indicators at 19:30 on trading days. Consumers read o
 exact-date snapshot through `query_stock_pool_snapshot`; the API never falls back to an older
 effective date. See `docs/领域详设-StockPool-2026-08-02.md`.
 
+The authenticated FastAPI endpoint `GET /api/v1/limit-up-pool?trade_date=YYYY-MM-DD` exposes the
+exact event-date mainboard limit-up snapshot. Its free-float market capitalization is strictly
+the same-date unadjusted close multiplied by same-date free-float shares; no other market-value
+field or date fallback is used.
+
 Classification uses complete, Shanghai-date snapshots. Capture the catalog before its members:
 
 ```bash

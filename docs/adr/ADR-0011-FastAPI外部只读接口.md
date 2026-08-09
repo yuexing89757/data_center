@@ -19,6 +19,7 @@ PostgREST 已经为内部消费者提供稳定查询契约，但外部调用方�
    - `GET /api/v1/securities`；
    - `GET /api/v1/daily-bars/{symbol}`；
    - `GET /api/v1/classifications/{namespace}/{classification_type}/{classification_code}/members`。
+   - `GET /api/v1/limit-up-pool`（2026-08-10，按 ADR-0021 的精确日期、版本与市值语义增补）。
 4. 不发布复权行情和市场指标接口。已有 Derived/Metrics 数据及 RPC 保留，但当前跳过计算，避免外部调用方把旧计算批次误认为持续更新的数据。
 5. 除 `/healthz` 和 `/readyz` 外，所有接口必须使用 `X-API-Key`。API Key 只从 `FASTAPI_API_KEY` 环境变量读取，使用常量时间比较，不写入日志、OpenAPI 示例或仓库。
 6. 生产环境优先使用独立的只读 `FASTAPI_DATABASE_URL`；未配置时允许复用 `DATABASE_URL` 以便本地试运行。服务代码即使使用高权限连接，也只能执行固定的 `api_v1` RPC。

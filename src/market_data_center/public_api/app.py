@@ -23,6 +23,7 @@ from market_data_center.public_api.models import (
     ErrorDetail,
     ErrorResponse,
     HealthResponse,
+    LimitUpPoolResponse,
     SecuritySearchResponse,
 )
 from market_data_center.public_api.queries import (
@@ -156,6 +157,33 @@ def create_app(
             as_of_date,
             limit,
         )
+
+    @app.get(
+        "/api/v1/limit-up-pool",
+        response_model=LimitUpPoolResponse,
+        responses={
+            401: {"model": ErrorResponse},
+            404: {"model": ErrorResponse},
+            503: {"model": ErrorResponse},
+        },
+        tags=["market-data"],
+        summary="Get the exact-date mainboard limit-up pool",
+        description=(
+            "Returns the versioned pool whose stocks closed exactly at the deterministic "
+            "upper price limit on trade_date. free_float_market_cap_cny is that date's "
+            "unadjusted close multiplied by free-float shares. Invalid rows are omitted with "
+            "grouped reason counts; valid rows are ordered by symbol before limit is applied. "
+            "No value or date fallback is used."
+        ),
+    )
+    def limit_up_pool(
+        _: ApiKeyDependency,
+        service: QueryServiceDependency,
+        trade_date: Annotated[date, Query()],
+        version: Annotated[int | None, Query(ge=1)] = None,
+        limit: Annotated[int, Query(ge=1, le=5000)] = 5000,
+    ) -> LimitUpPoolResponse:
+        return service.limit_up_pool(trade_date, version, limit)
 
     return app
 

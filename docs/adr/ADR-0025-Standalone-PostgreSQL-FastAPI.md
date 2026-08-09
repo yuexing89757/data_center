@@ -21,11 +21,13 @@ PostgREST are not API runtime dependencies.
    `DATABASE_URL` and accepts no Supabase URL or key.
 3. SQL is restricted to the accepted, bounded `api_v1` query functions. The API does not query
    internal schemas or expose lineage, provider payload fields, Raw objects, or credentials.
-4. A `market_data_api` NOLOGIN group role receives only schema usage and EXECUTE on the three v1
+4. A `market_data_api` NOLOGIN group role receives only schema usage and EXECUTE on the explicitly
+   published v1
    functions published by this service. A separately managed LOGIN role inherits that group role.
    Every API connection also sets transaction read-only and a five-second statement timeout.
 5. The first stable HTTP contract remains `/api/v1`: security search (100 rows), unadjusted daily
-   bars (5,000 rows and 3,661 days), and classification members (5,000 rows). Decimal values remain
+   bars (5,000 rows and 3,661 days), classification members (5,000 rows), and the exact-date
+   mainboard limit-up pool (5,000 rows). Decimal values remain
    JSON strings. Breaking changes require `/api/v2`.
 6. `/healthz` checks only the process. `/readyz` performs a bounded `select 1`. Business routes use
    the existing API-key mechanism until the user separately chooses the external authentication

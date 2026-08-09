@@ -1,7 +1,8 @@
 """Stable JSON models for the external read-only API."""
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -75,3 +76,35 @@ class ClassificationMembersResponse(ApiModel):
     member_count: int = Field(ge=0)
     returned_count: int = Field(ge=0)
     members: list[str]
+
+
+class LimitUpPoolItem(ApiModel):
+    symbol: str
+    code: str
+    name: str
+    free_float_market_cap_cny: Decimal
+
+
+class LimitUpPoolOmissionReasons(ApiModel):
+    missing_name: int = Field(ge=0)
+    missing_close: int = Field(ge=0)
+    missing_free_float_shares: int = Field(ge=0)
+
+
+class LimitUpPoolResponse(ApiModel):
+    snapshot_id: UUID
+    calculation_id: UUID
+    trade_date: date
+    effective_trade_date: date
+    version: int = Field(ge=1)
+    rule_version: str
+    algorithm_version: str
+    input_hash: str
+    generated_at: datetime
+    total_candidate_count: int = Field(ge=0)
+    valid_count: int = Field(ge=0)
+    returned_count: int = Field(ge=0)
+    omitted_count: int = Field(ge=0)
+    has_more: bool
+    omission_reasons: LimitUpPoolOmissionReasons
+    items: list[LimitUpPoolItem]

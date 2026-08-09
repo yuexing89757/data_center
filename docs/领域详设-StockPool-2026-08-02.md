@@ -44,3 +44,25 @@ market-data-center stock-pool-check \
   --pool-code CN_A_PREVIOUS_DAY_MAINBOARD_LIMIT_UP \
   --effective-trade-date 2026-08-03
 ```
+
+## FastAPI 涨停池读契约
+
+`GET /api/v1/limit-up-pool` 接受必填 `trade_date`（事件发生的上海交易日）、可选正整数
+`version` 和 `1..5000` 的 `limit`。它只读取
+`CN_A_PREVIOUS_DAY_MAINBOARD_LIMIT_UP` 的精确 basis 日期 ready 快照。
+
+每个成员返回标准 `symbol`、证券 `code`、该交易日有效的历史 `name`，以及
+`free_float_market_cap_cny = 当日未复权 close（元/股） × 当日 free_float_shares（股）`。
+乘法在 PostgreSQL numeric 中完成，JSON/OpenAPI 使用 Decimal 字符串表达元值。该字段不是
+`circulating_market_value` 的别名，也不从其他来源补值。输入不完整的成员单独省略；其他有效
+成员仍返回。响应包含 `total_candidate_count`、`valid_count`、`returned_count`、唯一
+`omitted_count`、`has_more` 和按缺失名称/收盘价/自由流通股本分组的 `omission_reasons`。
+一名成员可同时计入多个原因。空的 ready 快照合法返回空 items 和全零计数。
+
+RPC 先对整个不可变快照分类质量，再按 symbol 升序对有效成员应用 `limit`。因此省略计数不受
+limit 影响，`returned_count = min(valid_count, limit)`，`has_more` 明确表示有效结果被截断。
+首版不提供 offset/cursor；完整读取必须请求上限 5000。
+
+自然键与修订仍由不可变快照的 `(pool_code, effective_trade_date, version)`、成员
+`(snapshot_id, symbol)` 和 calculation lineage 承载。响应显式返回 basis/effective 日期、版本、
+规则/算法版本、input hash 和 calculation ID，消费者可固定 version 重放历史结果。

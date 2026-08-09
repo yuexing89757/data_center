@@ -7,8 +7,9 @@ separate services, users, environment files, credentials, and failure domains.
 
 1. Apply repository migrations to the existing production PostgreSQL through the protected workflow.
    Do not copy or cut over data. Migration
-   `20260809000100_create_fastapi_reader_role.sql` creates the NOLOGIN `market_data_api` role and its
-   three function grants.
+   `20260809000100_create_fastapi_reader_role.sql` creates the NOLOGIN `market_data_api` role;
+   `20260810000100_add_fastapi_limit_up_pool.sql` adds only the bounded limit-up query and its
+   execute grant.
 2. Create a separate LOGIN role outside source control, grant it `market_data_api`, and store its URL
    only as `FASTAPI_DATABASE_URL`. Never grant Worker, migration, ownership, or internal-schema rights.
 3. Extract the verified API release under `/home/project-api` so installing or rolling back the API
@@ -20,7 +21,8 @@ separate services, users, environment files, credentials, and failure domains.
 
 The exact database setup gate is:
 
-1. Apply only the pending ordered API-role migration with the protected migration connection.
+1. Apply the pending ordered API-role and limit-up query migrations with the protected migration
+   connection. Verify backup/restore evidence before any production migration.
 2. In a protected operator session, create a randomly named LOGIN role with a generated password,
    grant it membership in `market_data_api`, and set role defaults for read-only transactions and a
    five-second statement timeout. Store the resulting direct PostgreSQL URL only in the root-owned

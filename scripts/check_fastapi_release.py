@@ -11,6 +11,7 @@ PUBLISHED_FUNCTIONS = (
     "api_v1.query_securities(text,integer)",
     "api_v1.query_daily_bars(text,date,date,integer)",
     "api_v1.query_classification_members_as_of(text,text,text,date,integer)",
+    "api_v1.query_limit_up_pool(date,integer,integer)",
 )
 
 

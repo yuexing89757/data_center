@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
@@ -16,6 +16,9 @@ from market_data_center.public_api import create_app
 from market_data_center.public_api.models import (
     ClassificationMembersResponse,
     DailyBarItem,
+    LimitUpPoolItem,
+    LimitUpPoolOmissionReasons,
+    LimitUpPoolResponse,
     SecurityItem,
 )
 from market_data_center.public_api.queries import (
@@ -33,6 +36,7 @@ class FakeQueryService:
         self.classification_error: Exception | None = None
         self.security_calls: list[tuple[str, int]] = []
         self.daily_bar_calls: list[tuple[str, date, date, int]] = []
+        self.limit_up_calls: list[tuple[date, int | None, int]] = []
 
     def ready(self) -> None:
         if self.ready_error is not None:
@@ -95,6 +99,40 @@ class FakeQueryService:
             member_count=2,
             returned_count=2,
             members=["SSE:600000", "SZSE:000001"],
+        )
+
+    def limit_up_pool(
+        self, trade_date: date, version: int | None, limit: int
+    ) -> LimitUpPoolResponse:
+        self.limit_up_calls.append((trade_date, version, limit))
+        return LimitUpPoolResponse(
+            snapshot_id="11111111-1111-1111-1111-111111111111",
+            calculation_id="22222222-2222-2222-2222-222222222222",
+            trade_date=trade_date,
+            effective_trade_date=date(2026, 8, 3),
+            version=version or 2,
+            rule_version="CN_MAINBOARD_2026_07_06",
+            algorithm_version="1.0.0",
+            input_hash="0" * 64,
+            generated_at=datetime(2026, 8, 1, tzinfo=UTC),
+            total_candidate_count=3,
+            valid_count=2,
+            returned_count=1,
+            omitted_count=1,
+            has_more=True,
+            omission_reasons=LimitUpPoolOmissionReasons(
+                missing_name=0,
+                missing_close=1,
+                missing_free_float_shares=1,
+            ),
+            items=[
+                LimitUpPoolItem(
+                    symbol="SSE:600000",
+                    code="600000",
+                    name="浦发银行",
+                    free_float_market_cap_cny=Decimal("61200000.000000"),
+                )
+            ],
         )
 
 
@@ -226,9 +264,58 @@ def test_classification_members_and_not_found_response() -> None:
     assert "internal" not in missing.text
 
 
+def test_limit_up_pool_returns_exact_decimal_market_cap_and_revision() -> None:
+    service = FakeQueryService()
+
+    response = _client(service).get(
+        "/api/v1/limit-up-pool",
+        params={"trade_date": "2026-07-31", "version": 2, "limit": 100},
+        headers=_headers(),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["items"] == [
+        {
+            "symbol": "SSE:600000",
+            "code": "600000",
+            "name": "浦发银行",
+            "free_float_market_cap_cny": "61200000.000000",
+        }
+    ]
+    assert service.limit_up_calls == [(date(2026, 7, 31), 2, 100)]
+    assert response.json()["total_candidate_count"] == 3
+    assert response.json()["valid_count"] == 2
+    assert response.json()["omitted_count"] == 1
+    assert response.json()["has_more"] is True
+    assert response.json()["omission_reasons"] == {
+        "missing_name": 0,
+        "missing_close": 1,
+        "missing_free_float_shares": 1,
+    }
+
+
+def test_limit_up_pool_is_api_key_protected_and_bounded() -> None:
+    service = FakeQueryService()
+    client = _client(service)
+
+    assert (
+        client.get("/api/v1/limit-up-pool", params={"trade_date": "2026-07-31"}).status_code == 401
+    )
+    assert (
+        client.get(
+            "/api/v1/limit-up-pool",
+            params={"trade_date": "2026-07-31", "limit": 5001},
+            headers=_headers(),
+        ).status_code
+        == 422
+    )
+    assert service.limit_up_calls == []
+
+
 def test_openapi_only_contains_the_active_non_derived_routes() -> None:
     schema = _client(FakeQueryService()).get("/openapi.json").json()
 
     assert "/api/v1/securities" in schema["paths"]
     assert "/api/v1/daily-bars/{symbol}" in schema["paths"]
+    assert "/api/v1/limit-up-pool" in schema["paths"]
     assert not any("adjusted" in path or "metric" in path for path in schema["paths"])

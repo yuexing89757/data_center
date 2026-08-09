@@ -11,6 +11,7 @@ from market_data_center.domain import ClassificationType
 from market_data_center.public_api.models import (
     ClassificationMembersResponse,
     DailyBarItem,
+    LimitUpPoolResponse,
     SecurityItem,
 )
 
@@ -38,6 +39,14 @@ from api_v1.query_classification_members_as_of(
     p_as_of_date => :as_of_date,
     p_limit => :limit
 )
+""")
+
+QUERY_LIMIT_UP_POOL = text("""
+select api_v1.query_limit_up_pool(
+    p_trade_date => :trade_date,
+    p_version => :version,
+    p_limit => :limit
+) as payload
 """)
 
 
@@ -78,6 +87,10 @@ class PublicQueryService(Protocol):
         as_of_date: date,
         limit: int,
     ) -> ClassificationMembersResponse: ...
+
+    def limit_up_pool(
+        self, trade_date: date, version: int | None, limit: int
+    ) -> LimitUpPoolResponse: ...
 
 
 class PostgreSQLPublicQueryService:
@@ -126,6 +139,17 @@ class PostgreSQLPublicQueryService:
         if not rows:
             raise PublicQueryNotFound("classification snapshot was not found")
         return ClassificationMembersResponse.model_validate(dict(rows[0]))
+
+    def limit_up_pool(
+        self, trade_date: date, version: int | None, limit: int
+    ) -> LimitUpPoolResponse:
+        rows = self._execute(
+            QUERY_LIMIT_UP_POOL,
+            {"trade_date": trade_date, "version": version, "limit": limit},
+        )
+        if not rows:
+            raise PublicQueryNotFound("limit-up pool was not found")
+        return LimitUpPoolResponse.model_validate(rows[0]["payload"])
 
     def _execute(self, statement: Any, parameters: Mapping[str, object]) -> Sequence[RowMapping]:
         try:
