@@ -101,7 +101,7 @@ BlockingScheduler
 
 | Job 函数 | 行号 | 做什么 |
 |---|---|---|
-| `run_daily_market_job` | 129-165 | 同步 security + trading_calendar + 本地 pytdx 日K（`bar_lookback_days=1, calendar_lookback_days=14`，单分片） |
+| `run_daily_market_job` | 129-165 | 同步 security + trading_calendar + 远程 pytdx 日K（`bar_lookback_days=1, calendar_lookback_days=14`，单分片） |
 | `run_stock_daily_indicator_job` | 97-126 | tushare 全市场每日指标同步 + Core 保留策略（retention） |
 | `run_stale_recovery_job` | 168-216 | **3 步**：恢复 stale ingestion run（>60min）、恢复 stale workflow run、恢复过期 auction session。每小时 + 启动时各跑一次 |
 | `run_deducted_profit_job` | 219-258 | tushare 扣非净利润增量同步（按披露变化发现新公告/修订） |

@@ -12,7 +12,7 @@ $api = Join-Path $projectPath ".venv\Scripts\market-data-api.exe"
 
 if (-not (Test-Path -LiteralPath $envFile -PathType Leaf)) {
     Copy-Item -LiteralPath $envExample -Destination $envFile
-    throw "Created .env from .env.example. Fill DATABASE_URL, RAW_DATA_ROOT and PYTDX_VIPDOC_PATH, then run .\deploy.cmd again."
+    throw "Created .env from .env.example. Fill DATABASE_URL, RAW_DATA_ROOT and PYTDX_DAILY_BAR_ENDPOINTS, then run .\deploy.cmd again."
 }
 
 function Get-DotEnvValue {
@@ -28,7 +28,7 @@ function Get-DotEnvValue {
     return ($line -split "=", 2)[1].Trim().Trim('"').Trim("'")
 }
 
-foreach ($name in @("DATABASE_URL", "RAW_DATA_ROOT", "PYTDX_VIPDOC_PATH")) {
+foreach ($name in @("DATABASE_URL", "RAW_DATA_ROOT", "PYTDX_DAILY_BAR_ENDPOINTS")) {
     $value = Get-DotEnvValue -Name $name
     if ([string]::IsNullOrWhiteSpace($value) -or $value.Contains("<")) {
         throw "Set $name in .env, then run .\deploy.cmd again."
@@ -66,11 +66,6 @@ if ([string]::IsNullOrWhiteSpace($apiKey) -or $apiKey.Contains("<")) {
         [System.Text.UTF8Encoding]::new($false)
     )
     Write-Host "Generated FASTAPI_API_KEY in .env."
-}
-
-$vipdocPath = Get-DotEnvValue -Name "PYTDX_VIPDOC_PATH"
-if (-not (Test-Path -LiteralPath $vipdocPath -PathType Container)) {
-    throw "PYTDX_VIPDOC_PATH does not exist or is not a directory."
 }
 
 $uv = Get-Command uv -ErrorAction SilentlyContinue

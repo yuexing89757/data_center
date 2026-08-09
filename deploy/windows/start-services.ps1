@@ -6,8 +6,6 @@
 # job is driven by the in-process scheduler; no Windows Task Scheduler
 # entry is registered.
 #
-# The worker reads PYTDX_VIPDOC_PATH via os.getenv (not from WorkerSettings),
-# so we export it from .env here as a deployment-layer bridge.
 param(
     [string]$ProjectPath = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 )
@@ -26,23 +24,6 @@ if (-not (Test-Path -LiteralPath $worker -PathType Leaf)) {
 }
 if (-not (Test-Path -LiteralPath $envFile -PathType Leaf)) {
     throw ".env not found at $envFile. Run '.\deploy.cmd' first to create it."
-}
-
-# Bridge PYTDX_VIPDOC_PATH from .env into the process environment so the
-# pytdx provider (os.getenv) can see it. pydantic-settings does not push
-# .env values into os.environ.
-function Get-DotEnvValue {
-    param([Parameter(Mandatory)][string]$Name)
-    $line = Get-Content -LiteralPath $envFile |
-        Where-Object { $_ -match "^\s*$([regex]::Escape($Name))\s*=" } |
-        Select-Object -Last 1
-    if ($null -eq $line) { return $null }
-    return ($line -split "=", 2)[1].Trim().Trim('"').Trim("'")
-}
-
-$vipdoc = Get-DotEnvValue -Name "PYTDX_VIPDOC_PATH"
-if (-not [string]::IsNullOrWhiteSpace($vipdoc)) {
-    $env:PYTDX_VIPDOC_PATH = $vipdoc
 }
 
 Set-Location -LiteralPath $ProjectPath

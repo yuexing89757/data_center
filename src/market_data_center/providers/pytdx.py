@@ -1,7 +1,6 @@
-"""pytdx adapter for local unadjusted A-share daily-bar files."""
+"""pytdx adapter for remote unadjusted A-share Daily Bars."""
 
-import os
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -32,43 +31,64 @@ from market_data_center.providers.contracts import (
     ProviderRequestUnavailable,
     RawRow,
 )
+from market_data_center.settings import PytdxDailyBarSettings
 
-type LocalDailyBarRow = tuple[int, int, int, int, int, float, int, int]
+DAILY_BAR_CATEGORY = 9
 
 
-class PytdxDailyBarReader(Protocol):
-    def parse_data_by_file(self, fname: str) -> Iterable[LocalDailyBarRow]: ...
+class PytdxDailyBarClient(Protocol):
+    def connect(self, host: str, port: int, *, time_out: float) -> bool: ...
+
+    def disconnect(self) -> None: ...
+
+    def get_security_bars(
+        self, category: int, market: int, code: str, start: int, count: int
+    ) -> object: ...
 
 
 class PytdxProvider:
-    """Read local TDX daily files; other datasets remain unsupported."""
+    """Read unadjusted Daily Bars from one curated remote TDX endpoint."""
 
     source_code = "pytdx"
 
-    def __init__(self, reader: PytdxDailyBarReader, *, vipdoc_path: Path) -> None:
-        self._reader = reader
-        self._vipdoc_path = vipdoc_path
-        self._classification_cache: dict[
-            ClassificationType, tuple[tuple[RawRow, ...], dict[str, tuple[RawRow, ...]]]
-        ] = {}
+    def __init__(
+        self,
+        settings: PytdxDailyBarSettings,
+        *,
+        client_factory: Callable[[], PytdxDailyBarClient] | None = None,
+    ) -> None:
+        self._settings = settings
+        self._endpoints = parse_daily_bar_endpoints(settings.pytdx_daily_bar_endpoints)
+        self._client_factory = client_factory or _default_client_factory
+        self._client: PytdxDailyBarClient | None = None
+        self._endpoint: tuple[str, int] | None = None
 
     @classmethod
     def default(cls) -> Self:
-        from pytdx.reader.daily_bar_reader import (  # type: ignore[import-untyped]
-            TdxDailyBarReader,
-        )
-
-        configured_path = os.getenv("PYTDX_VIPDOC_PATH", "").strip()
-        if not configured_path:
-            raise ProviderError("PYTDX_VIPDOC_PATH is required for the local pytdx provider")
-        vipdoc_path = Path(configured_path)
-        if not vipdoc_path.is_dir():
-            raise ProviderError(f"pytdx vipdoc directory does not exist: {vipdoc_path}")
-        reader = TdxDailyBarReader(str(vipdoc_path))
-        return cls(cast(PytdxDailyBarReader, reader), vipdoc_path=vipdoc_path)
+        return cls(PytdxDailyBarSettings())
 
     def __enter__(self) -> Self:
-        return self
+        errors: list[str] = []
+        attempts = min(self._settings.pytdx_daily_bar_max_attempts, len(self._endpoints))
+        for host, port in self._endpoints[:attempts]:
+            client = self._client_factory()
+            try:
+                connected = client.connect(
+                    host,
+                    port,
+                    time_out=self._settings.pytdx_daily_bar_timeout_seconds,
+                )
+            except Exception as error:
+                errors.append(f"{host}:{port} ({type(error).__name__})")
+                _disconnect(client)
+                continue
+            if connected:
+                self._client = client
+                self._endpoint = (host, port)
+                return self
+            errors.append(f"{host}:{port}")
+            _disconnect(client)
+        raise ProviderError("pytdx remote connection failed; tried " + ", ".join(errors))
 
     def __exit__(
         self,
@@ -76,7 +96,10 @@ class PytdxProvider:
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        return None
+        if self._client is not None:
+            _disconnect(self._client)
+        self._client = None
+        self._endpoint = None
 
     def source_symbol(self, symbol: str) -> str:
         exchange, code, _ = _parse_source_symbol(symbol)
@@ -95,153 +118,86 @@ class PytdxProvider:
     ) -> ProviderBatch[DailyBarRecord]:
         _ensure_date_range(start_date, end_date)
         exchange, code, symbol = _parse_source_symbol(source_symbol)
-        relative_path = Path(exchange) / "lday" / f"{exchange}{code}.day"
-        file_path = self._vipdoc_path / relative_path
-        if not file_path.is_file():
-            raise ProviderRequestUnavailable(
-                f"pytdx local daily-bar file does not exist: {relative_path.as_posix()}"
-            )
-
-        raw_rows: list[RawRow] = []
-        start_key = int(start_date.strftime("%Y%m%d"))
-        end_key = int(end_date.strftime("%Y%m%d"))
+        if self._client is None or self._endpoint is None:
+            raise ProviderError("pytdx remote provider must be used as a managed context")
+        market = 1 if exchange == "sh" else 0
+        source_rows: list[RawRow] = []
         try:
-            source_rows = sorted(
-                (_raw_row(row) for row in self._reader.parse_data_by_file(str(file_path))),
-                key=lambda row: int(row["date"]),
-            )
-            previous_row: RawRow | None = None
-            for raw_row in source_rows:
-                source_date = int(raw_row["date"])
-                if start_key <= source_date <= end_key:
-                    raw_rows.append(
-                        {
-                            **raw_row,
-                            "previous_close": previous_row["close"] if previous_row else "",
-                        }
-                    )
-                previous_row = raw_row
+            for page in range(self._settings.pytdx_daily_bar_max_pages):
+                result = self._client.get_security_bars(
+                    DAILY_BAR_CATEGORY,
+                    market,
+                    code,
+                    page * self._settings.pytdx_daily_bar_page_size,
+                    self._settings.pytdx_daily_bar_page_size,
+                )
+                if not isinstance(result, list):
+                    raise ProviderError("pytdx remote Daily Bar response is not a list")
+                if not result:
+                    break
+                page_rows = [_remote_raw_row(row) for row in result]
+                source_rows.extend(page_rows)
+                oldest = min(_parse_date(row["date"]) for row in page_rows)
+                if oldest < start_date or len(page_rows) < self._settings.pytdx_daily_bar_page_size:
+                    break
         except ProviderError:
             raise
         except Exception as error:
-            raise ProviderError(
-                f"pytdx failed to read local file: {relative_path.as_posix()}"
-            ) from error
+            raise ProviderError("pytdx remote Daily Bar request failed") from error
 
         if not source_rows:
             raise ProviderRequestUnavailable(
-                f"pytdx local daily-bar file is empty: {relative_path.as_posix()}"
+                f"pytdx remote endpoint returned no Daily Bars for {source_symbol}"
             )
-        market_latest_date = self._market_latest_date(exchange)
-        if market_latest_date < end_date:
-            raise ProviderError(
-                f"pytdx local {exchange} market data is stale: "
-                f"latest {market_latest_date.isoformat()}, requested through {end_date.isoformat()}"
-            )
+        ordered = sorted(source_rows, key=lambda row: _parse_date(row["date"]))
+        raw_rows = _rows_with_previous_close(ordered)
+        raw_rows = tuple(
+            row for row in raw_rows if start_date <= _parse_date(row["date"]) <= end_date
+        )
         if not raw_rows:
             raise ProviderRequestUnavailable(
-                f"pytdx local file has no daily bars in the requested range for {source_symbol}"
+                f"pytdx remote endpoint has no Daily Bars in range for {source_symbol}"
             )
+        endpoint = f"{self._endpoint[0]}:{self._endpoint[1]}"
         return ProviderBatch(
             raw_rows=raw_rows,
             request_params={
                 "source_symbol": f"{exchange}.{code}",
                 "start_date": start_date.isoformat(),
                 "end_date": end_date.isoformat(),
-                "relative_path": relative_path.as_posix(),
+                "endpoint": endpoint,
+                "tdx_market": market,
+                "category": DAILY_BAR_CATEGORY,
+                "page_size": self._settings.pytdx_daily_bar_page_size,
+                "max_pages": self._settings.pytdx_daily_bar_max_pages,
                 "adjust": "none",
             },
-            schema_version="pytdx.local_daily_bar.v2",
+            schema_version="pytdx.remote_daily_bar.v1",
             record_factory=lambda: _daily_bar_records(raw_rows, symbol),
         )
 
     def fetch_capital(self, source_symbol: str) -> ProviderBatch[CapitalRecord]:
-        raise ProviderRequestUnavailable("pytdx local files do not provide Capital facts")
+        raise ProviderRequestUnavailable("pytdx does not provide Capital facts")
 
     def fetch_stock_daily_indicators(
         self, source_symbol: str, start_date: date, end_date: date
     ) -> ProviderBatch[StockDailyIndicatorSnapshotRecord]:
-        raise ProviderRequestUnavailable("pytdx local files do not provide stock daily indicators")
+        raise ProviderRequestUnavailable("pytdx does not provide stock daily indicators")
 
     def fetch_stock_daily_indicator_snapshot(
         self, trade_date: date
     ) -> ProviderBatch[StockDailyIndicatorSnapshotRecord]:
-        raise ProviderRequestUnavailable("pytdx local files do not provide stock daily indicators")
+        raise ProviderRequestUnavailable("pytdx does not provide stock daily indicators")
 
     def fetch_classification_catalog(
         self, classification_type: str, snapshot_date: date
     ) -> ProviderBatch[ClassificationRecord]:
-        kind = _classification_type(classification_type)
-        definitions, _ = self._classification_data(kind)
-        return ProviderBatch(
-            raw_rows=definitions,
-            request_params={
-                "classification_type": kind.value,
-                "snapshot_date": snapshot_date.isoformat(),
-            },
-            schema_version="pytdx.local_classification_catalog.v1",
-            records=[_classification_catalog_record(definitions, kind, snapshot_date)],
-        )
+        raise ProviderRequestUnavailable("remote pytdx does not provide Classification facts")
 
     def fetch_classification_members(
         self, classification_type: str, classification_code: str, snapshot_date: date
     ) -> ProviderBatch[ClassificationRecord]:
-        kind = _classification_type(classification_type)
-        code = classification_code.strip().upper()
-        definitions, members_by_code = self._classification_data(kind)
-        known_codes = {row["classification_code"] for row in definitions}
-        if code not in known_codes:
-            raise ProviderRequestUnavailable(f"unknown pytdx classification code: {code}")
-        rows = members_by_code.get(code, ())
-        return ProviderBatch(
-            raw_rows=rows,
-            request_params={
-                "classification_type": kind.value,
-                "classification_code": code,
-                "snapshot_date": snapshot_date.isoformat(),
-            },
-            schema_version="pytdx.local_classification_members.v1",
-            records=[_classification_member_record(rows, kind, code, snapshot_date)],
-        )
-
-    def _classification_data(
-        self, kind: ClassificationType
-    ) -> tuple[tuple[RawRow, ...], dict[str, tuple[RawRow, ...]]]:
-        cached = self._classification_cache.get(kind)
-        if cached is not None:
-            return cached
-        hq_cache_path = self._vipdoc_path.parent / "T0002" / "hq_cache"
-        loaded = (
-            _load_industry_classifications(hq_cache_path)
-            if kind is ClassificationType.INDUSTRY
-            else _load_concept_classifications(hq_cache_path)
-        )
-        self._classification_cache[kind] = loaded
-        return loaded
-
-    def _market_latest_date(self, exchange: str) -> date:
-        sentinel_code = {"sh": "000001", "sz": "399001", "bj": "899050"}[exchange]
-        relative_path = Path(exchange) / "lday" / f"{exchange}{sentinel_code}.day"
-        file_path = self._vipdoc_path / relative_path
-        if not file_path.is_file():
-            raise ProviderError(
-                f"pytdx local market sentinel does not exist: {relative_path.as_posix()}"
-            )
-        try:
-            dates = (
-                _parse_date(str(row[0])) for row in self._reader.parse_data_by_file(str(file_path))
-            )
-            return max(dates)
-        except ValueError as error:
-            raise ProviderError(
-                f"pytdx local market sentinel is empty: {relative_path.as_posix()}"
-            ) from error
-        except ProviderError:
-            raise
-        except Exception as error:
-            raise ProviderError(
-                f"pytdx failed to read local market sentinel: {relative_path.as_posix()}"
-            ) from error
+        raise ProviderRequestUnavailable("remote pytdx does not provide Classification facts")
 
 
 def normalize_pytdx_raw(
@@ -267,7 +223,11 @@ def normalize_pytdx_raw(
         return (_classification_member_record(raw_rows, kind, code, snapshot_date),)
     if dataset_code is not DatasetCode.DAILY_BAR:
         raise ProviderError(f"pytdx cannot replay dataset: {dataset_code.value}")
-    if schema_version not in {"pytdx.local_daily_bar.v1", "pytdx.local_daily_bar.v2"}:
+    if schema_version not in {
+        "pytdx.local_daily_bar.v1",
+        "pytdx.local_daily_bar.v2",
+        "pytdx.remote_daily_bar.v1",
+    }:
         raise ProviderError(f"unsupported pytdx Raw schema: {schema_version}")
     source_symbol = request_params.get("source_symbol")
     if not isinstance(source_symbol, str):
@@ -281,34 +241,80 @@ def normalize_pytdx_raw(
     return tuple(_daily_bar_records(normalized_rows, symbol))
 
 
-def _raw_row(row: LocalDailyBarRow) -> RawRow:
-    if len(row) != 8:
-        raise ProviderError(f"invalid pytdx local daily-bar record length: {len(row)}")
-    trade_date, open_, high, low, close, amount, volume, reserved = row
+def _default_client_factory() -> PytdxDailyBarClient:
+    from pytdx.hq import TdxHq_API  # type: ignore[import-untyped]
+
+    return cast(
+        PytdxDailyBarClient,
+        TdxHq_API(heartbeat=True, auto_retry=False, raise_exception=True),
+    )
+
+
+def _disconnect(client: PytdxDailyBarClient) -> None:
+    try:
+        client.disconnect()
+    except Exception:
+        return
+
+
+def parse_daily_bar_endpoints(value: str) -> tuple[tuple[str, int], ...]:
+    endpoints: list[tuple[str, int]] = []
+    for item in value.split(","):
+        candidate = item.strip()
+        if not candidate or ":" not in candidate:
+            raise ProviderError("PYTDX_DAILY_BAR_ENDPOINTS must contain host:port entries")
+        host, port_text = candidate.rsplit(":", maxsplit=1)
+        host = host.strip()
+        try:
+            port = int(port_text)
+        except ValueError as error:
+            raise ProviderError("pytdx Daily Bar endpoint port must be an integer") from error
+        endpoint = (host, port)
+        if not host or not 0 < port <= 65_535:
+            raise ProviderError("pytdx Daily Bar endpoint is invalid")
+        if endpoint in endpoints:
+            raise ProviderError("pytdx Daily Bar endpoints must be unique")
+        endpoints.append(endpoint)
+    if not endpoints:
+        raise ProviderError("PYTDX_DAILY_BAR_ENDPOINTS is required")
+    return tuple(endpoints)
+
+
+def _remote_raw_row(row: object) -> RawRow:
+    if not isinstance(row, Mapping):
+        raise ProviderError("pytdx remote Daily Bar row is not an object")
+    raw_date = str(row.get("datetime") or row.get("date") or "").strip()
+    date_key = raw_date[:10].replace("-", "")
+    required = {
+        "open": row.get("open"),
+        "high": row.get("high"),
+        "low": row.get("low"),
+        "close": row.get("close"),
+        "amount": row.get("amount"),
+        "volume": row.get("vol", row.get("volume")),
+    }
+    if any(value is None for value in required.values()):
+        raise ProviderError("pytdx remote Daily Bar row is missing required fields")
+    _parse_date(date_key)
     return {
-        "date": str(trade_date),
-        "open": str(open_),
-        "high": str(high),
-        "low": str(low),
-        "close": str(close),
-        "amount": str(amount),
-        "volume": str(volume),
-        "reserved": str(reserved),
+        "date": date_key,
+        "price_scale": "1",
+        **{key: str(value) for key, value in required.items()},
     }
 
 
 def _map_daily_bar(row: Mapping[str, str], symbol: str) -> DailyBarRecord:
     previous_close = row.get("previous_close", "").strip()
+    price = _decimal if row.get("price_scale") == "1" else _price
     return DailyBarRecord(
         symbol=symbol,
         trade_date=_parse_date(row["date"]),
         market=Market.CN_A_SHARE,
-        open=_price(row["open"], "open"),
-        high=_price(row["high"], "high"),
-        low=_price(row["low"], "low"),
-        close=_price(row["close"], "close"),
-        previous_close=_price(previous_close, "previous_close") if previous_close else None,
-        # The .day binary record already stores stock volume in shares.
+        open=price(row["open"], "open"),
+        high=price(row["high"], "high"),
+        low=price(row["low"], "low"),
+        close=price(row["close"], "close"),
+        previous_close=price(previous_close, "previous_close") if previous_close else None,
         volume=_integer(row["volume"], "volume"),
         amount=_decimal(row["amount"], "amount"),
         trade_status=TradeStatus.UNKNOWN,
@@ -324,7 +330,7 @@ def _daily_bar_records(rows: Iterable[Mapping[str, str]], symbol: str) -> list[D
         existing = records_by_date.get(record.trade_date)
         if existing is not None and existing != record:
             raise ProviderError(
-                f"pytdx local file contains conflicting daily bars for {symbol} "
+                f"pytdx contains conflicting daily bars for {symbol} "
                 f"on {record.trade_date.isoformat()}"
             )
         records_by_date[record.trade_date] = record
@@ -373,11 +379,11 @@ def _parse_source_symbol(value: str) -> tuple[str, str, str]:
 
 def _parse_date(value: str) -> date:
     if len(value) != 8 or not value.isdigit():
-        raise ProviderError(f"invalid pytdx local date: {value}")
+        raise ProviderError(f"invalid pytdx date: {value}")
     try:
         return date(int(value[:4]), int(value[4:6]), int(value[6:]))
     except ValueError as error:
-        raise ProviderError(f"invalid pytdx local date: {value}") from error
+        raise ProviderError(f"invalid pytdx date: {value}") from error
 
 
 def _price(value: str, field: str) -> Decimal:

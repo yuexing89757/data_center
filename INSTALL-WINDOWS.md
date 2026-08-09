@@ -3,7 +3,7 @@
 ## 运行前准备
 
 1. 将压缩包解压到不会移动的固定目录，例如 `D:\market-data-center`。
-2. 确认本机通达信已经下载日线数据，并能找到 `vipdoc` 目录。
+2. 准备两个或以上经过验收的 TDX 行情节点地址；运行时不会自动发现节点。
 3. 安装 `uv`：
 
 ```powershell
@@ -20,7 +20,7 @@ winget install --id astral-sh.uv -e
 .\deploy.cmd
 ```
 
-第一次执行会从 `.env.example` 创建 `.env` 并停止。编辑 `.env`，至少填写数据库和本地通达信目录：
+第一次执行会从 `.env.example` 创建 `.env` 并停止。编辑 `.env`，至少填写数据库和远程 TDX 节点：
 
 ```dotenv
 DATABASE_URL=postgresql+psycopg://<用户>:<密码>@<主机>:<端口>/<数据库>
@@ -29,7 +29,7 @@ FASTAPI_API_KEY=<可保持占位符，部署脚本会自动生成>
 FASTAPI_HOST=127.0.0.1
 FASTAPI_PORT=8000
 RAW_DATA_ROOT=data/raw
-PYTDX_VIPDOC_PATH=D:\new_tdx64\vipdoc
+PYTDX_DAILY_BAR_ENDPOINTS=<host1>:7709,<host2>:7709
 ```
 
 不要把 `.env` 发给其他人，也不要提交到 Git。填写完成后再次执行；部署脚本会在 `.env` 中自动生成随机 `FASTAPI_API_KEY`：
@@ -78,7 +78,7 @@ PYTDX_VIPDOC_PATH=D:\new_tdx64\vipdoc
 
 ## 当前运行范围
 
-- 股票日 K 只读取 `PYTDX_VIPDOC_PATH` 下的本地通达信文件；
+- 股票日 K 只访问显式配置的远程 TDX 节点，不扫描公共节点；
 - 每日任务只处理最近交易日，不回补历史日 K；
 - 每日任务不计算衍生指标；
 - 数据库迁移由 GitHub Actions 或管理员单独执行，本安装包不会修改数据库结构。
@@ -87,6 +87,6 @@ PYTDX_VIPDOC_PATH=D:\new_tdx64\vipdoc
 
 `uv is required`：安装 `uv` 后重新打开终端。
 
-`PYTDX_VIPDOC_PATH does not exist`：检查 `.env` 中的通达信目录，配置值应指向 `vipdoc` 文件夹。
+TDX 连接失败：检查 `PYTDX_DAILY_BAR_ENDPOINTS`、出站端口、防火墙和公共节点可用性。
 
 数据库连接失败：检查 `DATABASE_URL`、Supabase PostgreSQL 端口和网络连通性，不要把连接串粘贴到 Issue 或日志中。

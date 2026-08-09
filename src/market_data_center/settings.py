@@ -58,6 +58,18 @@ class PytdxHqSettings(BaseSettings):
     pytdx_hq_pool_path: Path = Field(default=Path("data/pytdx_hq_pool.json"))
 
 
+class PytdxDailyBarSettings(BaseSettings):
+    """Curated remote TDX endpoints for unadjusted Daily Bars."""
+
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    pytdx_daily_bar_endpoints: str = ""
+    pytdx_daily_bar_timeout_seconds: float = Field(default=3.0, gt=0, le=10)
+    pytdx_daily_bar_max_attempts: int = Field(default=2, ge=1, le=5)
+    pytdx_daily_bar_page_size: int = Field(default=800, ge=1, le=800)
+    pytdx_daily_bar_max_pages: int = Field(default=16, ge=1, le=64)
+
+
 class ApiSettings(BaseSettings):
     """External read-only API configuration."""
 

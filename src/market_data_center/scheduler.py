@@ -127,7 +127,7 @@ def run_stock_daily_indicator_job() -> None:
 
 
 def run_daily_market_job() -> None:
-    """Run the ordinary security, calendar, and local pytdx daily-bar workflow."""
+    """Run the ordinary security, calendar, and remote pytdx Daily Bar workflow."""
     settings = WorkerSettings()  # type: ignore[call-arg]
     scheduling = SchedulerSettings()
     engine = create_engine(

@@ -87,8 +87,8 @@ def test_default_routes_are_capability_specific_and_deterministic() -> None:
         DatasetCode.TRADING_CALENDAR: ("baostock", "akshare"),
         DatasetCode.DAILY_BAR: ("pytdx",),
         DatasetCode.CAPITAL: ("akshare",),
-        DatasetCode.CLASSIFICATION_CATALOG: ("pytdx", "akshare"),
-        DatasetCode.CLASSIFICATION_MEMBERS: ("pytdx", "akshare"),
+        DatasetCode.CLASSIFICATION_CATALOG: ("akshare",),
+        DatasetCode.CLASSIFICATION_MEMBERS: ("akshare",),
     }
 
 

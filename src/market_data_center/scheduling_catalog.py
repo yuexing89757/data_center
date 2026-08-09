@@ -42,7 +42,7 @@ WORKFLOW_DEFINITIONS = (
     WorkflowDefinition(
         "daily_market",
         "日 K 与基础数据更新",
-        "同步证券、交易日历和本地 pytdx 未复权日 K。",
+        "同步证券、交易日历和远程 pytdx 未复权日 K。",
         ("security", "trading_calendar", "daily_bar"),
     ),
     WorkflowDefinition(

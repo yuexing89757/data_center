@@ -68,7 +68,7 @@ AKShare Adapter 使用四个东方财富接口：
 
 Raw Schema 分别为 `akshare.classification_catalog.v1` 和 `akshare.classification_members.v1`。请求参数保留类型、代码和上海日期以支持确定性重放。
 
-本地 pytdx Adapter 读取通达信安装目录中的 `T0002/hq_cache/tdxhy.cfg`、`tdxzs.cfg`、`tdxzs3.cfg` 和 `infoharbor_block.dat`，生成 `namespace=tdx` 的行业和概念完整快照。Raw Schema 为 `pytdx.local_classification_catalog.v1` 和 `pytdx.local_classification_members.v1`。自动 Router 对 Classification 优先使用本地 pytdx，文件不可用时才回退 AKShare；BaoStock 不提供该能力。
+ADR-0024 移除 Worker 的本地通达信目录依赖后，Classification 自动 Router 只使用 AKShare。历史 `namespace=tdx` 快照及 `pytdx.local_classification_*` Raw 仍可重放，但不再由日常 Worker 新采集。
 
 ## 7. CLI 顺序
 

@@ -5,13 +5,13 @@
 1. 同步证券主数据；
 2. 同步截至运行日的统一 A 股日历；
 3. 确定截至运行日的最近交易日；
-4. 只对该交易日尚无事实的上市股票读取本地 pytdx Daily Bar，并通过自然键幂等写入。
+4. 只对该交易日尚无事实的上市股票读取远程 pytdx Daily Bar，并通过自然键幂等写入。
 
 `daily-run` 不回看、不修复历史日 K，也不自动计算 Derived/Metrics。停牌或本地文件在当日没有记录的证券记为 `unavailable`，不会导致整批失败；文件损坏、市场哨兵陈旧、数据库错误仍会使任务失败。
 
 Provider 的原始响应先写入不可变 Raw 对象，再执行 Record DTO 标准化。若标准化失败，采集批次、Raw Manifest 和阻断级 `QualityResult` 会一起落库，Core 不写入该批次，因此错误来源仍可追溯和重放。
 
-默认日历窗口为最近 14 个自然日。周末或节假日运行时取窗口内最近的实际交易日，因此不会把本地 pytdx 的正常休市误判为行情文件过期。兼容参数 `--bar-lookback-days` 仅保留命令行兼容性，不再触发历史修复。
+默认日历窗口为最近 14 个自然日。周末或节假日运行时取窗口内最近的实际交易日。兼容参数 `--bar-lookback-days` 仅保留命令行兼容性，不再触发历史修复。
 
 ## 手工运行
 
@@ -29,7 +29,7 @@ market-data-center daily-run --calendar-lookback-days 30
 market-data-center --provider baostock daily-run --as-of-date 2026-07-29
 ```
 
-`pytdx` 只支持 Daily Bar，不能单独承担完整的 `daily-run`；自动模式在 Daily Bar 步骤固定使用本地 pytdx。个股停牌、本地文件未更新或文件缺失产生的缺口保持可见，不通过 BaoStock/AKShare 补数。
+`pytdx` 只支持 Daily Bar，不能单独承担完整的 `daily-run`；自动模式在 Daily Bar 步骤固定使用远程 pytdx。停牌、节点缺数或不支持 BSE 产生的缺口保持可见，不通过 BaoStock/AKShare 补数。
 
 pytdx 还可从通达信 `T0002/hq_cache` 读取行业和概念完整快照，但 Security 和 Trading Calendar 仍由 BaoStock/AKShare 提供。分类成员引用尚未进入 Security 的代码时，整个成员快照按质量规则阻断，不能静默删掉未知成员。
 
@@ -49,12 +49,12 @@ pytdx 还可从通达信 `T0002/hq_cache` 读取行业和概念完整快照，�
 完成的证明：任务还会检查 basis 当日 `daily_market`、`stock_daily_indicator` WorkflowRun
 均成功，并校验精确交易日、日 K、每日指标和 lineage；缺失时失败且不回退旧快照。
 
-pytdx 只要求 `PYTDX_VIPDOC_PATH` 指向可读的 `vipdoc` 目录，不依赖 Windows API。在 Linux
-上可将通达信数据以只读卷挂载到 `/mnt/tdx/vipdoc`；通达信数据的外部更新仍由部署环境负责。
-Raw 与 JobStore 必须使用持久目录，例如：
+pytdx 要求 `PYTDX_DAILY_BAR_ENDPOINTS` 指向有序、人工验收的 `host:port` 列表。连接和
+读取采用有限超时，建立会话时有限 failover；成功会话不切换 endpoint。公共节点无 SLA，
+可能限流、下线或缺少 BSE。Raw 与 JobStore 必须使用持久目录，例如：
 
 ```dotenv
-PYTDX_VIPDOC_PATH=/mnt/tdx/vipdoc
+PYTDX_DAILY_BAR_ENDPOINTS=<host1>:7709,<host2>:7709
 RAW_DATA_ROOT=/var/lib/market-data-center/raw
 SCHEDULER_STORE_PATH=/var/lib/market-data-center/scheduler/jobs.sqlite
 ```

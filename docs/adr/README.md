@@ -41,6 +41,7 @@ ADR 记录已经接受的架构决策。其优先级低于项目宪法，高于�
 - `ADR-0001-第一阶段架构基线.md`：第一阶段开工所需的领域和工程基线。
 - `ADR-0002-AKShare第二数据源接入.md`：允许显式选择 AKShare 第二数据源，不引入自动路由或回退。
 - `ADR-0003-同花顺动态板块指数.md`：以独立 BoardIndex 领域接入同花顺动态板块指数及每日成分股快照。
-- `ADR-0004-pytdx日K补数源.md`：使用 pytdx 读取本地通达信 `.day` 文件，作为未复权股票日 K 唯一来源。
+- `ADR-0004-pytdx日K补数源.md`：历史决定；本地 `.day` Daily Bar Reader 已被 ADR-0024 取代。
+- `ADR-0024-远程TDX日K数据源.md`：以显式配置、有限 failover 的远程 TDX 节点提供未复权 Daily Bar。
 - `ADR-0005-Provider自动路由与故障切换.md`：按数据集能力自动选择 Provider，仅对来源错误执行确定性回退和进程内熔断。
 - `ADR-0006-Raw重放与运行恢复.md`：重放创建新 IngestionRun 并引用原 RawManifest，同时定义僵尸运行恢复与只读多源差异报告。

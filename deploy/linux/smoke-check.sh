@@ -11,6 +11,7 @@ fi
 
 systemctl is-active --quiet market-data-center-worker.service
 .venv/bin/market-data-center worker --check
+.venv/bin/python scripts/check_pytdx_daily_bar_endpoints.py --require-all
 
 if [ -z "${MIGRATION_DATABASE_URL:-}" ]; then
     echo "MIGRATION_DATABASE_URL is required for the read-only migration check" >&2

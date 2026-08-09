@@ -49,11 +49,11 @@
 
 - Provider-specific field names and units stop at the provider adapter boundary. Providers
   return standard domain records and never leak source payload fields downstream.
-- Automatic routing follows ADR-0005: Security and Trading Calendar try BaoStock then
-  AKShare; ordinary stock Daily Bar uses local pytdx only. Missing, stale, or suspended
+- Automatic routing follows ADR-0005/ADR-0024: Security and Trading Calendar try BaoStock then
+  AKShare; ordinary stock Daily Bar uses remote pytdx only. Missing, stale, or suspended
   Daily Bars remain explicit gaps and are not filled from network providers.
-- pytdx reads configured local `vipdoc/{sh,sz,bj}/lday/*.day` files and does not connect to
-  TDX network quote servers. Its ordinary Daily Bar path covers listed stocks only.
+- ADR-0024 pytdx Daily Bar reads only explicitly configured remote TDX endpoints. It performs
+  no endpoint discovery, uses bounded connection attempts/timeouts, and keeps gaps visible.
 - The THS dynamic board index adapter (`akshare_ths`, including `THS:883423`) is isolated
   from ordinary Security and Daily Bar routing. Do not treat it as a standard stock symbol.
 - A successful ingestion run has one actual provider. Do not merge partial results from

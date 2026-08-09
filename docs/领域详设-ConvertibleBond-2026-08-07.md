@@ -172,7 +172,8 @@ type ConvertibleBondRecord = (
 
 ### 4.2 pytdx（备选，OHLCV only）
 
-路径 `vipdoc/{sh,sz}/lday/{sh,sz}{code}.day` 天然兼容可转债代码（已验证）。`fetch_daily_bars` 能读，但：
+本段关于本地 `vipdoc` 的兼容性记录已被 ADR-0024 取代。远程 TDX 普通 Daily Bar 路径
+仍不承担可转债领域采集；可转债继续使用其专用 Provider/命令。
 - 只产出 OHLCV，转股价值/溢价率/剩余规模为 null
 - `trade_status` = `unknown`（.day 文件无此字段）
 - `volume` 单位语义为"张"（adapter 不换算，保持源语义）
