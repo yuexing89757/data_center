@@ -2,11 +2,16 @@ do $$
 begin
     if not exists (select 1 from pg_roles where rolname = 'market_data_api') then
         create role market_data_api nologin;
+    elsif exists (
+        select 1
+        from pg_roles
+        where rolname = 'market_data_api'
+          and (rolsuper or rolcreaterole or rolcreatedb or rolcanlogin or rolreplication or rolbypassrls)
+    ) then
+        raise exception 'existing market_data_api role has unsafe attributes';
     end if;
 end
 $$;
-
-alter role market_data_api with nologin nosuperuser nocreatedb nocreaterole noreplication nobypassrls;
 
 revoke all on schema api_v1 from market_data_api;
 grant usage on schema api_v1 to market_data_api;
