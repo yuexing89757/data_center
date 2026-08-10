@@ -92,7 +92,7 @@ it does not require VIP access or perform an implicit history backfill. Consumer
 `query_deducted_profits_as_of` PostgREST RPC.
 
 Main-board previous-day limit-up and limit-down pools are calculated from internal unadjusted
-Daily Bars and exact daily indicators at 19:30 on trading days. Consumers read one immutable,
+Daily Bars and exact daily indicators at 21:00 on trading days. Consumers read one immutable,
 exact-date snapshot through `query_stock_pool_snapshot`; the API never falls back to an older
 effective date. See `docs/领域详设-StockPool-2026-08-02.md`.
 

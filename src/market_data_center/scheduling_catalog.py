@@ -10,6 +10,8 @@ STALE_RUN_RECOVERY_JOB_ID = "recover-stale-ingestion-runs"
 DEDUCTED_PROFIT_JOB_ID = "deducted-profit-daily"
 STOCK_POOL_JOB_ID = "mainboard-price-limit-stock-pools-daily"
 AUCTION_COLLECTION_JOB_ID = "opening-auction-limit-up-quotes"
+EOD_QUOTE_SNAPSHOT_JOB_ID = "eod-quote-snapshot-daily"
+CALL_AUCTION_SNAPSHOT_JOB_ID = "call-auction-snapshot-daily"
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,6 +76,18 @@ WORKFLOW_DEFINITIONS = (
         "集合竞价涨停池五档采集",
         "冻结当日精确涨停池快照, 并在 09:15-09:25 内按固定节奏采集。",
         ("collect_auction_quotes",),
+    ),
+    WorkflowDefinition(
+        "eod_quote_snapshot",
+        "收盘五档快照",
+        "当日日 K、每日指标和涨停池完成后采集收盘五档快照, 计算封单金额。",
+        ("collect_eod_quotes",),
+    ),
+    WorkflowDefinition(
+        "call_auction_snapshot",
+        "今日竞价量",
+        "收盘后采集涨停池成员的当日集合竞价量、额及溢价率。",
+        ("collect_call_auction",),
     ),
 )
 
@@ -157,6 +171,36 @@ def job_definitions(settings: SchedulerSettings) -> tuple[JobDefinition, ...]:
             "启动及每小时恢复超过 60 分钟的 running 记录",
             hour=settings.deducted_profit_hour,
             minute=settings.deducted_profit_minute,
+        ),
+        JobDefinition(
+            EOD_QUOTE_SNAPSHOT_JOB_ID,
+            "收盘五档快照",
+            "当日涨停池 ready 后采集其成员的收盘五档行情, 计算涨停封单金额。",
+            "eod_quote_snapshot",
+            "cron",
+            f"周一至周五 {settings.eod_quote_hour:02d}:{settings.eod_quote_minute:02d}",
+            timezone,
+            settings.eod_quote_snapshot_enabled,
+            timeout,
+            "当日 ready 涨停池缺失时失败; 不使用旧池或当前报价补历史数据",
+            day_of_week="mon-fri",
+            hour=settings.eod_quote_hour,
+            minute=settings.eod_quote_minute,
+        ),
+        JobDefinition(
+            CALL_AUCTION_SNAPSHOT_JOB_ID,
+            "今日竞价量",
+            "收盘后采集涨停池成员的当日集合竞价量、额及溢价率。",
+            "call_auction_snapshot",
+            "cron",
+            f"周一至周五 {settings.call_auction_hour:02d}:{settings.call_auction_minute:02d}",
+            timezone,
+            settings.call_auction_snapshot_enabled,
+            timeout,
+            "无涨停池时跳过; 下次调度重试",
+            day_of_week="mon-fri",
+            hour=settings.call_auction_hour,
+            minute=settings.call_auction_minute,
         ),
         JobDefinition(
             STALE_RUN_RECOVERY_JOB_ID,

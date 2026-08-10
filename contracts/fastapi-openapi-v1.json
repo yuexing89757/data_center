@@ -288,7 +288,7 @@
             ],
             "title": "Free Float Market Cap"
           },
-          "free_float_turnover_pct": {
+          "free_float_turnover_rate_pct": {
             "anyOf": [
               {
                 "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
@@ -298,7 +298,7 @@
                 "type": "null"
               }
             ],
-            "title": "Free Float Turnover Pct"
+            "title": "Free Float Turnover Rate Pct"
           },
           "name": {
             "title": "Name",
@@ -346,7 +346,7 @@
           "close",
           "volume",
           "free_float_market_cap",
-          "free_float_turnover_pct",
+          "free_float_turnover_rate_pct",
           "seal_amount",
           "seal_volume_ratio",
           "consecutive_limit_up_days",

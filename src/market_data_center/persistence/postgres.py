@@ -38,6 +38,10 @@ from market_data_center.domain.ingestion import (
     RawManifest,
     ReplaySource,
 )
+from market_data_center.domain.realtime_quote import (
+    CallAuctionSnapshotRecord,
+    EodQuoteSnapshotRecord,
+)
 from market_data_center.domain.records import (
     CapitalRecord,
     DailyBarRecord,
@@ -535,6 +539,60 @@ on conflict (symbol, event_type, announcement_date) do update set
     status = excluded.status,
     source_code = excluded.source_code,
     ingestion_id = excluded.ingestion_id
+""")
+
+UPSERT_EOD_QUOTE = text("""
+insert into realtime.eod_quote_snapshot (
+    symbol, trade_date, last_price, previous_close,
+    bid1_price, bid1_volume, bid2_price, bid2_volume,
+    bid3_price, bid3_volume, bid4_price, bid4_volume,
+    bid5_price, bid5_volume,
+    ask1_price, ask1_volume, ask2_price, ask2_volume,
+    ask3_price, ask3_volume, ask4_price, ask4_volume,
+    ask5_price, ask5_volume,
+    seal_amount, source_code, ingestion_id
+) values (
+    :symbol, :trade_date, :last_price, :previous_close,
+    :bid1_price, :bid1_volume, :bid2_price, :bid2_volume,
+    :bid3_price, :bid3_volume, :bid4_price, :bid4_volume,
+    :bid5_price, :bid5_volume,
+    :ask1_price, :ask1_volume, :ask2_price, :ask2_volume,
+    :ask3_price, :ask3_volume, :ask4_price, :ask4_volume,
+    :ask5_price, :ask5_volume,
+    :seal_amount, :source_code, :ingestion_id
+)
+on conflict (symbol, trade_date) do update set
+    last_price=excluded.last_price, previous_close=excluded.previous_close,
+    bid1_price=excluded.bid1_price, bid1_volume=excluded.bid1_volume,
+    bid2_price=excluded.bid2_price, bid2_volume=excluded.bid2_volume,
+    bid3_price=excluded.bid3_price, bid3_volume=excluded.bid3_volume,
+    bid4_price=excluded.bid4_price, bid4_volume=excluded.bid4_volume,
+    bid5_price=excluded.bid5_price, bid5_volume=excluded.bid5_volume,
+    ask1_price=excluded.ask1_price, ask1_volume=excluded.ask1_volume,
+    ask2_price=excluded.ask2_price, ask2_volume=excluded.ask2_volume,
+    ask3_price=excluded.ask3_price, ask3_volume=excluded.ask3_volume,
+    ask4_price=excluded.ask4_price, ask4_volume=excluded.ask4_volume,
+    ask5_price=excluded.ask5_price, ask5_volume=excluded.ask5_volume,
+    seal_amount=excluded.seal_amount, source_code=excluded.source_code,
+    ingestion_id=excluded.ingestion_id
+""")
+
+UPSERT_CALL_AUCTION = text("""
+insert into realtime.call_auction_snapshot (
+    symbol, trade_date, last_price, previous_close,
+    cumulative_volume, cumulative_amount, auction_premium_pct,
+    source_code, ingestion_id
+) values (
+    :symbol, :trade_date, :last_price, :previous_close,
+    :cumulative_volume, :cumulative_amount, :auction_premium_pct,
+    :source_code, :ingestion_id
+)
+on conflict (symbol, trade_date) do update set
+    last_price=excluded.last_price, previous_close=excluded.previous_close,
+    cumulative_volume=excluded.cumulative_volume,
+    cumulative_amount=excluded.cumulative_amount,
+    auction_premium_pct=excluded.auction_premium_pct,
+    source_code=excluded.source_code, ingestion_id=excluded.ingestion_id
 """)
 
 
@@ -1083,6 +1141,77 @@ where market = 'CN_A_SHARE'
                         UPSERT_CB_CALL_EVENT,
                         self._cb_call_event_envelope_parameters(events),
                     )
+            connection.execute(UPDATE_INGESTION_RUN, self._run_update_parameters(run))
+
+    def commit_eod_quotes(
+        self,
+        run: IngestionRun,
+        records: Sequence[EodQuoteSnapshotRecord],
+        manifest: RawManifest,
+        quality_results: Sequence[QualityResult],
+    ) -> None:
+        params = [
+            {
+                "symbol": r.symbol,
+                "trade_date": r.trade_date,
+                "last_price": r.last_price,
+                "previous_close": r.previous_close,
+                "bid1_price": r.bid1_price,
+                "bid1_volume": r.bid1_volume,
+                "bid2_price": r.bid2_price,
+                "bid2_volume": r.bid2_volume,
+                "bid3_price": r.bid3_price,
+                "bid3_volume": r.bid3_volume,
+                "bid4_price": r.bid4_price,
+                "bid4_volume": r.bid4_volume,
+                "bid5_price": r.bid5_price,
+                "bid5_volume": r.bid5_volume,
+                "ask1_price": r.ask1_price,
+                "ask1_volume": r.ask1_volume,
+                "ask2_price": r.ask2_price,
+                "ask2_volume": r.ask2_volume,
+                "ask3_price": r.ask3_price,
+                "ask3_volume": r.ask3_volume,
+                "ask4_price": r.ask4_price,
+                "ask4_volume": r.ask4_volume,
+                "ask5_price": r.ask5_price,
+                "ask5_volume": r.ask5_volume,
+                "seal_amount": r.seal_amount,
+                "source_code": r.source_code,
+                "ingestion_id": run.ingestion_id,
+            }
+            for r in records
+        ]
+        with self._engine.begin() as connection:
+            self._insert_manifest(connection, manifest)
+            if quality_results:
+                connection.execute(INSERT_QUALITY_RESULT, self._quality_parameters(quality_results))
+            if params:
+                connection.execute(UPSERT_EOD_QUOTE, params)
+            connection.execute(UPDATE_INGESTION_RUN, self._run_update_parameters(run))
+
+    def commit_call_auction(
+        self,
+        run: IngestionRun,
+        records: Sequence[CallAuctionSnapshotRecord],
+    ) -> None:
+        params = [
+            {
+                "symbol": r.symbol,
+                "trade_date": r.trade_date,
+                "last_price": r.last_price,
+                "previous_close": r.previous_close,
+                "cumulative_volume": r.cumulative_volume,
+                "cumulative_amount": r.cumulative_amount,
+                "auction_premium_pct": r.auction_premium_pct,
+                "source_code": r.source_code,
+                "ingestion_id": run.ingestion_id,
+            }
+            for r in records
+        ]
+        with self._engine.begin() as connection:
+            if params:
+                connection.execute(UPSERT_CALL_AUCTION, params)
             connection.execute(UPDATE_INGESTION_RUN, self._run_update_parameters(run))
 
     def commit_classification_catalog_batch(

@@ -40,9 +40,25 @@ Linux Worker 无法挂载原 Windows 通达信目录。pytdx 同时支持本地�
 - 无生产节点可用性保证；上线前必须对每个配置节点分别验证 SSE、SZSE，并在需要 BSE 时
   验证北交所样本。探测只用于运维验收，不进入运行时发现逻辑。
 
+## 2026-08-11 Accepted clarification：本地优先模式
+
+- 当 `PYTDX_VIPDOC_PATH` 指向有效的通达信 `vipdoc` 目录时，Daily Bar 采集进入**本地优先模式**：
+  先读取本地 `.day` 二进制文件（`pytdx.local_daily_bar.v2` Raw schema），仅当本地文件缺失时
+  才 fallback 到远程 TDX 节点。
+- 本地优先模式下，`PYTDX_DAILY_BAR_ENDPOINTS` 和 IP 池文件均为可选。若未配置任何远程
+  endpoint，Provider 在本地文件缺失时返回显式 `ProviderRequestUnavailable`（可见缺口），
+  不伪造数据。
+- 本地优先模式不改变 Daily Bar 领域语义、Decimal 精度、自然键、Raw 可重放性和缺口可见性。
+  Raw schema `pytdx.local_daily_bar.v2` 行记录已在 ADR-0024 主体中声明可重放。
+- 决策第 8 条中"`PYTDX_VIPDOC_PATH` 从 Worker 和 Linux 发布配置删除"仅适用于无本地通达信
+  安装的 Linux 部署；Windows 或挂载了通达信目录的环境可设置 `PYTDX_VIPDOC_PATH` 启用本地优先。
+- 分类路由不受影响：Classification 仍由 AKShare 提供，不使用 pytdx 本地分类文件。
+
 ## 验收
 
 - Mock 测试覆盖配置解析、连接失败与有限 failover、读取失败、分页、BSE、Raw replay、
   单 endpoint lineage 和关闭连接。
+- Mock 测试覆盖本地优先模式：vipdoc_path 设置时本地 .day 文件优先、本地文件缺失时
+  返回 ProviderRequestUnavailable、无远程 endpoint 时本地-only 模式正常工作。
 - Linux 环境模板、systemd、smoke、README 与发布手册不再要求 `vipdoc`。
 - Ruff、mypy 与完整单元测试通过；不得在测试或部署准备中触发生产采集。

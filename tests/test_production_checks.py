@@ -148,3 +148,25 @@ def test_limit_up_api_migration_uses_exact_governed_inputs() -> None:
     assert "grant execute on function api_v1.query_limit_up_pool" in migration
     assert "market_data_worker" not in migration
     assert not re.search(r"(?im)^grant\s+(insert|update|delete|all)", migration)
+
+
+def test_daily_limit_up_list_fix_limits_snapshot_not_members() -> None:
+    migration = (
+        MIGRATION_DIR / "20260811000100_fix_daily_limit_up_list_latest_snapshot.sql"
+    ).read_text(encoding="utf-8")
+
+    latest_snapshot, member_query = migration.split("limit_up_members as", maxsplit=1)
+    assert "order by s.version desc\n        limit 1" in latest_snapshot
+    assert "join stock_pool.member" in member_query
+    assert "limit least(greatest(p_limit, 1), 500)" in member_query
+    assert "grant execute on function api_v1.query_daily_limit_up_list" in migration
+    assert not re.search(r"(?im)^grant\s+(insert|update|delete|all)", migration)
+
+
+def test_snapshot_quality_dataset_codes_are_migrated_forward() -> None:
+    migration = (MIGRATION_DIR / "20260811000200_allow_snapshot_quality_results.sql").read_text(
+        encoding="utf-8"
+    )
+
+    assert "alter table audit.quality_result" in migration
+    assert "'eod_quote_snapshot','call_auction_snapshot'" in migration

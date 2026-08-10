@@ -765,6 +765,40 @@ def _execute(args: Namespace, pipeline: IngestionPipeline) -> IngestionRun:
             date.fromisoformat(args.start_date),
             date.fromisoformat(args.end_date),
         )
+    if args.dataset == "eod-quote-snapshot":
+        from market_data_center.snapshot_collector import collect_eod_quotes
+
+        trade_date = (
+            date.fromisoformat(args.trade_date)
+            if args.trade_date
+            else datetime.now(SHANGHAI_TIME_ZONE).date()
+        )
+        engine = create_engine(
+            sqlalchemy_url(
+                WorkerSettings().database_url.get_secret_value()  # type: ignore[call-arg]
+            ),
+            pool_pre_ping=True,
+        )
+        collect_eod_quotes(engine, trade_date)
+        engine.dispose()
+        raise SystemExit(0)
+    if args.dataset == "call-auction-snapshot":
+        from market_data_center.snapshot_collector import collect_call_auction
+
+        trade_date = (
+            date.fromisoformat(args.trade_date)
+            if args.trade_date
+            else datetime.now(SHANGHAI_TIME_ZONE).date()
+        )
+        engine = create_engine(
+            sqlalchemy_url(
+                WorkerSettings().database_url.get_secret_value()  # type: ignore[call-arg]
+            ),
+            pool_pre_ping=True,
+        )
+        collect_call_auction(engine, trade_date)
+        engine.dispose()
+        raise SystemExit(0)
     if args.dataset == "classification-catalog":
         return pipeline.ingest_classification_catalog(
             args.classification_type,
@@ -861,6 +895,16 @@ def _parser() -> ArgumentParser:
         "--source-symbol", required=True, help="standard symbol such as SSE:113527"
     )
     _add_date_range(cb_daily_bar)
+
+    eod_parser = subparsers.add_parser(
+        "eod-quote-snapshot", help="collect end-of-day 5-level quotes for limit-up pool"
+    )
+    eod_parser.add_argument("--trade-date", help="YYYY-MM-DD; defaults to today")
+
+    auction_parser = subparsers.add_parser(
+        "call-auction-snapshot", help="collect call-auction snapshot for limit-up pool"
+    )
+    auction_parser.add_argument("--trade-date", help="YYYY-MM-DD; defaults to today")
 
     catalog = subparsers.add_parser(
         "classification-catalog", help="capture a complete industry or concept catalog snapshot"

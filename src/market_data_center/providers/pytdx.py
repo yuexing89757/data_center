@@ -147,6 +147,11 @@ class PytdxProvider:
                 )
         # Fallback to remote endpoint.
         if self._client is None or self._endpoint is None:
+            if self._vipdoc_path:
+                raise ProviderRequestUnavailable(
+                    f"pytdx local .day file not found for {source_symbol}"
+                    " and no remote endpoint configured"
+                )
             raise ProviderError("pytdx remote provider must be used as a managed context")
         market = 1 if exchange == "sh" else 0
         source_rows: list[RawRow] = []
@@ -331,13 +336,19 @@ def _read_daily_bar_pool(path: Path) -> tuple[tuple[str, int], ...]:
 
 
 def _resolve_daily_bar_endpoints(settings: PytdxDailyBarSettings) -> tuple[tuple[str, int], ...]:
-    """Prefer the IP pool file; fall back to PYTDX_DAILY_BAR_ENDPOINTS; error if neither."""
+    """Prefer the IP pool file; fall back to PYTDX_DAILY_BAR_ENDPOINTS.
+
+    Returns an empty tuple when no endpoints are found and ``vipdoc_path``
+    is set, enabling local-only mode without remote fallback.
+    """
     pool = _read_daily_bar_pool(settings.pytdx_daily_bar_pool_path)
     if pool:
         return pool
     env_hosts = parse_daily_bar_endpoints(settings.pytdx_daily_bar_endpoints)
     if env_hosts:
         return env_hosts
+    if settings.pytdx_vipdoc_path:
+        return ()
     raise ProviderError(
         "pytdx has no Daily Bar endpoints: set PYTDX_DAILY_BAR_ENDPOINTS or run "
         "scripts/probe_pytdx_hq_hosts.py to build the pool"

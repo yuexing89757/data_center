@@ -17,7 +17,7 @@ Tushare `daily_basic` 已支持按交易日一次获取完整市场快照。生�
 
 ## 决策
 
-1. 使用独立 APScheduler 3.11.3 守护进程作为跨平台生产调度器；周一至周五 19:00
+1. 使用独立 APScheduler 3.11.3 守护进程作为跨平台生产调度器；周一至周五 20:30
    触发 Worker。Worker 先同步当日交易日历，只有 `CN_A_SHARE` 当日开市时才请求
    全市场每日指标，法定休市日自动跳过。
 2. 每次调用 Tushare `daily_basic` 的 `trade_date` 参数，一次获取完整市场快照；继续使用

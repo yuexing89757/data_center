@@ -87,13 +87,15 @@ BlockingScheduler
 | # | Job ID | 名称 | Workflow | 触发 | 默认时间 | 启用 |
 |---|---|---|---|---|---|---|
 | 1 | `opening-auction-limit-up-quotes` | 集合竞价涨停池五档采集 | `auction_collection` | cron 周一至周五 | 09:15 | **默认关** |
-| 2 | `daily-run` | 日 K 与基础数据更新 | `daily_market` | cron 周一至周五 | 18:30 | ✅ |
-| 3 | `stock-daily-indicators-daily` | 股票每日指标更新 | `stock_daily_indicator` | cron 周一至周五 | 19:00 | ✅ |
-| 4 | `mainboard-price-limit-stock-pools-daily` | 沪深主板昨日涨跌停股票池 | `stock_pool` | cron 周一至周五 | 19:30 | ✅ |
-| 5 | `deducted-profit-daily` | 扣非净利润增量同步 | `deducted_profit` | cron 每天 | 20:00 | ✅ |
-| 6 | `recover-stale-ingestion-runs` | 陈旧运行恢复 | `stale_run_recovery` | interval | 每 1 小时 | ✅ |
+| 2 | `eod-quote-snapshot-daily` | 收盘五档快照 | `eod_quote_snapshot` | cron 周一至周五 | 21:10 | **默认关** |
+| 3 | `call-auction-snapshot-daily` | 今日竞价量 | `call_auction_snapshot` | cron 周一至周五 | 18:00 | ✅ |
+| 4 | `daily-run` | 日 K 与基础数据更新 | `daily_market` | cron 周一至周五 | 20:00 | ✅ |
+| 5 | `stock-daily-indicators-daily` | 股票每日指标更新 | `stock_daily_indicator` | cron 周一至周五 | 20:30 | ✅ |
+| 6 | `mainboard-price-limit-stock-pools-daily` | 沪深主板昨日涨跌停股票池 | `stock_pool` | cron 周一至周五 | 21:00 | ✅ |
+| 7 | `deducted-profit-daily` | 扣非净利润增量同步 | `deducted_profit` | cron 每天 | 20:00 | ✅ |
+| 8 | `recover-stale-ingestion-runs` | 陈旧运行恢复 | `stale_run_recovery` | interval | 每 1 小时 | ✅ |
 
-> 时间默认值在 `SchedulerSettings`，可通过 `.env` 覆盖（见配置章节）。业务顺序设计：日K(18:30) → 每日指标(19:00) → 股票池(19:30) → 扣非利润(20:00)，股票池依赖前两者当日成功。
+> 时间默认值在 `SchedulerSettings`，可通过 `.env` 覆盖（见配置章节）。业务顺序设计：日K(20:00) → 每日指标(20:30) → 股票池(21:00) → 收盘五档(21:10)。收盘五档严格读取当日最新 ready 涨停池；缺失时失败，不回退旧池，也不允许用当前报价补历史日期。今日竞价量任务独立运行。
 
 ### 每个 job 做什么（scheduler.py 里的执行函数）
 
@@ -127,15 +129,17 @@ BlockingScheduler
 |---|---|---|
 | `SCHEDULER_STORE_PATH` | `data/scheduler/jobs.sqlite` | APScheduler 持久化路径 |
 | `SCHEDULER_TIMEZONE` | `Asia/Shanghai` | 调度时区 |
-| `DAILY_RUN_HOUR` / `DAILY_RUN_MINUTE` | `18` / `30` | 日K采集时间 |
-| `STOCK_DAILY_INDICATOR_HOUR` / `_MINUTE` | `19` / `0` | 每日指标时间 |
-| `STOCK_POOL_HOUR` / `_MINUTE` | `19` / `30` | 股票池构建时间 |
+| `DAILY_RUN_HOUR` / `DAILY_RUN_MINUTE` | `20` / `0` | 日K采集时间 |
+| `STOCK_DAILY_INDICATOR_HOUR` / `_MINUTE` | `20` / `30` | 每日指标时间 |
+| `STOCK_POOL_HOUR` / `_MINUTE` | `21` / `0` | 股票池构建时间 |
 | `DEDUCTED_PROFIT_HOUR` / `_MINUTE` | `20` / `0` | 扣非利润时间 |
 | `SCHEDULER_MISFIRE_GRACE_SECONDS` | `21600`（6h） | misfire 宽限期（同时是 job timeout） |
 | `WORKER_ADMIN_PORT` | `8765` | 管理页面端口 |
 | `AUCTION_COLLECTION_ENABLED` | `false` | 集合竞价采集开关 |
 | `AUCTION_COLLECTION_HOUR` / `_MINUTE` | `9` / `15` | 采集开始时间 |
 | `AUCTION_COLLECTION_CADENCE_SECONDS` | `5` | 采样节奏（1-60 秒） |
+| `EOD_QUOTE_SNAPSHOT_ENABLED` | `false` | 收盘五档任务开关；完成实盘语义验证后显式开启 |
+| `EOD_QUOTE_HOUR` / `_MINUTE` | `21` / `10` | 当日涨停池 ready 后的收盘五档采集时间 |
 
 ## 健康检查（`worker --check`）
 

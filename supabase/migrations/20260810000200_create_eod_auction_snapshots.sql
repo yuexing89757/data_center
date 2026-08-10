@@ -80,15 +80,19 @@ language sql stable security definer
 set search_path = pg_catalog, api_v1, stock_pool, core, realtime, derived
 set statement_timeout = '5s'
 as $$
-    with limit_up_members as (
-        select m.symbol, s.basis_trade_date
+    with latest_snapshot as (
+        select s.snapshot_id, s.basis_trade_date
         from stock_pool.snapshot s
-        join stock_pool.member m on m.snapshot_id = s.snapshot_id
         where s.pool_code = 'CN_A_PREVIOUS_DAY_MAINBOARD_LIMIT_UP'
           and s.basis_trade_date = p_trade_date
           and s.status = 'ready'
         order by s.version desc
         limit 1
+    ),
+    limit_up_members as (
+        select m.symbol, ls.basis_trade_date
+        from latest_snapshot ls
+        join stock_pool.member m on m.snapshot_id = ls.snapshot_id
     ),
     enriched as (
         select
@@ -137,7 +141,7 @@ as $$
         'count', count(*),
         'items', coalesce(jsonb_agg(to_jsonb(e) order by e.close desc nulls last), '[]'::jsonb)
     )
-    from enriched
+    from enriched e
 $$;
 
 revoke all on function api_v1.query_daily_limit_up_list(date, integer) from public;

@@ -10,8 +10,10 @@ from market_data_center.scheduler import (
 )
 from market_data_center.scheduling_catalog import (
     AUCTION_COLLECTION_JOB_ID,
+    CALL_AUCTION_SNAPSHOT_JOB_ID,
     DAILY_RUN_JOB_ID,
     DEDUCTED_PROFIT_JOB_ID,
+    EOD_QUOTE_SNAPSHOT_JOB_ID,
     STALE_RUN_RECOVERY_JOB_ID,
     STOCK_DAILY_INDICATOR_JOB_ID,
     STOCK_POOL_JOB_ID,
@@ -26,12 +28,12 @@ def test_scheduler_registers_persistent_single_instance_market_job(tmp_path: Pat
 
     daily_run = scheduler.get_job(DAILY_RUN_JOB_ID)
     assert daily_run is not None
-    assert str(daily_run.trigger) == "cron[day_of_week='mon-fri', hour='18', minute='30']"
+    assert str(daily_run.trigger) == "cron[day_of_week='mon-fri', hour='20', minute='0']"
     assert daily_run.max_instances == 1
     job = scheduler.get_job(STOCK_DAILY_INDICATOR_JOB_ID)
 
     assert job is not None
-    assert str(job.trigger) == "cron[day_of_week='mon-fri', hour='19', minute='0']"
+    assert str(job.trigger) == "cron[day_of_week='mon-fri', hour='20', minute='30']"
     assert job.coalesce
     assert job.max_instances == 1
     assert job.misfire_grace_time == 21_600
@@ -44,7 +46,7 @@ def test_scheduler_registers_persistent_single_instance_market_job(tmp_path: Pat
     assert str(deducted_profit.trigger) == "cron[hour='20', minute='0']"
     stock_pool = scheduler.get_job(STOCK_POOL_JOB_ID)
     assert stock_pool is not None
-    assert str(stock_pool.trigger) == "cron[day_of_week='mon-fri', hour='19', minute='30']"
+    assert str(stock_pool.trigger) == "cron[day_of_week='mon-fri', hour='21', minute='0']"
     assert store_path.parent.is_dir()
     assert scheduler.get_job(AUCTION_COLLECTION_JOB_ID) is None
 
@@ -61,6 +63,47 @@ def test_scheduler_registers_one_auction_session_job_only_when_enabled(tmp_path:
     assert auction is not None
     assert str(auction.trigger) == "cron[day_of_week='mon-fri', hour='9', minute='15']"
     assert auction.max_instances == 1
+
+
+def test_call_auction_snapshot_job_registered_when_enabled(tmp_path: Path) -> None:
+    scheduler = build_scheduler(
+        SchedulerSettings(
+            scheduler_store_path=tmp_path / "call_auction.sqlite",
+            call_auction_snapshot_enabled=True,
+        )
+    )
+
+    job = scheduler.get_job(CALL_AUCTION_SNAPSHOT_JOB_ID)
+    assert job is not None
+    assert str(job.trigger) == "cron[day_of_week='mon-fri', hour='18', minute='0']"
+    assert job.max_instances == 1
+    assert job.coalesce
+
+
+def test_eod_quote_snapshot_job_registered_after_stock_pool_when_enabled(tmp_path: Path) -> None:
+    scheduler = build_scheduler(
+        SchedulerSettings(
+            scheduler_store_path=tmp_path / "eod.sqlite",
+            eod_quote_snapshot_enabled=True,
+        )
+    )
+
+    job = scheduler.get_job(EOD_QUOTE_SNAPSHOT_JOB_ID)
+    assert job is not None
+    assert str(job.trigger) == "cron[day_of_week='mon-fri', hour='21', minute='10']"
+    assert job.max_instances == 1
+    assert job.coalesce
+
+
+def test_call_auction_snapshot_job_absent_when_disabled(tmp_path: Path) -> None:
+    scheduler = build_scheduler(
+        SchedulerSettings(
+            scheduler_store_path=tmp_path / "no_call_auction.sqlite",
+            call_auction_snapshot_enabled=False,
+        )
+    )
+
+    assert scheduler.get_job(CALL_AUCTION_SNAPSHOT_JOB_ID) is None
 
 
 class HealthPersistence:
@@ -99,7 +142,11 @@ def test_scheduler_health_requires_jobs_fresh_snapshot_and_no_stale_runs(tmp_pat
             STOCK_POOL_JOB_ID,
         ),
     )
-    settings = SchedulerSettings(scheduler_store_path=store_path, auction_collection_enabled=False)
+    settings = SchedulerSettings(
+        scheduler_store_path=store_path,
+        auction_collection_enabled=False,
+        call_auction_snapshot_enabled=False,
+    )
 
     healthy = check_scheduler_health(
         settings,

@@ -33,8 +33,10 @@ from market_data_center.raw_store import LocalRawStore
 from market_data_center.reliability import recover_stale_runs
 from market_data_center.scheduling_catalog import (
     AUCTION_COLLECTION_JOB_ID,
+    CALL_AUCTION_SNAPSHOT_JOB_ID,
     DAILY_RUN_JOB_ID,
     DEDUCTED_PROFIT_JOB_ID,
+    EOD_QUOTE_SNAPSHOT_JOB_ID,
     STALE_RUN_RECOVERY_JOB_ID,
     STOCK_DAILY_INDICATOR_JOB_ID,
     STOCK_POOL_JOB_ID,
@@ -330,6 +332,54 @@ def run_auction_collection_job() -> None:
         engine.dispose()
 
 
+def run_eod_quote_snapshot_job() -> None:
+    """Collect end-of-day five-level quotes for the latest limit-up pool."""
+    from market_data_center.snapshot_collector import collect_eod_quotes
+
+    settings = WorkerSettings()  # type: ignore[call-arg]
+    scheduling = SchedulerSettings()
+    engine = create_engine(
+        sqlalchemy_url(settings.database_url.get_secret_value()), pool_pre_ping=True
+    )
+    try:
+        fire_time = _scheduled_fire_time(
+            scheduling.eod_quote_hour,
+            scheduling.eod_quote_minute,
+            scheduling.scheduler_timezone,
+            weekdays_only=True,
+        )
+        collect_eod_quotes(
+            engine,
+            fire_time.astimezone(ZoneInfo(scheduling.scheduler_timezone)).date(),
+            raw_store=LocalRawStore(settings.raw_data_root),
+        )
+    finally:
+        engine.dispose()
+
+
+def run_call_auction_snapshot_job() -> None:
+    """Collect call-auction snapshot for the latest limit-up pool."""
+    from market_data_center.snapshot_collector import collect_call_auction
+
+    settings = WorkerSettings()  # type: ignore[call-arg]
+    scheduling = SchedulerSettings()
+    engine = create_engine(
+        sqlalchemy_url(settings.database_url.get_secret_value()), pool_pre_ping=True
+    )
+    try:
+        fire_time = _scheduled_fire_time(
+            scheduling.call_auction_hour,
+            scheduling.call_auction_minute,
+            scheduling.scheduler_timezone,
+            weekdays_only=True,
+        )
+        collect_call_auction(
+            engine, fire_time.astimezone(ZoneInfo(scheduling.scheduler_timezone)).date()
+        )
+    finally:
+        engine.dispose()
+
+
 def _scheduled_fire_time(
     hour: int,
     minute: int,
@@ -365,6 +415,8 @@ def build_scheduler(settings: SchedulerSettings | None = None) -> BlockingSchedu
         DEDUCTED_PROFIT_JOB_ID: run_deducted_profit_job,
         STOCK_POOL_JOB_ID: run_stock_pool_job,
         AUCTION_COLLECTION_JOB_ID: run_auction_collection_job,
+        EOD_QUOTE_SNAPSHOT_JOB_ID: run_eod_quote_snapshot_job,
+        CALL_AUCTION_SNAPSHOT_JOB_ID: run_call_auction_snapshot_job,
     }
     for definition in job_definitions(settings):
         if not definition.enabled:

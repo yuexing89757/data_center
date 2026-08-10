@@ -194,14 +194,47 @@ def test_endpoint_configuration_is_rejected(endpoints: str) -> None:
 
 
 def test_no_endpoints_without_pool_is_rejected() -> None:
-    """Empty endpoints with no pool file raises ProviderError."""
+    """Empty endpoints with no pool file and no vipdoc_path raises ProviderError."""
     settings = PytdxDailyBarSettings(
         pytdx_daily_bar_endpoints="",
         pytdx_daily_bar_pool_path=Path("nonexistent-pool.json"),
+        pytdx_vipdoc_path="",
     )
 
     with pytest.raises(ProviderError, match="no Daily Bar endpoints"):
         PytdxProvider(settings, client_factory=FakeClient)
+
+
+def test_local_only_mode_without_endpoints(tmp_path: Path) -> None:
+    """When vipdoc_path is set and no endpoints configured, local-only mode works."""
+    vipdoc = tmp_path / "vipdoc"
+    _write_day_file(vipdoc, "sh", "600000", [(20260807, 920, 930, 915, 925, 400000.0, 40000)])
+    settings = PytdxDailyBarSettings(
+        pytdx_vipdoc_path=str(vipdoc),
+        pytdx_daily_bar_endpoints="",
+        pytdx_daily_bar_pool_path=Path("nonexistent-pool.json"),
+    )
+
+    provider = PytdxProvider(settings, client_factory=FakeClient)
+    with provider:
+        batch = provider.fetch_daily_bars("sh.600000", date(2026, 8, 7), date(2026, 8, 7))
+
+    assert len(batch.records) == 1
+    assert batch.records[0].close == Decimal("9.25")
+    assert batch.schema_version == "pytdx.local_daily_bar.v2"
+
+
+def test_local_only_mode_missing_file_is_visible_gap(tmp_path: Path) -> None:
+    """In local-only mode, a missing .day file raises ProviderRequestUnavailable."""
+    settings = PytdxDailyBarSettings(
+        pytdx_vipdoc_path=str(tmp_path / "vipdoc"),
+        pytdx_daily_bar_endpoints="",
+        pytdx_daily_bar_pool_path=Path("nonexistent-pool.json"),
+    )
+
+    provider = PytdxProvider(settings, client_factory=FakeClient)
+    with provider, pytest.raises(ProviderRequestUnavailable, match=r"local \.day file not found"):
+        provider.fetch_daily_bars("sh.600000", date(2026, 8, 7), date(2026, 8, 7))
 
 
 def test_legacy_local_raw_remains_replayable() -> None:

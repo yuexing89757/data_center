@@ -38,16 +38,21 @@ pytdx 还可从通达信 `T0002/hq_cache` 读取行业和概念完整快照，�
 ## 跨平台调度
 
 全部生产定时任务由统一的 `market-data-center worker` 进程负责，APScheduler 只是其内部
-组件：工作日 18:30 执行普通 `daily-run`，
-19:00 执行 Tushare 每日指标，并每小时恢复超时停留在 `running` 的采集批次。单线程执行器
+组件：工作日 20:00 执行普通 `daily-run`，
+20:30 执行 Tushare 每日指标，并每小时恢复超时停留在 `running` 的采集批次。单线程执行器
 保证任务不重叠，PostgreSQL advisory lock 保证同一时刻只有一个 Scheduler 实例持有主锁。
 
 每天 20:00（包括周末）执行扣非净利润增量同步。该任务按披露变化发现受影响证券，不按
 交易日触发，也不进行全市场历史回填；详见 ADR-0020。
 
-周一至周五 19:30 构建沪深主板昨日涨停与昨日跌停两份不可变股票池。触发时间不是依赖
+周一至周五 21:00 构建沪深主板昨日涨停与昨日跌停两份不可变股票池。触发时间不是依赖
 完成的证明：任务还会检查 basis 当日 `daily_market`、`stock_daily_indicator` WorkflowRun
 均成功，并校验精确交易日、日 K、每日指标和 lineage；缺失时失败且不回退旧快照。
+
+收盘五档任务默认关闭；完成 pytdx 收盘盘口字段与数量单位的实盘验证后，通过
+`EOD_QUOTE_SNAPSHOT_ENABLED=true` 显式开启。任务在工作日 21:10 运行，只读取当天最新
+`ready` 涨停池，保存原始 JSONL、Manifest、质量结果和标准快照。当天池缺失时失败，空池
+合法跳过；任务禁止把当前实时报价写成其他历史日期，也不会回退旧股票池。
 
 pytdx 要求 `PYTDX_DAILY_BAR_ENDPOINTS` 指向有序、人工验收的 `host:port` 列表。连接和
 读取采用有限超时，建立会话时有限 failover；成功会话不切换 endpoint。公共节点无 SLA，
@@ -61,7 +66,7 @@ SCHEDULER_STORE_PATH=/var/lib/market-data-center/scheduler/jobs.sqlite
 
 ## 股票每日指标定时采集
 
-Tushare 每日指标由 APScheduler 进程在周一至周五 19:00 触发。Worker 先用 Tushare 同步
+Tushare 每日指标由 APScheduler 进程在周一至周五 20:30 触发。Worker 先用 Tushare 同步
 当日交易日历；当日休市时直接跳过，开市时按 `trade_date` 一次获取全市场快照。采集
 成功或部分成功后，删除 Core 中早于一个自然月截止日的每日指标。Raw、Manifest、
 IngestionRun 和 QualityResult 不删除。
