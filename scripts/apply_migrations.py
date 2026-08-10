@@ -63,6 +63,8 @@ EXPECTED_TABLES = {
     ("convertible_bond", "call_event"),
     ("convertible_bond", "convert_price_revision"),
     ("convertible_bond", "daily_bar"),
+    ("realtime", "call_auction_snapshot"),
+    ("realtime", "eod_quote_snapshot"),
 }
 EXPECTED_VIEWS = {
     ("api_v1", "adjusted_daily_bars"),

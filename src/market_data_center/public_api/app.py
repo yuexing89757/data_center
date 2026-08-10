@@ -20,6 +20,7 @@ from market_data_center.domain import ClassificationType
 from market_data_center.public_api.models import (
     ClassificationMembersResponse,
     DailyBarResponse,
+    DailyLimitUpListResponse,
     ErrorDetail,
     ErrorResponse,
     HealthResponse,
@@ -184,6 +185,31 @@ def create_app(
         limit: Annotated[int, Query(ge=1, le=5000)] = 5000,
     ) -> LimitUpPoolResponse:
         return service.limit_up_pool(trade_date, version, limit)
+
+    @app.get(
+        "/api/v1/daily-limit-up-list",
+        response_model=DailyLimitUpListResponse,
+        responses={
+            401: {"model": ErrorResponse},
+            404: {"model": ErrorResponse},
+            503: {"model": ErrorResponse},
+        },
+        tags=["market-data"],
+        summary="Get the daily limit-up stock list with rich metrics",
+        description=(
+            "Returns limit-up stocks for trade_date with close price, volume, "
+            "free-float market cap, free-float turnover, seal amount, seal volume "
+            "ratio, consecutive limit-up days, and call-auction data. Fields "
+            "requiring eod/auction snapshots are null when not yet collected."
+        ),
+    )
+    def daily_limit_up_list(
+        _: ApiKeyDependency,
+        service: QueryServiceDependency,
+        trade_date: Annotated[date, Query()],
+        limit: Annotated[int, Query(ge=1, le=500)] = 200,
+    ) -> DailyLimitUpListResponse:
+        return service.daily_limit_up_list(trade_date, limit)
 
     return app
 

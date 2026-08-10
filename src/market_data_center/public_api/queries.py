@@ -11,6 +11,7 @@ from market_data_center.domain import ClassificationType
 from market_data_center.public_api.models import (
     ClassificationMembersResponse,
     DailyBarItem,
+    DailyLimitUpListResponse,
     LimitUpPoolResponse,
     SecurityItem,
 )
@@ -45,6 +46,13 @@ QUERY_LIMIT_UP_POOL = text("""
 select api_v1.query_limit_up_pool(
     p_trade_date => :trade_date,
     p_version => :version,
+    p_limit => :limit
+) as payload
+""")
+
+QUERY_DAILY_LIMIT_UP_LIST = text("""
+select api_v1.query_daily_limit_up_list(
+    p_trade_date => :trade_date,
     p_limit => :limit
 ) as payload
 """)
@@ -91,6 +99,8 @@ class PublicQueryService(Protocol):
     def limit_up_pool(
         self, trade_date: date, version: int | None, limit: int
     ) -> LimitUpPoolResponse: ...
+
+    def daily_limit_up_list(self, trade_date: date, limit: int) -> DailyLimitUpListResponse: ...
 
 
 class PostgreSQLPublicQueryService:
@@ -150,6 +160,15 @@ class PostgreSQLPublicQueryService:
         if not rows:
             raise PublicQueryNotFound("limit-up pool was not found")
         return LimitUpPoolResponse.model_validate(rows[0]["payload"])
+
+    def daily_limit_up_list(self, trade_date: date, limit: int) -> DailyLimitUpListResponse:
+        rows = self._execute(
+            QUERY_DAILY_LIMIT_UP_LIST,
+            {"trade_date": trade_date, "limit": limit},
+        )
+        if not rows:
+            raise PublicQueryNotFound("daily limit-up list was not found")
+        return DailyLimitUpListResponse.model_validate(rows[0]["payload"])
 
     def _execute(self, statement: Any, parameters: Mapping[str, object]) -> Sequence[RowMapping]:
         try:

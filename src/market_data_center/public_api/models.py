@@ -108,3 +108,24 @@ class LimitUpPoolResponse(ApiModel):
     has_more: bool
     omission_reasons: LimitUpPoolOmissionReasons
     items: list[LimitUpPoolItem]
+
+
+class DailyLimitUpListItem(ApiModel):
+    code: str
+    name: str
+    close: Decimal | None
+    volume: int | None
+    free_float_market_cap: Decimal | None
+    free_float_turnover_pct: Decimal | None
+    seal_amount: Decimal | None
+    seal_volume_ratio: Decimal | None
+    consecutive_limit_up_days: int | None
+    auction_volume: int | None
+    auction_amount: Decimal | None
+    auction_premium_pct: Decimal | None
+
+
+class DailyLimitUpListResponse(ApiModel):
+    trade_date: date
+    count: int = Field(ge=0)
+    items: list[DailyLimitUpListItem]

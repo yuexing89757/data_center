@@ -16,6 +16,8 @@ from market_data_center.public_api import create_app
 from market_data_center.public_api.models import (
     ClassificationMembersResponse,
     DailyBarItem,
+    DailyLimitUpListItem,
+    DailyLimitUpListResponse,
     LimitUpPoolItem,
     LimitUpPoolOmissionReasons,
     LimitUpPoolResponse,
@@ -131,6 +133,28 @@ class FakeQueryService:
                     code="600000",
                     name="浦发银行",
                     free_float_market_cap_cny=Decimal("61200000.000000"),
+                )
+            ],
+        )
+
+    def daily_limit_up_list(self, trade_date: date, limit: int) -> DailyLimitUpListResponse:
+        return DailyLimitUpListResponse(
+            trade_date=trade_date,
+            count=1,
+            items=[
+                DailyLimitUpListItem(
+                    code="600000",
+                    name="浦发银行",
+                    close=Decimal("9.29"),
+                    volume=62542540,
+                    free_float_market_cap=Decimal("5000000000"),
+                    free_float_turnover_pct=Decimal("2.5"),
+                    seal_amount=Decimal("1200000"),
+                    seal_volume_ratio=Decimal("0.05"),
+                    consecutive_limit_up_days=2,
+                    auction_volume=5000,
+                    auction_amount=Decimal("46000"),
+                    auction_premium_pct=Decimal("1.2"),
                 )
             ],
         )
@@ -318,4 +342,25 @@ def test_openapi_only_contains_the_active_non_derived_routes() -> None:
     assert "/api/v1/securities" in schema["paths"]
     assert "/api/v1/daily-bars/{symbol}" in schema["paths"]
     assert "/api/v1/limit-up-pool" in schema["paths"]
+    assert "/api/v1/daily-limit-up-list" in schema["paths"]
     assert not any("adjusted" in path or "metric" in path for path in schema["paths"])
+
+
+def test_daily_limit_up_list_returns_items() -> None:
+    service = FakeQueryService()
+
+    response = _client(service).get(
+        "/api/v1/daily-limit-up-list",
+        params={"trade_date": "2026-08-10", "limit": 200},
+        headers=_headers(),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["trade_date"] == "2026-08-10"
+    assert body["count"] == 1
+    item = body["items"][0]
+    assert item["code"] == "600000"
+    assert item["close"] == "9.29"
+    assert item["consecutive_limit_up_days"] == 2
+    assert item["seal_amount"] == "1200000"

@@ -2,7 +2,7 @@
 
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
 from itertools import pairwise
@@ -314,3 +314,61 @@ def _finding(
     natural_key: Mapping[str, object],
 ) -> RealtimeQuoteFinding:
     return RealtimeQuoteFinding(rule_code, severity, message, natural_key)
+
+
+@dataclass(frozen=True, slots=True)
+class EodQuoteSnapshotRecord:
+    """End-of-day five-level quote snapshot for limit-up pool members."""
+
+    symbol: str
+    trade_date: date
+    source_code: str
+    last_price: Decimal | None = None
+    previous_close: Decimal | None = None
+    bid1_price: Decimal | None = None
+    bid1_volume: int | None = None
+    bid2_price: Decimal | None = None
+    bid2_volume: int | None = None
+    bid3_price: Decimal | None = None
+    bid3_volume: int | None = None
+    bid4_price: Decimal | None = None
+    bid4_volume: int | None = None
+    bid5_price: Decimal | None = None
+    bid5_volume: int | None = None
+    ask1_price: Decimal | None = None
+    ask1_volume: int | None = None
+    ask2_price: Decimal | None = None
+    ask2_volume: int | None = None
+    ask3_price: Decimal | None = None
+    ask3_volume: int | None = None
+    ask4_price: Decimal | None = None
+    ask4_volume: int | None = None
+    ask5_price: Decimal | None = None
+    ask5_volume: int | None = None
+    seal_amount: Decimal | None = None
+
+    def __post_init__(self) -> None:
+        if self.last_price is not None and self.last_price < 0:
+            raise ValueError("last_price must be non-negative")
+        if self.seal_amount is not None and self.seal_amount < 0:
+            raise ValueError("seal_amount must be non-negative")
+
+
+@dataclass(frozen=True, slots=True)
+class CallAuctionSnapshotRecord:
+    """Call-auction snapshot for limit-up pool members (09:15-09:25)."""
+
+    symbol: str
+    trade_date: date
+    source_code: str
+    last_price: Decimal | None = None
+    previous_close: Decimal | None = None
+    cumulative_volume: int | None = None
+    cumulative_amount: Decimal | None = None
+    auction_premium_pct: Decimal | None = None
+
+    def __post_init__(self) -> None:
+        if self.cumulative_volume is not None and self.cumulative_volume < 0:
+            raise ValueError("cumulative_volume must be non-negative")
+        if self.cumulative_amount is not None and self.cumulative_amount < 0:
+            raise ValueError("cumulative_amount must be non-negative")
