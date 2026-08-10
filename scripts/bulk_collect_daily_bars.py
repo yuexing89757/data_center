@@ -37,18 +37,20 @@ BATCH_SIZE = 500
 
 UPSERT_SQL = """
     insert into core.daily_bar (
-        symbol, trade_date, market, open, high, low, close,
+        symbol, trade_date, market, open, high, low, close, previous_close,
         amount, volume, trade_status, source_code, ingestion_id
     ) values (
         :symbol, :trade_date, 'CN_A_SHARE',
         cast(:open as numeric)/100, cast(:high as numeric)/100,
         cast(:low as numeric)/100, cast(:close as numeric)/100,
+        cast(nullif(:prev_close, '') as numeric) / 100,
         cast(:amount as numeric), :volume, 'unknown', 'pytdx', cast(:ingestion_id as uuid)
     )
     on conflict (symbol, trade_date) do update set
         market=excluded.market, open=excluded.open, high=excluded.high,
-        low=excluded.low, close=excluded.close, amount=excluded.amount,
-        volume=excluded.volume, trade_status=excluded.trade_status,
+        low=excluded.low, close=excluded.close, previous_close=excluded.previous_close,
+        amount=excluded.amount, volume=excluded.volume,
+        trade_status=excluded.trade_status,
         source_code=excluded.source_code, ingestion_id=excluded.ingestion_id
 """
 
@@ -79,19 +81,36 @@ def _parse_args() -> tuple[date, date]:
 
 
 def _read_day_file(path: Path, start: date, end: date) -> list[tuple]:
-    """Read a .day file, return rows within [start, end] as (date_str, o, h, l, c, amount, vol)."""
+    """Read a .day file; return rows within [start, end] with previous_close.
+
+    Returns tuples: (date_str, o, h, l, c, amount, vol, prev_close_or_empty).
+    """
     data = path.read_bytes()
-    rows: list[tuple] = []
+    all_records: list[tuple] = []
     for offset in range(0, len(data) - 31, 32):
         raw_date, o, h, low, c, amount, vol, _ = struct.unpack_from("<IIIIIfII", data, offset)
         try:
             trade_date = date(raw_date // 10000, raw_date % 10000 // 100, raw_date % 100)
         except ValueError:
             continue
+        all_records.append((trade_date, o, h, low, c, amount, vol))
+    all_records.sort(key=lambda r: r[0])
+    rows: list[tuple] = []
+    for i, (trade_date, o, h, low, c, amount, vol) in enumerate(all_records):
         if trade_date < start or trade_date > end:
             continue
+        prev_close = str(all_records[i - 1][4]) if i > 0 else ""
         rows.append(
-            (trade_date.isoformat(), str(o), str(h), str(low), str(c), f"{amount:.0f}", str(vol))
+            (
+                trade_date.isoformat(),
+                str(o),
+                str(h),
+                str(low),
+                str(c),
+                f"{amount:.0f}",
+                str(vol),
+                prev_close,
+            )
         )
     return rows
 
@@ -130,7 +149,9 @@ def main() -> None:
         if not day_file.is_file():
             missing += 1
             continue
-        for d_str, o, h, low, c, amount, vol in _read_day_file(day_file, start_date, end_date):
+        for d_str, o, h, low, c, amount, vol, prev_close in _read_day_file(
+            day_file, start_date, end_date
+        ):
             all_rows.append(
                 {
                     "symbol": symbol,
@@ -141,6 +162,7 @@ def main() -> None:
                     "close": c,
                     "amount": amount,
                     "volume": vol,
+                    "prev_close": prev_close,
                 }
             )
     read_time = time.perf_counter() - t0
