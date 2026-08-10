@@ -148,7 +148,7 @@ class FakeQueryService:
                     close=Decimal("9.29"),
                     volume=62542540,
                     free_float_market_cap=Decimal("5000000000"),
-                    free_float_turnover_pct=Decimal("2.5"),
+                    free_float_turnover_rate_pct=Decimal("2.5"),
                     seal_amount=Decimal("1200000"),
                     seal_volume_ratio=Decimal("0.05"),
                     consecutive_limit_up_days=2,

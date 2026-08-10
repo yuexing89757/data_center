@@ -116,7 +116,7 @@ class DailyLimitUpListItem(ApiModel):
     close: Decimal | None
     volume: int | None
     free_float_market_cap: Decimal | None
-    free_float_turnover_pct: Decimal | None
+    free_float_turnover_rate_pct: Decimal | None
     seal_amount: Decimal | None
     seal_volume_ratio: Decimal | None
     consecutive_limit_up_days: int | None
