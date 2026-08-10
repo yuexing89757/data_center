@@ -41,8 +41,9 @@ UPSERT_SQL = """
         amount, volume, trade_status, source_code, ingestion_id
     ) values (
         :symbol, :trade_date, 'CN_A_SHARE',
-        :open::numeric/100, :high::numeric/100, :low::numeric/100, :close::numeric/100,
-        :amount::numeric, :volume, 'unknown', 'pytdx', :ingestion_id::uuid
+        cast(:open as numeric)/100, cast(:high as numeric)/100,
+        cast(:low as numeric)/100, cast(:close as numeric)/100,
+        cast(:amount as numeric), :volume, 'unknown', 'pytdx', cast(:ingestion_id as uuid)
     )
     on conflict (symbol, trade_date) do update set
         market=excluded.market, open=excluded.open, high=excluded.high,
@@ -55,8 +56,8 @@ RUN_SQL = """
     insert into ingestion.ingestion_run
     (ingestion_id, provider_code, dataset_code, status, requested_at, started_at, finished_at,
      request_params, fetched_rows, accepted_rows, rejected_rows)
-    values (:ingestion_id::uuid, 'pytdx', 'daily_bar', 'succeeded', now(), now(), now(),
-            :params::jsonb, :fetched, :accepted, 0)
+    values (cast(:ingestion_id as uuid), 'pytdx', 'daily_bar', 'succeeded', now(), now(), now(),
+            cast(:params as jsonb), :fetched, :accepted, 0)
 """
 
 
