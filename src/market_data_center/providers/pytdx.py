@@ -5,6 +5,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+from struct import unpack
 from types import TracebackType
 from typing import Protocol, Self, cast
 
@@ -59,6 +60,7 @@ class PytdxProvider:
         client_factory: Callable[[], PytdxDailyBarClient] | None = None,
     ) -> None:
         self._settings = settings
+        self._vipdoc_path = settings.pytdx_vipdoc_path
         self._endpoints = _resolve_daily_bar_endpoints(settings)
         self._client_factory = client_factory or _default_client_factory
         self._client: PytdxDailyBarClient | None = None
@@ -89,6 +91,11 @@ class PytdxProvider:
                 return self
             errors.append(f"{host}:{port}")
             _disconnect(client)
+        # In local mode (vipdoc_path set), network failure is tolerated —
+        # fetch_daily_bars reads .day files and only needs the network as
+        # a fallback for symbols absent from local storage.
+        if self._vipdoc_path:
+            return self
         raise ProviderError("pytdx remote connection failed; tried " + ", ".join(errors))
 
     def __exit__(
@@ -119,6 +126,26 @@ class PytdxProvider:
     ) -> ProviderBatch[DailyBarRecord]:
         _ensure_date_range(start_date, end_date)
         exchange, code, symbol = _parse_source_symbol(source_symbol)
+        # Local .day file takes priority over remote endpoints.
+        if self._vipdoc_path:
+            local_rows = _read_local_day_file(
+                self._vipdoc_path, exchange, code, start_date, end_date
+            )
+            if local_rows:
+                ordered = sorted(local_rows, key=lambda row: _parse_date(row["date"]))
+                raw_rows = _rows_with_previous_close(ordered)
+                return ProviderBatch(
+                    raw_rows=raw_rows,
+                    request_params={
+                        "source_symbol": f"{exchange}.{code}",
+                        "start_date": start_date.isoformat(),
+                        "end_date": end_date.isoformat(),
+                        "source": "local_day_file",
+                    },
+                    schema_version="pytdx.local_daily_bar.v2",
+                    record_factory=lambda: _daily_bar_records(raw_rows, symbol),
+                )
+        # Fallback to remote endpoint.
         if self._client is None or self._endpoint is None:
             raise ProviderError("pytdx remote provider must be used as a managed context")
         market = 1 if exchange == "sh" else 0
@@ -315,6 +342,54 @@ def _resolve_daily_bar_endpoints(settings: PytdxDailyBarSettings) -> tuple[tuple
         "pytdx has no Daily Bar endpoints: set PYTDX_DAILY_BAR_ENDPOINTS or run "
         "scripts/probe_pytdx_hq_hosts.py to build the pool"
     )
+
+
+def _read_local_day_file(
+    vipdoc_path: str,
+    exchange: str,
+    code: str,
+    start_date: date,
+    end_date: date,
+) -> tuple[RawRow, ...] | None:
+    """Read a local TDX .day file and return raw rows, or None if the file is absent.
+
+    The .day binary format is 32 bytes per record:
+    date(uint32 YYYYMMDD) open(uint32) high(uint32) low(uint32) close(uint32)
+    amount(float32) volume(uint32) prev_close(uint32).
+
+    Prices are stored as actual_price * 100; the ``price_scale`` empty
+    marker tells ``_map_daily_bar`` to apply the /100 conversion.
+    """
+    day_file = Path(vipdoc_path) / exchange / "lday" / f"{exchange}{code}.day"
+    if not day_file.is_file():
+        return None
+    data = day_file.read_bytes()
+    record_count = len(data) // 32
+    rows: list[RawRow] = []
+    for index in range(record_count):
+        offset = index * 32
+        raw_date, open_raw, high_raw, low_raw, close_raw, amount_raw, vol_raw, _prev = unpack(
+            "<IIIIIfII", data[offset : offset + 32]
+        )
+        try:
+            trade_date = date(raw_date // 10000, raw_date % 10000 // 100, raw_date % 100)
+        except ValueError:
+            continue
+        if trade_date < start_date or trade_date > end_date:
+            continue
+        rows.append(
+            {
+                "date": f"{raw_date:08d}",
+                "price_scale": "",
+                "open": str(open_raw),
+                "high": str(high_raw),
+                "low": str(low_raw),
+                "close": str(close_raw),
+                "amount": f"{amount_raw:.0f}",
+                "volume": str(vol_raw),
+            }
+        )
+    return tuple(rows)
 
 
 def _remote_raw_row(row: object) -> RawRow:

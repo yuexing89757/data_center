@@ -63,6 +63,7 @@ class PytdxDailyBarSettings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
+    pytdx_vipdoc_path: str = ""
     pytdx_daily_bar_endpoints: str = ""
     pytdx_daily_bar_pool_path: Path = Field(default=Path("data/pytdx_hq_pool.json"))
     pytdx_daily_bar_timeout_seconds: float = Field(default=3.0, gt=0, le=10)
