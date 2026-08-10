@@ -1,6 +1,7 @@
 from collections.abc import Mapping
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
@@ -13,6 +14,7 @@ from market_data_center.settings import PytdxDailyBarSettings
 def _settings(**overrides: object) -> PytdxDailyBarSettings:
     return PytdxDailyBarSettings(
         pytdx_daily_bar_endpoints="first.example:7709,second.example:7710",
+        pytdx_daily_bar_pool_path=Path("nonexistent-pool.json"),
         **overrides,
     )
 
@@ -177,12 +179,26 @@ def test_request_failure_does_not_fail_over_mid_session() -> None:
 
 @pytest.mark.parametrize(
     "endpoints",
-    ["", "missing-port", "host:not-a-port", "host:0", "host:7709,host:7709"],
+    ["missing-port", "host:not-a-port", "host:0", "host:7709,host:7709"],
 )
 def test_endpoint_configuration_is_rejected(endpoints: str) -> None:
-    settings = PytdxDailyBarSettings(pytdx_daily_bar_endpoints=endpoints or " ")
+    settings = PytdxDailyBarSettings(
+        pytdx_daily_bar_endpoints=endpoints,
+        pytdx_daily_bar_pool_path=Path("nonexistent-pool.json"),
+    )
 
     with pytest.raises(ProviderError):
+        PytdxProvider(settings, client_factory=FakeClient)
+
+
+def test_no_endpoints_without_pool_is_rejected() -> None:
+    """Empty endpoints with no pool file raises ProviderError."""
+    settings = PytdxDailyBarSettings(
+        pytdx_daily_bar_endpoints="",
+        pytdx_daily_bar_pool_path=Path("nonexistent-pool.json"),
+    )
+
+    with pytest.raises(ProviderError, match="no Daily Bar endpoints"):
         PytdxProvider(settings, client_factory=FakeClient)
 
 

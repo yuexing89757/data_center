@@ -1,5 +1,6 @@
 """pytdx adapter for remote unadjusted A-share Daily Bars."""
 
+import json
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import date
 from decimal import Decimal, InvalidOperation
@@ -58,7 +59,7 @@ class PytdxProvider:
         client_factory: Callable[[], PytdxDailyBarClient] | None = None,
     ) -> None:
         self._settings = settings
-        self._endpoints = parse_daily_bar_endpoints(settings.pytdx_daily_bar_endpoints)
+        self._endpoints = _resolve_daily_bar_endpoints(settings)
         self._client_factory = client_factory or _default_client_factory
         self._client: PytdxDailyBarClient | None = None
         self._endpoint: tuple[str, int] | None = None
@@ -258,6 +259,13 @@ def _disconnect(client: PytdxDailyBarClient) -> None:
 
 
 def parse_daily_bar_endpoints(value: str) -> tuple[tuple[str, int], ...]:
+    """Parse a comma-separated host:port string into endpoint tuples.
+
+    Returns an empty tuple when *value* is blank so the caller can fall
+    back to the IP pool file.
+    """
+    if not value or not value.strip():
+        return ()
     endpoints: list[tuple[str, int]] = []
     for item in value.split(","):
         candidate = item.strip()
@@ -275,9 +283,38 @@ def parse_daily_bar_endpoints(value: str) -> tuple[tuple[str, int], ...]:
         if endpoint in endpoints:
             raise ProviderError("pytdx Daily Bar endpoints must be unique")
         endpoints.append(endpoint)
-    if not endpoints:
-        raise ProviderError("PYTDX_DAILY_BAR_ENDPOINTS is required")
     return tuple(endpoints)
+
+
+def _read_daily_bar_pool(path: Path) -> tuple[tuple[str, int], ...]:
+    """Read the latency-sorted HQ pool file into endpoint tuples; empty on failure."""
+    if not path.is_file():
+        return ()
+    try:
+        entries = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ()
+    hosts: list[tuple[str, int]] = []
+    for entry in entries:
+        ip = str(entry.get("ip", "")).strip()
+        port = int(entry.get("port", 0))
+        if ip and 0 < port <= 65_535:
+            hosts.append((ip, port))
+    return tuple(hosts)
+
+
+def _resolve_daily_bar_endpoints(settings: PytdxDailyBarSettings) -> tuple[tuple[str, int], ...]:
+    """Prefer the IP pool file; fall back to PYTDX_DAILY_BAR_ENDPOINTS; error if neither."""
+    pool = _read_daily_bar_pool(settings.pytdx_daily_bar_pool_path)
+    if pool:
+        return pool
+    env_hosts = parse_daily_bar_endpoints(settings.pytdx_daily_bar_endpoints)
+    if env_hosts:
+        return env_hosts
+    raise ProviderError(
+        "pytdx has no Daily Bar endpoints: set PYTDX_DAILY_BAR_ENDPOINTS or run "
+        "scripts/probe_pytdx_hq_hosts.py to build the pool"
+    )
 
 
 def _remote_raw_row(row: object) -> RawRow:
