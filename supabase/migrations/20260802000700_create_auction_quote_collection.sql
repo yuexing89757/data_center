@@ -225,6 +225,12 @@ $$;
 revoke all on function api_v1.query_auction_quotes(
     date, uuid, text, timestamptz, timestamptz, integer
 ) from public;
-grant execute on function api_v1.query_auction_quotes(
-    date, uuid, text, timestamptz, timestamptz, integer
-) to authenticated;
+do $$
+begin
+    if exists (select 1 from pg_roles where rolname = 'authenticated') then
+        grant execute on function api_v1.query_auction_quotes(
+            date, uuid, text, timestamptz, timestamptz, integer
+        ) to authenticated;
+    end if;
+end
+$$;

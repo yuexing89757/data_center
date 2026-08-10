@@ -218,5 +218,11 @@ $$;
 
 revoke all on function api_v1.query_stock_pool_snapshot(text, date, integer, integer)
     from public;
-grant execute on function api_v1.query_stock_pool_snapshot(text, date, integer, integer)
-    to anon, authenticated;
+do $$
+begin
+    if exists (select 1 from pg_roles where rolname = 'anon') then
+        grant execute on function api_v1.query_stock_pool_snapshot(text, date, integer, integer)
+            to anon, authenticated;
+    end if;
+end
+$$;
