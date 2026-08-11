@@ -3,8 +3,9 @@
 from collections import OrderedDict
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
-from datetime import UTC, datetime, timedelta
-from decimal import Decimal
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal, InvalidOperation
+from json import JSONDecodeError, loads
 from struct import unpack
 from types import TracebackType
 from typing import Protocol, Self, cast
@@ -15,7 +16,9 @@ from pytdx.parser.get_security_quotes import (  # type: ignore[import-untyped]
     GetSecurityQuotesCmd,
 )
 
+from market_data_center.domain.ingestion import DatasetCode
 from market_data_center.domain.realtime_quote import (
+    CallAuctionMarketSnapshotRecord,
     FiveLevelQuoteSnapshotRecord,
     OrderBookLevel,
     QuoteStatus,
@@ -23,7 +26,9 @@ from market_data_center.domain.realtime_quote import (
 from market_data_center.domain.records import Market
 from market_data_center.providers.contracts import (
     ProviderError,
+    RawNormalizationResult,
     RealtimeQuoteFetch,
+    RealtimeQuoteNormalizationError,
 )
 from market_data_center.providers.pytdx_pool import (
     PytdxCapability,
@@ -46,6 +51,12 @@ class ManagedQuoteClient(QuoteClient, Protocol):
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None: ...
+
+
+class _QuoteRowNormalizationError(ProviderError):
+    def __init__(self, reason: str, message: str) -> None:
+        super().__init__(message)
+        self.reason = reason
 
 
 class _DecimalSecurityQuotesCmd(GetSecurityQuotesCmd):  # type: ignore[misc]
@@ -206,37 +217,54 @@ class PytdxHqProvider(AbstractContextManager["PytdxHqProvider"]):
         if not requested or len(requested) != len(symbols):
             raise ProviderError("pytdx_hq symbols must be non-empty and unique")
         raw_rows: list[Mapping[str, str]] = []
+        raw_observed_at: list[datetime] = []
         records: list[FiveLevelQuoteSnapshotRecord] = []
-        failed: list[str] = []
+        failed: set[str] = set()
+        normalization_errors: list[RealtimeQuoteNormalizationError] = []
         for start in range(0, len(requested), self._settings.pytdx_hq_batch_size):
             symbol_batch = requested[start : start + self._settings.pytdx_hq_batch_size]
             if deadline is not None and self._clock() >= deadline:
-                failed.extend(requested[start:])
+                failed.update(requested[start:])
                 break
             requests = tuple(_source_identity(symbol) for symbol in symbol_batch)
             try:
                 response = self._managed_client.fetch(requests)
             except Exception:
-                failed.extend(symbol_batch)
+                failed.update(symbol_batch)
                 continue
-            collected_at = self._clock()
-            by_symbol: dict[str, Mapping[str, object]] = {}
+            normalized_requested: set[str] = set()
             for row in response:
-                symbol = _standard_symbol(cast(int, row["market"]), str(row["code"]))
-                by_symbol[symbol] = row
-            for symbol in symbol_batch:
-                matched_row = by_symbol.get(symbol)
-                if matched_row is None:
-                    failed.append(symbol)
+                observed_at = _utc_worker_observation(self._clock())
+                raw_row_index = len(raw_rows)
+                raw_rows.append(_raw_row(row))
+                raw_observed_at.append(observed_at)
+                symbol: str | None = None
+                try:
+                    symbol = _standard_symbol(cast(int, row["market"]), str(row["code"]))
+                    record = _record(symbol, row, observed_at)
+                except (KeyError, TypeError, ValueError, ProviderError) as error:
+                    if symbol in symbol_batch:
+                        failed.add(symbol)
+                    normalization_errors.append(
+                        RealtimeQuoteNormalizationError(
+                            raw_row_index,
+                            symbol,
+                            _normalization_reason(error),
+                        )
+                    )
                     continue
-                raw_rows.append(_raw_row(matched_row))
-                records.append(_record(symbol, matched_row, collected_at))
+                records.append(record)
+                if symbol in symbol_batch:
+                    normalized_requested.add(symbol)
+            failed.update(symbol for symbol in symbol_batch if symbol not in normalized_requested)
         return RealtimeQuoteFetch(
             tuple(raw_rows),
             tuple(records),
             requested,
-            tuple(failed),
+            tuple(symbol for symbol in requested if symbol in failed),
             "pytdx_hq.security_quotes.v1",
+            tuple(raw_observed_at),
+            tuple(normalization_errors),
         )
 
 
@@ -305,20 +333,40 @@ def _source_identity(symbol: str) -> tuple[int, str]:
 
 def _standard_symbol(market: int, code: str) -> str:
     if market not in {0, 1} or len(code) != 6 or not code.isdigit():
-        raise ProviderError("pytdx_hq returned an invalid stock identity")
+        raise _QuoteRowNormalizationError(
+            "invalid_identity", "pytdx_hq returned an invalid stock identity"
+        )
     return f"{'SSE' if market == 1 else 'SZSE'}:{code}"
 
 
 def _optional_price(value: object) -> Decimal | None:
     if not isinstance(value, Decimal):
-        raise ProviderError("pytdx_hq Decimal decoder contract was bypassed")
+        raise _QuoteRowNormalizationError(
+            "invalid_decimal", "pytdx_hq Decimal decoder contract was bypassed"
+        )
+    if value < 0:
+        raise _QuoteRowNormalizationError("negative_price", "pytdx_hq price must not be negative")
     return value if value > 0 else None
 
 
 def _lots_to_shares(value: object) -> int:
     if not isinstance(value, int) or value < 0:
-        raise ProviderError("pytdx_hq quantity is not a nonnegative integer")
+        raise _QuoteRowNormalizationError(
+            "invalid_quantity", "pytdx_hq quantity is not a nonnegative integer"
+        )
     return value * 100
+
+
+def _utc_worker_observation(value: datetime) -> datetime:
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ProviderError("pytdx_hq observation clock must be timezone-aware")
+    return value.astimezone(UTC)
+
+
+def _normalization_reason(error: Exception) -> str:
+    if isinstance(error, _QuoteRowNormalizationError):
+        return error.reason
+    return "invalid_quote_record"
 
 
 def _price(cents: int) -> Decimal:
@@ -348,3 +396,140 @@ def _decode_volume_decimal(encoded: int) -> Decimal:
 
 def _raw_row(row: Mapping[str, object]) -> Mapping[str, str]:
     return {key: str(value) for key, value in row.items()}
+
+
+def normalize_pytdx_hq_raw(
+    dataset_code: DatasetCode,
+    schema_version: str,
+    rows: Sequence[Mapping[str, str]],
+    request_params: Mapping[str, object],
+) -> RawNormalizationResult:
+    expected_schema = "market_data_center.call_auction_market_snapshot.raw.v1"
+    if (
+        dataset_code is not DatasetCode.CALL_AUCTION_MARKET_SNAPSHOT
+        or schema_version != expected_schema
+    ):
+        raise ProviderError(f"unsupported pytdx_hq Raw schema: {schema_version}")
+    trade_date_raw = request_params.get("trade_date")
+    if not isinstance(trade_date_raw, str):
+        raise ProviderError("pytdx_hq call-auction replay requires trade_date")
+    try:
+        trade_date = datetime.strptime(trade_date_raw, "%Y-%m-%d").date()
+    except ValueError as error:
+        raise ProviderError("pytdx_hq call-auction replay trade_date is invalid") from error
+
+    records: list[CallAuctionMarketSnapshotRecord] = []
+    normalization_errors: list[RealtimeQuoteNormalizationError] = []
+    for raw_row_index, row in enumerate(rows):
+        observed_at = _raw_envelope_observed_at(row)
+        if row.get("provider_schema_version") != "pytdx_hq.security_quotes.v1":
+            raise ProviderError("pytdx_hq call-auction Raw provider schema is invalid")
+        provider_raw = _raw_envelope_json(row, "provider_raw_json")
+        symbol: str | None = None
+        try:
+            restored = _restore_provider_row(provider_raw)
+            symbol = _standard_symbol(cast(int, restored["market"]), str(restored["code"]))
+            quote = _record(symbol, restored, observed_at)
+            records.append(_market_record(quote, trade_date))
+        except (KeyError, TypeError, ValueError, ProviderError) as error:
+            normalization_errors.append(
+                RealtimeQuoteNormalizationError(
+                    raw_row_index,
+                    symbol,
+                    _normalization_reason(error),
+                )
+            )
+            continue
+    return RawNormalizationResult(tuple(records), tuple(normalization_errors))
+
+
+def _raw_envelope_observed_at(row: Mapping[str, str]) -> datetime:
+    raw = row.get("worker_observed_at")
+    if not raw:
+        raise ProviderError("pytdx_hq call-auction Raw observation is missing")
+    try:
+        observed_at = datetime.fromisoformat(raw)
+    except ValueError as error:
+        raise ProviderError("pytdx_hq call-auction Raw observation is invalid") from error
+    if observed_at.tzinfo is None or observed_at.utcoffset() is None:
+        raise ProviderError("pytdx_hq call-auction Raw observation must be timezone-aware")
+    return observed_at.astimezone(UTC)
+
+
+def _raw_envelope_json(row: Mapping[str, str], field: str) -> Mapping[str, object]:
+    raw = row.get(field)
+    if raw is None:
+        raise ProviderError(f"pytdx_hq call-auction Raw envelope is missing {field}")
+    try:
+        value = loads(raw)
+    except JSONDecodeError as error:
+        raise ProviderError(f"pytdx_hq call-auction Raw {field} is invalid JSON") from error
+    if not isinstance(value, Mapping):
+        raise ProviderError(f"pytdx_hq call-auction Raw {field} must be an object")
+    return cast(Mapping[str, object], value)
+
+
+def _restore_provider_row(values: Mapping[str, object]) -> Mapping[str, object]:
+    restored: dict[str, object] = {
+        "market": _raw_integer(values, "market"),
+        "code": _raw_text(values, "code"),
+        "server_time_raw": _raw_text(values, "server_time_raw"),
+    }
+    for field in ("price", "last_close", "open", "high", "low", "amount"):
+        restored[field] = _raw_decimal(values, field)
+    for field in (
+        "volume_lots",
+        "current_volume_lots",
+        "sell_volume_lots",
+        "buy_volume_lots",
+    ):
+        restored[field] = _raw_integer(values, field)
+    for level in range(1, 6):
+        for side in ("bid", "ask"):
+            restored[f"{side}{level}"] = _raw_decimal(values, f"{side}{level}")
+            restored[f"{side}_vol{level}"] = _raw_integer(values, f"{side}_vol{level}")
+    return restored
+
+
+def _raw_text(values: Mapping[str, object], field: str) -> str:
+    value = values.get(field)
+    if not isinstance(value, str):
+        raise _QuoteRowNormalizationError("invalid_raw_type", f"pytdx_hq Raw {field} must be text")
+    return value
+
+
+def _raw_decimal(values: Mapping[str, object], field: str) -> Decimal:
+    value = _raw_text(values, field)
+    try:
+        return Decimal(value)
+    except InvalidOperation as error:
+        raise _QuoteRowNormalizationError(
+            "invalid_decimal", f"pytdx_hq Raw {field} is not decimal"
+        ) from error
+
+
+def _raw_integer(values: Mapping[str, object], field: str) -> int:
+    value = _raw_text(values, field)
+    try:
+        return int(value)
+    except ValueError as error:
+        raise _QuoteRowNormalizationError(
+            "invalid_integer", f"pytdx_hq Raw {field} is not an integer"
+        ) from error
+
+
+def _market_record(
+    quote: FiveLevelQuoteSnapshotRecord, trade_date: date
+) -> CallAuctionMarketSnapshotRecord:
+    return CallAuctionMarketSnapshotRecord(
+        symbol=quote.symbol,
+        trade_date=trade_date,
+        observed_at=quote.observed_at,
+        source_code=quote.source_code,
+        last_price=quote.last_price,
+        previous_close=quote.previous_close,
+        high_price=quote.high,
+        low_price=quote.low,
+        cumulative_volume=quote.cumulative_volume,
+        cumulative_amount=quote.cumulative_amount,
+    )

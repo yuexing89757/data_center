@@ -632,9 +632,9 @@ limit 1
 """)
 
 COUNT_CALL_AUCTION_POOL_COVERAGE = text("""
-select count(*)
+select count(member.symbol) actual_members, count(source.symbol) covered_members
 from stock_pool.member member
-join realtime.call_auction_market_snapshot source
+left join realtime.call_auction_market_snapshot source
   on source.symbol = member.symbol
  and source.ingestion_id = :ingestion_id
  and source.trade_date = :trade_date
@@ -1322,11 +1322,15 @@ where market = 'CN_A_SHARE'
         self,
         run: IngestionRun,
         records: Sequence[CallAuctionMarketSnapshotRecord],
-        manifest: RawManifest,
+        manifest: RawManifest | None,
         quality_results: Sequence[QualityResult],
     ) -> None:
-        if manifest.ingestion_id != run.ingestion_id:
+        if manifest is not None and manifest.ingestion_id != run.ingestion_id:
             raise ValueError("Raw manifest does not match the call-auction market attempt")
+        if manifest is not None and manifest.row_count != run.fetched_rows:
+            raise ValueError("Raw manifest row_count does not match run fetched_rows")
+        if len(records) != run.accepted_rows:
+            raise ValueError("persisted fact count does not match run accepted_rows")
         if any(result.ingestion_id != run.ingestion_id for result in quality_results):
             raise ValueError("quality result does not match the call-auction market attempt")
         parameters = self._call_auction_market_parameters(records, run.ingestion_id)
@@ -1363,11 +1367,11 @@ where market = 'CN_A_SHARE'
                     "snapshot_id": pool.snapshot_id,
                 }
             )
-            covered_members = connection.execute(
+            actual_members, covered_members = connection.execute(
                 COUNT_CALL_AUCTION_POOL_COVERAGE,
                 parameters,
-            ).scalar_one()
-            if covered_members != pool.member_count:
+            ).one()
+            if actual_members != pool.member_count or covered_members != actual_members:
                 raise RuntimeError(
                     "call-auction market snapshot does not provide complete coverage "
                     f"for ready pool {pool.snapshot_id}"
@@ -1722,7 +1726,6 @@ where board_id = :board_id and trade_date = :trade_date
             for record in records
         ]
 
-    @staticmethod
     @staticmethod
     def _cb_bond_envelope_parameters(
         records: Iterable[IngestionEnvelope[ConvertibleBondBasicRecord]],

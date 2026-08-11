@@ -29,7 +29,10 @@ from market_data_center.domain.realtime_quote import (
     RealtimeQuoteFinding,
     validate_realtime_quotes,
 )
-from market_data_center.providers.contracts import RealtimeQuoteFetch
+from market_data_center.providers.contracts import (
+    RealtimeQuoteFetch,
+    RealtimeQuoteNormalizationError,
+)
 from market_data_center.raw_store import StoredRawObject
 
 SHANGHAI_ZONE = ZoneInfo("Asia/Shanghai")
@@ -145,17 +148,9 @@ class CallAuctionMarketSnapshotService:
                     requested_symbols=universe,
                     failed_symbols=universe,
                     schema_version="pytdx_hq.security_quotes.v1",
+                    raw_observed_at=(),
                 )
 
-            stored = self._raw_store.write_jsonl(
-                provider=ProviderCode.PYTDX_HQ.value,
-                dataset=DatasetCode.CALL_AUCTION_MARKET_SNAPSHOT.value,
-                partition_date=trade_date,
-                ingestion_id=run.ingestion_id,
-                rows=_raw_envelopes(fetch),
-                schema_version=CALL_AUCTION_MARKET_RAW_SCHEMA_VERSION,
-            )
-            manifest = _manifest(run.ingestion_id, stored)
             raw_record_cardinality = (
                 None
                 if len(fetch.raw_rows) == len(fetch.records)
@@ -171,8 +166,7 @@ class CallAuctionMarketSnapshotService:
             candidate_records = tuple(
                 record
                 for record in fetch.records
-                if raw_record_cardinality is None
-                and record.symbol not in duplicate_symbols
+                if record.symbol not in duplicate_symbols
                 and record.symbol not in out_of_window_symbols
             )
             validation = validate_realtime_quotes(
@@ -182,23 +176,30 @@ class CallAuctionMarketSnapshotService:
                 now=_utc_clock_sample(self._clock),
             )
             records = tuple(_to_market_record(record, trade_date) for record in validation.accepted)
+            stored = self._raw_store.write_jsonl(
+                provider=ProviderCode.PYTDX_HQ.value,
+                dataset=DatasetCode.CALL_AUCTION_MARKET_SNAPSHOT.value,
+                partition_date=trade_date,
+                ingestion_id=run.ingestion_id,
+                rows=_raw_envelopes(fetch),
+                schema_version=CALL_AUCTION_MARKET_RAW_SCHEMA_VERSION,
+            )
+            manifest = _manifest(run.ingestion_id, stored)
             missing_symbols = expected - {record.symbol for record in records}
-            prevalidation_rejected_rows = sum(
-                response_counts[symbol] for symbol in duplicate_symbols | out_of_window_symbols
-            )
-            attempt_rejected_rows = (
-                len(fetch.raw_rows)
-                if raw_record_cardinality is not None
-                else validation.rejected_rows + prevalidation_rejected_rows
-            )
+            attempt_rejected_rows = max(stored.row_count - len(records), 0)
             dataset_extra_failure_symbols = (duplicate_symbols | out_of_window_symbols) - expected
-            summary_rejected_rows = (
-                len(missing_symbols) + validation.rejected_rows + len(dataset_extra_failure_symbols)
+            summary_rejected_rows = max(
+                len(missing_symbols)
+                + validation.rejected_rows
+                + len(dataset_extra_failure_symbols),
+                len(fetch.normalization_errors),
+                int(raw_record_cardinality is not None),
             )
             succeeded = (
                 summary_rejected_rows == 0
                 and raw_record_cardinality is None
                 and provider_error is None
+                and not fetch.normalization_errors
             )
             quality_results = _quality_results(
                 ingestion_id=run.ingestion_id,
@@ -208,12 +209,13 @@ class CallAuctionMarketSnapshotService:
                 out_of_window_symbols=out_of_window_symbols,
                 provider_error=provider_error,
                 raw_record_cardinality=raw_record_cardinality,
+                normalization_errors=fetch.normalization_errors,
             )
             completed = replace(
                 run,
                 status=(IngestionStatus.SUCCEEDED if succeeded else IngestionStatus.PARTIAL),
                 finished_at=_utc_clock_sample(self._clock),
-                fetched_rows=len(fetch.raw_rows),
+                fetched_rows=stored.row_count,
                 accepted_rows=len(records),
                 rejected_rows=attempt_rejected_rows,
                 error_summary=(
@@ -307,19 +309,23 @@ def _manifest(ingestion_id: UUID, stored: StoredRawObject) -> RawManifest:
     )
 
 
-def _raw_envelopes(fetch: RealtimeQuoteFetch) -> tuple[Mapping[str, str], ...]:
-    cardinality_matches = len(fetch.raw_rows) == len(fetch.records)
+def _raw_envelopes(
+    fetch: RealtimeQuoteFetch,
+) -> tuple[Mapping[str, str], ...]:
     return tuple(
         {
-            "worker_observed_at": (
-                fetch.records[index].observed_at.isoformat() if cardinality_matches else ""
-            ),
+            "worker_observed_at": fetch.raw_observed_at[index].astimezone(UTC).isoformat(),
             "provider_schema_version": fetch.schema_version,
-            "provider_raw_json": dumps(
-                dict(raw_row), ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            "provider_raw_json": (
+                dumps(
+                    dict(fetch.raw_rows[index]),
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
             ),
         }
-        for index, raw_row in enumerate(fetch.raw_rows)
+        for index in range(len(fetch.raw_rows))
     )
 
 
@@ -356,6 +362,7 @@ def _quality_results(
     out_of_window_symbols: set[str] | None = None,
     provider_error: str | None = None,
     raw_record_cardinality: tuple[int, int] | None = None,
+    normalization_errors: Sequence[RealtimeQuoteNormalizationError] = (),
 ) -> tuple[QualityResult, ...]:
     results = [
         QualityResult(
@@ -423,6 +430,20 @@ def _quality_results(
                 details={"raw_rows": raw_rows, "records": records},
             )
         )
+    results.extend(
+        QualityResult(
+            uuid4(),
+            ingestion_id,
+            DatasetCode.CALL_AUCTION_MARKET_SNAPSHOT,
+            "call_auction_market.normalization_error",
+            QualitySeverity.ERROR,
+            QualityStatus.FAILED,
+            "provider response row could not be normalized",
+            ({"symbol": error.symbol} if error.symbol is not None else {}),
+            details={"raw_row_index": error.raw_row_index, "reason": error.reason},
+        )
+        for error in normalization_errors
+    )
     results.extend(
         QualityResult(
             uuid4(),

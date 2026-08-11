@@ -2,7 +2,7 @@
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from types import TracebackType
 from typing import Protocol, Self
 
@@ -10,7 +10,10 @@ from market_data_center.domain.board_index import BoardIndexProviderRecord
 from market_data_center.domain.classification import ClassificationRecord
 from market_data_center.domain.convertible_bond import ConvertibleBondRecord
 from market_data_center.domain.deducted_profit import DeductedProfitRecord
-from market_data_center.domain.realtime_quote import FiveLevelQuoteSnapshotRecord
+from market_data_center.domain.realtime_quote import (
+    CallAuctionMarketSnapshotRecord,
+    FiveLevelQuoteSnapshotRecord,
+)
 from market_data_center.domain.records import (
     CapitalRecord,
     DailyBarRecord,
@@ -29,6 +32,7 @@ type ProviderRecord = (
     | StockDailyIndicatorSnapshotRecord
     | DeductedProfitRecord
     | FiveLevelQuoteSnapshotRecord
+    | CallAuctionMarketSnapshotRecord
     | ConvertibleBondRecord
 )
 type RawRow = Mapping[str, str]
@@ -112,12 +116,43 @@ class ConvertibleBondProvider(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
+class RealtimeQuoteNormalizationError:
+    raw_row_index: int
+    symbol: str | None
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class RawNormalizationResult:
+    records: tuple[ProviderRecord, ...]
+    normalization_errors: tuple[RealtimeQuoteNormalizationError, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class RealtimeQuoteFetch:
     raw_rows: tuple[RawRow, ...]
     records: tuple[FiveLevelQuoteSnapshotRecord, ...]
     requested_symbols: tuple[str, ...]
     failed_symbols: tuple[str, ...]
     schema_version: str
+    raw_observed_at: tuple[datetime, ...]
+    normalization_errors: tuple[RealtimeQuoteNormalizationError, ...] = ()
+
+    def __post_init__(self) -> None:
+        if len(self.records) > len(self.raw_rows):
+            raise ValueError("normalized quote records cannot outnumber provider Raw rows")
+        if len(self.raw_observed_at) != len(self.raw_rows):
+            raise ValueError("quote Raw rows and observation timestamps must have equal counts")
+        if any(
+            observed_at.tzinfo is None or observed_at.utcoffset() != timedelta()
+            for observed_at in self.raw_observed_at
+        ):
+            raise ValueError("quote Raw observation timestamps must be aware UTC datetimes")
+        if any(
+            error.raw_row_index < 0 or error.raw_row_index >= len(self.raw_rows)
+            for error in self.normalization_errors
+        ):
+            raise ValueError("quote normalization error references an invalid Raw row")
 
 
 class RealtimeQuoteProvider(Protocol):

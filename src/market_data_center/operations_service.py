@@ -137,6 +137,8 @@ def _result_statistics(result: object) -> tuple[int, int, int, ExecutionStatus]:
             result.rejected_node_count,
             ExecutionStatus.PARTIAL if result.used_last_good else ExecutionStatus.SUCCEEDED,
         )
+    if type(result) is int:
+        return result, result, 0, ExecutionStatus.SUCCEEDED
     if not isinstance(result, IngestionRun):
         return 0, 0, 0, ExecutionStatus.SUCCEEDED
     status = {

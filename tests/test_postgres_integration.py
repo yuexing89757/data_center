@@ -333,6 +333,29 @@ def test_call_auction_market_schema_enforces_append_only_source_facts(
             "low_price": (18, 4, "YES"),
             "cumulative_amount": (30, 4, "YES"),
         }
+        nonnumeric_columns = {
+            cast(str, row["column_name"]): (row["data_type"], row["is_nullable"])
+            for row in columns
+            if row["column_name"]
+            in {
+                "ingestion_id",
+                "symbol",
+                "trade_date",
+                "observed_at",
+                "cumulative_volume",
+                "source_code",
+                "created_at",
+            }
+        }
+        assert nonnumeric_columns == {
+            "ingestion_id": ("uuid", "NO"),
+            "symbol": ("text", "NO"),
+            "trade_date": ("date", "NO"),
+            "observed_at": ("timestamp with time zone", "NO"),
+            "cumulative_volume": ("bigint", "YES"),
+            "source_code": ("text", "NO"),
+            "created_at": ("timestamp with time zone", "NO"),
+        }
         primary_key = connection.execute(
             text("""
                 select array_agg(attribute.attname order by key.ordinality)
@@ -519,6 +542,7 @@ def test_call_auction_market_schema_enforces_append_only_source_facts(
                 "scheduled_for": observed_at,
             },
         )
+        connection.execute(text("set local role market_data_worker"))
         connection.execute(
             text("""
                 insert into realtime.call_auction_market_snapshot (
@@ -537,6 +561,16 @@ def test_call_auction_market_schema_enforces_append_only_source_facts(
                 "observed_at": observed_at,
             },
         )
+        worker_row = connection.execute(
+            text("""
+                select symbol, cumulative_volume, source_code
+                from realtime.call_auction_market_snapshot
+                where ingestion_id=:ingestion_id
+            """),
+            {"ingestion_id": ingestion_id},
+        ).one()
+        connection.execute(text("reset role"))
+        assert tuple(worker_row) == (SYMBOL, 100, "pytdx_hq")
 
     invalid_rows = (
         ("call_auction_market_price_range", {"high_price": "9.8000", "low_price": "9.9000"}),
@@ -751,6 +785,157 @@ def test_call_auction_market_attempts_are_append_only_and_finalize_latest_succes
     assert tuple(audit_counts) == (2, 2)
 
 
+def test_call_auction_market_replay_uses_new_lineage_without_copying_manifest(
+    database_engine: Engine,
+) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    trade_date = date(2026, 8, 12)
+    with database_engine.begin() as connection:
+        _insert_call_auction_security_universe(connection)
+    source_run = _call_auction_market_run(
+        IngestionStatus.SUCCEEDED,
+        finished_at=datetime(2026, 8, 12, 1, 27, tzinfo=UTC),
+        fetched_rows=1,
+        accepted_rows=1,
+    )
+    source_record = _call_auction_market_record(
+        "SSE:600000",
+        trade_date,
+        datetime(2026, 8, 12, 1, 26, 0, 123456, tzinfo=UTC),
+    )
+    source_manifest = _manifest(
+        source_run.ingestion_id,
+        "call-auction-market-replay-source",
+        row_count=1,
+        provider="pytdx_hq",
+    )
+    persistence.create_ingestion_run(
+        replace(
+            source_run,
+            status=IngestionStatus.RUNNING,
+            finished_at=None,
+            fetched_rows=0,
+            accepted_rows=0,
+        )
+    )
+    persistence.commit_call_auction_market_attempt(
+        source_run,
+        [source_record],
+        source_manifest,
+        [],
+    )
+
+    replay_run = replace(
+        _call_auction_market_run(
+            IngestionStatus.SUCCEEDED,
+            finished_at=datetime(2026, 8, 12, 1, 28, tzinfo=UTC),
+            fetched_rows=1,
+            accepted_rows=1,
+        ),
+        replayed_from_raw_id=source_manifest.raw_id,
+    )
+    persistence.create_ingestion_run(
+        replace(
+            replay_run,
+            status=IngestionStatus.RUNNING,
+            finished_at=None,
+            fetched_rows=0,
+            accepted_rows=0,
+        )
+    )
+
+    persistence.commit_call_auction_market_attempt(
+        replay_run,
+        [source_record],
+        None,
+        [],
+    )
+
+    with database_engine.connect() as connection:
+        replayed = connection.execute(
+            text("""
+                select run.replayed_from_raw_id, source.observed_at,
+                       source.last_price, source.cumulative_volume,
+                       (select count(*) from ingestion.raw_manifest manifest
+                        where manifest.ingestion_id = run.ingestion_id) manifest_count
+                from ingestion.ingestion_run run
+                join realtime.call_auction_market_snapshot source
+                  on source.ingestion_id = run.ingestion_id
+                where run.ingestion_id = :ingestion_id
+            """),
+            {"ingestion_id": replay_run.ingestion_id},
+        ).one()
+    assert tuple(replayed) == (
+        source_manifest.raw_id,
+        source_record.observed_at,
+        Decimal("10.0000"),
+        100,
+        0,
+    )
+
+
+def test_call_auction_market_attempt_rejects_incoherent_manifest_and_fact_counts(
+    database_engine: Engine,
+) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    trade_date = date(2026, 8, 12)
+    with database_engine.begin() as connection:
+        _insert_call_auction_security_universe(connection)
+    record = _call_auction_market_record(
+        "SSE:600000",
+        trade_date,
+        datetime(2026, 8, 12, 1, 26, tzinfo=UTC),
+    )
+    cases = (
+        (2, 1, 1, "Raw manifest row_count"),
+        (2, 2, 2, "accepted_rows"),
+    )
+    for fetched_rows, accepted_rows, manifest_rows, message in cases:
+        run = _call_auction_market_run(
+            IngestionStatus.SUCCEEDED,
+            finished_at=datetime(2026, 8, 12, 1, 28, tzinfo=UTC),
+            fetched_rows=fetched_rows,
+            accepted_rows=accepted_rows,
+        )
+        persistence.create_ingestion_run(
+            replace(
+                run,
+                status=IngestionStatus.RUNNING,
+                finished_at=None,
+                fetched_rows=0,
+                accepted_rows=0,
+            )
+        )
+
+        with pytest.raises(ValueError, match=message):
+            persistence.commit_call_auction_market_attempt(
+                run,
+                [record],
+                _manifest(
+                    run.ingestion_id,
+                    f"call-auction-market-counts-{run.ingestion_id}",
+                    row_count=manifest_rows,
+                    provider="pytdx_hq",
+                ),
+                [],
+            )
+
+        with database_engine.connect() as connection:
+            counts = connection.execute(
+                text("""
+                    select
+                        (select count(*) from ingestion.raw_manifest
+                         where ingestion_id=:ingestion_id),
+                        (select count(*) from realtime.call_auction_market_snapshot
+                         where ingestion_id=:ingestion_id),
+                        (select status from ingestion.ingestion_run
+                         where ingestion_id=:ingestion_id)
+                """),
+                {"ingestion_id": run.ingestion_id},
+            ).one()
+        assert tuple(counts) == (0, 0, "running")
+
+
 def test_call_auction_market_attempt_rolls_back_manifest_quality_and_facts(
     database_engine: Engine,
 ) -> None:
@@ -915,6 +1100,56 @@ def test_finalize_call_auction_incomplete_pool_preserves_existing_final_rows(
     assert tuple(existing) == ("SSE:600000", legacy_ingestion_id, 999)
 
 
+def test_finalize_call_auction_rejects_inconsistent_pool_member_metadata(
+    database_engine: Engine,
+) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    trade_date = date(2026, 8, 12)
+    with database_engine.begin() as connection:
+        _insert_call_auction_security_universe(connection)
+    succeeded = _call_auction_market_run(
+        IngestionStatus.SUCCEEDED,
+        finished_at=datetime(2026, 8, 12, 1, 28, tzinfo=UTC),
+        fetched_rows=1,
+        accepted_rows=1,
+    )
+    _commit_call_auction_market_run(
+        persistence,
+        succeeded,
+        [
+            _call_auction_market_record(
+                "SSE:600000",
+                trade_date,
+                datetime(2026, 8, 12, 1, 26, tzinfo=UTC),
+            )
+        ],
+    )
+    with database_engine.begin() as connection:
+        snapshot_id = _insert_ready_limit_up_pool(
+            connection,
+            trade_date,
+            ["SSE:600000", "SZSE:000001"],
+        )
+        connection.execute(
+            text("update stock_pool.snapshot set member_count=1 where snapshot_id=:snapshot_id"),
+            {"snapshot_id": snapshot_id},
+        )
+        legacy_ingestion_id = _insert_existing_call_auction_final(connection, trade_date)
+
+    with pytest.raises(RuntimeError, match="complete coverage"):
+        persistence.finalize_call_auction_snapshot(trade_date)
+
+    with database_engine.connect() as connection:
+        existing = connection.execute(
+            text("""
+                select symbol, ingestion_id, cumulative_volume
+                from realtime.call_auction_snapshot where trade_date=:trade_date
+            """),
+            {"trade_date": trade_date},
+        ).one()
+    assert tuple(existing) == ("SSE:600000", legacy_ingestion_id, 999)
+
+
 def test_finalize_call_auction_ready_empty_pool_clears_only_exact_date(
     database_engine: Engine,
 ) -> None:
@@ -997,7 +1232,6 @@ insert into stock_pool.snapshot (
                 "input_hash": "0" * 64,
             },
         )
-
     with database_engine.connect() as connection:
         payload = connection.execute(
             text("select api_v1.query_stock_pool_snapshot(:code, :effective, null, 5000)"),
@@ -2541,7 +2775,7 @@ def _commit_call_auction_market_run(
         _manifest(
             run.ingestion_id,
             f"call-auction-market-{run.ingestion_id}",
-            row_count=len(records),
+            row_count=run.fetched_rows,
             provider="pytdx_hq",
         ),
         [

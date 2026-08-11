@@ -95,6 +95,20 @@ class BatchRecordedClient(RecordedClient):
     def __init__(self, batches: list[tuple[tuple[int, str], ...]]) -> None:
         self.batches = batches
         self.hosts: tuple[tuple[str, int], ...] = ()
+        self.enter_count = 0
+        self.exit_count = 0
+
+    def __enter__(self) -> "BatchRecordedClient":
+        self.enter_count += 1
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        self.exit_count += 1
 
     def record_hosts(self, hosts: Sequence[tuple[str, int]]) -> "BatchRecordedClient":
         self.hosts = tuple(hosts)
@@ -178,13 +192,29 @@ def test_hq_provider_does_not_fallback_when_pool_is_corrupt(tmp_path: Path) -> N
         pass
 
 
-def test_market_provider_uses_one_explicit_endpoint_and_batches_by_eighty(tmp_path: Path) -> None:
+def test_market_provider_uses_one_explicit_endpoint_and_batches_by_eighty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from market_data_center.providers import pytdx_hq
+
     batches: list[tuple[tuple[int, str], ...]] = []
     client = BatchRecordedClient(batches)
+    factory_calls = 0
+
+    def factory(hosts: Sequence[tuple[str, int]], _timeout: float) -> BatchRecordedClient:
+        nonlocal factory_calls
+        factory_calls += 1
+        return client.record_hosts(hosts)
+
+    monkeypatch.setattr(
+        pytdx_hq,
+        "load_endpoint_pool",
+        lambda _path: (_ for _ in ()).throw(AssertionError("explicit endpoint loaded pool")),
+    )
     provider = PytdxHqProvider(
         PytdxHqSettings(_env_file=None),
         endpoints=(("second.quote", 7709),),
-        client_factory=lambda hosts, _timeout: client.record_hosts(hosts),
+        client_factory=factory,
     )
     symbols = _symbols(161)
     with provider:
@@ -192,17 +222,43 @@ def test_market_provider_uses_one_explicit_endpoint_and_batches_by_eighty(tmp_pa
     assert client.hosts == (("second.quote", 7709),)
     assert [len(batch) for batch in batches] == [80, 80, 1]
     assert result.requested_symbols == symbols
+    assert factory_calls == 1
+    assert (client.enter_count, client.exit_count) == (1, 1)
+
+
+def test_market_provider_flattens_5200_symbols_in_65_ordered_batches() -> None:
+    batches: list[tuple[tuple[int, str], ...]] = []
+    client = BatchRecordedClient(batches)
+    symbols = _symbols(5_200)
+    provider = PytdxHqProvider(
+        PytdxHqSettings(_env_file=None),
+        endpoints=(("only.quote", 7709),),
+        client_factory=lambda hosts, _timeout: client.record_hosts(hosts),
+        clock=lambda: datetime(2026, 8, 12, 1, 26, tzinfo=UTC),
+    )
+
+    with provider:
+        result = provider.fetch_five_level_quotes(symbols)
+
+    assert len(batches) == 65
+    assert all(len(batch) <= 80 for batch in batches)
+    assert (
+        tuple(
+            f"{'SSE' if market == 1 else 'SZSE'}:{code}"
+            for batch in batches
+            for market, code in batch
+        )
+        == symbols
+    )
+    assert tuple(record.symbol for record in result.records) == symbols
 
 
 def test_provider_stops_starting_batches_at_deadline() -> None:
     batches: list[tuple[tuple[int, str], ...]] = []
     client = BatchRecordedClient(batches)
     clock = iter(
-        (
-            datetime(2026, 8, 12, 1, 29, 29, tzinfo=UTC),
-            datetime(2026, 8, 12, 1, 29, 29, 500000, tzinfo=UTC),
-            datetime(2026, 8, 12, 1, 29, 31, tzinfo=UTC),
-        )
+        (datetime(2026, 8, 12, 1, 29, 29, tzinfo=UTC),) * 81
+        + (datetime(2026, 8, 12, 1, 29, 31, tzinfo=UTC),)
     ).__next__
     provider = PytdxHqProvider(
         PytdxHqSettings(_env_file=None),

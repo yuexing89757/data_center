@@ -44,6 +44,7 @@ from market_data_center.domain.ingestion import (
     RawManifest,
     ReplaySource,
 )
+from market_data_center.domain.realtime_quote import CallAuctionMarketSnapshotRecord
 from market_data_center.domain.records import (
     CapitalRecord,
     DailyBarRecord,
@@ -59,8 +60,14 @@ from market_data_center.domain.validation import validate_daily_bars
 from market_data_center.providers.akshare import normalize_akshare_raw
 from market_data_center.providers.akshare_ths import normalize_akshare_ths_raw
 from market_data_center.providers.baostock import normalize_baostock_raw
-from market_data_center.providers.contracts import ProviderError, ProviderRecord
+from market_data_center.providers.contracts import (
+    ProviderError,
+    ProviderRecord,
+    RawNormalizationResult,
+    RealtimeQuoteNormalizationError,
+)
 from market_data_center.providers.pytdx import normalize_pytdx_raw
+from market_data_center.providers.pytdx_hq import normalize_pytdx_hq_raw
 from market_data_center.providers.tushare import normalize_tushare_raw
 from market_data_center.raw_store import LocalRawStore, RawIntegrityError
 
@@ -217,6 +224,14 @@ class ReliabilityPersistence(Protocol):
         quality_results: Sequence[QualityResult],
     ) -> None: ...
 
+    def commit_call_auction_market_attempt(
+        self,
+        run: IngestionRun,
+        records: Sequence[CallAuctionMarketSnapshotRecord],
+        manifest: RawManifest | None,
+        quality_results: Sequence[QualityResult],
+    ) -> None: ...
+
     def commit_rejected_batch(
         self,
         run: IngestionRun,
@@ -233,7 +248,7 @@ class ReliabilityPersistence(Protocol):
 
 Normalizer = Callable[
     [DatasetCode, str, Sequence[Mapping[str, str]], Mapping[str, object]],
-    tuple[ProviderRecord, ...],
+    tuple[ProviderRecord, ...] | RawNormalizationResult,
 ]
 
 _NORMALIZERS: Mapping[ProviderCode, Normalizer] = {
@@ -241,6 +256,7 @@ _NORMALIZERS: Mapping[ProviderCode, Normalizer] = {
     ProviderCode.AKSHARE_THS: normalize_akshare_ths_raw,
     ProviderCode.BAOSTOCK: normalize_baostock_raw,
     ProviderCode.PYTDX: normalize_pytdx_raw,
+    ProviderCode.PYTDX_HQ: normalize_pytdx_hq_raw,
     ProviderCode.TUSHARE: normalize_tushare_raw,
 }
 
@@ -265,30 +281,42 @@ class RawReplayService:
         if run is not None:
             self._persistence.create_ingestion_run(run)
         try:
-            records = self._normalize(source)
-            return self._validate_and_commit(source, records, run, dry_run=dry_run)
+            normalized = self._normalize(source)
+            return self._validate_and_commit(
+                source,
+                normalized.records,
+                run,
+                dry_run=dry_run,
+                normalization_errors=normalized.normalization_errors,
+            )
         except Exception as error:
             if run is not None:
                 self._commit_failure(run, error)
             raise
 
-    def _normalize(self, source: ReplaySource) -> tuple[ProviderRecord, ...]:
+    def _normalize(self, source: ReplaySource) -> RawNormalizationResult:
         if source.manifest is None:
             raise RawIntegrityError("ingestion run has no Raw manifest")
         rows = self._raw_store.read_jsonl(source.manifest)
         normalizer = _NORMALIZERS[source.provider_code]
-        records = normalizer(
+        normalized = normalizer(
             source.dataset_code,
             source.manifest.schema_version,
             rows,
             source.request_params,
         )
+        if isinstance(normalized, RawNormalizationResult):
+            records = normalized.records
+            result = normalized
+        else:
+            records = normalized
+            result = RawNormalizationResult(records)
         mismatched = sum(record.source_code != source.provider_code.value for record in records)
         if mismatched:
             raise ProviderError(
                 f"replayed batch contains {mismatched} record(s) with mismatched source_code"
             )
-        return records
+        return result
 
     def _validate_and_commit(
         self,
@@ -297,6 +325,7 @@ class RawReplayService:
         run: IngestionRun | None,
         *,
         dry_run: bool,
+        normalization_errors: Sequence[RealtimeQuoteNormalizationError] = (),
     ) -> ReplaySummary:
         if source.dataset_code is DatasetCode.SECURITY:
             security_records = cast(tuple[SecurityRecord, ...], records)
@@ -583,6 +612,153 @@ class RawReplayService:
                 fetched_count,
                 accepted_count,
                 rejected_count,
+            )
+
+        if source.dataset_code is DatasetCode.CALL_AUCTION_MARKET_SNAPSHOT:
+            call_auction_records = cast(tuple[CallAuctionMarketSnapshotRecord, ...], records)
+            if any(
+                not isinstance(record, CallAuctionMarketSnapshotRecord)
+                for record in call_auction_records
+            ):
+                raise ProviderError("call-auction market replay contains an unexpected record")
+            if source.manifest is None:  # pragma: no cover - guarded during normalization
+                raise RawIntegrityError("ingestion run has no Raw manifest")
+            fetched_rows = source.manifest.row_count
+            expected_rows = source.request_params.get("expected_rows")
+            if (
+                isinstance(expected_rows, bool)
+                or not isinstance(expected_rows, int)
+                or expected_rows < 0
+            ):
+                raise ProviderError(
+                    "call-auction market replay requires a nonnegative expected_rows"
+                )
+            symbol_counts = {
+                symbol: sum(record.symbol == symbol for record in call_auction_records)
+                for symbol in {record.symbol for record in call_auction_records}
+            }
+            duplicate_symbols = {symbol for symbol, count in symbol_counts.items() if count > 1}
+            known_symbols = self._persistence.known_symbols(set(symbol_counts))
+            unknown_symbols = set(symbol_counts) - known_symbols
+            known_trading_dates = self._persistence.known_trading_dates(
+                {record.trade_date for record in call_auction_records}
+            )
+            unknown_trading_dates = {
+                record.trade_date
+                for record in call_auction_records
+                if record.trade_date not in known_trading_dates
+            }
+            blocked_symbols = duplicate_symbols | unknown_symbols
+            auction_accepted = tuple(
+                record
+                for record in call_auction_records
+                if record.symbol not in blocked_symbols
+                and record.trade_date not in unknown_trading_dates
+            )
+            accepted_rows = len(auction_accepted)
+            rejected_rows = max(fetched_rows - accepted_rows, 0)
+            if accepted_rows > fetched_rows:
+                raise ProviderError(
+                    "call-auction market replay has more facts than Raw envelope rows"
+                )
+            completed = self._completed(
+                run,
+                fetched_rows,
+                accepted_rows,
+                rejected_rows,
+            )
+            complete = (
+                expected_rows == fetched_rows == accepted_rows
+                and not normalization_errors
+                and not duplicate_symbols
+                and not unknown_symbols
+                and not unknown_trading_dates
+            )
+            if completed is not None and not complete:
+                completed = replace(
+                    completed,
+                    status=(IngestionStatus.PARTIAL if accepted_rows else IngestionStatus.FAILED),
+                    error_summary="RawReplayIncomplete: call-auction replay is incomplete",
+                )
+            auction_quality_results: list[QualityResult] = []
+            if completed is not None:
+                auction_quality_results.extend(
+                    QualityResult(
+                        quality_result_id=self._uuid_factory(),
+                        ingestion_id=completed.ingestion_id,
+                        dataset_code=DatasetCode.CALL_AUCTION_MARKET_SNAPSHOT,
+                        rule_code="call_auction_market.normalization_error",
+                        severity=QualitySeverity.ERROR,
+                        status=QualityStatus.FAILED,
+                        message="provider Raw row could not be normalized during replay",
+                        natural_key=({"symbol": error.symbol} if error.symbol is not None else {}),
+                        details={
+                            "raw_row_index": error.raw_row_index,
+                            "reason": error.reason,
+                        },
+                    )
+                    for error in normalization_errors
+                )
+                auction_quality_results.extend(
+                    QualityResult(
+                        quality_result_id=self._uuid_factory(),
+                        ingestion_id=completed.ingestion_id,
+                        dataset_code=DatasetCode.CALL_AUCTION_MARKET_SNAPSHOT,
+                        rule_code="call_auction_market.duplicate_symbol",
+                        severity=QualitySeverity.ERROR,
+                        status=QualityStatus.FAILED,
+                        message="Raw replay contains duplicate facts for a symbol",
+                        natural_key={"symbol": symbol},
+                    )
+                    for symbol in sorted(duplicate_symbols)
+                )
+                auction_quality_results.extend(
+                    QualityResult(
+                        quality_result_id=self._uuid_factory(),
+                        ingestion_id=completed.ingestion_id,
+                        dataset_code=DatasetCode.CALL_AUCTION_MARKET_SNAPSHOT,
+                        rule_code="realtime_quote.unknown_symbol",
+                        severity=QualitySeverity.ERROR,
+                        status=QualityStatus.FAILED,
+                        message="Raw replay contains a symbol outside the known security universe",
+                        natural_key={"symbol": symbol},
+                    )
+                    for symbol in sorted(unknown_symbols)
+                )
+                if not complete and not auction_quality_results:
+                    auction_quality_results.append(
+                        QualityResult(
+                            quality_result_id=self._uuid_factory(),
+                            ingestion_id=completed.ingestion_id,
+                            dataset_code=DatasetCode.CALL_AUCTION_MARKET_SNAPSHOT,
+                            rule_code="call_auction_market.raw_replay_incomplete",
+                            severity=QualitySeverity.ERROR,
+                            status=QualityStatus.FAILED,
+                            message=(
+                                "Raw replay retained valid facts but the source envelope "
+                                "was incomplete"
+                            ),
+                            details={
+                                "expected_rows": expected_rows,
+                                "raw_rows": fetched_rows,
+                                "standardized_facts": accepted_rows,
+                            },
+                        )
+                    )
+            if completed is not None:
+                self._persistence.commit_call_auction_market_attempt(
+                    completed,
+                    auction_accepted,
+                    None,
+                    tuple(auction_quality_results),
+                )
+            return self._summary(
+                source,
+                completed,
+                dry_run,
+                fetched_rows,
+                accepted_rows,
+                max(rejected_rows, expected_rows - accepted_rows),
             )
 
         daily_records = cast(tuple[DailyBarRecord, ...], records)

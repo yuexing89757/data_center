@@ -236,6 +236,22 @@ def test_execution_service_records_call_auction_market_statistics() -> None:
     assert workflow.status is ExecutionStatus.PARTIAL
 
 
+def test_execution_service_records_integer_finalization_rows() -> None:
+    persistence = MemoryOperationsPersistence()
+    execution = WorkflowExecutionService(cast(PostgreSQLOperationsPersistence, persistence)).start(
+        WorkflowCode.CALL_AUCTION_SNAPSHOT, NOW, TriggerSource.SCHEDULED
+    )
+
+    execution.step("finalize_call_auction_snapshot", 1, lambda: 2)
+    execution.succeed()
+
+    job = persistence.finished_jobs[0]
+    workflow = persistence.finished_workflows[0]
+    assert (job.fetched_rows, job.accepted_rows, job.rejected_rows) == (2, 2, 0)
+    assert job.status is ExecutionStatus.SUCCEEDED
+    assert workflow.accepted_rows == 2
+
+
 def test_execute_pytdx_pool_refresh_records_the_controlled_workflow(tmp_path) -> None:
     persistence = MemoryOperationsPersistence()
     pool_settings = PytdxPoolSettings(pytdx_pool_path=tmp_path / "pytdx_pool.json", _env_file=None)

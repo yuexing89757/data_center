@@ -300,6 +300,17 @@ class AuctionCollectionService:
             symbols,
             failed,
             result.schema_version,
+            (*result.raw_observed_at, *retry.raw_observed_at),
+            (
+                *result.normalization_errors,
+                *(
+                    replace(
+                        error,
+                        raw_row_index=error.raw_row_index + len(result.raw_rows),
+                    )
+                    for error in retry.normalization_errors
+                ),
+            ),
         )
 
 

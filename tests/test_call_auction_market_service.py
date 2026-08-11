@@ -19,7 +19,9 @@ from market_data_center.domain.realtime_quote import (
 )
 from market_data_center.domain.records import Market
 from market_data_center.providers.contracts import ProviderError, RealtimeQuoteFetch
+from market_data_center.providers.pytdx_hq import PytdxHqProvider
 from market_data_center.raw_store import StoredRawObject
+from market_data_center.settings import PytdxHqSettings
 
 TRADE_DATE = date(2026, 8, 12)
 COLLECTION_TIME = datetime(2026, 8, 12, 1, 26, tzinfo=UTC)
@@ -84,6 +86,7 @@ def _fetch(*records: FiveLevelQuoteSnapshotRecord) -> RealtimeQuoteFetch:
         requested_symbols=EXPECTED_UNIVERSE,
         failed_symbols=(),
         schema_version="pytdx_hq.security_quotes.v1",
+        raw_observed_at=tuple(record.observed_at for record in records),
     )
 
 
@@ -99,6 +102,7 @@ class FakePersistence:
         self.created_runs: list[IngestionRun] = []
         self.committed_runs: list[IngestionRun] = []
         self.committed_records: list[FiveLevelQuoteSnapshotRecord] = []
+        self.committed_record_counts: list[int] = []
         self.committed_quality: list[QualityResult] = []
         self.manifest_row_counts: list[int] = []
 
@@ -123,6 +127,7 @@ class FakePersistence:
     ) -> None:
         self.committed_runs.append(run)
         self.committed_records.extend(records)  # type: ignore[arg-type]
+        self.committed_record_counts.append(len(records))
         self.committed_quality.extend(quality_results)
         self.manifest_row_counts.append(manifest.row_count)  # type: ignore[attr-defined]
 
@@ -219,6 +224,77 @@ class MutableClock:
         return self.current
 
 
+class ScriptedQuoteClient(AbstractContextManager["ScriptedQuoteClient"]):
+    def __init__(self, responses: Sequence[Sequence[Mapping[str, object]] | Exception]) -> None:
+        self.responses = list(responses)
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
+        return None
+
+    def fetch(self, requests: Sequence[tuple[int, str]]) -> Sequence[Mapping[str, object]]:
+        response = self.responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+
+def _provider_row(symbol: str, **changes: object) -> Mapping[str, object]:
+    exchange, code = symbol.split(":", 1)
+    row: dict[str, object] = {
+        "market": 1 if exchange == "SSE" else 0,
+        "code": code,
+        "price": Decimal("10.00"),
+        "last_close": Decimal("9.90"),
+        "open": Decimal("10.00"),
+        "high": Decimal("10.00"),
+        "low": Decimal("10.00"),
+        "server_time_raw": "92600",
+        "volume_lots": 123,
+        "current_volume_lots": 1,
+        "amount": Decimal("123000.00"),
+        "sell_volume_lots": 2,
+        "buy_volume_lots": 3,
+    }
+    for level in range(1, 6):
+        row[f"bid{level}"] = Decimal("10.00") - Decimal(level - 1) / 100
+        row[f"ask{level}"] = Decimal("10.01") + Decimal(level - 1) / 100
+        row[f"bid_vol{level}"] = level
+        row[f"ask_vol{level}"] = level
+    row.update(changes)
+    return row
+
+
+def _real_provider_factory(
+    client: ScriptedQuoteClient,
+) -> Callable[[tuple[str, int]], PytdxHqProvider]:
+    def factory(endpoint: tuple[str, int]) -> PytdxHqProvider:
+        return PytdxHqProvider(
+            PytdxHqSettings(_env_file=None),
+            endpoints=(endpoint,),
+            client_factory=lambda _hosts, _timeout: client,
+            clock=lambda: COLLECTION_TIME,
+        )
+
+    return factory
+
+
+def _real_service(
+    persistence: FakePersistence,
+    raw_store: FakeRawStore,
+    client: ScriptedQuoteClient,
+) -> CallAuctionMarketSnapshotService:
+    return CallAuctionMarketSnapshotService(
+        persistence=persistence,
+        raw_store=raw_store,
+        quote_endpoints=(ENDPOINTS[0],),
+        provider_factory=_real_provider_factory(client),
+        clock=lambda: COLLECTION_TIME,
+    )
+
+
 def _service(
     persistence: FakePersistence,
     provider_factory: FakeProviderFactory,
@@ -272,6 +348,7 @@ def test_raw_envelope_preserves_distinct_worker_observations_and_source_fields()
         requested_symbols=EXPECTED_UNIVERSE,
         failed_symbols=(),
         schema_version="pytdx_hq.security_quotes.v1",
+        raw_observed_at=(COLLECTION_TIME, second_time),
     )
 
     summary = _service(persistence, FakeProviderFactory([fetch]), raw_store).collect(TRADE_DATE)
@@ -293,14 +370,17 @@ def test_raw_envelope_preserves_distinct_worker_observations_and_source_fields()
 
 
 @pytest.mark.parametrize(
-    "raw_rows",
+    ("raw_rows", "envelope_rows"),
     [
-        ({"raw": "first-only"},),
-        ({"raw": "first"}, {"raw": "second"}, {"raw": "unexpected-third"}),
+        (
+            ({"raw": "first"}, {"raw": "second"}, {"raw": "unexpected-third"}),
+            3,
+        ),
     ],
 )
-def test_raw_record_cardinality_mismatch_blocks_facts_without_dropping_raw_rows(
+def test_raw_record_cardinality_mismatch_blocks_success_without_dropping_raw_or_facts(
     raw_rows: tuple[Mapping[str, str], ...],
+    envelope_rows: int,
 ) -> None:
     persistence = FakePersistence()
     raw_store = FakeRawStore()
@@ -311,6 +391,7 @@ def test_raw_record_cardinality_mismatch_blocks_facts_without_dropping_raw_rows(
         requested_symbols=EXPECTED_UNIVERSE,
         failed_symbols=(),
         schema_version="pytdx_hq.security_quotes.v1",
+        raw_observed_at=(COLLECTION_TIME,) * len(raw_rows),
     )
 
     summary = _service(persistence, FakeProviderFactory([fetch, fetch]), raw_store).collect(
@@ -318,14 +399,129 @@ def test_raw_record_cardinality_mismatch_blocks_facts_without_dropping_raw_rows(
     )
 
     assert summary.status == "partial"
-    assert persistence.committed_records == []
-    assert persistence.manifest_row_counts == [len(raw_rows), len(raw_rows)]
-    assert [len(rows) for rows in raw_store.rows] == [len(raw_rows), len(raw_rows)]
+    assert summary.accepted_rows == len(records)
+    assert persistence.committed_record_counts == [len(records), len(records)]
+    assert persistence.manifest_row_counts == [envelope_rows, envelope_rows]
+    assert [run.fetched_rows for run in persistence.committed_runs] == [
+        envelope_rows,
+        envelope_rows,
+    ]
+    assert [len(rows) for rows in raw_store.rows] == [envelope_rows, envelope_rows]
+    assert [
+        sum(bool(row["provider_raw_json"]) for row in attempt_rows)
+        for attempt_rows in raw_store.rows
+    ] == [len(raw_rows), len(raw_rows)]
     assert [
         result.rule_code
         for result in persistence.committed_quality
         if result.rule_code == "call_auction_market.raw_record_cardinality"
     ] == ["call_auction_market.raw_record_cardinality"] * 2
+
+
+def test_real_adapter_duplicate_rows_reach_service_validation() -> None:
+    persistence = FakePersistence()
+    raw_store = FakeRawStore()
+    client = ScriptedQuoteClient(
+        [
+            [
+                _provider_row("SSE:600000"),
+                _provider_row("SSE:600000", amount=Decimal("123001.00")),
+                _provider_row("SZSE:000001"),
+            ]
+        ]
+    )
+
+    summary = _real_service(persistence, raw_store, client).collect(TRADE_DATE)
+
+    assert summary.status == "partial"
+    assert persistence.committed_record_counts == [1]
+    assert [record.symbol for record in persistence.committed_records] == ["SZSE:000001"]
+    assert raw_store.rows[0][0]["worker_observed_at"] == COLLECTION_TIME.isoformat()
+    assert len(raw_store.rows[0]) == 3
+    assert any(
+        result.rule_code == "call_auction_market.duplicate_symbol"
+        for result in persistence.committed_quality
+    )
+
+
+def test_real_adapter_unknown_parseable_row_reaches_service_validation() -> None:
+    persistence = FakePersistence()
+    raw_store = FakeRawStore()
+    client = ScriptedQuoteClient(
+        [
+            [
+                _provider_row("SSE:600000"),
+                _provider_row("SZSE:000001"),
+                _provider_row("SSE:600001"),
+            ]
+        ]
+    )
+
+    summary = _real_service(persistence, raw_store, client).collect(TRADE_DATE)
+
+    assert summary.status == "partial"
+    assert summary.accepted_rows == 2
+    assert len(raw_store.rows[0]) == 3
+    assert any(
+        result.rule_code == "realtime_quote.unknown_symbol"
+        for result in persistence.committed_quality
+    )
+
+
+def test_real_adapter_negative_price_is_a_row_failure_and_raw_is_preserved() -> None:
+    persistence = FakePersistence()
+    raw_store = FakeRawStore()
+    client = ScriptedQuoteClient(
+        [
+            [
+                _provider_row("SSE:600000", price=Decimal("-0.01")),
+                _provider_row("SZSE:000001"),
+            ]
+        ]
+    )
+
+    summary = _real_service(persistence, raw_store, client).collect(TRADE_DATE)
+
+    assert summary.status == "partial"
+    assert summary.accepted_rows == 1
+    assert [record.symbol for record in persistence.committed_records] == ["SZSE:000001"]
+    assert len(raw_store.rows[0]) == 2
+    assert loads(raw_store.rows[0][0]["provider_raw_json"])["price"] == "-0.01"
+    normalization = [
+        result
+        for result in persistence.committed_quality
+        if result.rule_code == "call_auction_market.normalization_error"
+    ]
+    assert len(normalization) == 1
+    assert normalization[0].natural_key == {"symbol": "SSE:600000"}
+    assert normalization[0].details == {"raw_row_index": 0, "reason": "negative_price"}
+
+
+def test_real_adapter_late_row_failure_retains_earlier_batch_raw_and_facts() -> None:
+    universe = tuple(f"SSE:{600000 + index:06d}" for index in range(81))
+    persistence = FakePersistence(universe)
+    raw_store = FakeRawStore()
+    client = ScriptedQuoteClient(
+        [
+            [_provider_row(symbol) for symbol in universe[:80]],
+            [_provider_row(universe[80], volume_lots=-1)],
+        ]
+    )
+
+    summary = _real_service(persistence, raw_store, client).collect(TRADE_DATE)
+
+    assert summary.status == "partial"
+    assert summary.accepted_rows == 80
+    assert persistence.committed_record_counts == [80]
+    assert [record.symbol for record in persistence.committed_records] == list(universe[:80])
+    assert len(raw_store.rows[0]) == 81
+    assert persistence.committed_runs[0].fetched_rows == 81
+    assert persistence.manifest_row_counts == [81]
+    assert any(
+        result.rule_code == "call_auction_market.normalization_error"
+        and result.natural_key == {"symbol": universe[80]}
+        for result in persistence.committed_quality
+    )
 
 
 def test_partial_attempt_restarts_complete_universe_on_second_endpoint() -> None:
