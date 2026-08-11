@@ -11,6 +11,7 @@ DEDUCTED_PROFIT_JOB_ID = "deducted-profit-daily"
 STOCK_POOL_JOB_ID = "mainboard-price-limit-stock-pools-daily"
 AUCTION_COLLECTION_JOB_ID = "opening-auction-limit-up-quotes"
 EOD_QUOTE_SNAPSHOT_JOB_ID = "eod-quote-snapshot-daily"
+CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID = "call-auction-market-snapshot-daily"
 CALL_AUCTION_SNAPSHOT_JOB_ID = "call-auction-snapshot-daily"
 PYTDX_POOL_REFRESH_JOB_ID = "pytdx-pool-refresh"
 SCHEDULER_TIMEZONE = "Asia/Shanghai"
@@ -89,10 +90,16 @@ WORKFLOW_DEFINITIONS = (
         ("collect_eod_quotes",),
     ),
     WorkflowDefinition(
+        "call_auction_market_snapshot",
+        "沪深全市场开盘竞价快照",
+        "在开盘集合竞价结束后采集沪深上市股票的完整来源快照。",
+        ("collect_call_auction_market_snapshot",),
+    ),
+    WorkflowDefinition(
         "call_auction_snapshot",
         "今日竞价量",
-        "收盘后采集涨停池成员的当日集合竞价量、额及溢价率。",
-        ("collect_call_auction",),
+        "盘后从当日完整晨间快照和 ready 涨停池最终化竞价量、额及溢价率。",
+        ("finalize_call_auction_snapshot",),
     ),
     WorkflowDefinition(
         "pytdx_pool_refresh",
@@ -198,16 +205,31 @@ def job_definitions(settings: SchedulerSettings) -> tuple[JobDefinition, ...]:
             minute=10,
         ),
         JobDefinition(
+            CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID,
+            "沪深全市场开盘竞价快照",
+            "采集沪深上市股票在开盘集合竞价结束后的完整来源快照。",
+            "call_auction_market_snapshot",
+            "cron",
+            "周一至周五 09:26",
+            timezone,
+            settings.call_auction_snapshot_enabled,
+            timeout,
+            "只在当日 09:25-09:30 窗口内采集; 失败保持显式缺口, 不盘后补采。",
+            day_of_week="mon-fri",
+            hour=9,
+            minute=26,
+        ),
+        JobDefinition(
             CALL_AUCTION_SNAPSHOT_JOB_ID,
             "今日竞价量",
-            "收盘后采集涨停池成员的当日集合竞价量、额及溢价率。",
+            "从当日成功晨间快照和 ready 涨停池最终化竞价量、额及溢价率。",
             "call_auction_snapshot",
             "cron",
             "周一至周五 21:30",
             timezone,
             settings.call_auction_snapshot_enabled,
             timeout,
-            "无涨停池时跳过; 下次调度重试",
+            "输入缺失时失败且不回退旧日期或 partial 批次; 下次调度重试",
             day_of_week="mon-fri",
             hour=21,
             minute=30,

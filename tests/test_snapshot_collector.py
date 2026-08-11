@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.engine import Engine
 
+import market_data_center.snapshot_collector as snapshot_collector
 from market_data_center.domain import (
     FiveLevelQuoteSnapshotRecord,
     Market,
@@ -25,7 +26,6 @@ from market_data_center.snapshot_collector import (
     _eod_quality_results,
     _finish_run,
     _limit_up_symbols,
-    _to_auction_records,
     _to_eod_records,
     collect_eod_quotes,
 )
@@ -111,13 +111,32 @@ def test_snapshot_conversion_preserves_decimal_units() -> None:
     quote = _quote()
 
     eod = _to_eod_records((quote,), date(2026, 8, 10), {quote.symbol: Decimal("11.00")})[0]
-    auction = _to_auction_records((quote,), date(2026, 8, 10))[0]
 
     assert eod.bid1_volume == 500
     assert eod.seal_amount == Decimal("5500.00")
-    assert auction.cumulative_volume == 1_000_000
-    assert auction.cumulative_amount == Decimal("10900000")
-    assert auction.auction_premium_pct == Decimal("10.0")
+
+
+class FinalizationPersistence:
+    def __init__(self, result: int) -> None:
+        self.result = result
+        self.trade_dates: list[date] = []
+
+    def finalize_call_auction_snapshot(self, trade_date: date) -> int:
+        self.trade_dates.append(trade_date)
+        return self.result
+
+
+def test_call_auction_finalization_delegates_to_database_only() -> None:
+    persistence = FinalizationPersistence(result=2)
+
+    written = snapshot_collector.finalize_call_auction(
+        cast(Engine, object()),
+        date(2026, 8, 12),
+        persistence_factory=lambda _engine: persistence,
+    )
+
+    assert written == 2
+    assert persistence.trade_dates == [date(2026, 8, 12)]
 
 
 def test_call_auction_symbols_use_exact_date_limit_up_pool_only() -> None:

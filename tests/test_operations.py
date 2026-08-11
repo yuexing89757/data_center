@@ -4,6 +4,7 @@ from uuid import uuid4
 
 import pytest
 
+from market_data_center.call_auction_market_service import CallAuctionMarketCollectionSummary
 from market_data_center.domain.operations import (
     ExecutionStatus,
     JobExecution,
@@ -102,6 +103,10 @@ def test_job_catalog_is_stable_and_references_defined_workflows() -> None:
     assert all(job.workflow_code in workflows for job in jobs)
     assert workflows["daily_market"].step_codes == ("security", "trading_calendar", "daily_bar")
     assert workflows["stock_pool"].step_codes == ("build_stock_pools",)
+    assert workflows["call_auction_market_snapshot"].step_codes == (
+        "collect_call_auction_market_snapshot",
+    )
+    assert workflows["call_auction_snapshot"].step_codes == ("finalize_call_auction_snapshot",)
     assert all(job.timezone == "Asia/Shanghai" for job in jobs)
     assert {workflow.value for workflow in WorkflowCode} == set(workflows)
 
@@ -128,9 +133,15 @@ def test_job_catalog_owns_all_fixed_schedules() -> None:
         jobs["eod-quote-snapshot-daily"].minute,
     ) == (21, 10)
     assert (
+        jobs["call-auction-market-snapshot-daily"].hour,
+        jobs["call-auction-market-snapshot-daily"].minute,
+    ) == (9, 26)
+    assert (
         jobs["call-auction-snapshot-daily"].hour,
         jobs["call-auction-snapshot-daily"].minute,
     ) == (21, 30)
+    assert jobs["call-auction-market-snapshot-daily"].enabled is True
+    assert jobs["call-auction-snapshot-daily"].enabled is True
     assert (
         jobs["deducted-profit-daily"].hour,
         jobs["deducted-profit-daily"].minute,
@@ -199,6 +210,30 @@ def test_execution_service_records_pool_refresh_statistics(
     assert (job.fetched_rows, job.accepted_rows, job.rejected_rows) == (4, 3, 1)
     assert job.status is expected_status
     assert workflow.status is expected_status
+
+
+def test_execution_service_records_call_auction_market_statistics() -> None:
+    persistence = MemoryOperationsPersistence()
+    execution = WorkflowExecutionService(cast(PostgreSQLOperationsPersistence, persistence)).start(
+        WorkflowCode.CALL_AUCTION_MARKET_SNAPSHOT, NOW, TriggerSource.SCHEDULED
+    )
+    summary = CallAuctionMarketCollectionSummary(
+        status="partial",
+        attempts=2,
+        expected_rows=5_200,
+        accepted_rows=5_199,
+        rejected_rows=1,
+        ingestion_id=uuid4(),
+    )
+
+    execution.step("collect_call_auction_market_snapshot", 1, lambda: summary)
+    execution.succeed()
+
+    job = persistence.finished_jobs[0]
+    workflow = persistence.finished_workflows[0]
+    assert (job.fetched_rows, job.accepted_rows, job.rejected_rows) == (5_200, 5_199, 1)
+    assert job.status is ExecutionStatus.PARTIAL
+    assert workflow.status is ExecutionStatus.PARTIAL
 
 
 def test_execute_pytdx_pool_refresh_records_the_controlled_workflow(tmp_path) -> None:

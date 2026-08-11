@@ -4,6 +4,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from typing import Protocol
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
@@ -21,7 +22,6 @@ from market_data_center.domain.ingestion import (
     RawManifest,
 )
 from market_data_center.domain.realtime_quote import (
-    CallAuctionSnapshotRecord,
     EodQuoteSnapshotRecord,
     FiveLevelQuoteSnapshotRecord,
     RealtimeQuoteFinding,
@@ -117,29 +117,6 @@ def _to_eod_records(
                 ask5_price=asks[4].price if len(asks) > 4 else None,
                 ask5_volume=asks[4].volume if len(asks) > 4 else None,
                 seal_amount=seal,
-                source_code="pytdx_hq",
-            )
-        )
-    return records
-
-
-def _to_auction_records(
-    quotes: Sequence[FiveLevelQuoteSnapshotRecord], trade_date: date
-) -> list[CallAuctionSnapshotRecord]:
-    records: list[CallAuctionSnapshotRecord] = []
-    for q in quotes:
-        premium = None
-        if q.last_price is not None and q.previous_close is not None and q.previous_close > 0:
-            premium = (q.last_price - q.previous_close) / q.previous_close * Decimal(100)
-        records.append(
-            CallAuctionSnapshotRecord(
-                symbol=q.symbol,
-                trade_date=trade_date,
-                last_price=q.last_price,
-                previous_close=q.previous_close,
-                cumulative_volume=q.cumulative_volume,
-                cumulative_amount=q.cumulative_amount,
-                auction_premium_pct=premium,
                 source_code="pytdx_hq",
             )
         )
@@ -317,39 +294,23 @@ def _eod_quality_results(
     return tuple(results)
 
 
+class CallAuctionFinalizationPersistence(Protocol):
+    def finalize_call_auction_snapshot(self, trade_date: date) -> int: ...
+
+
+def finalize_call_auction(
+    engine: Engine,
+    trade_date: date,
+    *,
+    persistence_factory: Callable[[Engine], CallAuctionFinalizationPersistence] | None = None,
+) -> int:
+    """Finalize one exact trading date using only persisted morning facts."""
+    factory = persistence_factory or PostgreSQLPersistence
+    written = factory(engine).finalize_call_auction_snapshot(trade_date)
+    print(f"call-auction finalization: {written} snapshots written")
+    return written
+
+
 def collect_call_auction(engine: Engine, trade_date: date) -> int:
-    """Collect call-auction snapshots for the day's limit-up pool."""
-    symbols = _limit_up_symbols(engine, trade_date)
-    if not symbols:
-        print(f"no limit-up pool members for {trade_date}")
-        return 0
-    print(f"collecting call-auction for {len(symbols)} limit-up symbols")
-    run, persistence = _start_run(engine, DatasetCode.CALL_AUCTION_SNAPSHOT, trade_date)
-    try:
-        with PytdxHqProvider(PytdxHqSettings()) as provider:
-            fetch = provider.fetch_five_level_quotes(symbols)
-    except Exception as error:
-        failed = _finish_run(
-            run,
-            fetched_rows=0,
-            accepted_rows=0,
-            rejected_rows=0,
-            error_summary=f"{type(error).__name__}: {error}",
-        )
-        persistence.fail_ingestion_run(failed)
-        raise
-    records = _to_auction_records(fetch.records, trade_date)
-    completed = _finish_run(
-        run,
-        fetched_rows=len(fetch.requested_symbols),
-        accepted_rows=len(records),
-        rejected_rows=len(fetch.failed_symbols),
-        error_summary=(
-            f"{len(fetch.failed_symbols)} symbol(s) had no usable quote"
-            if fetch.failed_symbols
-            else None
-        ),
-    )
-    persistence.commit_call_auction(completed, records)
-    print(f"call-auction: {len(records)} snapshots written")
-    return len(records)
+    """Backward-compatible entry point for database-only finalization."""
+    return finalize_call_auction(engine, trade_date)
