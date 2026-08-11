@@ -29,13 +29,11 @@
 - Modify: `tests/test_realtime_quote.py`
 - Modify: `src/market_data_center/domain/realtime_quote.py`
 - Modify: `src/market_data_center/domain/ingestion.py`
-- Modify: `src/market_data_center/domain/operations.py`
 - Modify: `src/market_data_center/domain/__init__.py`
 
 **Interfaces:**
 - Produces: `CallAuctionMarketSnapshotRecord(symbol, trade_date, observed_at, source_code, last_price, previous_close, high_price, low_price, cumulative_volume, cumulative_amount)`
 - Produces: `DatasetCode.CALL_AUCTION_MARKET_SNAPSHOT`
-- Produces: `WorkflowCode.CALL_AUCTION_MARKET_SNAPSHOT`
 - Preserves: `CallAuctionSnapshotRecord`，但增加可空 `observed_at`
 
 - [ ] **Step 1: 写领域记录失败测试**
@@ -80,6 +78,16 @@ def test_market_auction_record_rejects_bse_and_invalid_price_range() -> None:
             high_price=Decimal("10.10"),
             low_price=Decimal("10.00"),
         )
+    with pytest.raises(ValueError, match="high_price"):
+        _market_auction(last_price=Decimal("10.20"), high_price=Decimal("10.10"), low_price=None)
+    with pytest.raises(ValueError, match="low_price"):
+        _market_auction(last_price=Decimal("9.90"), high_price=None, low_price=Decimal("10.00"))
+
+
+@pytest.mark.parametrize("value", [True, Decimal("1.5")])
+def test_market_auction_record_requires_integer_cumulative_volume(value: object) -> None:
+    with pytest.raises(TypeError, match="int"):
+        _market_auction(cumulative_volume=value)
 ```
 
 - [ ] **Step 2: 运行 RED**
@@ -96,7 +104,8 @@ Expected: FAIL，提示 `CallAuctionMarketSnapshotRecord` 尚未定义或导出�
 observed_at: datetime | None = None
 ```
 
-非空时必须为 aware datetime。随后在 `domain/__init__.py` 导出新记录，并在两个枚举中加入：
+非空时必须为 aware datetime。每个已提供的 high/low 必须分别约束 last price，成交量只接受非 bool
+的 `int`。随后在 `domain/__init__.py` 导出新记录，并在 dataset 枚举中加入：
 
 ```python
 CALL_AUCTION_MARKET_SNAPSHOT = "call_auction_market_snapshot"
@@ -543,6 +552,7 @@ git commit -m "feat: collect full-market morning auction facts"
 
 **Interfaces:**
 - Produces job: `CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID = "call-auction-market-snapshot-daily"`
+- Produces: `WorkflowCode.CALL_AUCTION_MARKET_SNAPSHOT`
 - Produces workflow step: `collect_call_auction_market_snapshot`
 - Changes step: `finalize_call_auction_snapshot`
 - Preserves switch: `SchedulerSettings.call_auction_snapshot_enabled`
@@ -590,6 +600,7 @@ Expected: FAIL，新 job/workflow 不存在且旧最终化仍访问 Provider。
 - [ ] **Step 4: 实现目录和执行函数**
 
 - 新 workflow `call_auction_market_snapshot`，step `collect_call_auction_market_snapshot`；
+- 同一提交加入 `WorkflowCode.CALL_AUCTION_MARKET_SNAPSHOT`，保持 enum 与 workflow catalog 集合完全相等；
 - 现 workflow `call_auction_snapshot` 的描述改为盘后最终化，step 改为 `finalize_call_auction_snapshot`；
 - job catalog 插入 09:26 job，两 job 读取同一 switch；
 - `run_call_auction_market_snapshot_job` 加载 quote endpoints，构建 Task 5 service，并完整记录 Operations；
