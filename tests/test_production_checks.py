@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import subprocess
@@ -192,3 +193,115 @@ def test_operations_workflow_codes_are_migrated_as_one_controlled_catalog() -> N
     assert "validate constraint workflow_run_workflow_code_check" in migration
     assert all(f"'{code}'" in migration for code in controlled_codes)
     assert not re.search(r"(?im)^grant\s+", migration)
+
+
+def _write_runtime_pool(path: Path, *, szse: bool) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": "pytdx.endpoint_pool.v1",
+                "refreshed_at": "2026-08-11T10:00:00+08:00",
+                "nodes": [
+                    {
+                        "host": "node.example",
+                        "port": 7709,
+                        "latency_ms": 10,
+                        "capabilities": {
+                            "quote": True,
+                            "daily_bar_sse": True,
+                            "daily_bar_szse": szse,
+                            "daily_bar_bse": False,
+                        },
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_pytdx_pool_check_script_reports_capability_counts(tmp_path: Path) -> None:
+    pool = tmp_path / "pytdx_pool.json"
+    _write_runtime_pool(pool, szse=True)
+    environment = os.environ.copy()
+    environment["PYTDX_POOL_PATH"] = str(pool)
+
+    result = subprocess.run(
+        [sys.executable, "scripts/check_pytdx_pool.py"],
+        cwd=PROJECT_ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert json.loads(result.stdout) == {
+        "daily_bar_bse": 0,
+        "daily_bar_sse": 1,
+        "daily_bar_szse": 1,
+        "quote": 1,
+    }
+
+
+def test_pytdx_pool_check_script_rejects_incomplete_pool(tmp_path: Path) -> None:
+    pool = tmp_path / "pytdx_pool.json"
+    _write_runtime_pool(pool, szse=False)
+    environment = os.environ.copy()
+    environment["PYTDX_POOL_PATH"] = str(pool)
+
+    result = subprocess.run(
+        [sys.executable, "scripts/check_pytdx_pool.py"],
+        cwd=PROJECT_ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert result.stderr.strip() == "pytdx endpoint pool is missing required capabilities"
+
+
+def test_linux_worker_uses_the_shared_pool_runtime_contract() -> None:
+    unit = (PROJECT_ROOT / "deploy/linux/market-data-center-worker.service").read_text(
+        encoding="utf-8"
+    )
+    template = (PROJECT_ROOT / "deploy/linux/market-data-center.env.example").read_text(
+        encoding="utf-8"
+    )
+    smoke = (PROJECT_ROOT / "deploy/linux/smoke-check.sh").read_text(encoding="utf-8")
+
+    assert "check_pytdx_" + "daily_bar_endpoints.py" not in unit
+    assert "PYTDX_POOL_PATH=/var/lib/market-data-center/pytdx_pool.json" in template
+    assert "PYTDX_POOL_REFRESH_HOURS=12" in template
+    assert "AUCTION_COLLECTION_ENABLED=true" in template
+    assert "EOD_QUOTE_SNAPSHOT_ENABLED=true" in template
+    assert "scripts/check_pytdx_pool.py" in smoke
+
+
+def test_active_release_files_do_not_reference_legacy_pytdx_settings() -> None:
+    legacy_settings = (
+        "PYTDX_DAILY_BAR_" + "ENDPOINTS",
+        "PYTDX_DAILY_BAR_" + "POOL_PATH",
+        "PYTDX_HQ_" + "HOST",
+        "PYTDX_HQ_" + "PORT",
+        "PYTDX_HQ_" + "POOL_PATH",
+    )
+    files = [
+        *PROJECT_ROOT.joinpath("src").rglob("*.py"),
+        *PROJECT_ROOT.joinpath("scripts").rglob("*.py"),
+        *PROJECT_ROOT.joinpath("deploy").rglob("*"),
+        PROJECT_ROOT / ".env.example",
+        PROJECT_ROOT / "deploy.ps1",
+        PROJECT_ROOT / "README.md",
+        PROJECT_ROOT / "INSTALL-WINDOWS.md",
+        PROJECT_ROOT / "docs/Worker日常采集与调度.md",
+        PROJECT_ROOT / "docs/Worker调度系统.md",
+        PROJECT_ROOT / "docs/最小生产发布运行手册.md",
+        PROJECT_ROOT / "docs/集合竞价五档采集运行手册.md",
+        PROJECT_ROOT / "docs/领域详设-RemoteTdxDailyBar-2026-08-09.md",
+    ]
+    release_text = "\n".join(path.read_text(encoding="utf-8") for path in files if path.is_file())
+
+    assert all(setting not in release_text for setting in legacy_settings)

@@ -12,7 +12,7 @@ $api = Join-Path $projectPath ".venv\Scripts\market-data-api.exe"
 
 if (-not (Test-Path -LiteralPath $envFile -PathType Leaf)) {
     Copy-Item -LiteralPath $envExample -Destination $envFile
-    throw "Created .env from .env.example. Fill DATABASE_URL, RAW_DATA_ROOT and PYTDX_DAILY_BAR_ENDPOINTS, then run .\deploy.cmd again."
+    throw "Created .env from .env.example. Fill DATABASE_URL and RAW_DATA_ROOT, then run .\deploy.cmd again. The Worker builds the PYTDX pool at startup."
 }
 
 function Get-DotEnvValue {
@@ -28,7 +28,7 @@ function Get-DotEnvValue {
     return ($line -split "=", 2)[1].Trim().Trim('"').Trim("'")
 }
 
-foreach ($name in @("DATABASE_URL", "RAW_DATA_ROOT", "PYTDX_DAILY_BAR_ENDPOINTS")) {
+foreach ($name in @("DATABASE_URL", "RAW_DATA_ROOT")) {
     $value = Get-DotEnvValue -Name $name
     if ([string]::IsNullOrWhiteSpace($value) -or $value.Contains("<")) {
         throw "Set $name in .env, then run .\deploy.cmd again."

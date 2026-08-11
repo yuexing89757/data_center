@@ -15,8 +15,7 @@
 - `PYTDX_DAILY_BAR_PAGE_SIZE`：单页记录数，默认及最大 800。
 - `PYTDX_DAILY_BAR_MAX_PAGES`：单证券最大页数，默认 16，范围 `1..64`。
 
-旧 `PYTDX_DAILY_BAR_ENDPOINTS`、Daily Bar/HQ pool path 和单 HQ host/port 配置不再属于
-运行契约。
+旧的 per-provider endpoint 列表、独立 pool path 和单 HQ host/port 配置不再属于运行契约。
 
 ## 统一节点池
 

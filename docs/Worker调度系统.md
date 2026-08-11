@@ -25,7 +25,7 @@
 │ (单实例保证)       │    │                      │   │ (只读 HTML, ADR-0018)│
 └───────────────────┘    │ JobStore: SQLite     │   └─────────────────────┘
                          │ Executor: 单线程      │
-                         │ 6 个定时 job          │
+                         │ 9 个定时 job          │
                          └──────────┬───────────┘
                                     │ 按时触发
                     ┌───────────────┼───────────────┐
@@ -47,22 +47,23 @@
 | **优雅退出** | `SIGTERM`/`SIGINT` → `scheduler.shutdown(wait=True)` | 等当前 job 跑完再退出 |
 | **进程内调度** | 全部 job 在 Worker 进程的 APScheduler 里（宪法第 11 条） | 无 OS 级计划任务 |
 
-## 生命周期（`run_worker`，scheduler.py:431-481）
+## 生命周期（`run_worker`）
 
 启动 `market-data-center worker` 后的完整流程：
 
 1. **配置日志** → 实例化 `SchedulerSettings`
 2. **若 `--check`**：只读健康检查，打印 JSON 报告后退出（退出码 0=健康/1=不健康），供探针使用
-3. **构建调度器** `build_scheduler()`（见下节）
-4. **注册信号处理**：`SIGINT`/`SIGTERM` → 优雅关闭
-5. **获取 PostgreSQL advisory lock**（拿不到即抛异常退出 → 单实例保证）
-6. **锁内依次**：
+3. **注册信号处理**：`SIGINT`/`SIGTERM` → 优雅关闭
+4. **获取 PostgreSQL advisory lock**（拿不到即抛异常退出 → 单实例保证）
+5. **锁内依次**：
+   - **立即同步执行一次** `run_stale_recovery_job`（清理上次进程残留的 running 记录）
+   - **刷新 PYTDX 节点池**：探测并原子发布；失败时使用 last-good；新旧池均无效则拒绝启动
+   - 构建调度器 `build_scheduler()`，注册每 12 小时刷新任务和其他启用任务
    - 启动 Worker Admin Page（`127.0.0.1:8765`）
-   - **立即同步执行一次** `run_stale_recovery_job`（清理上次进程残留的 running 记录，不等第一个 interval）
    - `scheduler.start()`（**阻塞**，直到收到 shutdown）
-7. **退出时**（finally）：关 admin page、关调度器、释放锁、释放连接池
+6. **退出时**（finally）：关 admin page、关调度器、释放锁、释放连接池
 
-## 调度核心（`build_scheduler`，scheduler.py:351-381）
+## 调度核心（`build_scheduler`）
 
 ```
 BlockingScheduler
@@ -78,7 +79,7 @@ BlockingScheduler
 - `cron` 类型 → `CronTrigger(day_of_week, hour, minute, timezone)`
 - `interval` 类型 → `IntervalTrigger(hours=N, timezone)`
 
-## 定时任务目录（6 个 job）
+## 定时任务目录（9 个 job）
 
 任务定义在 `scheduling_catalog.py`。每个 job 有：`code`（APScheduler job id）、`display_name`、`workflow_code`、`trigger_type`、计划时间、`enabled`、`timeout_seconds`、`recovery_policy`。
 
@@ -94,6 +95,7 @@ BlockingScheduler
 | 6 | `mainboard-price-limit-stock-pools-daily` | 沪深主板昨日涨跌停股票池 | `stock_pool` | cron 周一至周五 | 21:00 | ✅ |
 | 7 | `deducted-profit-daily` | 扣非净利润增量同步 | `deducted_profit` | cron 每天 | 20:00 | ✅ |
 | 8 | `recover-stale-ingestion-runs` | 陈旧运行恢复 | `stale_run_recovery` | interval | 每 1 小时 | ✅ |
+| 9 | `pytdx-pool-refresh` | PYTDX 节点池刷新 | `pytdx_pool_refresh` | interval | 每 12 小时 | ✅ |
 
 > 时间默认值在 `SchedulerSettings`，可通过 `.env` 覆盖（见配置章节）。业务顺序设计：日K(20:00) → 每日指标(20:30) → 股票池(21:00) → 收盘五档(21:10)。收盘五档严格读取当日最新 ready 涨停池；缺失时失败，不回退旧池，也不允许用当前报价补历史日期。今日竞价量任务独立运行。
 
@@ -101,14 +103,17 @@ BlockingScheduler
 
 所有 job 遵循同一模式：开一条 `operations` 工作流记录 → 执行业务 → 成功 `succeed()`/失败 `fail()`。这样任意中断都在 `operations` 表留下状态，供 stale recovery 清理。
 
-| Job 函数 | 行号 | 做什么 |
-|---|---|---|
-| `run_daily_market_job` | 129-165 | 同步 security + trading_calendar + 远程 pytdx 日K（`bar_lookback_days=1, calendar_lookback_days=14`，单分片） |
-| `run_stock_daily_indicator_job` | 97-126 | tushare 全市场每日指标同步 + Core 保留策略（retention） |
-| `run_stale_recovery_job` | 168-216 | **3 步**：恢复 stale ingestion run（>60min）、恢复 stale workflow run、恢复过期 auction session。每小时 + 启动时各跑一次 |
-| `run_deducted_profit_job` | 219-258 | tushare 扣非净利润增量同步（按披露变化发现新公告/修订） |
-| `run_stock_pool_job` | 261-291 | 解析基准交易日 → 构建下一交易日生效的涨跌停股票池（依赖当日日K+指标成功） |
-| `run_auction_collection_job` | 294-330 | pytdx_hq 集合竞价五档采集（09:15-09:25 按节奏采样，默认关） |
+| Job 函数 | 做什么 |
+|---|---|
+| `run_daily_market_job` | 同步 security + trading_calendar + 远程 pytdx 日K（`bar_lookback_days=1, calendar_lookback_days=14`，单分片） |
+| `run_stock_daily_indicator_job` | tushare 全市场每日指标同步 + Core 保留策略（retention） |
+| `run_stale_recovery_job` | **3 步**：恢复 stale ingestion run（>60min）、恢复 stale workflow run、恢复过期 auction session。每小时 + 启动时各跑一次 |
+| `run_deducted_profit_job` | tushare 扣非净利润增量同步（按披露变化发现新公告/修订） |
+| `run_stock_pool_job` | 解析基准交易日 → 构建下一交易日生效的涨跌停股票池（依赖当日日K+指标成功） |
+| `run_auction_collection_job` | pytdx_hq 集合竞价五档采集（09:15-09:25 按节奏采样，默认关） |
+| `run_eod_quote_snapshot_job` | 对当日 ready 涨停池采集收盘五档快照（默认关） |
+| `run_call_auction_snapshot_job` | 收盘后采集当日集合竞价量、额及溢价率 |
+| `run_pytdx_pool_refresh_job` | 有界探测候选节点能力；成功时原子发布，失败时保留 last-good |
 
 ## 自愈与可靠性（ADR-0016）
 
@@ -121,7 +126,7 @@ BlockingScheduler
 
 **misfire 处理**：`misfire_grace_time = scheduler_misfire_grace_seconds`（默认 21600 秒 = 6 小时）。错过触发时间的 job 在宽限期内仍会补跑，超期则跳过。
 
-## 配置（`SchedulerSettings`，settings.py:25-45）
+## 配置（`SchedulerSettings` 与 `PytdxPoolSettings`）
 
 全部通过 `.env` 配置，有默认值：
 
@@ -140,6 +145,8 @@ BlockingScheduler
 | `AUCTION_COLLECTION_CADENCE_SECONDS` | `5` | 采样节奏（1-60 秒） |
 | `EOD_QUOTE_SNAPSHOT_ENABLED` | `false` | 收盘五档任务开关；完成实盘语义验证后显式开启 |
 | `EOD_QUOTE_HOUR` / `_MINUTE` | `21` / `10` | 当日涨停池 ready 后的收盘五档采集时间 |
+| `PYTDX_POOL_PATH` | `data/pytdx_pool.json` | 统一版本化能力节点池路径；生产使用持久化绝对路径 |
+| `PYTDX_POOL_REFRESH_HOURS` | `12` | Worker 进程内节点池刷新周期 |
 
 ## 健康检查（`worker --check`）
 
@@ -172,7 +179,7 @@ market-data-center worker --check
 
 **展示内容**：
 - 摘要卡片：Worker 存活、调度健康、JobStore 可读、陈旧运行数、最新快照日期
-- 定时任务表：6 个任务的 ID/名称/描述/Workflow/步骤/触发类型/计划/状态/超时恢复/下次运行/已持久化
+- 定时任务表：9 个任务的 ID/名称/描述/Workflow/步骤/触发类型/计划/状态/超时恢复/下次运行/已持久化
 - 最近工作流执行：最近 10 条 operations 记录（workflow/status/attempt/触发来源/起止/行数/错误）
 
 **安全约束**（ADR-0018）：
@@ -214,8 +221,8 @@ market-data-center worker --check
 
 | 文件 | 职责 |
 |---|---|
-| `src/market_data_center/scheduler.py` | 调度核心：`run_worker`、`build_scheduler`、6 个 job 执行函数、健康检查 |
-| `src/market_data_center/scheduling_catalog.py` | 任务目录：6 个 `WorkflowDefinition` + `job_definitions()` |
+| `src/market_data_center/scheduler.py` | 调度核心：`run_worker`、`build_scheduler`、job 执行函数、健康检查 |
+| `src/market_data_center/scheduling_catalog.py` | 任务与 Workflow controlled catalog |
 | `src/market_data_center/worker_admin.py` | 管理页面：标准库 HTTP server + HTML 渲染 |
 | `src/market_data_center/settings.py` | `SchedulerSettings` 配置 |
 | `src/market_data_center/persistence/postgres.py:439-453` | advisory lock 实现（单实例） |

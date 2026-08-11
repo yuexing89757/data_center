@@ -1,6 +1,6 @@
 # Market Data Center
 
-A phase-one A-share daily market data pipeline using Python 3.12 and PostgreSQL. Security and calendar use BaoStock/AKShare routing; stock Daily Bar uses only explicitly configured remote TDX endpoints through pytdx.
+A phase-one A-share daily market data pipeline using Python 3.12 and PostgreSQL. Security and calendar use BaoStock/AKShare routing; pytdx quote and Daily Bar reads share one capability-aware endpoint pool maintained by the Worker.
 
 ## Minimal Linux production release
 
@@ -14,7 +14,7 @@ production backup restore or credential rotation has passed.
 
 ## Windows deployment
 
-Install `uv`, then prepare the environment with the root deployment script. On the first run it creates `.env`; fill `DATABASE_URL`, `RAW_DATA_ROOT`, and `PYTDX_DAILY_BAR_ENDPOINTS`, then run the same command again:
+Install `uv`, then prepare the environment with the root deployment script. On the first run it creates `.env`; fill `DATABASE_URL` and `RAW_DATA_ROOT`, then run the same command again. The Worker builds its PYTDX pool when it starts:
 
 ```powershell
 .\deploy.cmd
@@ -28,7 +28,7 @@ Start the long-lived API and worker services with:
 .\serve.cmd
 ```
 
-This launches the FastAPI read-only API (`http://127.0.0.1:8000`) and the `market-data-center worker` process in separate console windows. The worker hosts an in-process APScheduler that drives every scheduled job — daily-run, stock daily indicators, stock pools, deducted profit, stale-run recovery and the optional auction collection. Job fire times are configured in `.env` (`DAILY_RUN_HOUR`/`DAILY_RUN_MINUTE`, etc.). Stop each service with Ctrl+C in its window.
+This launches the FastAPI read-only API (`http://127.0.0.1:8000`) and the `market-data-center worker` process in separate console windows. The worker hosts an in-process APScheduler that drives every scheduled job — PYTDX pool refresh, daily-run, stock daily indicators, stock pools, deducted profit, stale-run recovery and the optional quote snapshots. Job fire times are configured in `.env` (`DAILY_RUN_HOUR`/`DAILY_RUN_MINUTE`, etc.). Stop each service with Ctrl+C in its window.
 
 See [INSTALL-WINDOWS.md](INSTALL-WINDOWS.md) for the Chinese installation and verification guide.
 
@@ -153,4 +153,4 @@ Verified Raw replay, stale-run recovery, and read-only cross-provider Daily Bar 
 
 Production migration and smoke verification can be started manually through the protected `Production migration and smoke check` GitHub Actions workflow.
 
-The CLI uses deterministic provider routing by default: BaoStock then AKShare for security/calendar, and remote pytdx only for Daily Bars. TDX endpoints are an ordered, explicitly configured list; the provider performs bounded connection failover but never discovers nodes or switches endpoints inside a successful batch. Missing or unavailable bars remain explicit gaps and are not filled from other providers. Public TDX nodes have no availability or rate-limit guarantee, and BSE coverage must be verified per endpoint. Use `--provider baostock|akshare|pytdx` to bypass routing for reproducible diagnostics.
+The CLI uses deterministic provider routing by default: BaoStock then AKShare for security/calendar, and pytdx only for Daily Bars. At startup and every 12 hours, the Worker probes a bounded candidate set and atomically publishes one versioned pool with quote, SSE, SZSE and BSE capability flags. Consumers filter that pool by capability, use bounded connection failover, and keep one endpoint for a successful batch. Missing or unavailable bars remain explicit gaps and are not filled from other providers. Public TDX nodes have no availability or rate-limit guarantee. Use `--provider baostock|akshare|pytdx` to bypass routing for reproducible diagnostics.

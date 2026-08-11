@@ -54,12 +54,16 @@ pytdx 还可从通达信 `T0002/hq_cache` 读取行业和概念完整快照，�
 `ready` 涨停池，保存原始 JSONL、Manifest、质量结果和标准快照。当天池缺失时失败，空池
 合法跳过；任务禁止把当前实时报价写成其他历史日期，也不会回退旧股票池。
 
-pytdx 要求 `PYTDX_DAILY_BAR_ENDPOINTS` 指向有序、人工验收的 `host:port` 列表。连接和
-读取采用有限超时，建立会话时有限 failover；成功会话不切换 endpoint。公共节点无 SLA，
-可能限流、下线或缺少 BSE。Raw 与 JobStore 必须使用持久目录，例如：
+Worker 启动时先探测一个有界候选集，按 quote、SSE 日 K、SZSE 日 K 和 BSE 日 K 能力生成
+统一的版本化 PYTDX 节点池，之后每 12 小时刷新。刷新失败时继续使用最后一个有效池；首次
+启动且新旧池均不可用时拒绝启动。消费者按能力筛选节点，建立会话时有限 failover，成功
+会话不切换 endpoint。公共节点无 SLA，可能限流、下线或缺少 BSE。Raw、节点池和 JobStore
+必须使用持久目录，例如：
 
 ```dotenv
-PYTDX_DAILY_BAR_ENDPOINTS=<host1>:7709,<host2>:7709
+PYTDX_POOL_PATH=/var/lib/market-data-center/pytdx_pool.json
+PYTDX_POOL_REFRESH_HOURS=12
+PYTDX_VIPDOC_PATH=D:\new_tdx64\vipdoc
 RAW_DATA_ROOT=/var/lib/market-data-center/raw
 SCHEDULER_STORE_PATH=/var/lib/market-data-center/scheduler/jobs.sqlite
 ```

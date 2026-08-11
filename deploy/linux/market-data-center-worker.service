@@ -13,7 +13,6 @@ ExecStart=/home/project/.venv/bin/market-data-center worker
 ExecStartPre=/usr/bin/test -r /home/project/.env
 ExecStartPre=/usr/bin/test -d /var/lib/market-data-center/raw
 ExecStartPre=/usr/bin/test -d /var/lib/market-data-center/scheduler
-ExecStartPre=/home/project/.venv/bin/python /home/project/scripts/check_pytdx_daily_bar_endpoints.py
 Restart=always
 RestartSec=10
 TimeoutStartSec=75
