@@ -1,6 +1,5 @@
 """pytdx adapter for remote unadjusted A-share Daily Bars."""
 
-import json
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import date
 from decimal import Decimal, InvalidOperation
@@ -33,9 +32,20 @@ from market_data_center.providers.contracts import (
     ProviderRequestUnavailable,
     RawRow,
 )
-from market_data_center.settings import PytdxDailyBarSettings
+from market_data_center.providers.pytdx_pool import (
+    PytdxCapability,
+    endpoints_for,
+    load_endpoint_pool,
+)
+from market_data_center.settings import PytdxDailyBarSettings, PytdxPoolSettings
 
 DAILY_BAR_CATEGORY = 9
+CAPABILITY_BY_EXCHANGE = {
+    "sh": PytdxCapability.DAILY_BAR_SSE,
+    "sz": PytdxCapability.DAILY_BAR_SZSE,
+    "bj": PytdxCapability.DAILY_BAR_BSE,
+}
+TDX_MARKET_BY_EXCHANGE = {"sh": 1, "sz": 0, "bj": 0}
 
 
 class PytdxDailyBarClient(Protocol):
@@ -57,46 +67,25 @@ class PytdxProvider:
         self,
         settings: PytdxDailyBarSettings,
         *,
+        pool_settings: PytdxPoolSettings | None = None,
         client_factory: Callable[[], PytdxDailyBarClient] | None = None,
     ) -> None:
         self._settings = settings
         self._vipdoc_path = settings.pytdx_vipdoc_path
-        self._endpoints = _resolve_daily_bar_endpoints(settings)
+        self._pool_settings = pool_settings or PytdxPoolSettings()
         self._client_factory = client_factory or _default_client_factory
-        self._client: PytdxDailyBarClient | None = None
-        self._endpoint: tuple[str, int] | None = None
+        self._sessions: dict[
+            str, tuple[PytdxDailyBarClient, tuple[str, int]]
+        ] = {}
+        self._managed = False
 
     @classmethod
     def default(cls) -> Self:
         return cls(PytdxDailyBarSettings())
 
     def __enter__(self) -> Self:
-        errors: list[str] = []
-        attempts = min(self._settings.pytdx_daily_bar_max_attempts, len(self._endpoints))
-        for host, port in self._endpoints[:attempts]:
-            client = self._client_factory()
-            try:
-                connected = client.connect(
-                    host,
-                    port,
-                    time_out=self._settings.pytdx_daily_bar_timeout_seconds,
-                )
-            except Exception as error:
-                errors.append(f"{host}:{port} ({type(error).__name__})")
-                _disconnect(client)
-                continue
-            if connected:
-                self._client = client
-                self._endpoint = (host, port)
-                return self
-            errors.append(f"{host}:{port}")
-            _disconnect(client)
-        # In local mode (vipdoc_path set), network failure is tolerated —
-        # fetch_daily_bars reads .day files and only needs the network as
-        # a fallback for symbols absent from local storage.
-        if self._vipdoc_path:
-            return self
-        raise ProviderError("pytdx remote connection failed; tried " + ", ".join(errors))
+        self._managed = True
+        return self
 
     def __exit__(
         self,
@@ -104,10 +93,13 @@ class PytdxProvider:
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        if self._client is not None:
-            _disconnect(self._client)
-        self._client = None
-        self._endpoint = None
+        disconnected: set[int] = set()
+        for client, _ in self._sessions.values():
+            if id(client) not in disconnected:
+                _disconnect(client)
+                disconnected.add(id(client))
+        self._sessions.clear()
+        self._managed = False
 
     def source_symbol(self, symbol: str) -> str:
         exchange, code, _ = _parse_source_symbol(symbol)
@@ -145,19 +137,12 @@ class PytdxProvider:
                     schema_version="pytdx.local_daily_bar.v2",
                     record_factory=lambda: _daily_bar_records(raw_rows, symbol),
                 )
-        # Fallback to remote endpoint.
-        if self._client is None or self._endpoint is None:
-            if self._vipdoc_path:
-                raise ProviderRequestUnavailable(
-                    f"pytdx local .day file not found for {source_symbol}"
-                    " and no remote endpoint configured"
-                )
-            raise ProviderError("pytdx remote provider must be used as a managed context")
-        market = 1 if exchange == "sh" else 0
+        client, selected_endpoint = self._session_for(exchange, source_symbol)
+        market = TDX_MARKET_BY_EXCHANGE[exchange]
         source_rows: list[RawRow] = []
         try:
             for page in range(self._settings.pytdx_daily_bar_max_pages):
-                result = self._client.get_security_bars(
+                result = client.get_security_bars(
                     DAILY_BAR_CATEGORY,
                     market,
                     code,
@@ -191,7 +176,7 @@ class PytdxProvider:
             raise ProviderRequestUnavailable(
                 f"pytdx remote endpoint has no Daily Bars in range for {source_symbol}"
             )
-        endpoint = f"{self._endpoint[0]}:{self._endpoint[1]}"
+        endpoint = f"{selected_endpoint[0]}:{selected_endpoint[1]}"
         return ProviderBatch(
             raw_rows=raw_rows,
             request_params={
@@ -207,6 +192,52 @@ class PytdxProvider:
             },
             schema_version="pytdx.remote_daily_bar.v1",
             record_factory=lambda: _daily_bar_records(raw_rows, symbol),
+        )
+
+    def _session_for(
+        self, exchange: str, source_symbol: str
+    ) -> tuple[PytdxDailyBarClient, tuple[str, int]]:
+        if not self._managed:
+            raise ProviderError("pytdx remote provider must be used as a managed context")
+        existing = self._sessions.get(exchange)
+        if existing is not None:
+            return existing
+        capability = CAPABILITY_BY_EXCHANGE[exchange]
+        try:
+            pool = load_endpoint_pool(self._pool_settings.pytdx_pool_path)
+        except ProviderError as error:
+            if self._vipdoc_path:
+                raise ProviderRequestUnavailable(
+                    f"pytdx local .day file not found for {source_symbol} "
+                    "and no usable remote endpoint pool exists"
+                ) from error
+            raise
+        endpoints = endpoints_for(pool, capability)
+        if not endpoints:
+            raise ProviderRequestUnavailable(
+                f"pytdx endpoint pool has no {capability.value} node"
+            )
+        errors: list[str] = []
+        for host, port in endpoints[: self._settings.pytdx_daily_bar_max_attempts]:
+            client = self._client_factory()
+            try:
+                connected = client.connect(
+                    host,
+                    port,
+                    time_out=self._settings.pytdx_daily_bar_timeout_seconds,
+                )
+            except Exception as error:
+                errors.append(f"{host}:{port} ({type(error).__name__})")
+                _disconnect(client)
+                continue
+            if connected:
+                session = (client, (host, port))
+                self._sessions[exchange] = session
+                return session
+            errors.append(f"{host}:{port}")
+            _disconnect(client)
+        raise ProviderError(
+            f"pytdx remote connection failed for {exchange}; tried " + ", ".join(errors)
         )
 
     def fetch_capital(self, source_symbol: str) -> ProviderBatch[CapitalRecord]:
@@ -288,71 +319,6 @@ def _disconnect(client: PytdxDailyBarClient) -> None:
         client.disconnect()
     except Exception:
         return
-
-
-def parse_daily_bar_endpoints(value: str) -> tuple[tuple[str, int], ...]:
-    """Parse a comma-separated host:port string into endpoint tuples.
-
-    Returns an empty tuple when *value* is blank so the caller can fall
-    back to the IP pool file.
-    """
-    if not value or not value.strip():
-        return ()
-    endpoints: list[tuple[str, int]] = []
-    for item in value.split(","):
-        candidate = item.strip()
-        if not candidate or ":" not in candidate:
-            raise ProviderError("PYTDX_DAILY_BAR_ENDPOINTS must contain host:port entries")
-        host, port_text = candidate.rsplit(":", maxsplit=1)
-        host = host.strip()
-        try:
-            port = int(port_text)
-        except ValueError as error:
-            raise ProviderError("pytdx Daily Bar endpoint port must be an integer") from error
-        endpoint = (host, port)
-        if not host or not 0 < port <= 65_535:
-            raise ProviderError("pytdx Daily Bar endpoint is invalid")
-        if endpoint in endpoints:
-            raise ProviderError("pytdx Daily Bar endpoints must be unique")
-        endpoints.append(endpoint)
-    return tuple(endpoints)
-
-
-def _read_daily_bar_pool(path: Path) -> tuple[tuple[str, int], ...]:
-    """Read the latency-sorted HQ pool file into endpoint tuples; empty on failure."""
-    if not path.is_file():
-        return ()
-    try:
-        entries = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return ()
-    hosts: list[tuple[str, int]] = []
-    for entry in entries:
-        ip = str(entry.get("ip", "")).strip()
-        port = int(entry.get("port", 0))
-        if ip and 0 < port <= 65_535:
-            hosts.append((ip, port))
-    return tuple(hosts)
-
-
-def _resolve_daily_bar_endpoints(settings: PytdxDailyBarSettings) -> tuple[tuple[str, int], ...]:
-    """Prefer the IP pool file; fall back to PYTDX_DAILY_BAR_ENDPOINTS.
-
-    Returns an empty tuple when no endpoints are found and ``vipdoc_path``
-    is set, enabling local-only mode without remote fallback.
-    """
-    pool = _read_daily_bar_pool(settings.pytdx_daily_bar_pool_path)
-    if pool:
-        return pool
-    env_hosts = parse_daily_bar_endpoints(settings.pytdx_daily_bar_endpoints)
-    if env_hosts:
-        return env_hosts
-    if settings.pytdx_vipdoc_path:
-        return ()
-    raise ProviderError(
-        "pytdx has no Daily Bar endpoints: set PYTDX_DAILY_BAR_ENDPOINTS or run "
-        "scripts/probe_pytdx_hq_hosts.py to build the pool"
-    )
 
 
 def _read_local_day_file(

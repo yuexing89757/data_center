@@ -1,3 +1,4 @@
+import json
 from collections.abc import Mapping
 from datetime import date
 from decimal import Decimal
@@ -9,16 +10,53 @@ import pytest
 from market_data_center.domain import DailyBarRecord, DatasetCode, TradeStatus
 from market_data_center.providers import ProviderError, ProviderRequestUnavailable, PytdxProvider
 from market_data_center.providers.pytdx import _read_local_day_file, normalize_pytdx_raw
-from market_data_center.settings import PytdxDailyBarSettings
+from market_data_center.settings import PytdxDailyBarSettings, PytdxPoolSettings
 
 
 def _settings(**overrides: object) -> PytdxDailyBarSettings:
     return PytdxDailyBarSettings(
-        pytdx_daily_bar_endpoints="first.example:7709,second.example:7710",
-        pytdx_daily_bar_pool_path=Path("nonexistent-pool.json"),
         pytdx_vipdoc_path="",
+        _env_file=None,
         **overrides,
     )
+
+
+def _node(
+    host: str,
+    port: int = 7709,
+    *,
+    quote: bool = False,
+    sse: bool = False,
+    szse: bool = False,
+    bse: bool = False,
+    latency_ms: int = 10,
+) -> dict[str, object]:
+    return {
+        "host": host,
+        "port": port,
+        "latency_ms": latency_ms,
+        "capabilities": {
+            "quote": quote,
+            "daily_bar_sse": sse,
+            "daily_bar_szse": szse,
+            "daily_bar_bse": bse,
+        },
+    }
+
+
+def _write_pool(tmp_path: Path, nodes: list[dict[str, object]]) -> Path:
+    path = tmp_path / "pytdx_pool.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": "pytdx.endpoint_pool.v1",
+                "refreshed_at": "2026-08-11T10:00:00+08:00",
+                "nodes": nodes,
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
 
 
 def _bar(day: str, *, close: str = "10.20", volume: int = 123_400) -> dict[str, object]:
@@ -65,18 +103,38 @@ class FakeClient:
         return result
 
 
-def _provider(client: FakeClient, **settings: object) -> PytdxProvider:
-    return PytdxProvider(_settings(**settings), client_factory=lambda: client)
+def _provider(tmp_path: Path, client: FakeClient, **settings: object) -> PytdxProvider:
+    pool = _write_pool(
+        tmp_path,
+        [_node("first.example", quote=True, sse=True, szse=True, bse=True)],
+    )
+    return PytdxProvider(
+        _settings(**settings),
+        pool_settings=PytdxPoolSettings(pytdx_pool_path=pool, _env_file=None),
+        client_factory=lambda: client,
+    )
 
 
-def test_context_uses_bounded_endpoint_failover_and_disconnects() -> None:
+def test_remote_session_uses_bounded_endpoint_failover_and_disconnects(tmp_path: Path) -> None:
     failed = FakeClient(connect_result=TimeoutError())
-    connected = FakeClient()
+    connected = FakeClient({0: [_bar("2026-07-28")]})
     clients = iter((failed, connected))
-    provider = PytdxProvider(_settings(), client_factory=lambda: next(clients))
+    pool = _write_pool(
+        tmp_path,
+        [
+            _node("first.example", sse=True, latency_ms=10),
+            _node("second.example", 7710, sse=True, latency_ms=20),
+        ],
+    )
+    provider = PytdxProvider(
+        _settings(),
+        pool_settings=PytdxPoolSettings(pytdx_pool_path=pool, _env_file=None),
+        client_factory=lambda: next(clients),
+    )
 
     with provider as entered:
         assert entered is provider
+        entered.fetch_daily_bars("sh.600000", date(2026, 7, 28), date(2026, 7, 28))
 
     assert failed.connect_calls == [("first.example", 7709, 3.0)]
     assert connected.connect_calls == [("second.example", 7710, 3.0)]
@@ -84,26 +142,72 @@ def test_context_uses_bounded_endpoint_failover_and_disconnects() -> None:
     assert connected.disconnected is True
 
 
-def test_connection_attempt_limit_is_enforced() -> None:
+def test_connection_attempt_limit_is_enforced(tmp_path: Path) -> None:
     failed = FakeClient(connect_result=False)
+    pool = _write_pool(
+        tmp_path,
+        [
+            _node("first.example", sse=True),
+            _node("second.example", 7710, sse=True),
+        ],
+    )
     provider = PytdxProvider(
-        _settings(pytdx_daily_bar_max_attempts=1), client_factory=lambda: failed
+        _settings(pytdx_daily_bar_max_attempts=1),
+        pool_settings=PytdxPoolSettings(pytdx_pool_path=pool, _env_file=None),
+        client_factory=lambda: failed,
     )
 
-    with pytest.raises(ProviderError, match=r"tried first\.example:7709"):
-        provider.__enter__()
+    with provider, pytest.raises(ProviderError, match="remote connection failed for sh"):
+        provider.fetch_daily_bars("sh.600000", date(2026, 7, 28), date(2026, 7, 28))
     assert len(failed.connect_calls) == 1
 
 
-def test_standard_symbol_mapping_covers_all_supported_exchanges() -> None:
-    provider = _provider(FakeClient())
+def test_standard_symbol_mapping_covers_all_supported_exchanges(tmp_path: Path) -> None:
+    provider = _provider(tmp_path, FakeClient())
 
     assert provider.source_symbol("SSE:600000") == "sh.600000"
     assert provider.source_symbol("SZSE:000001") == "sz.000001"
     assert provider.source_symbol("BSE:920000") == "bj.920000"
 
 
-def test_remote_daily_bars_crop_sort_normalize_and_capture_endpoint() -> None:
+def test_remote_daily_bars_select_nodes_by_market_capability(tmp_path: Path) -> None:
+    pool = _write_pool(
+        tmp_path,
+        [
+            _node("quote-only", quote=True, latency_ms=1),
+            _node("sse", sse=True, latency_ms=2),
+            _node("szse", szse=True, latency_ms=3),
+        ],
+    )
+    sse_client = FakeClient({0: [_bar("2026-07-28")]})
+    szse_client = FakeClient({0: [_bar("2026-07-28")]})
+    clients = iter((sse_client, szse_client))
+    provider = PytdxProvider(
+        _settings(),
+        pool_settings=PytdxPoolSettings(pytdx_pool_path=pool, _env_file=None),
+        client_factory=lambda: next(clients),
+    )
+
+    with provider:
+        provider.fetch_daily_bars("sh.600000", date(2026, 7, 28), date(2026, 7, 28))
+        provider.fetch_daily_bars("sz.000001", date(2026, 7, 28), date(2026, 7, 28))
+
+    assert sse_client.connect_calls == [("sse", 7709, 3.0)]
+    assert szse_client.connect_calls == [("szse", 7709, 3.0)]
+
+
+def test_remote_daily_bars_reuse_one_fixed_session_per_market(tmp_path: Path) -> None:
+    client = FakeClient({0: [_bar("2026-07-28")]})
+    provider = _provider(tmp_path, client)
+
+    with provider:
+        provider.fetch_daily_bars("sh.600000", date(2026, 7, 28), date(2026, 7, 28))
+        provider.fetch_daily_bars("sh.601398", date(2026, 7, 28), date(2026, 7, 28))
+
+    assert client.connect_calls == [("first.example", 7709, 3.0)]
+
+
+def test_remote_daily_bars_crop_sort_normalize_and_capture_endpoint(tmp_path: Path) -> None:
     client = FakeClient(
         {
             0: [
@@ -113,7 +217,7 @@ def test_remote_daily_bars_crop_sort_normalize_and_capture_endpoint() -> None:
             ]
         }
     )
-    provider = _provider(client)
+    provider = _provider(tmp_path, client)
 
     with provider:
         batch = provider.fetch_daily_bars("sh.600000", date(2026, 7, 24), date(2026, 7, 28))
@@ -143,14 +247,19 @@ def test_remote_daily_bars_crop_sort_normalize_and_capture_endpoint() -> None:
     assert isinstance(replayed[0], DailyBarRecord)
 
 
-def test_remote_daily_bars_paginate_with_hard_bounds() -> None:
+def test_remote_daily_bars_paginate_with_hard_bounds(tmp_path: Path) -> None:
     client = FakeClient(
         {
             0: [_bar("2026-07-28"), _bar("2026-07-27")],
             2: [_bar("2026-07-24"), _bar("2026-07-23")],
         }
     )
-    provider = _provider(client, pytdx_daily_bar_page_size=2, pytdx_daily_bar_max_pages=2)
+    provider = _provider(
+        tmp_path,
+        client,
+        pytdx_daily_bar_page_size=2,
+        pytdx_daily_bar_max_pages=2,
+    )
 
     with provider:
         batch = provider.fetch_daily_bars("sh.600000", date(2026, 7, 24), date(2026, 7, 28))
@@ -159,9 +268,9 @@ def test_remote_daily_bars_paginate_with_hard_bounds() -> None:
     assert len(batch.records) == 3
 
 
-def test_bse_uses_market_zero_and_empty_result_is_visible_gap() -> None:
+def test_bse_uses_market_zero_and_empty_result_is_visible_gap(tmp_path: Path) -> None:
     client = FakeClient({0: []})
-    provider = _provider(client)
+    provider = _provider(tmp_path, client)
 
     with provider, pytest.raises(ProviderRequestUnavailable, match="no Daily Bars"):
         provider.fetch_daily_bars("bj.920000", date(2026, 7, 28), date(2026, 7, 28))
@@ -169,40 +278,37 @@ def test_bse_uses_market_zero_and_empty_result_is_visible_gap() -> None:
     assert client.bar_calls[0][1:3] == (0, "920000")
 
 
-def test_request_failure_does_not_fail_over_mid_session() -> None:
+def test_request_failure_does_not_fail_over_mid_session(tmp_path: Path) -> None:
     client = FakeClient({0: TimeoutError()})
-    provider = _provider(client)
+    second = FakeClient({0: [_bar("2026-07-28")]})
+    clients = iter((client, second))
+    pool = _write_pool(
+        tmp_path,
+        [_node("first.example", szse=True), _node("second.example", 7710, szse=True)],
+    )
+    provider = PytdxProvider(
+        _settings(),
+        pool_settings=PytdxPoolSettings(pytdx_pool_path=pool, _env_file=None),
+        client_factory=lambda: next(clients),
+    )
 
     with provider, pytest.raises(ProviderError, match="request failed"):
         provider.fetch_daily_bars("sz.000001", date(2026, 7, 28), date(2026, 7, 28))
 
     assert client.connect_calls == [("first.example", 7709, 3.0)]
+    assert second.connect_calls == []
 
 
-@pytest.mark.parametrize(
-    "endpoints",
-    ["missing-port", "host:not-a-port", "host:0", "host:7709,host:7709"],
-)
-def test_endpoint_configuration_is_rejected(endpoints: str) -> None:
-    settings = PytdxDailyBarSettings(
-        pytdx_daily_bar_endpoints=endpoints,
-        pytdx_daily_bar_pool_path=Path("nonexistent-pool.json"),
+def test_missing_market_capability_is_a_visible_gap(tmp_path: Path) -> None:
+    pool = _write_pool(tmp_path, [_node("quote-only", quote=True)])
+    provider = PytdxProvider(
+        _settings(),
+        pool_settings=PytdxPoolSettings(pytdx_pool_path=pool, _env_file=None),
+        client_factory=lambda: FakeClient(),
     )
 
-    with pytest.raises(ProviderError):
-        PytdxProvider(settings, client_factory=FakeClient)
-
-
-def test_no_endpoints_without_pool_is_rejected() -> None:
-    """Empty endpoints with no pool file and no vipdoc_path raises ProviderError."""
-    settings = PytdxDailyBarSettings(
-        pytdx_daily_bar_endpoints="",
-        pytdx_daily_bar_pool_path=Path("nonexistent-pool.json"),
-        pytdx_vipdoc_path="",
-    )
-
-    with pytest.raises(ProviderError, match="no Daily Bar endpoints"):
-        PytdxProvider(settings, client_factory=FakeClient)
+    with provider, pytest.raises(ProviderRequestUnavailable, match="no daily_bar_bse"):
+        provider.fetch_daily_bars("bj.920000", date(2026, 7, 28), date(2026, 7, 28))
 
 
 def test_local_only_mode_without_endpoints(tmp_path: Path) -> None:
@@ -211,11 +317,16 @@ def test_local_only_mode_without_endpoints(tmp_path: Path) -> None:
     _write_day_file(vipdoc, "sh", "600000", [(20260807, 920, 930, 915, 925, 400000.0, 40000)])
     settings = PytdxDailyBarSettings(
         pytdx_vipdoc_path=str(vipdoc),
-        pytdx_daily_bar_endpoints="",
-        pytdx_daily_bar_pool_path=Path("nonexistent-pool.json"),
+        _env_file=None,
     )
 
-    provider = PytdxProvider(settings, client_factory=FakeClient)
+    provider = PytdxProvider(
+        settings,
+        pool_settings=PytdxPoolSettings(
+            pytdx_pool_path=tmp_path / "missing.json", _env_file=None
+        ),
+        client_factory=FakeClient,
+    )
     with provider:
         batch = provider.fetch_daily_bars("sh.600000", date(2026, 8, 7), date(2026, 8, 7))
 
@@ -228,11 +339,16 @@ def test_local_only_mode_missing_file_is_visible_gap(tmp_path: Path) -> None:
     """In local-only mode, a missing .day file raises ProviderRequestUnavailable."""
     settings = PytdxDailyBarSettings(
         pytdx_vipdoc_path=str(tmp_path / "vipdoc"),
-        pytdx_daily_bar_endpoints="",
-        pytdx_daily_bar_pool_path=Path("nonexistent-pool.json"),
+        _env_file=None,
     )
 
-    provider = PytdxProvider(settings, client_factory=FakeClient)
+    provider = PytdxProvider(
+        settings,
+        pool_settings=PytdxPoolSettings(
+            pytdx_pool_path=tmp_path / "missing.json", _env_file=None
+        ),
+        client_factory=FakeClient,
+    )
     with provider, pytest.raises(ProviderRequestUnavailable, match=r"local \.day file not found"):
         provider.fetch_daily_bars("sh.600000", date(2026, 8, 7), date(2026, 8, 7))
 
@@ -305,8 +421,7 @@ def test_local_daily_bar_takes_priority_over_remote(tmp_path: Path) -> None:
     _write_day_file(vipdoc, "sh", "600000", [(20260807, 920, 930, 915, 925, 400000.0, 40000)])
     settings = PytdxDailyBarSettings(
         pytdx_vipdoc_path=str(vipdoc),
-        pytdx_daily_bar_endpoints="fake.example:7709",
-        pytdx_daily_bar_pool_path=Path("nonexistent-pool.json"),
+        _env_file=None,
     )
 
     class _FailingClient:
@@ -316,7 +431,13 @@ def test_local_daily_bar_takes_priority_over_remote(tmp_path: Path) -> None:
         def disconnect(self) -> None:
             pass
 
-    provider = PytdxProvider(settings, client_factory=_FailingClient)
+    provider = PytdxProvider(
+        settings,
+        pool_settings=PytdxPoolSettings(
+            pytdx_pool_path=tmp_path / "missing.json", _env_file=None
+        ),
+        client_factory=_FailingClient,
+    )
     provider.__enter__()
     try:
         batch = provider.fetch_daily_bars("sh.600000", date(2026, 8, 7), date(2026, 8, 7))
