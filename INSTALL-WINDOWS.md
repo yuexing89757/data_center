@@ -30,8 +30,10 @@ FASTAPI_HOST=127.0.0.1
 FASTAPI_PORT=8000
 RAW_DATA_ROOT=data/raw
 PYTDX_POOL_PATH=data/pytdx_pool.json
-PYTDX_POOL_REFRESH_HOURS=12
 PYTDX_VIPDOC_PATH=D:\new_tdx64\vipdoc
+AUCTION_COLLECTION_ENABLED=true
+EOD_QUOTE_SNAPSHOT_ENABLED=true
+CALL_AUCTION_SNAPSHOT_ENABLED=true
 ```
 
 不要把 `.env` 发给其他人，也不要提交到 Git。填写完成后再次执行；部署脚本会在 `.env` 中自动生成随机 `FASTAPI_API_KEY`：
@@ -47,7 +49,7 @@ PYTDX_VIPDOC_PATH=D:\new_tdx64\vipdoc
 - 创建 `market-data-api.exe` 并检查两个命令行程序是否可运行；
 - Worker 首次启动时探测 PYTDX 节点，并每 12 小时刷新一次能力节点池。
 
-脚本**不再注册 Windows 计划任务**。所有定时采集（日 K、每日指标、涨跌停股票池、扣非净利润等）都由 worker 进程内置的 APScheduler 调度，触发时间在 `.env` 中配置（如 `DAILY_RUN_HOUR`/`DAILY_RUN_MINUTE`）。
+脚本**不再注册 Windows 计划任务**。所有定时采集（日 K、每日指标、涨跌停股票池、扣非净利润等）都由 worker 进程内置的 APScheduler 调度。执行时间固定在受控代码目录中；`.env` 只允许启用或停用三个可选行情任务。
 
 ## 验证
 

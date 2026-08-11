@@ -87,9 +87,9 @@ BlockingScheduler
 
 | # | Job ID | 名称 | Workflow | 触发 | 默认时间 | 启用 |
 |---|---|---|---|---|---|---|
-| 1 | `opening-auction-limit-up-quotes` | 集合竞价涨停池五档采集 | `auction_collection` | cron 周一至周五 | 09:15 | **默认关** |
-| 2 | `eod-quote-snapshot-daily` | 收盘五档快照 | `eod_quote_snapshot` | cron 周一至周五 | 21:10 | **默认关** |
-| 3 | `call-auction-snapshot-daily` | 今日竞价量 | `call_auction_snapshot` | cron 周一至周五 | 18:00 | ✅ |
+| 1 | `opening-auction-limit-up-quotes` | 集合竞价涨停池五档采集 | `auction_collection` | cron 周一至周五 | 09:15 | ✅ |
+| 2 | `eod-quote-snapshot-daily` | 收盘五档快照 | `eod_quote_snapshot` | cron 周一至周五 | 21:10 | ✅ |
+| 3 | `call-auction-snapshot-daily` | 今日竞价量 | `call_auction_snapshot` | cron 周一至周五 | 21:30 | ✅ |
 | 4 | `daily-run` | 日 K 与基础数据更新 | `daily_market` | cron 周一至周五 | 20:00 | ✅ |
 | 5 | `stock-daily-indicators-daily` | 股票每日指标更新 | `stock_daily_indicator` | cron 周一至周五 | 20:30 | ✅ |
 | 6 | `mainboard-price-limit-stock-pools-daily` | 沪深主板昨日涨跌停股票池 | `stock_pool` | cron 周一至周五 | 21:00 | ✅ |
@@ -97,7 +97,7 @@ BlockingScheduler
 | 8 | `recover-stale-ingestion-runs` | 陈旧运行恢复 | `stale_run_recovery` | interval | 每 1 小时 | ✅ |
 | 9 | `pytdx-pool-refresh` | PYTDX 节点池刷新 | `pytdx_pool_refresh` | interval | 每 12 小时 | ✅ |
 
-> 时间默认值在 `SchedulerSettings`，可通过 `.env` 覆盖（见配置章节）。业务顺序设计：日K(20:00) → 每日指标(20:30) → 股票池(21:00) → 收盘五档(21:10)。收盘五档严格读取当日最新 ready 涨停池；缺失时失败，不回退旧池，也不允许用当前报价补历史日期。今日竞价量任务独立运行。
+> 时间与调度策略固定在 `scheduling_catalog.py`，不能通过 `.env` 覆盖。业务顺序设计：日K(20:00) → 每日指标(20:30) → 股票池(21:00) → 收盘五档(21:10) → 今日竞价量(21:30)。两个收盘后任务只读取当日 ready 涨停池；缺失时失败或按任务契约跳过，不回退旧池，也不允许用当前报价补历史日期。
 
 ### 每个 job 做什么（scheduler.py 里的执行函数）
 
@@ -110,9 +110,9 @@ BlockingScheduler
 | `run_stale_recovery_job` | **3 步**：恢复 stale ingestion run（>60min）、恢复 stale workflow run、恢复过期 auction session。每小时 + 启动时各跑一次 |
 | `run_deducted_profit_job` | tushare 扣非净利润增量同步（按披露变化发现新公告/修订） |
 | `run_stock_pool_job` | 解析基准交易日 → 构建下一交易日生效的涨跌停股票池（依赖当日日K+指标成功） |
-| `run_auction_collection_job` | pytdx_hq 集合竞价五档采集（09:15-09:25 按节奏采样，默认关） |
-| `run_eod_quote_snapshot_job` | 对当日 ready 涨停池采集收盘五档快照（默认关） |
-| `run_call_auction_snapshot_job` | 收盘后采集当日集合竞价量、额及溢价率 |
+| `run_auction_collection_job` | pytdx_hq 集合竞价五档采集（09:15-09:25 按 5 秒节奏采样，默认启用） |
+| `run_eod_quote_snapshot_job` | 对当日 ready 涨停池采集收盘五档快照（默认启用） |
+| `run_call_auction_snapshot_job` | 21:30 仅对当日 ready 涨停池采集集合竞价量、额及溢价率 |
 | `run_pytdx_pool_refresh_job` | 有界探测候选节点能力；成功时原子发布，失败时保留 last-good |
 
 ## 自愈与可靠性（ADR-0016）
@@ -124,29 +124,20 @@ BlockingScheduler
 - 动作：标记为 failed，释放占用的状态，让下次调度能正常重试
 - 不回填历史数据，只清理状态
 
-**misfire 处理**：`misfire_grace_time = scheduler_misfire_grace_seconds`（默认 21600 秒 = 6 小时）。错过触发时间的 job 在宽限期内仍会补跑，超期则跳过。
+**misfire 处理**：代码目录固定 `misfire_grace_time = 21600` 秒（6 小时）。错过触发时间的 job 在宽限期内仍会补跑，超期则跳过。
 
-## 配置（`SchedulerSettings` 与 `PytdxPoolSettings`）
+## 配置边界
 
-全部通过 `.env` 配置，有默认值：
+执行时间、时区、采样节奏、misfire/timeout 和 interval 均由受控代码目录固定。`.env` 只保留运行路径、管理端口和三个可选任务开关：
 
 | 环境变量 | 默认值 | 说明 |
 |---|---|---|
 | `SCHEDULER_STORE_PATH` | `data/scheduler/jobs.sqlite` | APScheduler 持久化路径 |
-| `SCHEDULER_TIMEZONE` | `Asia/Shanghai` | 调度时区 |
-| `DAILY_RUN_HOUR` / `DAILY_RUN_MINUTE` | `20` / `0` | 日K采集时间 |
-| `STOCK_DAILY_INDICATOR_HOUR` / `_MINUTE` | `20` / `30` | 每日指标时间 |
-| `STOCK_POOL_HOUR` / `_MINUTE` | `21` / `0` | 股票池构建时间 |
-| `DEDUCTED_PROFIT_HOUR` / `_MINUTE` | `20` / `0` | 扣非利润时间 |
-| `SCHEDULER_MISFIRE_GRACE_SECONDS` | `21600`（6h） | misfire 宽限期（同时是 job timeout） |
 | `WORKER_ADMIN_PORT` | `8765` | 管理页面端口 |
-| `AUCTION_COLLECTION_ENABLED` | `false` | 集合竞价采集开关 |
-| `AUCTION_COLLECTION_HOUR` / `_MINUTE` | `9` / `15` | 采集开始时间 |
-| `AUCTION_COLLECTION_CADENCE_SECONDS` | `5` | 采样节奏（1-60 秒） |
-| `EOD_QUOTE_SNAPSHOT_ENABLED` | `false` | 收盘五档任务开关；完成实盘语义验证后显式开启 |
-| `EOD_QUOTE_HOUR` / `_MINUTE` | `21` / `10` | 当日涨停池 ready 后的收盘五档采集时间 |
+| `AUCTION_COLLECTION_ENABLED` | `true` | 集合竞价采集开关 |
+| `EOD_QUOTE_SNAPSHOT_ENABLED` | `true` | 收盘五档任务开关 |
+| `CALL_AUCTION_SNAPSHOT_ENABLED` | `true` | 今日竞价量任务开关 |
 | `PYTDX_POOL_PATH` | `data/pytdx_pool.json` | 统一版本化能力节点池路径；生产使用持久化绝对路径 |
-| `PYTDX_POOL_REFRESH_HOURS` | `12` | Worker 进程内节点池刷新周期 |
 
 ## 健康检查（`worker --check`）
 

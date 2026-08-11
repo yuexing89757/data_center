@@ -49,10 +49,13 @@ pytdx 还可从通达信 `T0002/hq_cache` 读取行业和概念完整快照，�
 完成的证明：任务还会检查 basis 当日 `daily_market`、`stock_daily_indicator` WorkflowRun
 均成功，并校验精确交易日、日 K、每日指标和 lineage；缺失时失败且不回退旧快照。
 
-收盘五档任务默认关闭；完成 pytdx 收盘盘口字段与数量单位的实盘验证后，通过
-`EOD_QUOTE_SNAPSHOT_ENABLED=true` 显式开启。任务在工作日 21:10 运行，只读取当天最新
+收盘五档任务默认启用，在工作日 21:10 运行，只读取当天最新
 `ready` 涨停池，保存原始 JSONL、Manifest、质量结果和标准快照。当天池缺失时失败，空池
 合法跳过；任务禁止把当前实时报价写成其他历史日期，也不会回退旧股票池。
+
+集合竞价涨停池五档默认启用，工作日 09:15 启动并按 5 秒节奏采样至 09:25。今日竞价量
+默认启用，工作日 21:30 运行，只读取精确交易日的 `ready` 涨停池；不读取跌停池，不回退
+旧池。三个可选任务只能通过 `.env` 布尔开关启停，执行时间由受控代码目录固定。
 
 Worker 启动时先探测一个有界候选集，按 quote、SSE 日 K、SZSE 日 K 和 BSE 日 K 能力生成
 统一的版本化 PYTDX 节点池，之后每 12 小时刷新。刷新失败时继续使用最后一个有效池；首次
@@ -62,10 +65,12 @@ Worker 启动时先探测一个有界候选集，按 quote、SSE 日 K、SZSE �
 
 ```dotenv
 PYTDX_POOL_PATH=/var/lib/market-data-center/pytdx_pool.json
-PYTDX_POOL_REFRESH_HOURS=12
 PYTDX_VIPDOC_PATH=D:\new_tdx64\vipdoc
 RAW_DATA_ROOT=/var/lib/market-data-center/raw
 SCHEDULER_STORE_PATH=/var/lib/market-data-center/scheduler/jobs.sqlite
+AUCTION_COLLECTION_ENABLED=true
+EOD_QUOTE_SNAPSHOT_ENABLED=true
+CALL_AUCTION_SNAPSHOT_ENABLED=true
 ```
 
 ## 股票每日指标定时采集

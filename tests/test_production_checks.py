@@ -274,10 +274,48 @@ def test_linux_worker_uses_the_shared_pool_runtime_contract() -> None:
 
     assert "check_pytdx_" + "daily_bar_endpoints.py" not in unit
     assert "PYTDX_POOL_PATH=/var/lib/market-data-center/pytdx_pool.json" in template
-    assert "PYTDX_POOL_REFRESH_HOURS=12" in template
     assert "AUCTION_COLLECTION_ENABLED=true" in template
     assert "EOD_QUOTE_SNAPSHOT_ENABLED=true" in template
+    assert "CALL_AUCTION_SNAPSHOT_ENABLED=true" in template
     assert "scripts/check_pytdx_pool.py" in smoke
+
+
+def test_release_templates_expose_task_switches_but_not_task_times() -> None:
+    templates = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (
+            PROJECT_ROOT / ".env.example",
+            PROJECT_ROOT / "deploy/linux/market-data-center.env.example",
+        )
+    )
+    switches = (
+        "AUCTION_COLLECTION_ENABLED=true",
+        "EOD_QUOTE_SNAPSHOT_ENABLED=true",
+        "CALL_AUCTION_SNAPSHOT_ENABLED=true",
+    )
+    forbidden = (
+        "SCHEDULER_TIMEZONE",
+        "DAILY_RUN_HOUR",
+        "DAILY_RUN_MINUTE",
+        "STOCK_DAILY_INDICATOR_HOUR",
+        "STOCK_DAILY_INDICATOR_MINUTE",
+        "STOCK_POOL_HOUR",
+        "STOCK_POOL_MINUTE",
+        "DEDUCTED_PROFIT_HOUR",
+        "DEDUCTED_PROFIT_MINUTE",
+        "SCHEDULER_MISFIRE_GRACE_SECONDS",
+        "AUCTION_COLLECTION_HOUR",
+        "AUCTION_COLLECTION_MINUTE",
+        "AUCTION_COLLECTION_CADENCE_SECONDS",
+        "EOD_QUOTE_HOUR",
+        "EOD_QUOTE_MINUTE",
+        "CALL_AUCTION_HOUR",
+        "CALL_AUCTION_MINUTE",
+        "PYTDX_POOL_REFRESH_HOURS",
+    )
+
+    assert all(templates.count(switch) == 2 for switch in switches)
+    assert all(name not in templates for name in forbidden)
 
 
 def test_active_release_files_do_not_reference_legacy_pytdx_settings() -> None:

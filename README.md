@@ -28,7 +28,7 @@ Start the long-lived API and worker services with:
 .\serve.cmd
 ```
 
-This launches the FastAPI read-only API (`http://127.0.0.1:8000`) and the `market-data-center worker` process in separate console windows. The worker hosts an in-process APScheduler that drives every scheduled job — PYTDX pool refresh, daily-run, stock daily indicators, stock pools, deducted profit, stale-run recovery and the optional quote snapshots. Job fire times are configured in `.env` (`DAILY_RUN_HOUR`/`DAILY_RUN_MINUTE`, etc.). Stop each service with Ctrl+C in its window.
+This launches the FastAPI read-only API (`http://127.0.0.1:8000`) and the `market-data-center worker` process in separate console windows. The worker hosts an in-process APScheduler that drives every scheduled job — PYTDX pool refresh, daily-run, stock daily indicators, stock pools, deducted profit, stale-run recovery and quote snapshots. Job fire times are fixed in the controlled code catalog; `.env` may only enable or disable the three optional quote tasks. Stop each service with Ctrl+C in its window.
 
 See [INSTALL-WINDOWS.md](INSTALL-WINDOWS.md) for the Chinese installation and verification guide.
 
