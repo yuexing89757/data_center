@@ -51,6 +51,15 @@ class SchedulerSettings(BaseSettings):
     call_auction_minute: int = Field(default=0, ge=0, le=59)
 
 
+class PytdxPoolSettings(BaseSettings):
+    """Shared endpoint-pool location and Worker refresh cadence."""
+
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    pytdx_pool_path: Path = Path("data/pytdx_pool.json")
+    pytdx_pool_refresh_hours: int = Field(default=12, ge=1, le=168)
+
+
 class PytdxHqSettings(BaseSettings):
     """Explicit network endpoint and bounded realtime quote settings."""
 
