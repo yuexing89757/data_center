@@ -221,16 +221,15 @@ def test_operations_workflow_codes_are_constrained(database_engine: Engine) -> N
             },
         )
 
-    with pytest.raises(DBAPIError) as captured:
-        with database_engine.begin() as connection:
-            connection.execute(
-                statement,
-                {
-                    "workflow_run_id": uuid4(),
-                    "workflow_code": "unknown_workflow",
-                    "scheduled_for": datetime(2026, 8, 11, 3, tzinfo=UTC),
-                },
-            )
+    with pytest.raises(DBAPIError) as captured, database_engine.begin() as connection:
+        connection.execute(
+            statement,
+            {
+                "workflow_run_id": uuid4(),
+                "workflow_code": "unknown_workflow",
+                "scheduled_for": datetime(2026, 8, 11, 3, tzinfo=UTC),
+            },
+        )
 
     assert isinstance(captured.value.orig, CheckViolation)
 
