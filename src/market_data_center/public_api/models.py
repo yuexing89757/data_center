@@ -2,6 +2,7 @@
 
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -111,21 +112,62 @@ class LimitUpPoolResponse(ApiModel):
 
 
 class DailyLimitUpListItem(ApiModel):
+    symbol: str
     code: str
     name: str
-    close: Decimal | None
-    volume: int | None
-    free_float_market_cap: Decimal | None
-    free_float_turnover_rate_pct: Decimal | None
-    seal_amount: Decimal | None
-    seal_volume_ratio: Decimal | None
-    consecutive_limit_up_days: int | None
-    auction_volume: int | None
-    auction_amount: Decimal | None
-    auction_premium_pct: Decimal | None
+    previous_close: Decimal
+    close: Decimal
+    limit_price: Decimal
+    change_percent: Decimal
+    free_float_shares: int = Field(gt=0)
+    free_float_market_cap_cny: Decimal
+    first_limit_up_at: datetime | None
+    last_limit_up_at: datetime | None
+    open_count: int | None = Field(default=None, ge=0)
+    limit_up_duration_seconds: int | None = Field(default=None, ge=0)
+    duration_semantics: str
+    source_reported_sealed_funds_cny: Decimal | None
+    closing_bid1_price: Decimal | None
+    closing_bid1_volume_shares: int | None = Field(default=None, ge=0)
+    closing_bid2_price: Decimal | None
+    closing_bid2_volume_shares: int | None = Field(default=None, ge=0)
+    closing_bid3_price: Decimal | None
+    closing_bid3_volume_shares: int | None = Field(default=None, ge=0)
+    closing_bid4_price: Decimal | None
+    closing_bid4_volume_shares: int | None = Field(default=None, ge=0)
+    closing_bid5_price: Decimal | None
+    closing_bid5_volume_shares: int | None = Field(default=None, ge=0)
+    closing_bid1_sealing_amount_cny: Decimal | None
+    daily_bar_ingestion_id: UUID
+    indicator_ingestion_id: UUID
+    name_ingestion_id: UUID
+    pool_calculation_id: UUID
+    source_observation_ingestion_id: UUID | None
+    source_observation_raw_id: UUID | None
+    order_book_ingestion_id: UUID | None
+
+
+class DailyLimitUpQualitySummary(ApiModel):
+    total_findings: int = Field(ge=0)
+    by_rule: dict[str, int]
 
 
 class DailyLimitUpListResponse(ApiModel):
+    snapshot_id: UUID
+    calculation_id: UUID | None
     trade_date: date
-    count: int = Field(ge=0)
+    version: int = Field(ge=1)
+    status: Literal["ready", "partial", "deferred", "failed"]
+    rule_version: str
+    algorithm_version: str
+    input_hash: str
+    source_ingestion_id: UUID | None
+    generated_at: datetime
+    candidate_count: int = Field(ge=0)
+    member_count: int = Field(ge=0)
+    rejected_count: int = Field(ge=0)
+    offset: int = Field(ge=0)
+    returned_count: int = Field(ge=0)
+    has_more: bool
+    quality: DailyLimitUpQualitySummary
     items: list[DailyLimitUpListItem]

@@ -18,6 +18,7 @@ from market_data_center.public_api.models import (
     DailyBarItem,
     DailyLimitUpListItem,
     DailyLimitUpListResponse,
+    DailyLimitUpQualitySummary,
     LimitUpPoolItem,
     LimitUpPoolOmissionReasons,
     LimitUpPoolResponse,
@@ -39,6 +40,7 @@ class FakeQueryService:
         self.security_calls: list[tuple[str, int]] = []
         self.daily_bar_calls: list[tuple[str, date, date, int]] = []
         self.limit_up_calls: list[tuple[date, int | None, int]] = []
+        self.daily_limit_up_calls: list[tuple[date, int | None, int, int]] = []
 
     def ready(self) -> None:
         if self.ready_error is not None:
@@ -137,24 +139,66 @@ class FakeQueryService:
             ],
         )
 
-    def daily_limit_up_list(self, trade_date: date, limit: int) -> DailyLimitUpListResponse:
+    def daily_limit_up_list(
+        self, trade_date: date, version: int | None, offset: int, limit: int
+    ) -> DailyLimitUpListResponse:
+        self.daily_limit_up_calls.append((trade_date, version, offset, limit))
         return DailyLimitUpListResponse(
+            snapshot_id="33333333-3333-3333-3333-333333333333",
+            calculation_id="44444444-4444-4444-4444-444444444444",
             trade_date=trade_date,
-            count=1,
+            version=version or 1,
+            status="partial",
+            rule_version="cn_a_mainboard_limit_up_v1",
+            algorithm_version="today_limit_up_snapshot_v1",
+            input_hash="1" * 64,
+            source_ingestion_id="55555555-5555-5555-5555-555555555555",
+            generated_at=datetime(2026, 8, 11, 14, 0, tzinfo=UTC),
+            candidate_count=55,
+            member_count=55,
+            rejected_count=0,
+            offset=offset,
+            returned_count=1,
+            has_more=True,
+            quality=DailyLimitUpQualitySummary(
+                total_findings=2,
+                by_rule={"missing_source_observation": 2},
+            ),
             items=[
                 DailyLimitUpListItem(
+                    symbol="SSE:600000",
                     code="600000",
                     name="浦发银行",
+                    previous_close=Decimal("8.45"),
                     close=Decimal("9.29"),
-                    volume=62542540,
-                    free_float_market_cap=Decimal("5000000000"),
-                    free_float_turnover_rate_pct=Decimal("2.5"),
-                    seal_amount=Decimal("1200000"),
-                    seal_volume_ratio=Decimal("0.05"),
-                    consecutive_limit_up_days=2,
-                    auction_volume=5000,
-                    auction_amount=Decimal("46000"),
-                    auction_premium_pct=Decimal("1.2"),
+                    limit_price=Decimal("9.29"),
+                    change_percent=Decimal("9.9408284024"),
+                    free_float_shares=100000000,
+                    free_float_market_cap_cny=Decimal("929000000"),
+                    first_limit_up_at=datetime(2026, 8, 11, 9, 35, tzinfo=UTC),
+                    last_limit_up_at=datetime(2026, 8, 11, 14, 30, tzinfo=UTC),
+                    open_count=1,
+                    limit_up_duration_seconds=None,
+                    duration_semantics="unavailable_without_event_stream",
+                    source_reported_sealed_funds_cny=Decimal("1200000"),
+                    closing_bid1_price=Decimal("9.29"),
+                    closing_bid1_volume_shares=100000,
+                    closing_bid2_price=Decimal("9.28"),
+                    closing_bid2_volume_shares=20000,
+                    closing_bid3_price=None,
+                    closing_bid3_volume_shares=None,
+                    closing_bid4_price=None,
+                    closing_bid4_volume_shares=None,
+                    closing_bid5_price=None,
+                    closing_bid5_volume_shares=None,
+                    closing_bid1_sealing_amount_cny=Decimal("929000"),
+                    daily_bar_ingestion_id="66666666-6666-6666-6666-666666666666",
+                    indicator_ingestion_id="77777777-7777-7777-7777-777777777777",
+                    name_ingestion_id="88888888-8888-8888-8888-888888888888",
+                    pool_calculation_id="99999999-9999-9999-9999-999999999999",
+                    source_observation_ingestion_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+                    source_observation_raw_id="bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+                    order_book_ingestion_id="cccccccc-cccc-cccc-cccc-cccccccccccc",
                 )
             ],
         )
@@ -351,16 +395,61 @@ def test_daily_limit_up_list_returns_items() -> None:
 
     response = _client(service).get(
         "/api/v1/daily-limit-up-list",
-        params={"trade_date": "2026-08-10", "limit": 200},
+        params={"trade_date": "2026-08-10", "version": 1, "offset": 10, "limit": 200},
         headers=_headers(),
     )
 
     assert response.status_code == 200
     body = response.json()
     assert body["trade_date"] == "2026-08-10"
-    assert body["count"] == 1
+    assert body["snapshot_id"] == "33333333-3333-3333-3333-333333333333"
+    assert body["version"] == 1
+    assert body["status"] == "partial"
+    assert body["member_count"] == 55
+    assert body["returned_count"] == 1
+    assert body["offset"] == 10
+    assert body["quality"] == {
+        "total_findings": 2,
+        "by_rule": {"missing_source_observation": 2},
+    }
     item = body["items"][0]
+    assert item["symbol"] == "SSE:600000"
     assert item["code"] == "600000"
     assert item["close"] == "9.29"
-    assert item["consecutive_limit_up_days"] == 2
-    assert item["seal_amount"] == "1200000"
+    assert item["free_float_market_cap_cny"] == "929000000"
+    assert item["source_reported_sealed_funds_cny"] == "1200000"
+    assert item["closing_bid1_sealing_amount_cny"] == "929000"
+    assert item["limit_up_duration_seconds"] is None
+    assert "consecutive_limit_up_days" not in item
+    assert service.daily_limit_up_calls == [(date(2026, 8, 10), 1, 10, 200)]
+
+
+def test_daily_limit_up_list_version_and_pagination_are_bounded() -> None:
+    service = FakeQueryService()
+    client = _client(service)
+
+    assert (
+        client.get(
+            "/api/v1/daily-limit-up-list",
+            params={"trade_date": "2026-08-10", "version": 0},
+            headers=_headers(),
+        ).status_code
+        == 422
+    )
+    assert (
+        client.get(
+            "/api/v1/daily-limit-up-list",
+            params={"trade_date": "2026-08-10", "offset": 50001},
+            headers=_headers(),
+        ).status_code
+        == 422
+    )
+    assert (
+        client.get(
+            "/api/v1/daily-limit-up-list",
+            params={"trade_date": "2026-08-10", "limit": 501},
+            headers=_headers(),
+        ).status_code
+        == 422
+    )
+    assert service.daily_limit_up_calls == []

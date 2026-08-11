@@ -214,7 +214,17 @@
       "DailyLimitUpListItem": {
         "additionalProperties": false,
         "properties": {
-          "auction_amount": {
+          "change_percent": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Change Percent",
+            "type": "string"
+          },
+          "close": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Close",
+            "type": "string"
+          },
+          "closing_bid1_price": {
             "anyOf": [
               {
                 "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
@@ -224,9 +234,9 @@
                 "type": "null"
               }
             ],
-            "title": "Auction Amount"
+            "title": "Closing Bid1 Price"
           },
-          "auction_premium_pct": {
+          "closing_bid1_sealing_amount_cny": {
             "anyOf": [
               {
                 "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
@@ -236,20 +246,21 @@
                 "type": "null"
               }
             ],
-            "title": "Auction Premium Pct"
+            "title": "Closing Bid1 Sealing Amount Cny"
           },
-          "auction_volume": {
+          "closing_bid1_volume_shares": {
             "anyOf": [
               {
+                "minimum": 0.0,
                 "type": "integer"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Auction Volume"
+            "title": "Closing Bid1 Volume Shares"
           },
-          "close": {
+          "closing_bid2_price": {
             "anyOf": [
               {
                 "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
@@ -259,100 +270,272 @@
                 "type": "null"
               }
             ],
-            "title": "Close"
+            "title": "Closing Bid2 Price"
+          },
+          "closing_bid2_volume_shares": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closing Bid2 Volume Shares"
+          },
+          "closing_bid3_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closing Bid3 Price"
+          },
+          "closing_bid3_volume_shares": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closing Bid3 Volume Shares"
+          },
+          "closing_bid4_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closing Bid4 Price"
+          },
+          "closing_bid4_volume_shares": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closing Bid4 Volume Shares"
+          },
+          "closing_bid5_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closing Bid5 Price"
+          },
+          "closing_bid5_volume_shares": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closing Bid5 Volume Shares"
           },
           "code": {
             "title": "Code",
             "type": "string"
           },
-          "consecutive_limit_up_days": {
+          "daily_bar_ingestion_id": {
+            "format": "uuid",
+            "title": "Daily Bar Ingestion Id",
+            "type": "string"
+          },
+          "duration_semantics": {
+            "title": "Duration Semantics",
+            "type": "string"
+          },
+          "first_limit_up_at": {
             "anyOf": [
               {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Limit Up At"
+          },
+          "free_float_market_cap_cny": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Free Float Market Cap Cny",
+            "type": "string"
+          },
+          "free_float_shares": {
+            "exclusiveMinimum": 0.0,
+            "title": "Free Float Shares",
+            "type": "integer"
+          },
+          "indicator_ingestion_id": {
+            "format": "uuid",
+            "title": "Indicator Ingestion Id",
+            "type": "string"
+          },
+          "last_limit_up_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Limit Up At"
+          },
+          "limit_price": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Limit Price",
+            "type": "string"
+          },
+          "limit_up_duration_seconds": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
                 "type": "integer"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Consecutive Limit Up Days"
-          },
-          "free_float_market_cap": {
-            "anyOf": [
-              {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Free Float Market Cap"
-          },
-          "free_float_turnover_rate_pct": {
-            "anyOf": [
-              {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Free Float Turnover Rate Pct"
+            "title": "Limit Up Duration Seconds"
           },
           "name": {
             "title": "Name",
             "type": "string"
           },
-          "seal_amount": {
-            "anyOf": [
-              {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Seal Amount"
+          "name_ingestion_id": {
+            "format": "uuid",
+            "title": "Name Ingestion Id",
+            "type": "string"
           },
-          "seal_volume_ratio": {
+          "open_count": {
             "anyOf": [
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Seal Volume Ratio"
-          },
-          "volume": {
-            "anyOf": [
-              {
+                "minimum": 0.0,
                 "type": "integer"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Volume"
+            "title": "Open Count"
+          },
+          "order_book_ingestion_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Book Ingestion Id"
+          },
+          "pool_calculation_id": {
+            "format": "uuid",
+            "title": "Pool Calculation Id",
+            "type": "string"
+          },
+          "previous_close": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Previous Close",
+            "type": "string"
+          },
+          "source_observation_ingestion_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Observation Ingestion Id"
+          },
+          "source_observation_raw_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Observation Raw Id"
+          },
+          "source_reported_sealed_funds_cny": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Reported Sealed Funds Cny"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
           }
         },
         "required": [
+          "symbol",
           "code",
           "name",
+          "previous_close",
           "close",
-          "volume",
-          "free_float_market_cap",
-          "free_float_turnover_rate_pct",
-          "seal_amount",
-          "seal_volume_ratio",
-          "consecutive_limit_up_days",
-          "auction_volume",
-          "auction_amount",
-          "auction_premium_pct"
+          "limit_price",
+          "change_percent",
+          "free_float_shares",
+          "free_float_market_cap_cny",
+          "first_limit_up_at",
+          "last_limit_up_at",
+          "duration_semantics",
+          "source_reported_sealed_funds_cny",
+          "closing_bid1_price",
+          "closing_bid2_price",
+          "closing_bid3_price",
+          "closing_bid4_price",
+          "closing_bid5_price",
+          "closing_bid1_sealing_amount_cny",
+          "daily_bar_ingestion_id",
+          "indicator_ingestion_id",
+          "name_ingestion_id",
+          "pool_calculation_id",
+          "source_observation_ingestion_id",
+          "source_observation_raw_id",
+          "order_book_ingestion_id"
         ],
         "title": "DailyLimitUpListItem",
         "type": "object"
@@ -360,10 +543,39 @@
       "DailyLimitUpListResponse": {
         "additionalProperties": false,
         "properties": {
-          "count": {
+          "algorithm_version": {
+            "title": "Algorithm Version",
+            "type": "string"
+          },
+          "calculation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calculation Id"
+          },
+          "candidate_count": {
             "minimum": 0.0,
-            "title": "Count",
+            "title": "Candidate Count",
             "type": "integer"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "has_more": {
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "input_hash": {
+            "title": "Input Hash",
+            "type": "string"
           },
           "items": {
             "items": {
@@ -372,18 +584,115 @@
             "title": "Items",
             "type": "array"
           },
+          "member_count": {
+            "minimum": 0.0,
+            "title": "Member Count",
+            "type": "integer"
+          },
+          "offset": {
+            "minimum": 0.0,
+            "title": "Offset",
+            "type": "integer"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/DailyLimitUpQualitySummary"
+          },
+          "rejected_count": {
+            "minimum": 0.0,
+            "title": "Rejected Count",
+            "type": "integer"
+          },
+          "returned_count": {
+            "minimum": 0.0,
+            "title": "Returned Count",
+            "type": "integer"
+          },
+          "rule_version": {
+            "title": "Rule Version",
+            "type": "string"
+          },
+          "snapshot_id": {
+            "format": "uuid",
+            "title": "Snapshot Id",
+            "type": "string"
+          },
+          "source_ingestion_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Ingestion Id"
+          },
+          "status": {
+            "enum": [
+              "ready",
+              "partial",
+              "deferred",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
           "trade_date": {
             "format": "date",
             "title": "Trade Date",
             "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
           }
         },
         "required": [
+          "snapshot_id",
+          "calculation_id",
           "trade_date",
-          "count",
+          "version",
+          "status",
+          "rule_version",
+          "algorithm_version",
+          "input_hash",
+          "source_ingestion_id",
+          "generated_at",
+          "candidate_count",
+          "member_count",
+          "rejected_count",
+          "offset",
+          "returned_count",
+          "has_more",
+          "quality",
           "items"
         ],
         "title": "DailyLimitUpListResponse",
+        "type": "object"
+      },
+      "DailyLimitUpQualitySummary": {
+        "additionalProperties": false,
+        "properties": {
+          "by_rule": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Rule",
+            "type": "object"
+          },
+          "total_findings": {
+            "minimum": 0.0,
+            "title": "Total Findings",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total_findings",
+          "by_rule"
+        ],
+        "title": "DailyLimitUpQualitySummary",
         "type": "object"
       },
       "ErrorDetail": {
@@ -1015,7 +1324,7 @@
     },
     "/api/v1/daily-limit-up-list": {
       "get": {
-        "description": "Returns limit-up stocks for trade_date with close price, volume, free-float market cap, free-float turnover, seal amount, seal volume ratio, consecutive limit-up days, and call-auction data. Fields requiring eod/auction snapshots are null when not yet collected.",
+        "description": "Returns the exact trade_date latest or requested today_limit_up snapshot. The response includes immutable revision, status, bounded quality metadata, canonical unadjusted price facts, close times same-date free-float shares, source-reported sealing facts, closing bid-1 computed sealing amount, optional five-level buy order-book context, and provider-neutral lineage. No date or value fallback is used; Decimal values are serialized as strings.",
         "operationId": "daily_limit_up_list_api_v1_daily_limit_up_list_get",
         "parameters": [
           {
@@ -1026,6 +1335,35 @@
               "format": "date",
               "title": "Trade Date",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 50000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
             }
           },
           {
@@ -1098,7 +1436,7 @@
             "APIKeyHeader": []
           }
         ],
-        "summary": "Get the daily limit-up stock list with rich metrics",
+        "summary": "Get one immutable same-day limit-up snapshot",
         "tags": [
           "market-data"
         ]

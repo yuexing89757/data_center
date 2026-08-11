@@ -116,6 +116,13 @@ exact event-date mainboard limit-up snapshot. Its free-float market capitalizati
 the same-date unadjusted close multiplied by same-date free-float shares; no other market-value
 field or date fallback is used.
 
+`GET /api/v1/daily-limit-up-list?trade_date=YYYY-MM-DD&version=&offset=0&limit=200` exposes the
+versioned immutable `today_limit_up` domain snapshot, including its ready/partial/deferred/failed
+state, bounded quality summary, objective price/capitalization facts, optional sealing/order-book
+facts, and provider-neutral lineage. It never substitutes an older date or missing enrichment;
+members are deterministically ordered by symbol. The generic `/api/v1/limit-up-pool` contract is
+unchanged.
+
 Daily Bar bulk ingestion keeps one provider/Raw/ingestion lineage unit per security while writing
 validated facts in bounded PostgreSQL transactions. Configure `DAILY_BAR_WRITE_BATCH_SIZE`
 (default 100, range 1..500); see `docs/DailyBar批量写入与性能基线-2026-08-11.md`.
@@ -138,8 +145,9 @@ market-data-center derived-recompute --start-date 2026-01-01 --end-date 2026-07-
 `api_v1.daily_bars` remains unadjusted. Derived views include the calculation ID, algorithm version, calculation range, input hash, and calculation timestamp; see [ADR-0009](docs/adr/ADR-0009-版本化复权行情与客观Metrics.md).
 
 The external HTTP contract is [FastAPI OpenAPI v1](contracts/fastapi-openapi-v1.json). FastAPI
-executes bounded PostgreSQL `api_v1` functions directly; consumers never receive database,
-provider, lineage, Raw, or secret fields.
+executes bounded PostgreSQL `api_v1` functions directly; consumers never receive database
+addresses, source payload field names, Raw objects, or secrets. Only contract-defined immutable
+lineage identifiers are exposed where required for reproducibility.
 
 The third-party dynamic board index `THS:883423` is isolated from Security and
 ordinary Daily Bar facts. Synchronize its explicit directory before bars and

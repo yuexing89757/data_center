@@ -53,6 +53,8 @@ select api_v1.query_limit_up_pool(
 QUERY_DAILY_LIMIT_UP_LIST = text("""
 select api_v1.query_daily_limit_up_list(
     p_trade_date => :trade_date,
+    p_version => :version,
+    p_offset => :offset,
     p_limit => :limit
 ) as payload
 """)
@@ -100,7 +102,9 @@ class PublicQueryService(Protocol):
         self, trade_date: date, version: int | None, limit: int
     ) -> LimitUpPoolResponse: ...
 
-    def daily_limit_up_list(self, trade_date: date, limit: int) -> DailyLimitUpListResponse: ...
+    def daily_limit_up_list(
+        self, trade_date: date, version: int | None, offset: int, limit: int
+    ) -> DailyLimitUpListResponse: ...
 
 
 class PostgreSQLPublicQueryService:
@@ -161,10 +165,17 @@ class PostgreSQLPublicQueryService:
             raise PublicQueryNotFound("limit-up pool was not found")
         return LimitUpPoolResponse.model_validate(rows[0]["payload"])
 
-    def daily_limit_up_list(self, trade_date: date, limit: int) -> DailyLimitUpListResponse:
+    def daily_limit_up_list(
+        self, trade_date: date, version: int | None, offset: int, limit: int
+    ) -> DailyLimitUpListResponse:
         rows = self._execute(
             QUERY_DAILY_LIMIT_UP_LIST,
-            {"trade_date": trade_date, "limit": limit},
+            {
+                "trade_date": trade_date,
+                "version": version,
+                "offset": offset,
+                "limit": limit,
+            },
         )
         if not rows:
             raise PublicQueryNotFound("daily limit-up list was not found")

@@ -174,6 +174,25 @@ def test_daily_limit_up_list_fix_limits_snapshot_not_members() -> None:
     assert "join stock_pool.member" in member_query
     assert "limit least(greatest(p_limit, 1), 500)" in member_query
     assert "grant execute on function api_v1.query_daily_limit_up_list" in migration
+
+
+def test_daily_limit_up_list_switches_to_bounded_today_limit_up_contract() -> None:
+    migration = (
+        MIGRATION_DIR / "20260812000100_switch_daily_limit_up_list_to_today_limit_up.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "join today_limit_up.member" in migration
+    assert "join today_limit_up.calculation_quality" in migration
+    assert "p_version integer default null" in migration
+    assert "p_offset integer default 0" in migration
+    assert "p_limit integer default 200" in migration
+    assert "offset p_offset" in migration
+    assert "limit p_limit" in migration
+    assert "to market_data_api" in migration
+    assert "to anon" not in migration
+    assert "to authenticated" not in migration
+    assert "realtime." not in migration
+    assert "core." not in migration
     assert not re.search(r"(?im)^grant\s+(insert|update|delete|all)", migration)
 
 

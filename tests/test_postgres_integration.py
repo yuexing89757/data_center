@@ -186,6 +186,81 @@ select has_schema_privilege('public','today_limit_up','usage')
         )
 
 
+def test_daily_limit_up_list_rpc_exposes_only_bounded_domain_projection(
+    database_engine: Engine,
+) -> None:
+    snapshot_id = uuid4()
+    with database_engine.begin() as connection:
+        connection.execute(
+            text("""
+insert into today_limit_up.snapshot (
+    snapshot_id, calculation_id, trade_date, version, status,
+    member_count, candidate_count, rejected_count, content_hash, input_hash,
+    rule_version, algorithm_version, source_ingestion_id, generated_at
+) values (
+    :snapshot_id, null, :trade_date, 1, 'deferred',
+    0, 0, 0, :content_hash, :input_hash,
+    'cn-a-share-limit-up-v1', 'today-limit-up-snapshot-v1', null, now()
+)
+"""),
+            {
+                "snapshot_id": snapshot_id,
+                "trade_date": TRADE_DATE,
+                "content_hash": "0" * 64,
+                "input_hash": "1" * 64,
+            },
+        )
+        connection.execute(
+            text("""
+insert into today_limit_up.calculation_quality (
+    snapshot_id, rule_code, severity, symbol, message
+) values (
+    :snapshot_id, 'missing_daily_market', 'error', '',
+    'daily_market dependency is not ready'
+)
+"""),
+            {"snapshot_id": snapshot_id},
+        )
+        assert connection.scalar(
+            text("""
+select has_function_privilege(
+    'market_data_api',
+    'api_v1.query_daily_limit_up_list(date,integer,integer,integer)',
+    'execute'
+)
+""")
+        )
+        assert not connection.scalar(
+            text("""
+select has_table_privilege(
+    'market_data_api', 'today_limit_up.snapshot', 'select'
+)
+""")
+        )
+        connection.execute(text("set local role market_data_api"))
+        payload = connection.scalar(
+            text("""
+select api_v1.query_daily_limit_up_list(
+    :trade_date, 1, 0, 20
+)
+"""),
+            {"trade_date": TRADE_DATE},
+        )
+
+    assert payload["snapshot_id"] == str(snapshot_id)
+    assert payload["trade_date"] == TRADE_DATE.isoformat()
+    assert payload["version"] == 1
+    assert payload["status"] == "deferred"
+    assert payload["member_count"] == 0
+    assert payload["returned_count"] == 0
+    assert payload["has_more"] is False
+    assert payload["quality"] == {
+        "total_findings": 1,
+        "by_rule": {"missing_daily_market": 1},
+    }
+    assert payload["items"] == []
+
+
 def test_operations_repository_records_attempts_steps_and_stale_recovery(
     database_engine: Engine,
 ) -> None:

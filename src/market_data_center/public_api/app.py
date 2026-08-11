@@ -195,21 +195,25 @@ def create_app(
             503: {"model": ErrorResponse},
         },
         tags=["market-data"],
-        summary="Get the daily limit-up stock list with rich metrics",
+        summary="Get one immutable same-day limit-up snapshot",
         description=(
-            "Returns limit-up stocks for trade_date with close price, volume, "
-            "free-float market cap, free-float turnover, seal amount, seal volume "
-            "ratio, consecutive limit-up days, and call-auction data. Fields "
-            "requiring eod/auction snapshots are null when not yet collected."
+            "Returns the exact trade_date latest or requested today_limit_up snapshot. "
+            "The response includes immutable revision, status, bounded quality metadata, "
+            "canonical unadjusted price facts, close times same-date free-float shares, "
+            "source-reported sealing facts, closing bid-1 computed sealing amount, optional "
+            "five-level buy order-book context, and provider-neutral lineage. No date or "
+            "value fallback is used; Decimal values are serialized as strings."
         ),
     )
     def daily_limit_up_list(
         _: ApiKeyDependency,
         service: QueryServiceDependency,
         trade_date: Annotated[date, Query()],
+        version: Annotated[int | None, Query(ge=1)] = None,
+        offset: Annotated[int, Query(ge=0, le=50000)] = 0,
         limit: Annotated[int, Query(ge=1, le=500)] = 200,
     ) -> DailyLimitUpListResponse:
-        return service.daily_limit_up_list(trade_date, limit)
+        return service.daily_limit_up_list(trade_date, version, offset, limit)
 
     return app
 
