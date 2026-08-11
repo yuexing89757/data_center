@@ -276,11 +276,7 @@ def load_endpoint_pool(path: Path) -> PytdxEndpointPool:
 def endpoints_for(
     pool: PytdxEndpointPool, capability: PytdxCapability
 ) -> tuple[tuple[str, int], ...]:
-    return tuple(
-        (node.host, node.port)
-        for node in pool.nodes
-        if node.capabilities[capability]
-    )
+    return tuple((node.host, node.port) for node in pool.nodes if node.capabilities[capability])
 ```
 
 实现要求：精确版本、字段集合、时区、端口、非负整数延迟、四个显式布尔 capability、endpoint 唯一；加载后按 `(latency_ms, host, port)` 排序。不要吞掉文件或 JSON 错误，统一转换为无敏感文本的 `ProviderError`。
@@ -876,10 +872,7 @@ Expected: FAIL，并列出旧变量/脚本引用。
 
 ```python
 pool = load_endpoint_pool(PytdxPoolSettings().pytdx_pool_path)
-counts = {
-    capability.value: len(endpoints_for(pool, capability))
-    for capability in PytdxCapability
-}
+counts = {capability.value: len(endpoints_for(pool, capability)) for capability in PytdxCapability}
 if min(counts["quote"], counts["daily_bar_sse"], counts["daily_bar_szse"]) == 0:
     raise SystemExit(1)
 print(json.dumps(counts, sort_keys=True))
