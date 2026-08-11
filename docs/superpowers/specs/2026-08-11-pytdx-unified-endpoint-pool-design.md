@@ -125,7 +125,10 @@ Worker 获得全局 Scheduler advisory lock 后、注册其他 APScheduler job �
 
 新增受控任务 `pytdx-pool-refresh`，使用 APScheduler interval trigger 每 12 小时执行。任务定义、调度注册、Operations 执行记录和本地管理页引用同一个代码目录。不得注册 cron、Windows Task Scheduler 或其他 OS 级刷新任务。
 
-Operations 新增内部 workflow code `pytdx_pool_refresh`，通过有序 SQL migration 扩展约束。该 workflow 不创建 IngestionRun，因为节点可用性探测不是市场事实采集；它只记录运行状态和受控行数统计。`operations` 仍不加入公共 PostgREST/FastAPI 契约。
+Operations 新增内部 workflow code `pytdx_pool_refresh`。当前数据库没有限制
+`workflow_code` 取值，因此通过有序 SQL migration 首次增加覆盖全部受控 workflow code 的
+check constraint。该 workflow 不创建 IngestionRun，因为节点可用性探测不是市场事实采集；
+它只记录运行状态和受控行数统计。`operations` 仍不加入公共 PostgREST/FastAPI 契约。
 
 ## 7. Provider 行为
 
@@ -154,7 +157,7 @@ Operations 新增内部 workflow code `pytdx_pool_refresh`，通过有序 SQL mi
 服务器上线顺序：
 
 1. 备份当前 release 和 `.env`；
-2. 应用仅扩展 Operations workflow code 的 migration；
+2. 应用首次约束 Operations workflow code、并包含 `pytdx_pool_refresh` 的 migration；
 3. 部署新 release；
 4. 删除旧 endpoint 变量，配置绝对 `PYTDX_POOL_PATH` 与 `PYTDX_POOL_REFRESH_HOURS=12`；
 5. 确保池目录由专用 Worker 用户可写，权限保持最小化；
