@@ -39,6 +39,7 @@ from market_data_center.domain.ingestion import (
     ReplaySource,
 )
 from market_data_center.domain.realtime_quote import (
+    CallAuctionMarketSnapshotRecord,
     CallAuctionSnapshotRecord,
     EodQuoteSnapshotRecord,
 )
@@ -595,6 +596,87 @@ on conflict (symbol, trade_date) do update set
     source_code=excluded.source_code, ingestion_id=excluded.ingestion_id
 """)
 
+INSERT_CALL_AUCTION_MARKET = text("""
+insert into realtime.call_auction_market_snapshot (
+    ingestion_id, symbol, trade_date, observed_at, last_price, previous_close,
+    high_price, low_price, cumulative_volume, cumulative_amount, source_code
+) values (
+    :ingestion_id, :symbol, :trade_date, :observed_at, :last_price, :previous_close,
+    :high_price, :low_price, :cumulative_volume, :cumulative_amount, :source_code
+)
+""")
+
+SELECT_LATEST_SUCCEEDED_CALL_AUCTION_MARKET = text("""
+select run.ingestion_id
+from ingestion.ingestion_run run
+where run.dataset_code = 'call_auction_market_snapshot'
+  and run.status = 'succeeded'
+  and exists (
+      select 1
+      from realtime.call_auction_market_snapshot source
+      where source.ingestion_id = run.ingestion_id
+        and source.trade_date = :trade_date
+  )
+order by run.finished_at desc, run.ingestion_id desc
+limit 1
+""")
+
+SELECT_LATEST_READY_LIMIT_UP_POOL = text("""
+select snapshot_id, member_count
+from stock_pool.snapshot
+where pool_code = 'CN_A_PREVIOUS_DAY_MAINBOARD_LIMIT_UP'
+  and effective_trade_date = :trade_date
+  and status = 'ready'
+order by version desc
+limit 1
+""")
+
+COUNT_CALL_AUCTION_POOL_COVERAGE = text("""
+select count(*)
+from stock_pool.member member
+join realtime.call_auction_market_snapshot source
+  on source.symbol = member.symbol
+ and source.ingestion_id = :ingestion_id
+ and source.trade_date = :trade_date
+where member.snapshot_id = :snapshot_id
+""")
+
+DELETE_CALL_AUCTION_FINAL = text("""
+delete from realtime.call_auction_snapshot
+where trade_date = :trade_date
+""")
+
+INSERT_FINALIZED_CALL_AUCTION = text("""
+insert into realtime.call_auction_snapshot (
+    symbol, trade_date, last_price, previous_close, cumulative_volume,
+    cumulative_amount, auction_premium_pct, source_code, ingestion_id, observed_at
+)
+select
+    source.symbol,
+    source.trade_date,
+    source.last_price,
+    source.previous_close,
+    source.cumulative_volume,
+    source.cumulative_amount,
+    case
+        when source.last_price is not null
+         and source.previous_close is not null
+         and source.previous_close <> 0
+        then ((source.last_price - source.previous_close) / source.previous_close)
+             * 100::numeric
+    end,
+    source.source_code,
+    source.ingestion_id,
+    source.observed_at
+from stock_pool.member member
+join realtime.call_auction_market_snapshot source
+  on source.symbol = member.symbol
+where member.snapshot_id = :snapshot_id
+  and source.ingestion_id = :ingestion_id
+  and source.trade_date = :trade_date
+order by source.symbol
+""")
+
 
 class PostgreSQLPersistence:
     def __init__(self, engine: Engine) -> None:
@@ -805,6 +887,28 @@ where namespace = :namespace
 select symbol
 from core.security
 where security_type = 'stock' and status = 'listed'
+order by symbol
+""")
+        with self._engine.connect() as connection:
+            return list(connection.execute(statement).scalars())
+
+    def is_trading_day(self, trade_date: date) -> bool:
+        statement = text("""
+select is_trading_day
+from core.trading_calendar
+where market = 'CN_A_SHARE' and trade_date = :trade_date
+""")
+        with self._engine.connect() as connection:
+            value = connection.execute(statement, {"trade_date": trade_date}).scalar_one_or_none()
+        return bool(value)
+
+    def listed_sse_szse_stock_symbols(self) -> list[str]:
+        statement = text("""
+select symbol
+from core.security
+where exchange in ('SSE', 'SZSE')
+  and security_type = 'stock'
+  and status = 'listed'
 order by symbol
 """)
         with self._engine.connect() as connection:
@@ -1214,6 +1318,65 @@ where market = 'CN_A_SHARE'
                 connection.execute(UPSERT_CALL_AUCTION, params)
             connection.execute(UPDATE_INGESTION_RUN, self._run_update_parameters(run))
 
+    def commit_call_auction_market_attempt(
+        self,
+        run: IngestionRun,
+        records: Sequence[CallAuctionMarketSnapshotRecord],
+        manifest: RawManifest,
+        quality_results: Sequence[QualityResult],
+    ) -> None:
+        if manifest.ingestion_id != run.ingestion_id:
+            raise ValueError("Raw manifest does not match the call-auction market attempt")
+        if any(result.ingestion_id != run.ingestion_id for result in quality_results):
+            raise ValueError("quality result does not match the call-auction market attempt")
+        parameters = self._call_auction_market_parameters(records, run.ingestion_id)
+        with self._engine.begin() as connection:
+            self._insert_manifest(connection, manifest)
+            if quality_results:
+                connection.execute(INSERT_QUALITY_RESULT, self._quality_parameters(quality_results))
+            if parameters:
+                connection.execute(INSERT_CALL_AUCTION_MARKET, parameters)
+            connection.execute(UPDATE_INGESTION_RUN, self._run_update_parameters(run))
+
+    def finalize_call_auction_snapshot(self, trade_date: date) -> int:
+        parameters: dict[str, object] = {"trade_date": trade_date}
+        with self._engine.begin() as connection:
+            ingestion_id = connection.execute(
+                SELECT_LATEST_SUCCEEDED_CALL_AUCTION_MARKET,
+                parameters,
+            ).scalar_one_or_none()
+            if ingestion_id is None:
+                raise LookupError(
+                    f"no successful call-auction market snapshot for {trade_date.isoformat()}"
+                )
+
+            pool = connection.execute(
+                SELECT_LATEST_READY_LIMIT_UP_POOL,
+                parameters,
+            ).one_or_none()
+            if pool is None:
+                raise LookupError(f"no ready limit-up pool for {trade_date.isoformat()}")
+
+            parameters.update(
+                {
+                    "ingestion_id": ingestion_id,
+                    "snapshot_id": pool.snapshot_id,
+                }
+            )
+            covered_members = connection.execute(
+                COUNT_CALL_AUCTION_POOL_COVERAGE,
+                parameters,
+            ).scalar_one()
+            if covered_members != pool.member_count:
+                raise RuntimeError(
+                    "call-auction market snapshot does not provide complete coverage "
+                    f"for ready pool {pool.snapshot_id}"
+                )
+
+            connection.execute(DELETE_CALL_AUCTION_FINAL, parameters)
+            result = connection.execute(INSERT_FINALIZED_CALL_AUCTION, parameters)
+            return result.rowcount
+
     def commit_classification_catalog_batch(
         self,
         run: IngestionRun,
@@ -1535,6 +1698,28 @@ where board_id = :board_id and trade_date = :trade_date
                 "ingestion_id": envelope.ingestion_id,
             }
             for envelope in records
+        ]
+
+    @staticmethod
+    def _call_auction_market_parameters(
+        records: Iterable[CallAuctionMarketSnapshotRecord],
+        ingestion_id: UUID,
+    ) -> list[dict[str, object]]:
+        return [
+            {
+                "ingestion_id": ingestion_id,
+                "symbol": record.symbol,
+                "trade_date": record.trade_date,
+                "observed_at": record.observed_at,
+                "last_price": record.last_price,
+                "previous_close": record.previous_close,
+                "high_price": record.high_price,
+                "low_price": record.low_price,
+                "cumulative_volume": record.cumulative_volume,
+                "cumulative_amount": record.cumulative_amount,
+                "source_code": record.source_code,
+            }
+            for record in records
         ]
 
     @staticmethod

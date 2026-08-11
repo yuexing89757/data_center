@@ -14,7 +14,7 @@ import psycopg
 import pytest
 from psycopg import sql
 from psycopg.errors import CheckViolation, InsufficientPrivilege
-from sqlalchemy import Engine, create_engine, text
+from sqlalchemy import Connection, Engine, create_engine, text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from market_data_center.derivation import DerivationService
@@ -25,6 +25,7 @@ from market_data_center.domain import (
     BoardIndexStatus,
     BoardIndexType,
     CalculatedTradingDay,
+    CallAuctionMarketSnapshotRecord,
     CapitalRecord,
     ClassificationCatalogSnapshotRecord,
     ClassificationDefinition,
@@ -576,6 +577,343 @@ def test_call_auction_market_schema_enforces_append_only_source_facts(
 
     orphaned_snapshot = capture_database_snapshot(database_url)
     assert orphaned_snapshot.orphan_facts == 1
+
+
+def test_call_auction_market_attempts_are_append_only_and_finalize_latest_success(
+    database_engine: Engine,
+) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    trade_date = date(2026, 8, 12)
+    with database_engine.begin() as connection:
+        _insert_call_auction_security_universe(connection)
+        _insert_trading_calendar_day(connection, trade_date, is_trading_day=True)
+
+    assert persistence.is_trading_day(trade_date) is True
+    assert persistence.is_trading_day(trade_date - timedelta(days=1)) is False
+    assert persistence.listed_sse_szse_stock_symbols() == ["SSE:600000", "SZSE:000001"]
+
+    partial = _call_auction_market_run(
+        IngestionStatus.PARTIAL,
+        finished_at=datetime(2026, 8, 12, 1, 27, tzinfo=UTC),
+        fetched_rows=2,
+        accepted_rows=1,
+        rejected_rows=1,
+    )
+    partial_record = _call_auction_market_record(
+        "SSE:600000",
+        trade_date,
+        datetime(2026, 8, 12, 1, 26, tzinfo=UTC),
+        last_price=Decimal("10.00"),
+        previous_close=Decimal("10.00"),
+        high_price=Decimal("10.05"),
+        low_price=Decimal("9.95"),
+        cumulative_volume=100,
+        cumulative_amount=Decimal("1000.00"),
+    )
+    _commit_call_auction_market_run(persistence, partial, [partial_record])
+
+    succeeded = _call_auction_market_run(
+        IngestionStatus.SUCCEEDED,
+        finished_at=datetime(2026, 8, 12, 1, 28, tzinfo=UTC),
+        fetched_rows=2,
+        accepted_rows=2,
+        request_params={"trade_date": "1999-01-01"},
+    )
+    succeeded_records = [
+        _call_auction_market_record(
+            "SSE:600000",
+            trade_date,
+            datetime(2026, 8, 12, 1, 27, tzinfo=UTC),
+            last_price=Decimal("10.10"),
+            previous_close=Decimal("10.00"),
+            high_price=Decimal("10.10"),
+            low_price=Decimal("10.00"),
+            cumulative_volume=123_400,
+            cumulative_amount=Decimal("1246340.00"),
+        ),
+        _call_auction_market_record(
+            "SZSE:000001",
+            trade_date,
+            datetime(2026, 8, 12, 1, 27, 1, tzinfo=UTC),
+            last_price=Decimal("8.80"),
+            previous_close=Decimal("8.00"),
+            high_price=Decimal("8.90"),
+            low_price=Decimal("8.00"),
+            cumulative_volume=200_000,
+            cumulative_amount=Decimal("1760000.00"),
+        ),
+    ]
+    _commit_call_auction_market_run(persistence, succeeded, succeeded_records)
+
+    with database_engine.begin() as connection:
+        _insert_ready_limit_up_pool(
+            connection,
+            trade_date - timedelta(days=1),
+            ["BSE:920000"],
+            version=1,
+        )
+        _insert_ready_limit_up_pool(
+            connection,
+            trade_date,
+            ["SSE:600000"],
+            version=1,
+        )
+        _insert_ready_limit_up_pool(
+            connection,
+            trade_date,
+            ["SSE:600000", "SZSE:000001"],
+            version=2,
+        )
+
+    written = persistence.finalize_call_auction_snapshot(trade_date)
+
+    assert written == 2
+    with database_engine.connect() as connection:
+        source_rows = connection.execute(
+            text("""
+                select symbol, observed_at, high_price, low_price, ingestion_id
+                from realtime.call_auction_market_snapshot
+                order by ingestion_id, symbol
+            """)
+        ).all()
+        final_rows = connection.execute(
+            text("""
+                select symbol, cumulative_volume, cumulative_amount, auction_premium_pct,
+                       observed_at, ingestion_id
+                from realtime.call_auction_snapshot order by symbol
+            """)
+        ).all()
+        audit_counts = connection.execute(
+            text("""
+                select
+                    (select count(*) from ingestion.raw_manifest) manifests,
+                    (select count(*) from audit.quality_result) quality_results
+            """)
+        ).one()
+
+    assert len(source_rows) == 3
+    assert all(row.high_price is not None and row.low_price is not None for row in source_rows)
+    assert {row.ingestion_id for row in final_rows} == {succeeded.ingestion_id}
+    assert [row.symbol for row in final_rows] == ["SSE:600000", "SZSE:000001"]
+    assert [row.cumulative_volume for row in final_rows] == [123_400, 200_000]
+    assert [row.cumulative_amount for row in final_rows] == [
+        Decimal("1246340.0000"),
+        Decimal("1760000.0000"),
+    ]
+    assert [row.auction_premium_pct for row in final_rows] == [
+        Decimal("1.0000000000"),
+        Decimal("10.0000000000"),
+    ]
+    assert [row.observed_at for row in final_rows] == [
+        datetime(2026, 8, 12, 1, 27, tzinfo=UTC),
+        datetime(2026, 8, 12, 1, 27, 1, tzinfo=UTC),
+    ]
+    assert tuple(audit_counts) == (2, 2)
+
+
+def test_call_auction_market_attempt_rolls_back_manifest_quality_and_facts(
+    database_engine: Engine,
+) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    trade_date = date(2026, 8, 12)
+    with database_engine.begin() as connection:
+        _insert_call_auction_security_universe(connection)
+    run = _call_auction_market_run(
+        IngestionStatus.SUCCEEDED,
+        finished_at=datetime(2026, 8, 12, 1, 28, tzinfo=UTC),
+        fetched_rows=2,
+        accepted_rows=2,
+    )
+    running = replace(
+        run,
+        status=IngestionStatus.RUNNING,
+        finished_at=None,
+        fetched_rows=0,
+        accepted_rows=0,
+    )
+    persistence.create_ingestion_run(running)
+    duplicate = _call_auction_market_record(
+        "SSE:600000",
+        trade_date,
+        datetime(2026, 8, 12, 1, 26, tzinfo=UTC),
+        last_price=Decimal("10.00"),
+        previous_close=Decimal("9.90"),
+        high_price=Decimal("10.00"),
+        low_price=Decimal("9.90"),
+        cumulative_volume=100,
+        cumulative_amount=Decimal("1000.00"),
+    )
+    manifest = _manifest(
+        run.ingestion_id,
+        "call-auction-market-rollback",
+        row_count=2,
+        provider="pytdx_hq",
+    )
+    quality = _call_auction_quality_result(run.ingestion_id)
+
+    with pytest.raises(IntegrityError):
+        persistence.commit_call_auction_market_attempt(
+            run,
+            [duplicate, duplicate],
+            manifest,
+            [quality],
+        )
+
+    with database_engine.connect() as connection:
+        counts = connection.execute(
+            text("""
+                select
+                    (select count(*) from ingestion.raw_manifest
+                     where ingestion_id=:ingestion_id) manifests,
+                    (select count(*) from audit.quality_result
+                     where ingestion_id=:ingestion_id) quality_results,
+                    (select count(*) from realtime.call_auction_market_snapshot
+                     where ingestion_id=:ingestion_id) source_facts,
+                    (select status from ingestion.ingestion_run
+                     where ingestion_id=:ingestion_id) status
+            """),
+            {"ingestion_id": run.ingestion_id},
+        ).one()
+    assert tuple(counts) == (0, 0, 0, "running")
+
+
+def test_finalize_call_auction_rejects_partial_and_old_date_inputs(
+    database_engine: Engine,
+) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    trade_date = date(2026, 8, 12)
+    with database_engine.begin() as connection:
+        _insert_call_auction_security_universe(connection)
+    old_date = trade_date - timedelta(days=1)
+    old_succeeded = _call_auction_market_run(
+        IngestionStatus.SUCCEEDED,
+        finished_at=datetime(2026, 8, 11, 1, 28, tzinfo=UTC),
+        fetched_rows=1,
+        accepted_rows=1,
+    )
+    _commit_call_auction_market_run(
+        persistence,
+        old_succeeded,
+        [
+            _call_auction_market_record(
+                "SSE:600000",
+                old_date,
+                datetime(2026, 8, 11, 1, 26, tzinfo=UTC),
+            )
+        ],
+    )
+    partial = _call_auction_market_run(
+        IngestionStatus.PARTIAL,
+        finished_at=datetime(2026, 8, 12, 1, 28, tzinfo=UTC),
+        fetched_rows=1,
+        accepted_rows=1,
+    )
+    _commit_call_auction_market_run(
+        persistence,
+        partial,
+        [
+            _call_auction_market_record(
+                "SSE:600000",
+                trade_date,
+                datetime(2026, 8, 12, 1, 26, tzinfo=UTC),
+            )
+        ],
+    )
+    with database_engine.begin() as connection:
+        _insert_ready_limit_up_pool(connection, trade_date, ["SSE:600000"])
+
+    with pytest.raises(LookupError, match="successful call-auction market snapshot"):
+        persistence.finalize_call_auction_snapshot(trade_date)
+
+    with database_engine.connect() as connection:
+        assert connection.scalar(text("select count(*) from realtime.call_auction_snapshot")) == 0
+
+
+def test_finalize_call_auction_incomplete_pool_preserves_existing_final_rows(
+    database_engine: Engine,
+) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    trade_date = date(2026, 8, 12)
+    with database_engine.begin() as connection:
+        _insert_call_auction_security_universe(connection)
+    succeeded = _call_auction_market_run(
+        IngestionStatus.SUCCEEDED,
+        finished_at=datetime(2026, 8, 12, 1, 28, tzinfo=UTC),
+        fetched_rows=1,
+        accepted_rows=1,
+    )
+    _commit_call_auction_market_run(
+        persistence,
+        succeeded,
+        [
+            _call_auction_market_record(
+                "SSE:600000",
+                trade_date,
+                datetime(2026, 8, 12, 1, 26, tzinfo=UTC),
+            )
+        ],
+    )
+    with database_engine.begin() as connection:
+        _insert_ready_limit_up_pool(
+            connection,
+            trade_date,
+            ["SSE:600000", "SZSE:000001"],
+        )
+        legacy_ingestion_id = _insert_existing_call_auction_final(connection, trade_date)
+
+    with pytest.raises(RuntimeError, match="complete coverage"):
+        persistence.finalize_call_auction_snapshot(trade_date)
+
+    with database_engine.connect() as connection:
+        existing = connection.execute(
+            text("""
+                select symbol, ingestion_id, cumulative_volume
+                from realtime.call_auction_snapshot where trade_date=:trade_date
+            """),
+            {"trade_date": trade_date},
+        ).one()
+    assert tuple(existing) == ("SSE:600000", legacy_ingestion_id, 999)
+
+
+def test_finalize_call_auction_ready_empty_pool_clears_only_exact_date(
+    database_engine: Engine,
+) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    trade_date = date(2026, 8, 12)
+    with database_engine.begin() as connection:
+        _insert_call_auction_security_universe(connection)
+    succeeded = _call_auction_market_run(
+        IngestionStatus.SUCCEEDED,
+        finished_at=datetime(2026, 8, 12, 1, 28, tzinfo=UTC),
+        fetched_rows=1,
+        accepted_rows=1,
+    )
+    _commit_call_auction_market_run(
+        persistence,
+        succeeded,
+        [
+            _call_auction_market_record(
+                "SSE:600000",
+                trade_date,
+                datetime(2026, 8, 12, 1, 26, tzinfo=UTC),
+            )
+        ],
+    )
+    with database_engine.begin() as connection:
+        _insert_ready_limit_up_pool(connection, trade_date, [])
+        _insert_existing_call_auction_final(connection, trade_date)
+        _insert_existing_call_auction_final(connection, trade_date - timedelta(days=1))
+
+    written = persistence.finalize_call_auction_snapshot(trade_date)
+
+    assert written == 0
+    with database_engine.connect() as connection:
+        remaining_dates = list(
+            connection.execute(
+                text("select trade_date from realtime.call_auction_snapshot order by trade_date")
+            ).scalars()
+        )
+    assert remaining_dates == [trade_date - timedelta(days=1)]
 
 
 def test_stock_pool_rpc_requires_exact_ready_date_and_preserves_empty_snapshot(
@@ -1965,6 +2303,319 @@ def test_daily_bar_quality_audit_excludes_pre_ipo_days_and_reports_active_gaps(
     assert report.gap_candidates[0].symbol == "SZSE:000001"
     assert report.gap_candidates[0].first_missing_date == date(2026, 7, 28)
     assert report.gap_candidates[0].last_missing_date == date(2026, 7, 29)
+
+
+def _insert_call_auction_security_universe(connection: Connection) -> None:
+    ingestion_id = uuid4()
+    connection.execute(
+        text("""
+            insert into ingestion.ingestion_run (
+                ingestion_id, provider_code, dataset_code, status, started_at
+            ) values (:ingestion_id, 'baostock', 'security', 'running', now())
+        """),
+        {"ingestion_id": ingestion_id},
+    )
+    connection.execute(
+        text("""
+            insert into core.security (
+                symbol, code, exchange, current_name, security_type, status,
+                source_code, ingestion_id
+            ) values (
+                :symbol, :code, :exchange, :current_name, :security_type, :status,
+                'baostock', :ingestion_id
+            )
+        """),
+        [
+            {
+                "symbol": "SSE:600000",
+                "code": "600000",
+                "exchange": "SSE",
+                "current_name": "浦发银行",
+                "security_type": "stock",
+                "status": "listed",
+                "ingestion_id": ingestion_id,
+            },
+            {
+                "symbol": "SZSE:000001",
+                "code": "000001",
+                "exchange": "SZSE",
+                "current_name": "平安银行",
+                "security_type": "stock",
+                "status": "listed",
+                "ingestion_id": ingestion_id,
+            },
+            {
+                "symbol": "BSE:920000",
+                "code": "920000",
+                "exchange": "BSE",
+                "current_name": "北交样本",
+                "security_type": "stock",
+                "status": "listed",
+                "ingestion_id": ingestion_id,
+            },
+            {
+                "symbol": "SSE:510300",
+                "code": "510300",
+                "exchange": "SSE",
+                "current_name": "ETF样本",
+                "security_type": "etf",
+                "status": "listed",
+                "ingestion_id": ingestion_id,
+            },
+            {
+                "symbol": "SZSE:000002",
+                "code": "000002",
+                "exchange": "SZSE",
+                "current_name": "退市样本",
+                "security_type": "stock",
+                "status": "delisted",
+                "ingestion_id": ingestion_id,
+            },
+        ],
+    )
+
+
+def _insert_trading_calendar_day(
+    connection: Connection,
+    trade_date: date,
+    *,
+    is_trading_day: bool,
+) -> None:
+    ingestion_id = uuid4()
+    connection.execute(
+        text("""
+            insert into ingestion.ingestion_run (
+                ingestion_id, provider_code, dataset_code, status, started_at
+            ) values (:ingestion_id, 'baostock', 'trading_calendar', 'running', now())
+        """),
+        {"ingestion_id": ingestion_id},
+    )
+    connection.execute(
+        text("""
+            insert into core.trading_calendar (
+                market, trade_date, is_trading_day, source_code, ingestion_id
+            ) values (
+                'CN_A_SHARE', :trade_date, :is_trading_day, 'baostock', :ingestion_id
+            )
+        """),
+        {
+            "trade_date": trade_date,
+            "is_trading_day": is_trading_day,
+            "ingestion_id": ingestion_id,
+        },
+    )
+
+
+def _call_auction_market_run(
+    status: IngestionStatus,
+    *,
+    finished_at: datetime,
+    fetched_rows: int,
+    accepted_rows: int,
+    rejected_rows: int = 0,
+    request_params: Mapping[str, object] | None = None,
+) -> IngestionRun:
+    started_at = finished_at - timedelta(minutes=2)
+    return IngestionRun(
+        ingestion_id=uuid4(),
+        provider_code=ProviderCode.PYTDX_HQ,
+        dataset_code=DatasetCode.CALL_AUCTION_MARKET_SNAPSHOT,
+        status=status,
+        requested_at=started_at,
+        started_at=started_at,
+        finished_at=finished_at,
+        request_params=request_params or {},
+        fetched_rows=fetched_rows,
+        accepted_rows=accepted_rows,
+        rejected_rows=rejected_rows,
+    )
+
+
+def _call_auction_market_record(
+    symbol: str,
+    trade_date: date,
+    observed_at: datetime,
+    *,
+    last_price: Decimal = Decimal("10.00"),
+    previous_close: Decimal = Decimal("10.00"),
+    high_price: Decimal = Decimal("10.00"),
+    low_price: Decimal = Decimal("10.00"),
+    cumulative_volume: int = 100,
+    cumulative_amount: Decimal = Decimal("1000.00"),
+) -> CallAuctionMarketSnapshotRecord:
+    return CallAuctionMarketSnapshotRecord(
+        symbol=symbol,
+        trade_date=trade_date,
+        observed_at=observed_at,
+        source_code="pytdx_hq",
+        last_price=last_price,
+        previous_close=previous_close,
+        high_price=high_price,
+        low_price=low_price,
+        cumulative_volume=cumulative_volume,
+        cumulative_amount=cumulative_amount,
+    )
+
+
+def _call_auction_quality_result(
+    ingestion_id: UUID,
+    *,
+    failed: bool = False,
+) -> QualityResult:
+    return QualityResult(
+        quality_result_id=uuid4(),
+        ingestion_id=ingestion_id,
+        dataset_code=DatasetCode.CALL_AUCTION_MARKET_SNAPSHOT,
+        rule_code="call_auction_market.complete",
+        severity=QualitySeverity.ERROR if failed else QualitySeverity.INFO,
+        status=QualityStatus.FAILED if failed else QualityStatus.PASSED,
+        message="incomplete source response" if failed else "complete source response",
+    )
+
+
+def _commit_call_auction_market_run(
+    persistence: PostgreSQLPersistence,
+    run: IngestionRun,
+    records: list[CallAuctionMarketSnapshotRecord],
+) -> None:
+    running = replace(
+        run,
+        status=IngestionStatus.RUNNING,
+        finished_at=None,
+        fetched_rows=0,
+        accepted_rows=0,
+        rejected_rows=0,
+    )
+    persistence.create_ingestion_run(running)
+    persistence.commit_call_auction_market_attempt(
+        run,
+        records,
+        _manifest(
+            run.ingestion_id,
+            f"call-auction-market-{run.ingestion_id}",
+            row_count=len(records),
+            provider="pytdx_hq",
+        ),
+        [
+            _call_auction_quality_result(
+                run.ingestion_id,
+                failed=run.status is IngestionStatus.PARTIAL,
+            )
+        ],
+    )
+
+
+def _insert_ready_limit_up_pool(
+    connection: Connection,
+    effective_trade_date: date,
+    symbols: list[str],
+    *,
+    version: int = 1,
+) -> UUID:
+    calculation_id = uuid4()
+    snapshot_id = uuid4()
+    basis_trade_date = effective_trade_date - timedelta(days=1)
+    input_hash = format(version, "x") * 64
+    connection.execute(
+        text("""
+            insert into derived.calculation_run (
+                calculation_id, calculation_code, algorithm_version, mode,
+                start_date, end_date, status, input_watermark, input_hash,
+                requested_at, calculated_at, finished_at, output_rows
+            ) values (
+                :calculation_id, 'cn_a_mainboard_price_limit_pools', '1.0.0',
+                'incremental', :basis_trade_date, :basis_trade_date, 'succeeded',
+                '{}'::jsonb, :input_hash, now(), now(), now(), :output_rows
+            )
+        """),
+        {
+            "calculation_id": calculation_id,
+            "basis_trade_date": basis_trade_date,
+            "input_hash": input_hash,
+            "output_rows": len(symbols),
+        },
+    )
+    connection.execute(
+        text("""
+            insert into stock_pool.snapshot (
+                snapshot_id, calculation_id, pool_code, basis_trade_date,
+                effective_trade_date, version, status, member_count, candidate_count,
+                rejected_count, content_hash, input_hash, rule_version,
+                algorithm_version, generated_at
+            ) values (
+                :snapshot_id, :calculation_id,
+                'CN_A_PREVIOUS_DAY_MAINBOARD_LIMIT_UP', :basis_trade_date,
+                :effective_trade_date, :version, 'ready', :member_count, :member_count,
+                0, :content_hash, :input_hash, 'CN_MAINBOARD_2026_07_06',
+                '1.0.0', :generated_at
+            )
+        """),
+        {
+            "snapshot_id": snapshot_id,
+            "calculation_id": calculation_id,
+            "basis_trade_date": basis_trade_date,
+            "effective_trade_date": effective_trade_date,
+            "version": version,
+            "member_count": len(symbols),
+            "content_hash": f"{version}" * 64,
+            "input_hash": input_hash,
+            "generated_at": datetime.combine(
+                effective_trade_date,
+                datetime.min.time(),
+                tzinfo=UTC,
+            )
+            + timedelta(seconds=version),
+        },
+    )
+    if symbols:
+        connection.execute(
+            text("""
+                insert into stock_pool.member (snapshot_id, symbol, direction)
+                values (:snapshot_id, :symbol, 'up')
+            """),
+            [{"snapshot_id": snapshot_id, "symbol": symbol} for symbol in symbols],
+        )
+    return snapshot_id
+
+
+def _insert_existing_call_auction_final(
+    connection: Connection,
+    trade_date: date,
+) -> UUID:
+    ingestion_id = uuid4()
+    observed_at = datetime.combine(trade_date, datetime.min.time(), tzinfo=UTC) + timedelta(
+        hours=1, minutes=26
+    )
+    connection.execute(
+        text("""
+            insert into ingestion.ingestion_run (
+                ingestion_id, provider_code, dataset_code, status, requested_at,
+                started_at, finished_at, fetched_rows, accepted_rows
+            ) values (
+                :ingestion_id, 'pytdx_hq', 'call_auction_snapshot', 'succeeded',
+                :observed_at, :observed_at, :observed_at, 1, 1
+            )
+        """),
+        {"ingestion_id": ingestion_id, "observed_at": observed_at},
+    )
+    connection.execute(
+        text("""
+            insert into realtime.call_auction_snapshot (
+                symbol, trade_date, last_price, previous_close, cumulative_volume,
+                cumulative_amount, auction_premium_pct, source_code, ingestion_id,
+                observed_at
+            ) values (
+                'SSE:600000', :trade_date, 9.99, 9.90, 999, 9980.01, 0.9090909091,
+                'pytdx_hq', :ingestion_id, :observed_at
+            )
+        """),
+        {
+            "trade_date": trade_date,
+            "ingestion_id": ingestion_id,
+            "observed_at": observed_at,
+        },
+    )
+    return ingestion_id
 
 
 @contextmanager
