@@ -176,9 +176,7 @@ def test_refresh_publishes_a_complete_pool_atomically(tmp_path: Path) -> None:
     probe = FakeProbe(
         {
             ("slow", 7709): _probe_result("slow", 20, quote=True),
-            ("fast", 7709): _probe_result(
-                "fast", 10, quote=True, sse=True, szse=True
-            ),
+            ("fast", 7709): _probe_result("fast", 10, quote=True, sse=True, szse=True),
         }
     )
 
@@ -205,13 +203,7 @@ def test_refresh_preserves_last_good_when_new_pool_fails_gate(tmp_path: Path) ->
     target = tmp_path / "pytdx_pool.json"
     _write_document(target, _valid_document())
     before = target.read_bytes()
-    probe = FakeProbe(
-        {
-            ("incomplete", 7709): _probe_result(
-                "incomplete", 5, quote=True, sse=True
-            )
-        }
-    )
+    probe = FakeProbe({("incomplete", 7709): _probe_result("incomplete", 5, quote=True, sse=True)})
 
     result = refresh_endpoint_pool(
         target,
@@ -245,11 +237,7 @@ def test_refresh_fails_when_no_new_or_last_good_pool_exists(tmp_path: Path) -> N
 def test_refresh_does_not_require_bse_capability(tmp_path: Path) -> None:
     target = tmp_path / "pytdx_pool.json"
     probe = FakeProbe(
-        {
-            ("core", 7709): _probe_result(
-                "core", 5, quote=True, sse=True, szse=True, bse=False
-            )
-        }
+        {("core", 7709): _probe_result("core", 5, quote=True, sse=True, szse=True, bse=False)}
     )
 
     result = refresh_endpoint_pool(

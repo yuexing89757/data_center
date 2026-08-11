@@ -524,9 +524,7 @@ def prepare_locked_worker(
     persistence: PostgreSQLPersistence,
     operations_persistence: PostgreSQLOperationsPersistence,
     *,
-    startup_refresh: Callable[
-        [TriggerSource], PytdxPoolRefreshResult
-    ] = run_pytdx_pool_refresh_job,
+    startup_refresh: Callable[[TriggerSource], PytdxPoolRefreshResult] = run_pytdx_pool_refresh_job,
     scheduler_factory: Callable[
         [SchedulerSettings, PytdxPoolSettings], BlockingScheduler
     ] = build_scheduler,

@@ -322,9 +322,7 @@ def test_local_only_mode_without_endpoints(tmp_path: Path) -> None:
 
     provider = PytdxProvider(
         settings,
-        pool_settings=PytdxPoolSettings(
-            pytdx_pool_path=tmp_path / "missing.json", _env_file=None
-        ),
+        pool_settings=PytdxPoolSettings(pytdx_pool_path=tmp_path / "missing.json", _env_file=None),
         client_factory=FakeClient,
     )
     with provider:
@@ -344,9 +342,7 @@ def test_local_only_mode_missing_file_is_visible_gap(tmp_path: Path) -> None:
 
     provider = PytdxProvider(
         settings,
-        pool_settings=PytdxPoolSettings(
-            pytdx_pool_path=tmp_path / "missing.json", _env_file=None
-        ),
+        pool_settings=PytdxPoolSettings(pytdx_pool_path=tmp_path / "missing.json", _env_file=None),
         client_factory=FakeClient,
     )
     with provider, pytest.raises(ProviderRequestUnavailable, match=r"local \.day file not found"):
@@ -433,9 +429,7 @@ def test_local_daily_bar_takes_priority_over_remote(tmp_path: Path) -> None:
 
     provider = PytdxProvider(
         settings,
-        pool_settings=PytdxPoolSettings(
-            pytdx_pool_path=tmp_path / "missing.json", _env_file=None
-        ),
+        pool_settings=PytdxPoolSettings(pytdx_pool_path=tmp_path / "missing.json", _env_file=None),
         client_factory=_FailingClient,
     )
     provider.__enter__()

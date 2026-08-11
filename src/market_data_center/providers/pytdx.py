@@ -74,9 +74,7 @@ class PytdxProvider:
         self._vipdoc_path = settings.pytdx_vipdoc_path
         self._pool_settings = pool_settings or PytdxPoolSettings()
         self._client_factory = client_factory or _default_client_factory
-        self._sessions: dict[
-            str, tuple[PytdxDailyBarClient, tuple[str, int]]
-        ] = {}
+        self._sessions: dict[str, tuple[PytdxDailyBarClient, tuple[str, int]]] = {}
         self._managed = False
 
     @classmethod
@@ -214,9 +212,7 @@ class PytdxProvider:
             raise
         endpoints = endpoints_for(pool, capability)
         if not endpoints:
-            raise ProviderRequestUnavailable(
-                f"pytdx endpoint pool has no {capability.value} node"
-            )
+            raise ProviderRequestUnavailable(f"pytdx endpoint pool has no {capability.value} node")
         errors: list[str] = []
         for host, port in endpoints[: self._settings.pytdx_daily_bar_max_attempts]:
             client = self._client_factory()

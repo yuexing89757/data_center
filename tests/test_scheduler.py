@@ -88,9 +88,7 @@ class FakeAdminServer:
 
 def test_locked_worker_refreshes_before_scheduler_and_admin(tmp_path: Path) -> None:
     events: list[str] = []
-    pool_settings = PytdxPoolSettings(
-        pytdx_pool_path=tmp_path / "pytdx_pool.json", _env_file=None
-    )
+    pool_settings = PytdxPoolSettings(pytdx_pool_path=tmp_path / "pytdx_pool.json", _env_file=None)
     last_good = PytdxPoolRefreshResult(
         candidate_count=3,
         usable_node_count=0,

@@ -82,11 +82,7 @@ def endpoints_for(
     pool: PytdxEndpointPool, capability: PytdxCapability
 ) -> tuple[tuple[str, int], ...]:
     """Return stable endpoints that explicitly advertise one capability."""
-    return tuple(
-        (node.host, node.port)
-        for node in pool.nodes
-        if node.capabilities[capability]
-    )
+    return tuple((node.host, node.port) for node in pool.nodes if node.capabilities[capability])
 
 
 def refresh_endpoint_pool(
@@ -250,26 +246,19 @@ def _probe_candidates(
         return ()
     executor = ThreadPoolExecutor(max_workers=min(PROBE_MAX_WORKERS, len(candidates)))
     futures = {
-        executor.submit(_safe_probe, probe, host, port): (host, port)
-        for host, port in candidates
+        executor.submit(_safe_probe, probe, host, port): (host, port) for host, port in candidates
     }
     try:
         completed, pending = wait(futures, timeout=PROBE_OVERALL_TIMEOUT_SECONDS)
         for future in pending:
             future.cancel()
-        nodes = tuple(
-            node
-            for future in completed
-            if (node := future.result()) is not None
-        )
+        nodes = tuple(node for future in completed if (node := future.result()) is not None)
     finally:
         executor.shutdown(wait=False, cancel_futures=True)
     return nodes
 
 
-def _safe_probe(
-    probe: PytdxEndpointProbe, host: str, port: int
-) -> PytdxPoolNode | None:
+def _safe_probe(probe: PytdxEndpointProbe, host: str, port: int) -> PytdxPoolNode | None:
     try:
         result = probe.probe(host, port)
         if result is None or (result.host, result.port) != (host, port):

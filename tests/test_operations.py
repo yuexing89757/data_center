@@ -174,9 +174,7 @@ def test_execution_service_records_pool_refresh_statistics(
 
 def test_execute_pytdx_pool_refresh_records_the_controlled_workflow(tmp_path) -> None:
     persistence = MemoryOperationsPersistence()
-    pool_settings = PytdxPoolSettings(
-        pytdx_pool_path=tmp_path / "pytdx_pool.json", _env_file=None
-    )
+    pool_settings = PytdxPoolSettings(pytdx_pool_path=tmp_path / "pytdx_pool.json", _env_file=None)
     expected = PytdxPoolRefreshResult(
         candidate_count=3,
         usable_node_count=3,
