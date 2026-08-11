@@ -170,3 +170,25 @@ def test_snapshot_quality_dataset_codes_are_migrated_forward() -> None:
 
     assert "alter table audit.quality_result" in migration
     assert "'eod_quote_snapshot','call_auction_snapshot'" in migration
+
+
+def test_operations_workflow_codes_are_migrated_as_one_controlled_catalog() -> None:
+    migration = (
+        MIGRATION_DIR / "20260811000300_constrain_operations_workflow_codes.sql"
+    ).read_text(encoding="utf-8")
+    controlled_codes = {
+        "daily_market",
+        "stock_daily_indicator",
+        "stale_run_recovery",
+        "deducted_profit",
+        "stock_pool",
+        "auction_collection",
+        "eod_quote_snapshot",
+        "call_auction_snapshot",
+        "pytdx_pool_refresh",
+    }
+
+    assert "add constraint workflow_run_workflow_code_check" in migration
+    assert "validate constraint workflow_run_workflow_code_check" in migration
+    assert all(f"'{code}'" in migration for code in controlled_codes)
+    assert not re.search(r"(?im)^grant\s+", migration)

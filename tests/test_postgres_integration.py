@@ -13,7 +13,7 @@ from uuid import UUID, uuid4
 import psycopg
 import pytest
 from psycopg import sql
-from psycopg.errors import InsufficientPrivilege
+from psycopg.errors import CheckViolation, InsufficientPrivilege
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
@@ -189,6 +189,50 @@ def test_operations_repository_records_attempts_steps_and_stale_recovery(
     assert recovered == 1
     assert history[0].status is ExecutionStatus.FAILED
     assert history[0].error_summary == "worker_interrupted_or_timed_out"
+
+
+def test_operations_workflow_codes_are_constrained(database_engine: Engine) -> None:
+    statement = text("""
+        insert into operations.workflow_run (
+            workflow_run_id,
+            workflow_code,
+            scheduled_for,
+            trigger_source,
+            attempt,
+            status,
+            started_at
+        ) values (
+            :workflow_run_id,
+            :workflow_code,
+            :scheduled_for,
+            'scheduled',
+            1,
+            'running',
+            :scheduled_for
+        )
+    """)
+    with database_engine.begin() as connection:
+        connection.execute(
+            statement,
+            {
+                "workflow_run_id": uuid4(),
+                "workflow_code": "pytdx_pool_refresh",
+                "scheduled_for": datetime(2026, 8, 11, 2, tzinfo=UTC),
+            },
+        )
+
+    with pytest.raises(DBAPIError) as captured:
+        with database_engine.begin() as connection:
+            connection.execute(
+                statement,
+                {
+                    "workflow_run_id": uuid4(),
+                    "workflow_code": "unknown_workflow",
+                    "scheduled_for": datetime(2026, 8, 11, 3, tzinfo=UTC),
+                },
+            )
+
+    assert isinstance(captured.value.orig, CheckViolation)
 
 
 def test_stock_pool_rpc_requires_exact_ready_date_and_preserves_empty_snapshot(
