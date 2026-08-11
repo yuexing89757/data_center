@@ -23,41 +23,23 @@ class TushareSettings(BaseSettings):
 
 
 class SchedulerSettings(BaseSettings):
-    """Embedded scheduling configuration for the collection Worker."""
+    """Runtime paths and optional-task switches for the collection Worker."""
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     scheduler_store_path: Path = Path("data/scheduler/jobs.sqlite")
-    scheduler_timezone: str = "Asia/Shanghai"
-    daily_run_hour: int = 20
-    daily_run_minute: int = 0
-    stock_daily_indicator_hour: int = 20
-    stock_daily_indicator_minute: int = 30
-    stock_pool_hour: int = 21
-    stock_pool_minute: int = 0
-    deducted_profit_hour: int = 20
-    deducted_profit_minute: int = 0
-    scheduler_misfire_grace_seconds: int = 21_600
     worker_admin_port: int = Field(default=8765, ge=1, le=65_535)
-    auction_collection_enabled: bool = False
-    auction_collection_hour: int = Field(default=9, ge=0, le=23)
-    auction_collection_minute: int = Field(default=15, ge=0, le=59)
-    auction_collection_cadence_seconds: int = Field(default=5, ge=1, le=60)
-    eod_quote_snapshot_enabled: bool = False
-    eod_quote_hour: int = Field(default=21, ge=0, le=23)
-    eod_quote_minute: int = Field(default=10, ge=0, le=59)
+    auction_collection_enabled: bool = True
+    eod_quote_snapshot_enabled: bool = True
     call_auction_snapshot_enabled: bool = True
-    call_auction_hour: int = Field(default=18, ge=0, le=23)
-    call_auction_minute: int = Field(default=0, ge=0, le=59)
 
 
 class PytdxPoolSettings(BaseSettings):
-    """Shared endpoint-pool location and Worker refresh cadence."""
+    """Shared endpoint-pool runtime location."""
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     pytdx_pool_path: Path = Path("data/pytdx_pool.json")
-    pytdx_pool_refresh_hours: int = Field(default=12, ge=1, le=168)
 
 
 class PytdxHqSettings(BaseSettings):
