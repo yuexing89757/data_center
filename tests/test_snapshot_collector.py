@@ -1,8 +1,11 @@
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from typing import cast
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.engine import Engine
 
 from market_data_center.domain import (
     FiveLevelQuoteSnapshotRecord,
@@ -17,13 +20,65 @@ from market_data_center.domain.ingestion import (
     ProviderCode,
 )
 from market_data_center.snapshot_collector import (
+    LIMIT_UP_POOL_CODE,
     EodQuoteSnapshotUnavailable,
     _eod_quality_results,
     _finish_run,
+    _limit_up_symbols,
     _to_auction_records,
     _to_eod_records,
     collect_eod_quotes,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class RecordedCall:
+    statement: str
+    parameters: dict[str, object]
+
+
+class RecordingResult:
+    def __init__(
+        self,
+        *,
+        scalar: str | None = None,
+        rows: tuple[tuple[str], ...] = (),
+    ) -> None:
+        self.scalar = scalar
+        self.rows = rows
+
+    def scalar_one_or_none(self) -> str | None:
+        return self.scalar
+
+    def all(self) -> list[tuple[str]]:
+        return list(self.rows)
+
+
+class RecordingConnection:
+    def __init__(self, engine: "RecordingEngine") -> None:
+        self.engine = engine
+
+    def __enter__(self) -> "RecordingConnection":
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        return None
+
+    def execute(self, statement, parameters) -> RecordingResult:
+        self.engine.calls.append(RecordedCall(str(statement), dict(parameters)))
+        if len(self.engine.calls) == 1:
+            return RecordingResult(scalar=self.engine.snapshot_id)
+        return RecordingResult(rows=tuple((symbol,) for symbol in self.engine.symbols))
+
+
+class RecordingEngine:
+    def __init__(self, *, snapshot_id: str, symbols: tuple[str, ...]) -> None:
+        self.snapshot_id = snapshot_id
+        self.symbols = symbols
+        self.calls: list[RecordedCall] = []
+
+    def connect(self) -> RecordingConnection:
+        return RecordingConnection(self)
 
 
 def _levels(*prices: str, volume: int) -> tuple[OrderBookLevel, ...]:
@@ -63,6 +118,19 @@ def test_snapshot_conversion_preserves_decimal_units() -> None:
     assert auction.cumulative_volume == 1_000_000
     assert auction.cumulative_amount == Decimal("10900000")
     assert auction.auction_premium_pct == Decimal("10.0")
+
+
+def test_call_auction_symbols_use_exact_date_limit_up_pool_only() -> None:
+    trade_date = date(2026, 8, 11)
+    engine = RecordingEngine(snapshot_id="pool-up", symbols=("SSE:600000", "SZSE:000001"))
+
+    symbols = _limit_up_symbols(cast(Engine, engine), trade_date)
+
+    assert symbols == ["SSE:600000", "SZSE:000001"]
+    assert engine.calls[0].parameters == {"code": LIMIT_UP_POOL_CODE, "d": trade_date}
+    assert "basis_trade_date = :d" in engine.calls[0].statement
+    assert "status = 'ready'" in engine.calls[0].statement
+    assert engine.calls[1].parameters == {"snapshot_id": "pool-up"}
 
 
 def test_snapshot_ingestion_run_finishes_partial_with_counts() -> None:
