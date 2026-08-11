@@ -212,7 +212,7 @@ def test_market_provider_uses_one_explicit_endpoint_and_batches_by_eighty(
         lambda _path: (_ for _ in ()).throw(AssertionError("explicit endpoint loaded pool")),
     )
     provider = PytdxHqProvider(
-        PytdxHqSettings(_env_file=None),
+        PytdxHqSettings(_env_file=None),  # type: ignore[call-arg]
         endpoints=(("second.quote", 7709),),
         client_factory=factory,
     )
@@ -231,7 +231,7 @@ def test_market_provider_flattens_5200_symbols_in_65_ordered_batches() -> None:
     client = BatchRecordedClient(batches)
     symbols = _symbols(5_200)
     provider = PytdxHqProvider(
-        PytdxHqSettings(_env_file=None),
+        PytdxHqSettings(_env_file=None),  # type: ignore[call-arg]
         endpoints=(("only.quote", 7709),),
         client_factory=lambda hosts, _timeout: client.record_hosts(hosts),
         clock=lambda: datetime(2026, 8, 12, 1, 26, tzinfo=UTC),
@@ -261,7 +261,7 @@ def test_provider_stops_starting_batches_at_deadline() -> None:
         + (datetime(2026, 8, 12, 1, 29, 31, tzinfo=UTC),)
     ).__next__
     provider = PytdxHqProvider(
-        PytdxHqSettings(_env_file=None),
+        PytdxHqSettings(_env_file=None),  # type: ignore[call-arg]
         endpoints=(("only.quote", 7709),),
         client_factory=lambda hosts, _timeout: client.record_hosts(hosts),
         clock=clock,

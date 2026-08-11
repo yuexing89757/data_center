@@ -269,7 +269,7 @@ def test_scheduler_removes_persisted_retired_call_auction_job(tmp_path: Path) ->
     _create_job_store(store_path, ("call-auction-snapshot-daily",))
 
     build_scheduler(
-        SchedulerSettings(
+        SchedulerSettings(  # type: ignore[call-arg]
             scheduler_store_path=store_path,
             call_auction_snapshot_enabled=True,
             _env_file=None,

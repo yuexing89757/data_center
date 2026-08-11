@@ -294,7 +294,10 @@ def test_raw_replay_disables_call_auction_market_before_raw_read_or_write(
     persistence = StubReliabilityPersistence(source)
 
     with pytest.raises(ProviderError) as error:
-        RawReplayService(raw_store=store, persistence=persistence).replay(
+        RawReplayService(
+            raw_store=store,
+            persistence=persistence,  # type: ignore[arg-type]
+        ).replay(
             SOURCE_RUN_ID,
             dry_run=dry_run,
         )

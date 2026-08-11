@@ -13,6 +13,7 @@ import pytest
 from market_data_center.call_auction_market_service import CallAuctionMarketSnapshotService
 from market_data_center.domain.ingestion import IngestionRun, IngestionStatus, QualityResult
 from market_data_center.domain.realtime_quote import (
+    CallAuctionMarketSnapshotRecord,
     FiveLevelQuoteSnapshotRecord,
     OrderBookLevel,
     QuoteStatus,
@@ -101,7 +102,7 @@ class FakePersistence:
         self.requested_universe: tuple[str, ...] = ()
         self.created_runs: list[IngestionRun] = []
         self.committed_runs: list[IngestionRun] = []
-        self.committed_records: list[FiveLevelQuoteSnapshotRecord] = []
+        self.committed_records: list[CallAuctionMarketSnapshotRecord] = []
         self.committed_record_counts: list[int] = []
         self.committed_quality: list[QualityResult] = []
         self.manifest_row_counts: list[int] = []
@@ -121,12 +122,12 @@ class FakePersistence:
     def commit_call_auction_market_attempt(
         self,
         run: IngestionRun,
-        records: Sequence[object],
+        records: Sequence[CallAuctionMarketSnapshotRecord],
         manifest: object,
         quality_results: Sequence[QualityResult],
     ) -> None:
         self.committed_runs.append(run)
-        self.committed_records.extend(records)  # type: ignore[arg-type]
+        self.committed_records.extend(records)
         self.committed_record_counts.append(len(records))
         self.committed_quality.extend(quality_results)
         self.manifest_row_counts.append(manifest.row_count)  # type: ignore[attr-defined]
@@ -272,7 +273,7 @@ def _real_provider_factory(
 ) -> Callable[[tuple[str, int]], PytdxHqProvider]:
     def factory(endpoint: tuple[str, int]) -> PytdxHqProvider:
         return PytdxHqProvider(
-            PytdxHqSettings(_env_file=None),
+            PytdxHqSettings(_env_file=None),  # type: ignore[call-arg]
             endpoints=(endpoint,),
             client_factory=lambda _hosts, _timeout: client,
             clock=lambda: COLLECTION_TIME,
