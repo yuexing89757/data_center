@@ -61,16 +61,13 @@ class PytdxPoolSettings(BaseSettings):
 
 
 class PytdxHqSettings(BaseSettings):
-    """Explicit network endpoint and bounded realtime quote settings."""
+    """Bounded realtime quote request settings."""
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    pytdx_hq_host: SecretStr | None = None
-    pytdx_hq_port: int = Field(default=7709, ge=1, le=65_535)
     pytdx_hq_timeout_seconds: float = Field(default=2.0, gt=0, le=4.0)
     pytdx_hq_batch_size: int = Field(default=80, ge=1, le=80)
     pytdx_hq_max_retries: int = Field(default=1, ge=0, le=1)
-    pytdx_hq_pool_path: Path = Field(default=Path("data/pytdx_hq_pool.json"))
 
 
 class PytdxDailyBarSettings(BaseSettings):

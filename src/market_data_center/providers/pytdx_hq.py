@@ -1,14 +1,11 @@
 """Network pytdx five-level quote adapter with Decimal protocol decoding."""
 
-import json
 from collections import OrderedDict
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
 from datetime import UTC, datetime
 from decimal import Decimal
 from itertools import batched
-from logging import getLogger
-from pathlib import Path
 from struct import unpack
 from types import TracebackType
 from typing import Protocol, Self, cast
@@ -29,7 +26,12 @@ from market_data_center.providers.contracts import (
     ProviderError,
     RealtimeQuoteFetch,
 )
-from market_data_center.settings import PytdxHqSettings
+from market_data_center.providers.pytdx_pool import (
+    PytdxCapability,
+    endpoints_for,
+    load_endpoint_pool,
+)
+from market_data_center.settings import PytdxHqSettings, PytdxPoolSettings
 
 
 class QuoteClient(Protocol):
@@ -45,49 +47,6 @@ class ManagedQuoteClient(QuoteClient, Protocol):
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None: ...
-
-
-LOGGER = getLogger(__name__)
-
-
-def _resolve_hosts(settings: PytdxHqSettings) -> list[tuple[str, int]]:
-    """Resolve candidate HQ endpoints, preferring the pool file.
-
-    Reads the JSON pool produced by ``scripts/probe_pytdx_hq_hosts.py``
-    (entries shaped as ``{"ip","port",...}`` already sorted by latency).
-    Falls back to the single ``PYTDX_HQ_HOST``/``PYTDX_HQ_PORT`` setting
-    when the pool is absent or unreadable. Raises ``ProviderError`` when
-    neither source yields a usable endpoint.
-    """
-    pool_hosts = _read_pool(settings.pytdx_hq_pool_path)
-    if pool_hosts:
-        return pool_hosts
-    if settings.pytdx_hq_host is not None:
-        host = settings.pytdx_hq_host.get_secret_value().strip()
-        if host:
-            return [(host, settings.pytdx_hq_port)]
-    raise ProviderError(
-        "pytdx_hq has no endpoints: set PYTDX_HQ_HOST or run "
-        "scripts/probe_pytdx_hq_hosts.py to build the pool"
-    )
-
-
-def _read_pool(path: Path) -> list[tuple[str, int]]:
-    """Parse the HQ pool file into [(ip, port), ...]; empty list on any failure."""
-    if not path.is_file():
-        return []
-    try:
-        entries = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        LOGGER.warning("pytdx_hq pool file unreadable: %s", path)
-        return []
-    hosts: list[tuple[str, int]] = []
-    for entry in entries:
-        ip = str(entry.get("ip", "")).strip()
-        port = int(entry.get("port", 0))
-        if ip and 0 < port <= 65_535:
-            hosts.append((ip, port))
-    return hosts
 
 
 class _DecimalSecurityQuotesCmd(GetSecurityQuotesCmd):  # type: ignore[misc]
@@ -202,21 +161,26 @@ class PytdxHqProvider(AbstractContextManager["PytdxHqProvider"]):
         self,
         settings: PytdxHqSettings,
         *,
-        client_factory: Callable[[], ManagedQuoteClient] | None = None,
+        pool_settings: PytdxPoolSettings | None = None,
+        client_factory: (
+            Callable[[Sequence[tuple[str, int]], float], ManagedQuoteClient] | None
+        ) = None,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self._settings = settings
-        self._client_factory = client_factory or (
-            lambda: _NetworkQuoteClient(
-                _resolve_hosts(settings),
-                settings.pytdx_hq_timeout_seconds,
-            )
-        )
+        self._pool_settings = pool_settings or PytdxPoolSettings()
+        self._client_factory = client_factory or _NetworkQuoteClient
         self._clock = clock
         self._managed_client: ManagedQuoteClient | None = None
 
     def __enter__(self) -> "PytdxHqProvider":
-        self._managed_client = self._client_factory().__enter__()
+        pool = load_endpoint_pool(self._pool_settings.pytdx_pool_path)
+        hosts = endpoints_for(pool, PytdxCapability.QUOTE)
+        if not hosts:
+            raise ProviderError("pytdx endpoint pool has no quote-capable node")
+        self._managed_client = self._client_factory(
+            hosts, self._settings.pytdx_hq_timeout_seconds
+        ).__enter__()
         return self
 
     def __exit__(

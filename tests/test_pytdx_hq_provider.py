@@ -1,12 +1,51 @@
+import json
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from decimal import Decimal
+from pathlib import Path
 from types import TracebackType
 
 import pytest
 
+from market_data_center.providers.contracts import ProviderError
 from market_data_center.providers.pytdx_hq import PytdxHqProvider
-from market_data_center.settings import PytdxHqSettings
+from market_data_center.settings import PytdxHqSettings, PytdxPoolSettings
+
+
+def _node(
+    host: str,
+    port: int = 7709,
+    *,
+    quote: bool = False,
+    sse: bool = False,
+    szse: bool = False,
+) -> dict[str, object]:
+    return {
+        "host": host,
+        "port": port,
+        "latency_ms": 10,
+        "capabilities": {
+            "quote": quote,
+            "daily_bar_sse": sse,
+            "daily_bar_szse": szse,
+            "daily_bar_bse": False,
+        },
+    }
+
+
+def _write_pool(tmp_path: Path, nodes: list[dict[str, object]]) -> Path:
+    pool = tmp_path / "pytdx_pool.json"
+    pool.write_text(
+        json.dumps(
+            {
+                "schema_version": "pytdx.endpoint_pool.v1",
+                "refreshed_at": "2026-08-11T10:00:00+08:00",
+                "nodes": nodes,
+            }
+        ),
+        encoding="utf-8",
+    )
+    return pool
 
 
 class RecordedClient:
@@ -46,11 +85,13 @@ class RecordedClient:
         return [row]
 
 
-def test_pytdx_hq_contract_keeps_decimal_and_converts_lots_to_shares() -> None:
+def test_pytdx_hq_contract_keeps_decimal_and_converts_lots_to_shares(tmp_path: Path) -> None:
     observed = datetime(2026, 8, 3, 1, 15, tzinfo=UTC)
+    pool = _write_pool(tmp_path, [_node("quote.example", quote=True)])
     provider = PytdxHqProvider(
-        PytdxHqSettings(pytdx_hq_host="recorded.invalid"),
-        client_factory=RecordedClient,
+        PytdxHqSettings(_env_file=None),
+        pool_settings=PytdxPoolSettings(pytdx_pool_path=pool, _env_file=None),
+        client_factory=lambda _hosts, _timeout: RecordedClient(),
         clock=lambda: observed,
     )
 
@@ -65,61 +106,56 @@ def test_pytdx_hq_contract_keeps_decimal_and_converts_lots_to_shares() -> None:
     assert result.failed_symbols == ()
 
 
-def test_resolve_hosts_prefers_pool(tmp_path):
-    import json
-
-    from market_data_center.providers.pytdx_hq import _resolve_hosts
-    from market_data_center.settings import PytdxHqSettings
-
-    pool = tmp_path / "pool.json"
-    pool.write_text(
-        json.dumps(
-            [
-                {"name": "fast", "ip": "1.1.1.1", "port": 7709, "latency_ms": 10},
-                {"name": "slow", "ip": "2.2.2.2", "port": 7700, "latency_ms": 200},
-            ]
-        ),
-        encoding="utf-8",
+def test_hq_provider_uses_only_quote_nodes_and_fixes_one_session(tmp_path: Path) -> None:
+    pool = _write_pool(
+        tmp_path,
+        [
+            _node("daily-only", sse=True, szse=True),
+            _node("quote", quote=True),
+        ],
     )
-    settings = PytdxHqSettings(pytdx_hq_host="fallback.invalid", pytdx_hq_pool_path=pool)
+    calls: list[tuple[tuple[tuple[str, int], ...], float]] = []
 
-    assert _resolve_hosts(settings) == [("1.1.1.1", 7709), ("2.2.2.2", 7700)]
+    def factory(hosts: Sequence[tuple[str, int]], timeout: float) -> RecordedClient:
+        calls.append((tuple(hosts), timeout))
+        return RecordedClient()
 
-
-def test_resolve_hosts_falls_back_to_env_host(tmp_path):
-    from market_data_center.providers.pytdx_hq import _resolve_hosts
-    from market_data_center.settings import PytdxHqSettings
-
-    # Pool path points to a non-existent file.
-    settings = PytdxHqSettings(
-        pytdx_hq_host="env.host.example",
-        pytdx_hq_port=7707,
-        pytdx_hq_pool_path=tmp_path / "missing.json",
+    provider = PytdxHqProvider(
+        PytdxHqSettings(_env_file=None),
+        pool_settings=PytdxPoolSettings(pytdx_pool_path=pool, _env_file=None),
+        client_factory=factory,
     )
 
-    assert _resolve_hosts(settings) == [("env.host.example", 7707)]
+    with provider:
+        provider.fetch_five_level_quotes(("SSE:600000",))
+        provider.fetch_five_level_quotes(("SZSE:000001",))
+
+    assert calls == [((("quote", 7709),), 2.0)]
 
 
-def test_resolve_hosts_raises_without_any_source(tmp_path):
-    from market_data_center.providers.contracts import ProviderError
-    from market_data_center.providers.pytdx_hq import _resolve_hosts
-    from market_data_center.settings import PytdxHqSettings
+def test_hq_provider_rejects_pool_without_quote_nodes(tmp_path: Path) -> None:
+    pool = _write_pool(tmp_path, [_node("daily-only", sse=True, szse=True)])
+    provider = PytdxHqProvider(
+        PytdxHqSettings(_env_file=None),
+        pool_settings=PytdxPoolSettings(pytdx_pool_path=pool, _env_file=None),
+        client_factory=lambda _hosts, _timeout: RecordedClient(),
+    )
 
-    settings = PytdxHqSettings(pytdx_hq_host=None, pytdx_hq_pool_path=tmp_path / "missing.json")
-
-    with pytest.raises(ProviderError, match="no endpoints"):
-        _resolve_hosts(settings)
+    with pytest.raises(ProviderError, match="no quote-capable node"), provider:
+        pass
 
 
-def test_resolve_hosts_ignores_corrupt_pool(tmp_path):
-    from market_data_center.providers.pytdx_hq import _resolve_hosts
-    from market_data_center.settings import PytdxHqSettings
-
+def test_hq_provider_does_not_fallback_when_pool_is_corrupt(tmp_path: Path) -> None:
     corrupt = tmp_path / "corrupt.json"
     corrupt.write_text("{not json", encoding="utf-8")
-    settings = PytdxHqSettings(pytdx_hq_host="fallback.invalid", pytdx_hq_pool_path=corrupt)
+    provider = PytdxHqProvider(
+        PytdxHqSettings(_env_file=None),
+        pool_settings=PytdxPoolSettings(pytdx_pool_path=corrupt, _env_file=None),
+        client_factory=lambda _hosts, _timeout: RecordedClient(),
+    )
 
-    assert _resolve_hosts(settings) == [("fallback.invalid", 7709)]
+    with pytest.raises(ProviderError, match="pool is unreadable"), provider:
+        pass
 
 
 class _FakeApi:
