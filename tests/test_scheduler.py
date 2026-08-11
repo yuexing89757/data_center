@@ -68,7 +68,6 @@ def test_scheduler_registers_persistent_single_instance_market_job(tmp_path: Pat
 def test_scheduler_registers_twelve_hour_pytdx_pool_refresh(tmp_path: Path) -> None:
     scheduler = build_scheduler(
         SchedulerSettings(scheduler_store_path=tmp_path / "refresh.sqlite", _env_file=None),
-        PytdxPoolSettings(pytdx_pool_refresh_hours=12, _env_file=None),
     )
 
     refresh = scheduler.get_job(PYTDX_POOL_REFRESH_JOB_ID)
@@ -184,7 +183,7 @@ def test_call_auction_snapshot_job_registered_when_enabled(tmp_path: Path) -> No
 
     job = scheduler.get_job(CALL_AUCTION_SNAPSHOT_JOB_ID)
     assert job is not None
-    assert str(job.trigger) == "cron[day_of_week='mon-fri', hour='18', minute='0']"
+    assert str(job.trigger) == "cron[day_of_week='mon-fri', hour='21', minute='30']"
     assert job.max_instances == 1
     assert job.coalesce
 
@@ -257,6 +256,7 @@ def test_scheduler_health_requires_jobs_fresh_snapshot_and_no_stale_runs(tmp_pat
     settings = SchedulerSettings(
         scheduler_store_path=store_path,
         auction_collection_enabled=False,
+        eod_quote_snapshot_enabled=False,
         call_auction_snapshot_enabled=False,
         _env_file=None,
     )

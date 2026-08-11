@@ -106,14 +106,43 @@ def test_job_catalog_is_stable_and_references_defined_workflows() -> None:
     assert {workflow.value for workflow in WorkflowCode} == set(workflows)
 
 
+def test_job_catalog_owns_all_fixed_schedules() -> None:
+    jobs = {job.code: job for job in job_definitions(SchedulerSettings(_env_file=None))}
+
+    assert (
+        jobs["opening-auction-limit-up-quotes"].hour,
+        jobs["opening-auction-limit-up-quotes"].minute,
+    ) == (9, 15)
+    assert jobs["opening-auction-limit-up-quotes"].cadence_seconds == 5
+    assert (jobs["daily-run"].hour, jobs["daily-run"].minute) == (20, 0)
+    assert (
+        jobs["stock-daily-indicators-daily"].hour,
+        jobs["stock-daily-indicators-daily"].minute,
+    ) == (20, 30)
+    assert (
+        jobs["mainboard-price-limit-stock-pools-daily"].hour,
+        jobs["mainboard-price-limit-stock-pools-daily"].minute,
+    ) == (21, 0)
+    assert (
+        jobs["eod-quote-snapshot-daily"].hour,
+        jobs["eod-quote-snapshot-daily"].minute,
+    ) == (21, 10)
+    assert (
+        jobs["call-auction-snapshot-daily"].hour,
+        jobs["call-auction-snapshot-daily"].minute,
+    ) == (21, 30)
+    assert (
+        jobs["deducted-profit-daily"].hour,
+        jobs["deducted-profit-daily"].minute,
+    ) == (20, 0)
+    assert jobs["recover-stale-ingestion-runs"].interval_hours == 1
+    assert jobs["pytdx-pool-refresh"].interval_hours == 12
+    assert all(job.timezone == "Asia/Shanghai" for job in jobs.values())
+    assert all(job.timeout_seconds == 21_600 for job in jobs.values())
+
+
 def test_catalog_registers_twelve_hour_pytdx_pool_refresh() -> None:
-    jobs = {
-        job.code: job
-        for job in job_definitions(
-            SchedulerSettings(_env_file=None),
-            PytdxPoolSettings(pytdx_pool_refresh_hours=12, _env_file=None),
-        )
-    }
+    jobs = {job.code: job for job in job_definitions(SchedulerSettings(_env_file=None))}
 
     refresh = jobs["pytdx-pool-refresh"]
     assert refresh.workflow_code == "pytdx_pool_refresh"

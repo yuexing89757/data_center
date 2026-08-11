@@ -45,6 +45,7 @@ from market_data_center.scheduling_catalog import (
     DEDUCTED_PROFIT_JOB_ID,
     EOD_QUOTE_SNAPSHOT_JOB_ID,
     PYTDX_POOL_REFRESH_JOB_ID,
+    SCHEDULER_TIMEZONE,
     STALE_RUN_RECOVERY_JOB_ID,
     STOCK_DAILY_INDICATOR_JOB_ID,
     STOCK_POOL_JOB_ID,
@@ -100,7 +101,7 @@ def read_job_store_snapshot(settings: SchedulerSettings) -> JobStoreSnapshot:
             ).fetchall()
     except SQLiteError:
         return JobStoreSnapshot(available=False, tasks=())
-    timezone = ZoneInfo(settings.scheduler_timezone)
+    timezone = ZoneInfo(SCHEDULER_TIMEZONE)
     tasks = tuple(
         PersistedScheduledTask(
             task_id=row[0],
@@ -463,19 +464,15 @@ def _scheduled_fire_time(
     return candidate.astimezone(UTC)
 
 
-def build_scheduler(
-    settings: SchedulerSettings | None = None,
-    pool_settings: PytdxPoolSettings | None = None,
-) -> BlockingScheduler:
+def build_scheduler(settings: SchedulerSettings | None = None) -> BlockingScheduler:
     settings = settings or SchedulerSettings()
-    pool_settings = pool_settings or PytdxPoolSettings()
     store_path = settings.scheduler_store_path.resolve()
     store_path.parent.mkdir(parents=True, exist_ok=True)
     job_store_engine = create_engine(URL.create("sqlite", database=str(store_path)))
     scheduler = BlockingScheduler(
         jobstores={"default": SQLAlchemyJobStore(engine=job_store_engine)},
         executors={"default": ThreadPoolExecutor(max_workers=1)},
-        timezone=settings.scheduler_timezone,
+        timezone=SCHEDULER_TIMEZONE,
     )
     functions = {
         DAILY_RUN_JOB_ID: run_daily_market_job,
@@ -488,7 +485,7 @@ def build_scheduler(
         CALL_AUCTION_SNAPSHOT_JOB_ID: run_call_auction_snapshot_job,
         PYTDX_POOL_REFRESH_JOB_ID: run_pytdx_pool_refresh_job,
     }
-    for definition in job_definitions(settings, pool_settings):
+    for definition in job_definitions(settings):
         if not definition.enabled:
             continue
         scheduler.add_job(

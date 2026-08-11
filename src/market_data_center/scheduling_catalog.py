@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from market_data_center.settings import PytdxPoolSettings, SchedulerSettings
+from market_data_center.settings import SchedulerSettings
 
 DAILY_RUN_JOB_ID = "daily-run"
 STOCK_DAILY_INDICATOR_JOB_ID = "stock-daily-indicators-daily"
@@ -13,6 +13,9 @@ AUCTION_COLLECTION_JOB_ID = "opening-auction-limit-up-quotes"
 EOD_QUOTE_SNAPSHOT_JOB_ID = "eod-quote-snapshot-daily"
 CALL_AUCTION_SNAPSHOT_JOB_ID = "call-auction-snapshot-daily"
 PYTDX_POOL_REFRESH_JOB_ID = "pytdx-pool-refresh"
+SCHEDULER_TIMEZONE = "Asia/Shanghai"
+JOB_TIMEOUT_SECONDS = 21_600
+AUCTION_COLLECTION_CADENCE_SECONDS = 5
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,6 +42,7 @@ class JobDefinition:
     hour: int | None = None
     minute: int | None = None
     interval_hours: int | None = None
+    cadence_seconds: int | None = None
 
 
 WORKFLOW_DEFINITIONS = (
@@ -99,13 +103,9 @@ WORKFLOW_DEFINITIONS = (
 )
 
 
-def job_definitions(
-    settings: SchedulerSettings,
-    pool_settings: PytdxPoolSettings | None = None,
-) -> tuple[JobDefinition, ...]:
-    pool_settings = pool_settings or PytdxPoolSettings()
-    timezone = settings.scheduler_timezone
-    timeout = settings.scheduler_misfire_grace_seconds
+def job_definitions(settings: SchedulerSettings) -> tuple[JobDefinition, ...]:
+    timezone = SCHEDULER_TIMEZONE
+    timeout = JOB_TIMEOUT_SECONDS
     return (
         JobDefinition(
             AUCTION_COLLECTION_JOB_ID,
@@ -113,15 +113,15 @@ def job_definitions(
             "单次启动十分钟会话, 仅采集精确 ready 的昨日涨停池。",
             "auction_collection",
             "cron",
-            f"周一至周五 {settings.auction_collection_hour:02d}:"
-            f"{settings.auction_collection_minute:02d}",
+            "周一至周五 09:15",
             timezone,
             settings.auction_collection_enabled,
             timeout,
             "进程恢复仅续采当前及未来轮次, 过去轮次记为缺失, 不回填。",
             day_of_week="mon-fri",
-            hour=settings.auction_collection_hour,
-            minute=settings.auction_collection_minute,
+            hour=9,
+            minute=15,
+            cadence_seconds=AUCTION_COLLECTION_CADENCE_SECONDS,
         ),
         JobDefinition(
             DAILY_RUN_JOB_ID,
@@ -129,14 +129,14 @@ def job_definitions(
             "运行 daily_market 工作流。",
             "daily_market",
             "cron",
-            f"周一至周五 {settings.daily_run_hour:02d}:{settings.daily_run_minute:02d}",
+            "周一至周五 20:00",
             timezone,
             True,
             timeout,
             "启动及每小时恢复超过 60 分钟的 running 记录",
             day_of_week="mon-fri",
-            hour=settings.daily_run_hour,
-            minute=settings.daily_run_minute,
+            hour=20,
+            minute=0,
         ),
         JobDefinition(
             STOCK_DAILY_INDICATOR_JOB_ID,
@@ -144,15 +144,14 @@ def job_definitions(
             "运行 stock_daily_indicator 工作流。",
             "stock_daily_indicator",
             "cron",
-            f"周一至周五 {settings.stock_daily_indicator_hour:02d}:"
-            f"{settings.stock_daily_indicator_minute:02d}",
+            "周一至周五 20:30",
             timezone,
             True,
             timeout,
             "启动及每小时恢复超过 60 分钟的 running 记录",
             day_of_week="mon-fri",
-            hour=settings.stock_daily_indicator_hour,
-            minute=settings.stock_daily_indicator_minute,
+            hour=20,
+            minute=30,
         ),
         JobDefinition(
             STOCK_POOL_JOB_ID,
@@ -160,14 +159,14 @@ def job_definitions(
             "构建涨停与跌停两份对称的不可变股票池快照。",
             "stock_pool",
             "cron",
-            f"周一至周五 {settings.stock_pool_hour:02d}:{settings.stock_pool_minute:02d}",
+            "周一至周五 21:00",
             timezone,
             True,
             timeout,
             "缺少同日成功的日 K/每日指标 workflow 时失败; 下一次调度或手工命令重试",
             day_of_week="mon-fri",
-            hour=settings.stock_pool_hour,
-            minute=settings.stock_pool_minute,
+            hour=21,
+            minute=0,
         ),
         JobDefinition(
             DEDUCTED_PROFIT_JOB_ID,
@@ -175,13 +174,13 @@ def job_definitions(
             "按披露变化增量同步累计和单季度扣非净利润。",
             "deducted_profit",
             "cron",
-            f"每天 {settings.deducted_profit_hour:02d}:{settings.deducted_profit_minute:02d}",
+            "每天 20:00",
             timezone,
             True,
             timeout,
             "启动及每小时恢复超过 60 分钟的 running 记录",
-            hour=settings.deducted_profit_hour,
-            minute=settings.deducted_profit_minute,
+            hour=20,
+            minute=0,
         ),
         JobDefinition(
             EOD_QUOTE_SNAPSHOT_JOB_ID,
@@ -189,14 +188,14 @@ def job_definitions(
             "当日涨停池 ready 后采集其成员的收盘五档行情, 计算涨停封单金额。",
             "eod_quote_snapshot",
             "cron",
-            f"周一至周五 {settings.eod_quote_hour:02d}:{settings.eod_quote_minute:02d}",
+            "周一至周五 21:10",
             timezone,
             settings.eod_quote_snapshot_enabled,
             timeout,
             "当日 ready 涨停池缺失时失败; 不使用旧池或当前报价补历史数据",
             day_of_week="mon-fri",
-            hour=settings.eod_quote_hour,
-            minute=settings.eod_quote_minute,
+            hour=21,
+            minute=10,
         ),
         JobDefinition(
             CALL_AUCTION_SNAPSHOT_JOB_ID,
@@ -204,14 +203,14 @@ def job_definitions(
             "收盘后采集涨停池成员的当日集合竞价量、额及溢价率。",
             "call_auction_snapshot",
             "cron",
-            f"周一至周五 {settings.call_auction_hour:02d}:{settings.call_auction_minute:02d}",
+            "周一至周五 21:30",
             timezone,
             settings.call_auction_snapshot_enabled,
             timeout,
             "无涨停池时跳过; 下次调度重试",
             day_of_week="mon-fri",
-            hour=settings.call_auction_hour,
-            minute=settings.call_auction_minute,
+            hour=21,
+            minute=30,
         ),
         JobDefinition(
             STALE_RUN_RECOVERY_JOB_ID,
@@ -232,14 +231,18 @@ def job_definitions(
             "有界探测节点能力, 成功时原子发布, 失败时保留 last-good。",
             "pytdx_pool_refresh",
             "interval",
-            f"每 {pool_settings.pytdx_pool_refresh_hours} 小时",
+            "每 12 小时",
             timezone,
             True,
             timeout,
             "刷新失败保留 last-good; 新旧池均无效时 Worker 启动失败",
-            interval_hours=pool_settings.pytdx_pool_refresh_hours,
+            interval_hours=12,
         ),
     )
+
+
+def job_definition(code: str, settings: SchedulerSettings) -> JobDefinition:
+    return next(item for item in job_definitions(settings) if item.code == code)
 
 
 def workflow_definition(code: str) -> WorkflowDefinition:
