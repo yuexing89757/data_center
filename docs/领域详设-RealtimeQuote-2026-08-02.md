@@ -1,5 +1,78 @@
 # 领域详设：RealtimeQuote 股票实时五档 v0
 
+> 沪深全市场开盘竞价来源快照与盘后最终化：
+> `adr/ADR-0027-沪深全市场开盘竞价快照与涨停池最终化.md`（Accepted）
+
+## 全市场开盘竞价来源快照（v2）
+
+### 领域边界
+
+`CallAuctionMarketSnapshotRecord` 是 09:25 最终撮合后、09:30 连续竞价前观察到的沪深 listed
+stock 来源事实。它不是逐笔成交、分钟行情或盘后历史重建。BSE 不在 v2 支持范围。
+
+```text
+09:26 Security 全集
+  → 单 endpoint、每批 ≤80 的 pytdx_hq 采集
+  → Raw JSONL + RawManifest + IngestionRun
+  → realtime.call_auction_market_snapshot（append-only）
+  → 21:30 精确日期 succeeded ingestion × ready 涨停池
+  → realtime.call_auction_snapshot（最终涨停池结果）
+```
+
+### 标准记录
+
+```text
+CallAuctionMarketSnapshotRecord
+├── symbol: str
+├── trade_date: date
+├── observed_at: aware datetime
+├── last_price: Decimal | None
+├── previous_close: Decimal | None
+├── high_price: Decimal | None
+├── low_price: Decimal | None
+├── cumulative_volume: int | None
+├── cumulative_amount: Decimal | None
+└── source_code: pytdx_hq
+```
+
+记录不包含 `ingestion_id`；Persistence 在写边界附加。累计量/额只因观察窗口被限定为
+`[09:25,09:30)` 才具有本设计中的开盘竞价语义。09:30 后同名来源字段属于全天连续成交累计，
+不得写入该聚合。
+
+### 全集和完整性
+
+- 全集来自 `core.security` 的 SSE/SZSE、`security_type=stock`、`status=listed`；
+- BSE、ETF、可转债、指数和退市证券排除；
+- 每个 attempt 的预期 symbol 固定、排序且唯一；
+- 一个成功 ingestion 只使用一个 endpoint；失败后新 ingestion 才能换 endpoint 全量重试；
+- 响应集合与预期集合完全相同才能成功；停牌/空行情的明确响应仍是事实；
+- partial/failed ingestion 的行可用于审计和 Raw 重放，但不能作为 21:30 输入。
+
+### 存储和查询
+
+`realtime.call_auction_market_snapshot` 以 `(ingestion_id,symbol)` 为主键，保存 `trade_date`、
+`observed_at`、最新价、昨收、截至观察时点的当日最高价/最低价、标准量额和来源。最高价/最低价
+允许缺失；非空时必须非负且 `high_price >= low_price`，最新价与两者均非空时必须落在该区间。
+索引支持按 `(trade_date,ingestion_id,symbol)` 读取。
+成功输入的选择先在 `ingestion.ingestion_run` 限定 dataset/status，再与精确日期事实连接；不得从
+`request_params` JSON 猜测交易日。
+
+21:30 最终化写入现有 `realtime.call_auction_snapshot`，保留晨间 ingestion lineage 和
+`observed_at`。公共 `query_daily_limit_up_list` 继续只连接最终表，不暴露全市场来源表。
+
+### 时间和调度
+
+- `call-auction-market-snapshot-daily`：工作日 09:26；
+- 09:29:30 后不发新请求，`observed_at >=09:30` 硬拒绝；
+- `call-auction-snapshot-daily`：工作日 21:30，只访问 PostgreSQL；
+- 两个任务共用 `CALL_AUCTION_SNAPSHOT_ENABLED`；时间只在代码目录；
+- 非交易日跳过，错过晨间窗口不补采，盘后不调用历史成交或实时行情伪造。
+
+### 保留和容量
+
+每天约 5,200 行、每年约 130 万行。来源事实和 Raw 长期保留，首版不增加清理任务。每日单次
+快照不构成逐秒持续采集，也不改变 ADR-0012 对分钟、tick、逐笔和 Level-2 的禁止边界。
+
 > 集合竞价采集落地决策：`adr/ADR-0022-集合竞价涨停池五档快照采集.md`（Accepted）
 
 ## 集合竞价采集边界（v1）
