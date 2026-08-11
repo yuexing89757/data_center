@@ -65,6 +65,7 @@ COUNT_QUERIES = {
     "workflow_run": "select count(*) from operations.workflow_run",
     "ingestion_run": "select count(*) from ingestion.ingestion_run",
     "raw_manifest": "select count(*) from ingestion.raw_manifest",
+    "call_auction_market_snapshot": ("select count(*) from realtime.call_auction_market_snapshot"),
     "five_level_quote_snapshot": "select count(*) from realtime.five_level_quote_snapshot",
 }
 
@@ -138,6 +139,8 @@ def capture_database_snapshot(database_url: str) -> DatabaseSnapshot:
                 select ingestion_id from classification.member_snapshot_item
                 union all
                 select ingestion_id from classification.member_interval
+                union all
+                select ingestion_id from realtime.call_auction_market_snapshot
             ) facts
             left join ingestion.ingestion_run run using (ingestion_id)
             where run.ingestion_id is null

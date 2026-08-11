@@ -234,6 +234,350 @@ def test_operations_workflow_codes_are_constrained(database_engine: Engine) -> N
     assert isinstance(captured.value.orig, CheckViolation)
 
 
+def test_call_auction_market_schema_enforces_append_only_source_facts(
+    database_engine: Engine,
+) -> None:
+    trade_date = date(2026, 8, 12)
+    observed_at = datetime(2026, 8, 12, 1, 26, tzinfo=UTC)
+    ingestion_id = uuid4()
+    security_ingestion_id = uuid4()
+    workflow_run_id = uuid4()
+
+    with database_engine.connect() as connection:
+        assert (
+            connection.scalar(text("select to_regclass('realtime.call_auction_market_snapshot')"))
+            == "realtime.call_auction_market_snapshot"
+        )
+        columns = (
+            connection.execute(
+                text("""
+                select column_name, data_type, numeric_precision, numeric_scale, is_nullable
+                from information_schema.columns
+                where table_schema = 'realtime'
+                  and table_name = 'call_auction_market_snapshot'
+                order by ordinal_position
+            """)
+            )
+            .mappings()
+            .all()
+        )
+        column_names = {cast(str, row["column_name"]) for row in columns}
+        assert column_names >= {
+            "ingestion_id",
+            "symbol",
+            "trade_date",
+            "observed_at",
+            "last_price",
+            "previous_close",
+            "high_price",
+            "low_price",
+            "cumulative_volume",
+            "cumulative_amount",
+            "source_code",
+            "created_at",
+        }
+        numeric_columns = {
+            cast(str, row["column_name"]): (
+                row["numeric_precision"],
+                row["numeric_scale"],
+                row["is_nullable"],
+            )
+            for row in columns
+            if row["data_type"] == "numeric"
+        }
+        assert numeric_columns == {
+            "last_price": (18, 4, "YES"),
+            "previous_close": (18, 4, "YES"),
+            "high_price": (18, 4, "YES"),
+            "low_price": (18, 4, "YES"),
+            "cumulative_amount": (30, 4, "YES"),
+        }
+        primary_key = connection.execute(
+            text("""
+                select array_agg(attribute.attname order by key.ordinality)
+                from pg_constraint constraint_definition
+                cross join lateral unnest(constraint_definition.conkey)
+                    with ordinality as key(attnum, ordinality)
+                join pg_attribute attribute
+                  on attribute.attrelid = constraint_definition.conrelid
+                 and attribute.attnum = key.attnum
+                where constraint_definition.conrelid =
+                      'realtime.call_auction_market_snapshot'::regclass
+                  and constraint_definition.contype = 'p'
+            """)
+        ).scalar_one()
+        assert primary_key == ["ingestion_id", "symbol"]
+        foreign_tables = set(
+            connection.execute(
+                text("""
+                    select referenced_namespace.nspname, referenced_table.relname
+                    from pg_constraint constraint_definition
+                    join pg_class referenced_table
+                      on referenced_table.oid = constraint_definition.confrelid
+                    join pg_namespace referenced_namespace
+                      on referenced_namespace.oid = referenced_table.relnamespace
+                    where constraint_definition.conrelid =
+                          'realtime.call_auction_market_snapshot'::regclass
+                      and constraint_definition.contype = 'f'
+                """)
+            ).all()
+        )
+        assert foreign_tables == {("ingestion", "ingestion_run"), ("core", "security")}
+        check_constraints = {
+            cast(str, name): cast(bool, validated)
+            for name, validated in connection.execute(
+                text("""
+                    select conname, convalidated
+                    from pg_constraint
+                    where conrelid = 'realtime.call_auction_market_snapshot'::regclass
+                      and contype = 'c'
+                """)
+            ).all()
+        }
+        assert check_constraints == {
+            "call_auction_market_nonnegative": True,
+            "call_auction_market_observation_window": True,
+            "call_auction_market_price_range": True,
+            "call_auction_market_snapshot_source_code_check": True,
+        }
+        index_columns = connection.execute(
+            text("""
+                select array_agg(attribute.attname order by key.ordinality)
+                from pg_index index_definition
+                cross join lateral unnest(index_definition.indkey)
+                    with ordinality as key(attnum, ordinality)
+                join pg_attribute attribute
+                  on attribute.attrelid = index_definition.indrelid
+                 and attribute.attnum = key.attnum
+                where index_definition.indrelid =
+                      'realtime.call_auction_market_snapshot'::regclass
+                  and not index_definition.indisprimary
+                group by index_definition.indexrelid
+            """)
+        ).scalar_one()
+        assert index_columns == ["trade_date", "ingestion_id", "symbol"]
+        assert (
+            connection.scalar(
+                text("""
+                select relrowsecurity
+                from pg_class
+                where oid = 'realtime.call_auction_market_snapshot'::regclass
+            """)
+            )
+            is True
+        )
+        policies = {
+            (cast(str, command), tuple(cast(list[str], roles)))
+            for command, roles in connection.execute(
+                text("""
+                    select cmd, roles
+                    from pg_policies
+                    where schemaname = 'realtime'
+                      and tablename = 'call_auction_market_snapshot'
+                """)
+            ).all()
+        }
+        assert policies == {
+            ("INSERT", ("market_data_worker",)),
+            ("SELECT", ("market_data_worker",)),
+        }
+        worker_grants = {
+            cast(str, privilege)
+            for (privilege,) in connection.execute(
+                text("""
+                    select privilege_type
+                    from information_schema.role_table_grants
+                    where grantee = 'market_data_worker'
+                      and table_schema = 'realtime'
+                      and table_name = 'call_auction_market_snapshot'
+                """)
+            ).all()
+        }
+        assert worker_grants == {"INSERT", "SELECT"}
+        final_observed_at = connection.execute(
+            text("""
+                select data_type, is_nullable
+                from information_schema.columns
+                where table_schema = 'realtime'
+                  and table_name = 'call_auction_snapshot'
+                  and column_name = 'observed_at'
+            """)
+        ).one()
+        assert tuple(final_observed_at) == ("timestamp with time zone", "YES")
+        assert (
+            connection.scalar(
+                text("""
+                select has_table_privilege(
+                    'market_data_worker', 'realtime.call_auction_snapshot', 'delete'
+                )
+            """)
+            )
+            is True
+        )
+        assert (
+            connection.execute(
+                text("""
+                select table_type
+                from information_schema.tables
+                where table_schema = 'api_v1'
+                  and table_name = 'call_auction_market_snapshot'
+            """)
+            ).all()
+            == []
+        )
+
+    with database_engine.begin() as connection:
+        connection.execute(
+            text("""
+                insert into ingestion.ingestion_run (
+                    ingestion_id, provider_code, dataset_code, status
+                ) values
+                    (:security_ingestion_id, 'baostock', 'security', 'running'),
+                    (:ingestion_id, 'pytdx_hq', 'call_auction_market_snapshot', 'running')
+            """),
+            {
+                "security_ingestion_id": security_ingestion_id,
+                "ingestion_id": ingestion_id,
+            },
+        )
+        connection.execute(
+            text("""
+                insert into core.security (
+                    symbol, code, exchange, current_name, security_type, status,
+                    source_code, ingestion_id
+                ) values (
+                    :symbol, '600000', 'SSE', '浦发银行', 'stock', 'listed',
+                    'baostock', :security_ingestion_id
+                )
+            """),
+            {"symbol": SYMBOL, "security_ingestion_id": security_ingestion_id},
+        )
+        connection.execute(
+            text("""
+                insert into audit.quality_result (
+                    ingestion_id, dataset_code, rule_code, severity, status, message
+                ) values (
+                    :ingestion_id, 'call_auction_market_snapshot',
+                    'market_snapshot.complete', 'info', 'passed', 'complete'
+                )
+            """),
+            {"ingestion_id": ingestion_id},
+        )
+        connection.execute(
+            text("""
+                insert into operations.workflow_run (
+                    workflow_run_id, workflow_code, scheduled_for, trigger_source,
+                    attempt, status, started_at
+                ) values (
+                    :workflow_run_id, 'call_auction_market_snapshot', :scheduled_for,
+                    'scheduled', 1, 'running', :scheduled_for
+                )
+            """),
+            {
+                "workflow_run_id": workflow_run_id,
+                "scheduled_for": observed_at,
+            },
+        )
+        connection.execute(
+            text("""
+                insert into realtime.call_auction_market_snapshot (
+                    ingestion_id, symbol, trade_date, observed_at, last_price,
+                    previous_close, high_price, low_price, cumulative_volume,
+                    cumulative_amount, source_code
+                ) values (
+                    :ingestion_id, :symbol, :trade_date, :observed_at, 10.0000,
+                    9.8000, 10.1000, 9.9000, 100, 1000.0000, 'pytdx_hq'
+                )
+            """),
+            {
+                "ingestion_id": ingestion_id,
+                "symbol": SYMBOL,
+                "trade_date": trade_date,
+                "observed_at": observed_at,
+            },
+        )
+
+    invalid_rows = (
+        ("call_auction_market_price_range", {"high_price": "9.8000", "low_price": "9.9000"}),
+        ("call_auction_market_price_range", {"last_price": "9.8000", "low_price": "9.9000"}),
+        ("call_auction_market_price_range", {"last_price": "10.2000", "high_price": "10.1000"}),
+        ("call_auction_market_nonnegative", {"previous_close": "-0.0001"}),
+        (
+            "call_auction_market_observation_window",
+            {"observed_at": datetime(2026, 8, 12, 1, 30, tzinfo=UTC)},
+        ),
+    )
+    statement = text("""
+        insert into realtime.call_auction_market_snapshot (
+            ingestion_id, symbol, trade_date, observed_at, last_price,
+            previous_close, high_price, low_price, cumulative_volume,
+            cumulative_amount, source_code
+        ) values (
+            :ingestion_id, :symbol, :trade_date, :observed_at, :last_price,
+            :previous_close, :high_price, :low_price, :cumulative_volume,
+            :cumulative_amount, 'pytdx_hq'
+        )
+    """)
+    defaults: dict[str, object] = {
+        "symbol": SYMBOL,
+        "trade_date": trade_date,
+        "observed_at": observed_at,
+        "last_price": "10.0000",
+        "previous_close": "9.8000",
+        "high_price": None,
+        "low_price": None,
+        "cumulative_volume": 100,
+        "cumulative_amount": "1000.0000",
+    }
+    for expected_constraint, overrides in invalid_rows:
+        rejected_ingestion_id = uuid4()
+        parameters = defaults | overrides | {"ingestion_id": rejected_ingestion_id}
+        with pytest.raises(DBAPIError) as captured, database_engine.begin() as connection:
+            connection.execute(
+                text("""
+                    insert into ingestion.ingestion_run (
+                        ingestion_id, provider_code, dataset_code, status
+                    ) values (
+                        :ingestion_id, 'pytdx_hq',
+                        'call_auction_market_snapshot', 'running'
+                    )
+                """),
+                {"ingestion_id": rejected_ingestion_id},
+            )
+            connection.execute(statement, parameters)
+        assert isinstance(captured.value.orig, CheckViolation)
+        assert captured.value.orig.diag.constraint_name == expected_constraint
+
+    for forbidden_statement in (
+        "update realtime.call_auction_market_snapshot set last_price = last_price",
+        "delete from realtime.call_auction_market_snapshot",
+    ):
+        with pytest.raises(DBAPIError) as captured, database_engine.begin() as connection:
+            connection.execute(text("set role market_data_worker"))
+            connection.execute(text(forbidden_statement))
+        assert isinstance(captured.value.orig, InsufficientPrivilege)
+
+    database_url = database_engine.url.render_as_string(hide_password=False)
+    snapshot = capture_database_snapshot(database_url)
+    assert dict(snapshot.row_counts)["call_auction_market_snapshot"] == 1
+    assert snapshot.orphan_facts == 0
+
+    with database_engine.begin() as connection:
+        connection.execute(text("set session_replication_role = replica"))
+        connection.execute(
+            statement,
+            defaults
+            | {
+                "ingestion_id": uuid4(),
+                "observed_at": datetime(2026, 8, 12, 1, 27, tzinfo=UTC),
+            },
+        )
+        connection.execute(text("set session_replication_role = origin"))
+
+    orphaned_snapshot = capture_database_snapshot(database_url)
+    assert orphaned_snapshot.orphan_facts == 1
+
+
 def test_stock_pool_rpc_requires_exact_ready_date_and_preserves_empty_snapshot(
     database_engine: Engine,
 ) -> None:

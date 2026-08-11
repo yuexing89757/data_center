@@ -41,6 +41,10 @@ def test_production_schema_expectations_follow_all_migrations() -> None:
     assert set(API_VIEWS) == {view for schema, view in views if schema == "api_v1"}
 
 
+def test_production_schema_inventory_includes_call_auction_market_snapshot() -> None:
+    assert ("realtime", "call_auction_market_snapshot") in EXPECTED_TABLES
+
+
 def test_smoke_required_metrics_cover_phase_one_and_board_index() -> None:
     assert {
         "security",
