@@ -120,7 +120,7 @@ where job_execution_id=:job_execution_id and status='running'
         with self._engine.begin() as connection:
             connection.execute(
                 text("""
-update operations.job_execution set status='failed', finished_at=now(),
+update operations.job_execution set status='failed', finished_at=greatest(now(), started_at),
  error_summary='worker_interrupted_or_timed_out'
 where status='running' and started_at < :stale_before
 """),
@@ -128,7 +128,7 @@ where status='running' and started_at < :stale_before
             )
             result = connection.execute(
                 text("""
-update operations.workflow_run set status='failed', finished_at=now(),
+update operations.workflow_run set status='failed', finished_at=greatest(now(), started_at),
  error_summary='worker_interrupted_or_timed_out'
 where status='running' and started_at < :stale_before
 """),

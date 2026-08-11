@@ -192,6 +192,46 @@ def test_operations_repository_records_attempts_steps_and_stale_recovery(
     assert history[0].error_summary == "worker_interrupted_or_timed_out"
 
 
+def test_operations_stale_recovery_preserves_time_order_when_database_clock_trails_worker(
+    database_engine: Engine,
+) -> None:
+    persistence = PostgreSQLOperationsPersistence(database_engine)
+    run = persistence.start_workflow(
+        WorkflowCode.DAILY_MARKET,
+        datetime(2026, 8, 2, 10, tzinfo=UTC),
+        TriggerSource.MANUAL,
+    )
+    persistence.start_job(run.workflow_run_id, "security", 1)
+    with database_engine.begin() as connection:
+        worker_started_at = connection.execute(
+            text("select now() + interval '1 hour'")
+        ).scalar_one()
+        connection.execute(
+            text("update operations.workflow_run set started_at=:started_at"),
+            {"started_at": worker_started_at},
+        )
+        connection.execute(
+            text("update operations.job_execution set started_at=:started_at"),
+            {"started_at": worker_started_at},
+        )
+
+    recovered = persistence.recover_stale(worker_started_at + timedelta(minutes=1))
+
+    with database_engine.connect() as connection:
+        workflow_row = connection.execute(
+            text("select status, started_at, finished_at from operations.workflow_run")
+        ).one()
+        job_row = connection.execute(
+            text("select status, started_at, finished_at from operations.job_execution")
+        ).one()
+
+    assert recovered == 1
+    assert workflow_row.status == "failed"
+    assert workflow_row.finished_at >= workflow_row.started_at
+    assert job_row.status == "failed"
+    assert job_row.finished_at >= job_row.started_at
+
+
 def test_operations_workflow_codes_are_constrained(database_engine: Engine) -> None:
     statement = text("""
         insert into operations.workflow_run (
