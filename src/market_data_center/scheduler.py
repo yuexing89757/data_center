@@ -45,7 +45,6 @@ from market_data_center.reliability import recover_stale_runs
 from market_data_center.scheduling_catalog import (
     AUCTION_COLLECTION_JOB_ID,
     CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID,
-    CALL_AUCTION_SNAPSHOT_JOB_ID,
     DAILY_RUN_JOB_ID,
     DEDUCTED_PROFIT_JOB_ID,
     EOD_QUOTE_SNAPSHOT_JOB_ID,
@@ -68,6 +67,7 @@ from market_data_center.stock_pool_service import StockPoolService
 
 SCHEDULER_LOCK_KEY = "market-data-center:scheduler"
 LOGGER = getLogger(__name__)
+_RETIRED_JOB_IDS = ("call-auction-snapshot-daily",)
 
 
 @dataclass(frozen=True, slots=True)
@@ -406,37 +406,6 @@ def run_eod_quote_snapshot_job() -> None:
         engine.dispose()
 
 
-def run_call_auction_snapshot_job() -> None:
-    """Finalize call-auction facts from the database for the latest trading date."""
-    from market_data_center.snapshot_collector import finalize_call_auction
-
-    settings = WorkerSettings()  # type: ignore[call-arg]
-    scheduling = SchedulerSettings()
-    engine = create_engine(
-        sqlalchemy_url(settings.database_url.get_secret_value()), pool_pre_ping=True
-    )
-    try:
-        fire_time = _scheduled_job_fire_time(CALL_AUCTION_SNAPSHOT_JOB_ID, scheduling)
-        execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
-            WorkflowCode.CALL_AUCTION_SNAPSHOT,
-            fire_time,
-            TriggerSource.SCHEDULED,
-        )
-        try:
-            trade_date = fire_time.astimezone(ZoneInfo(SCHEDULER_TIMEZONE)).date()
-            execution.step(
-                "finalize_call_auction_snapshot",
-                1,
-                lambda: finalize_call_auction(engine, trade_date),
-            )
-        except BaseException as error:
-            execution.fail(error)
-            raise
-        execution.succeed()
-    finally:
-        engine.dispose()
-
-
 def run_call_auction_market_snapshot_job() -> None:
     """Collect one complete morning auction snapshot from stable quote endpoints."""
     settings = WorkerSettings()  # type: ignore[call-arg]
@@ -519,6 +488,7 @@ def build_scheduler(settings: SchedulerSettings | None = None) -> BlockingSchedu
     settings = settings or SchedulerSettings()
     store_path = settings.scheduler_store_path.resolve()
     store_path.parent.mkdir(parents=True, exist_ok=True)
+    _remove_retired_jobs(store_path)
     job_store_engine = create_engine(URL.create("sqlite", database=str(store_path)))
     scheduler = BlockingScheduler(
         jobstores={"default": SQLAlchemyJobStore(engine=job_store_engine)},
@@ -534,7 +504,6 @@ def build_scheduler(settings: SchedulerSettings | None = None) -> BlockingSchedu
         AUCTION_COLLECTION_JOB_ID: run_auction_collection_job,
         EOD_QUOTE_SNAPSHOT_JOB_ID: run_eod_quote_snapshot_job,
         CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID: run_call_auction_market_snapshot_job,
-        CALL_AUCTION_SNAPSHOT_JOB_ID: run_call_auction_snapshot_job,
         PYTDX_POOL_REFRESH_JOB_ID: run_pytdx_pool_refresh_job,
     }
     for definition in job_definitions(settings):
@@ -550,6 +519,19 @@ def build_scheduler(settings: SchedulerSettings | None = None) -> BlockingSchedu
             misfire_grace_time=definition.timeout_seconds,
         )
     return scheduler
+
+
+def _remove_retired_jobs(store_path: Path) -> None:
+    with connect(store_path) as connection:
+        table_exists = connection.execute(
+            "select 1 from sqlite_master where type = 'table' and name = 'apscheduler_jobs'"
+        ).fetchone()
+        if table_exists is None:
+            return
+        connection.executemany(
+            "delete from apscheduler_jobs where id = ?",
+            ((job_id,) for job_id in _RETIRED_JOB_IDS),
+        )
 
 
 def _trigger(definition: JobDefinition) -> CronTrigger | IntervalTrigger:

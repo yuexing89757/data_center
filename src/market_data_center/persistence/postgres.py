@@ -1322,12 +1322,12 @@ where market = 'CN_A_SHARE'
         self,
         run: IngestionRun,
         records: Sequence[CallAuctionMarketSnapshotRecord],
-        manifest: RawManifest | None,
+        manifest: RawManifest,
         quality_results: Sequence[QualityResult],
     ) -> None:
-        if manifest is not None and manifest.ingestion_id != run.ingestion_id:
+        if manifest.ingestion_id != run.ingestion_id:
             raise ValueError("Raw manifest does not match the call-auction market attempt")
-        if manifest is not None and manifest.row_count != run.fetched_rows:
+        if manifest.row_count != run.fetched_rows:
             raise ValueError("Raw manifest row_count does not match run fetched_rows")
         if len(records) != run.accepted_rows:
             raise ValueError("persisted fact count does not match run accepted_rows")

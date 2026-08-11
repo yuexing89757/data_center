@@ -18,7 +18,8 @@ ADR 记录已经接受的架构决策。其优先级低于项目宪法，高于�
 
 ## 当前 ADR
 
-- `ADR-0027-沪深全市场开盘竞价快照与涨停池最终化.md`：09:26 采集单 endpoint、完整且可追溯的沪深 listed stock 开盘竞价来源快照，21:30 仅以当日成功快照和 ready 涨停池完成最终化；BSE 暂缓。
+- `ADR-0028-暂停全市场竞价Raw重放与移除自动最终化.md`：保留 09:26 来源采集和 Raw，暂停缺少原冻结全集身份的 replay，并移除 21:30 自动最终化及旧 JobStore 残留；不增加替代计划。
+- `ADR-0027-沪深全市场开盘竞价快照与涨停池最终化.md`：接受 09:26 单 endpoint 沪深 listed-stock 来源快照；其 Raw replay 与 21:30 自动最终化部分已由 ADR-0028 替代。
 - `ADR-0026-统一PYTDX能力节点池.md`：Daily Bar 与五档行情共用带能力标记的本地节点池，由 Worker 启动时及每 12 小时有界刷新，失败时保留 last-good。
 - `ADR-0023-可转债领域.md`：新增 `convertible_bond` 独立 schema（基础条款/每日行情/转股价调整/赎回事件），复用 core.security 但不复用 core.daily_bar；Tushare cb_* 主源。
 - `ADR-0022-集合竞价涨停池五档快照采集.md`：冻结当日涨停池，由单个 Worker 会话在 09:15–09:25 有界采样，并以 live validation 门禁防止误解竞价档位。

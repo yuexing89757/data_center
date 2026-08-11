@@ -904,7 +904,8 @@ def _parser() -> ArgumentParser:
     eod_parser.add_argument("--trade-date", help="YYYY-MM-DD; defaults to today")
 
     auction_parser = subparsers.add_parser(
-        "call-auction-snapshot", help="collect call-auction snapshot for limit-up pool"
+        "call-auction-snapshot",
+        help="finalize call-auction facts from persisted morning data",
     )
     auction_parser.add_argument("--trade-date", help="YYYY-MM-DD; defaults to today")
 

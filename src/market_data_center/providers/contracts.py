@@ -10,10 +10,7 @@ from market_data_center.domain.board_index import BoardIndexProviderRecord
 from market_data_center.domain.classification import ClassificationRecord
 from market_data_center.domain.convertible_bond import ConvertibleBondRecord
 from market_data_center.domain.deducted_profit import DeductedProfitRecord
-from market_data_center.domain.realtime_quote import (
-    CallAuctionMarketSnapshotRecord,
-    FiveLevelQuoteSnapshotRecord,
-)
+from market_data_center.domain.realtime_quote import FiveLevelQuoteSnapshotRecord
 from market_data_center.domain.records import (
     CapitalRecord,
     DailyBarRecord,
@@ -32,7 +29,6 @@ type ProviderRecord = (
     | StockDailyIndicatorSnapshotRecord
     | DeductedProfitRecord
     | FiveLevelQuoteSnapshotRecord
-    | CallAuctionMarketSnapshotRecord
     | ConvertibleBondRecord
 )
 type RawRow = Mapping[str, str]
@@ -120,12 +116,6 @@ class RealtimeQuoteNormalizationError:
     raw_row_index: int
     symbol: str | None
     reason: str
-
-
-@dataclass(frozen=True, slots=True)
-class RawNormalizationResult:
-    records: tuple[ProviderRecord, ...]
-    normalization_errors: tuple[RealtimeQuoteNormalizationError, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

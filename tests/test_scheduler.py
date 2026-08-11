@@ -20,7 +20,7 @@ from market_data_center.scheduler import (
 )
 from market_data_center.scheduling_catalog import (
     AUCTION_COLLECTION_JOB_ID,
-    CALL_AUCTION_SNAPSHOT_JOB_ID,
+    CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID,
     DAILY_RUN_JOB_ID,
     DEDUCTED_PROFIT_JOB_ID,
     EOD_QUOTE_SNAPSHOT_JOB_ID,
@@ -94,12 +94,10 @@ def test_legacy_time_environment_cannot_change_registered_jobs(monkeypatch, tmp_
         )
     )
 
-    assert str(scheduler.get_job(CALL_AUCTION_SNAPSHOT_JOB_ID).trigger) == (
-        "cron[day_of_week='mon-fri', hour='21', minute='30']"
-    )
-    assert str(scheduler.get_job("call-auction-market-snapshot-daily").trigger) == (
+    assert str(scheduler.get_job(CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID).trigger) == (
         "cron[day_of_week='mon-fri', hour='9', minute='26']"
     )
+    assert scheduler.get_job("call-auction-snapshot-daily") is None
     assert str(scheduler.get_job(EOD_QUOTE_SNAPSHOT_JOB_ID).trigger) == (
         "cron[day_of_week='mon-fri', hour='21', minute='10']"
     )
@@ -119,12 +117,12 @@ def test_scheduled_job_fire_time_uses_catalog_definition(monkeypatch) -> None:
     monkeypatch.setattr(scheduler_module, "_scheduled_fire_time", fake_fire_time)
 
     actual = scheduler_module._scheduled_job_fire_time(
-        CALL_AUCTION_SNAPSHOT_JOB_ID,
+        CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID,
         SchedulerSettings(_env_file=None),
     )
 
     assert actual == expected
-    assert captured == [(21, 30, "Asia/Shanghai", True)]
+    assert captured == [(9, 26, "Asia/Shanghai", True)]
 
 
 class FakeScheduler:
@@ -219,7 +217,7 @@ def test_scheduler_registers_one_auction_session_job_only_when_enabled(tmp_path:
     assert auction.max_instances == 1
 
 
-def test_call_auction_jobs_registered_when_enabled(tmp_path: Path) -> None:
+def test_only_call_auction_morning_job_is_registered_when_enabled(tmp_path: Path) -> None:
     scheduler = build_scheduler(
         SchedulerSettings(
             scheduler_store_path=tmp_path / "call_auction.sqlite",
@@ -228,17 +226,13 @@ def test_call_auction_jobs_registered_when_enabled(tmp_path: Path) -> None:
         )
     )
 
-    morning = scheduler.get_job("call-auction-market-snapshot-daily")
-    finalization = scheduler.get_job(CALL_AUCTION_SNAPSHOT_JOB_ID)
+    morning = scheduler.get_job(CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID)
     assert morning is not None
-    assert finalization is not None
     assert str(morning.trigger) == "cron[day_of_week='mon-fri', hour='9', minute='26']"
-    assert str(finalization.trigger) == "cron[day_of_week='mon-fri', hour='21', minute='30']"
     assert morning.func is scheduler_module.run_call_auction_market_snapshot_job
-    assert finalization.func is scheduler_module.run_call_auction_snapshot_job
-    assert morning.max_instances == finalization.max_instances == 1
+    assert morning.max_instances == 1
     assert morning.coalesce
-    assert finalization.coalesce
+    assert scheduler.get_job("call-auction-snapshot-daily") is None
 
 
 def test_eod_quote_snapshot_job_registered_after_stock_pool_when_enabled(tmp_path: Path) -> None:
@@ -257,7 +251,7 @@ def test_eod_quote_snapshot_job_registered_after_stock_pool_when_enabled(tmp_pat
     assert job.coalesce
 
 
-def test_call_auction_jobs_absent_when_disabled(tmp_path: Path) -> None:
+def test_call_auction_morning_job_is_absent_when_disabled(tmp_path: Path) -> None:
     scheduler = build_scheduler(
         SchedulerSettings(
             scheduler_store_path=tmp_path / "no_call_auction.sqlite",
@@ -266,8 +260,25 @@ def test_call_auction_jobs_absent_when_disabled(tmp_path: Path) -> None:
         )
     )
 
-    assert scheduler.get_job("call-auction-market-snapshot-daily") is None
-    assert scheduler.get_job(CALL_AUCTION_SNAPSHOT_JOB_ID) is None
+    assert scheduler.get_job(CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID) is None
+    assert scheduler.get_job("call-auction-snapshot-daily") is None
+
+
+def test_scheduler_removes_persisted_retired_call_auction_job(tmp_path: Path) -> None:
+    store_path = tmp_path / "retired.sqlite"
+    _create_job_store(store_path, ("call-auction-snapshot-daily",))
+
+    build_scheduler(
+        SchedulerSettings(
+            scheduler_store_path=store_path,
+            call_auction_snapshot_enabled=True,
+            _env_file=None,
+        )
+    )
+
+    with connect(store_path) as connection:
+        persisted = connection.execute("select id from apscheduler_jobs").fetchall()
+    assert persisted == []
 
 
 class HealthPersistence:

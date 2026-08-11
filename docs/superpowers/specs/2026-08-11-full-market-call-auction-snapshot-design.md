@@ -3,13 +3,13 @@
 日期：2026-08-11
 状态：设计已获项目所有者批准
 关联 Issue：#41
-治理决策：ADR-0027（Accepted）
+治理决策：ADR-0027、ADR-0028（Accepted）
 
 ## 1. 目标
 
-修正现有 21:30“今日竞价量”把收盘累计成交量/额当作开盘竞价事实的语义错误。Worker 在
-09:26 采集沪深全部 listed stock 的完整来源快照，21:30 再与当日 ready 涨停池关联。最终公共
-结果仍只包含涨停池成员。
+Worker 在 09:26 采集沪深全部 listed stock 的完整开盘竞价来源快照，避免再把盘后累计成交量/额
+解释为开盘竞价事实。项目所有者已移除 21:30 自动最终化；来源事实、Raw 和内部数据库最终化能力
+保留，但没有替代自动计划。
 
 ## 2. 非目标
 
@@ -17,9 +17,10 @@
 - 不采分钟、tick、逐笔、Level-2 或盘后历史成交；
 - 不公开全市场晨间来源表；
 - 不增加 OS 级计划任务、并行行情洪泛或 `.env` 时间配置；
+- 不自动执行“今日竞价量”最终化；
 - 不回填本功能上线前的历史日期。
 
-## 3. 两阶段架构
+## 3. 架构
 
 ### 3.1 09:26 来源采集
 
@@ -34,14 +35,15 @@ RawManifest、QualityResult 和 IngestionRun 使用 dataset `call_auction_market
 任一批失败时保存当前 attempt 为 partial。若仍在窗口内，第二 attempt 使用下一个 endpoint，
 从完整全集起点重新采集；不得合并两个 endpoint 的成功子集。最多两个 attempt。
 
-### 3.2 21:30 最终化
+### 3.2 非调度的内部最终化能力
 
-任务不创建网络 Provider。它选择精确交易日、dataset 正确、状态 succeeded、finished_at 最新的
+内部数据库最终化不创建网络 Provider。它选择精确交易日、dataset 正确、状态 succeeded、finished_at 最新的
 晨间 ingestion，并读取该 ingestion 的完整事实；然后选择精确交易日最新 ready 涨停池。集合交集
 必须覆盖全部池成员，否则事务失败。最终记录复用晨间 `ingestion_id` 和 `observed_at`，计算
 `(last_price-previous_close)/previous_close*100`，原子写入现有最终表。
 
 没有晨间成功批次、没有 ready 池、成员缺失或日期不一致时不回退。ready 空池是合法零行成功。
+该能力不在 Worker job catalog 或 scheduler function map 中，不自动运行，也没有替代时间。
 
 ## 4. 数据模型
 
@@ -79,10 +81,11 @@ RawManifest、QualityResult 和 IngestionRun 使用 dataset `call_auction_market
 - `providers/pytdx_hq.py`：显式选择一个 endpoint，保持单 attempt 单节点；批量协议和 Decimal
   解码不变。
 - 新的晨间采集服务：冻结 universe、执行最多两个全量 attempt、校验时间/完整性、写 Raw 和事实。
-- `snapshot_collector.py`：21:30 方法改成纯数据库最终化，不再实例化 Provider。
+- `snapshot_collector.py`：保留纯数据库内部最终化，不实例化 Provider。
 - Persistence：append-only 写晨间事实；精确选择成功 ingestion；事务写最终池结果。
-- `scheduling_catalog.py`：新增 09:26 job；现有 21:30 job 保留；共享一个 enable switch。
-- `scheduler.py`：分别注册采集与最终化函数，Operations 记录不同 workflow/step。
+- `scheduling_catalog.py`：只注册 09:26 job；保留历史 workflow code 以兼容既有 operations 事实。
+- `scheduler.py`：注册晨间采集，并从持久 JobStore 清理已退役的 21:30 job ID。
+- `reliability.py`：在 Raw 读取或 persistence 写入前 fail closed 拒绝本数据集 replay。
 
 ## 6. 错误和恢复
 
@@ -92,19 +95,20 @@ RawManifest、QualityResult 和 IngestionRun 使用 dataset `call_auction_market
 - 两次不完整：当日无 succeeded 晨间快照；
 - Worker 崩溃：stale recovery 标记运行失败，重启后只有仍在窗口内的正常调度/人工明确操作可新建
   attempt，不能补过去时点；
-- 21:30 输入缺失：workflow 失败且最终表不发生部分提交；
-- 重复执行：晨间产生新 append-only ingestion；21:30 对相同最终自然键幂等更新为所选最新成功来源。
+- Raw replay：来源 Raw 继续保留，但缺少原冻结全集确定性身份时稳定拒绝且不创建 replay ingestion；
+- 重复执行：晨间产生新 append-only ingestion；内部最终化若被显式调用，对相同最终自然键保持幂等。
 
 ## 7. 配置与运维
 
-现有 `CALL_AUCTION_SNAPSHOT_ENABLED` 同时控制两个 job，默认 true。环境模板不新增 hour/minute、
-批量大小、重试节点数或窗口变量；这些属于受控代码和 Provider 固定边界。管理页显示：
+现有 `CALL_AUCTION_SNAPSHOT_ENABLED` 只控制 09:26 job，默认 true。环境模板不新增 hour/minute、
+批量大小、重试节点数或窗口变量；这些属于受控代码和 Provider 固定边界。管理页只显示：
 
 - `call-auction-market-snapshot-daily`：工作日 09:26；
-- `call-auction-snapshot-daily`：工作日 21:30。
+
+`call-auction-snapshot-daily` 已退役；没有 cron、timer、Windows Task Scheduler 或其他自动替代。
 
 生产部署需要 migration、备份、受保护 schema workflow、单 Worker 重启和只读 smoke。不得为验收手工
-补造历史竞价快照；等待下一交易日检查实际 attempt 数、批次数、耗时、缺失数、Raw 和最终池行数。
+补造历史竞价快照；等待下一交易日检查实际 attempt 数、批次数、耗时、缺失数、Raw 和来源事实行数。
 
 ## 8. 测试策略
 
@@ -117,10 +121,11 @@ RawManifest、QualityResult 和 IngestionRun 使用 dataset `call_auction_market
 - 单 endpoint 完整成功；首 endpoint partial 后第二 endpoint 全量成功；两次失败；
 - 明确空行情与缺失响应的区别；重复、未知、负数和跨日期拒绝；
 - 最高价/最低价缺失、非负、倒置和最新价越界校验；
-- Raw replay、Manifest、QualityResult、attempt ingestion 状态和单 endpoint lineage；
-- 21:30 只选精确日期最新 succeeded ingestion，拒绝 partial/旧日期；
+- Raw、Manifest、QualityResult、attempt ingestion 状态和单 endpoint lineage；
+- 本数据集 Raw replay 在读取 Raw/写数据库前稳定拒绝，且 Raw 保持不变；
+- 内部最终化只选精确日期最新 succeeded ingestion，拒绝 partial/旧日期；
 - ready 空池零行成功、成员缺失整次失败、Provider 不被构造；
-- 两 job 共用开关、固定 09:26/21:30、本地管理页展示一致；
+- 只有 09:26 job 受开关控制，21:30 job 不在目录、function map、JobStore 或本地管理页；
 - migration 从空库执行，RLS/grants/check constraints 正确；
 - public PostgREST/FastAPI/Agent contracts 保持兼容。
 
@@ -130,8 +135,8 @@ RawManifest、QualityResult 和 IngestionRun 使用 dataset `call_auction_market
 ## 9. 成功标准
 
 - 09:26 成功批次包含当天全部沪深 listed stock，单 ingestion 单 endpoint；
-- partial 或 09:30 后事实不能进入 21:30 输入；
-- 21:30 无网络调用，只从精确日期晨间成功事实生成涨停池结果；
-- 公共“今日竞价量”字段来自晨间观察值，不再来自收盘实时累计量；
+- partial 或 09:30 后事实不能成为成功晨间快照；
+- 来源 Raw 保留，但 operational replay 在原冻结全集身份可证明前保持禁用；
+- Worker 不自动执行最终化，也不提供替代调度；
 - Worker 管理页、Operations、Ingestion、Raw 和数据库 lineage 可共同解释一次运行；
 - BSE 保持显式暂缓，`.env` 仍只控制启用/停用。

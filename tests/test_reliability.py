@@ -1,8 +1,6 @@
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
-from decimal import Decimal
-from json import dumps
 from pathlib import Path
 from uuid import UUID
 
@@ -13,7 +11,6 @@ from market_data_center.domain import (
     BoardIndexDailyBarRecord,
     BoardIndexRecord,
     CalculatedTradingDay,
-    CallAuctionMarketSnapshotRecord,
     CapitalRecord,
     ClassificationCatalogSnapshotRecord,
     ClassificationDefinition,
@@ -31,8 +28,10 @@ from market_data_center.domain import (
     SecurityRecord,
 )
 from market_data_center.domain.ingestion import ReplaySource
+from market_data_center.providers.contracts import ProviderError
 from market_data_center.raw_store import LocalRawStore, RawIntegrityError
 from market_data_center.reliability import (
+    CALL_AUCTION_MARKET_REPLAY_DISABLED,
     RawReplayService,
     compare_daily_bar_sources,
     recover_stale_runs,
@@ -93,14 +92,6 @@ class StubReliabilityPersistence:
                 IngestionRun,
                 RawManifest | None,
                 IngestionEnvelope[ClassificationMemberSnapshotRecord],
-                Sequence[QualityResult],
-            ]
-        ] = []
-        self.call_auction_market_commits: list[
-            tuple[
-                IngestionRun,
-                RawManifest | None,
-                Sequence[CallAuctionMarketSnapshotRecord],
                 Sequence[QualityResult],
             ]
         ] = []
@@ -219,15 +210,6 @@ class StubReliabilityPersistence:
     ) -> None:
         return None
 
-    def commit_call_auction_market_attempt(
-        self,
-        run: IngestionRun,
-        records: Sequence[CallAuctionMarketSnapshotRecord],
-        manifest: RawManifest | None,
-        quality_results: Sequence[QualityResult],
-    ) -> None:
-        self.call_auction_market_commits.append((run, manifest, records, quality_results))
-
     def commit_rejected_batch(
         self,
         run: IngestionRun,
@@ -285,104 +267,49 @@ def test_raw_replay_reuses_verified_raw_lineage_without_new_manifest(tmp_path: P
     assert envelopes[0].record.symbol == "SSE:600000"
 
 
-def test_raw_replay_restores_call_auction_market_fact_and_worker_observation(
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_raw_replay_disables_call_auction_market_before_raw_read_or_write(
     tmp_path: Path,
+    dry_run: bool,
 ) -> None:
-    observed_at = datetime(2026, 8, 12, 1, 26, 0, 123456, tzinfo=UTC)
-    original = CallAuctionMarketSnapshotRecord(
-        symbol="SSE:600000",
-        trade_date=date(2026, 8, 12),
-        observed_at=observed_at,
-        source_code="pytdx_hq",
-        last_price=Decimal("10.1000"),
-        previous_close=Decimal("10.0000"),
-        high_price=Decimal("10.1000"),
-        low_price=Decimal("10.0000"),
-        cumulative_volume=123_400,
-        cumulative_amount=Decimal("1246340.0000"),
-    )
-    store = LocalRawStore(tmp_path)
+    class TrackingRawStore(LocalRawStore):
+        read_count = 0
+
+        def read_jsonl(self, manifest: RawManifest) -> tuple[Mapping[str, str], ...]:
+            self.read_count += 1
+            return super().read_jsonl(manifest)
+
+    store = TrackingRawStore(tmp_path)
     source = _source(
         store,
         provider=ProviderCode.PYTDX_HQ,
         dataset=DatasetCode.CALL_AUCTION_MARKET_SNAPSHOT,
         schema_version="market_data_center.call_auction_market_snapshot.raw.v1",
-        rows=[_call_auction_market_raw_envelope(original)],
+        rows=[{"retained_provider_raw": "future replay input"}],
         request_params={"trade_date": "2026-08-12", "expected_rows": 1},
     )
+    assert source.manifest is not None
+    raw_path = tmp_path.joinpath(*source.manifest.object_path.split("/"))
+    raw_before = raw_path.read_bytes()
     persistence = StubReliabilityPersistence(source)
 
-    summary = RawReplayService(
-        raw_store=store,
-        persistence=persistence,
-        clock=lambda: NOW,
-        uuid_factory=lambda: REPLAY_RUN_ID,
-    ).replay(SOURCE_RUN_ID)
+    with pytest.raises(ProviderError) as error:
+        RawReplayService(raw_store=store, persistence=persistence).replay(
+            SOURCE_RUN_ID,
+            dry_run=dry_run,
+        )
 
-    assert summary.status == "succeeded"
-    assert (summary.fetched_rows, summary.accepted_rows, summary.rejected_rows) == (1, 1, 0)
-    assert persistence.created[0].replayed_from_raw_id == RAW_ID
-    completed, replay_manifest, records, quality_results = persistence.call_auction_market_commits[
-        0
-    ]
-    assert completed.ingestion_id == REPLAY_RUN_ID
-    assert replay_manifest is None
-    assert tuple(records) == (original,)
-    assert records[0].observed_at == observed_at
-    assert quality_results == ()
-
-
-def test_raw_replay_keeps_valid_call_auction_facts_when_raw_has_failed_row(
-    tmp_path: Path,
-) -> None:
-    original = CallAuctionMarketSnapshotRecord(
-        symbol="SSE:600000",
-        trade_date=date(2026, 8, 12),
-        observed_at=datetime(2026, 8, 12, 1, 26, tzinfo=UTC),
-        source_code="pytdx_hq",
-        last_price=Decimal("10.10"),
-        previous_close=Decimal("10.00"),
-        high_price=Decimal("10.10"),
-        low_price=Decimal("10.00"),
-        cumulative_volume=100,
-        cumulative_amount=Decimal("1010.00"),
-    )
-    store = LocalRawStore(tmp_path)
-    failed_row = _call_auction_market_raw_envelope(
-        original,
-        symbol="SZSE:000001",
-        observed_at=datetime(2026, 8, 12, 1, 26, 1, tzinfo=UTC),
-        price="-0.01",
-    )
-    source = _source(
-        store,
-        provider=ProviderCode.PYTDX_HQ,
-        dataset=DatasetCode.CALL_AUCTION_MARKET_SNAPSHOT,
-        schema_version="market_data_center.call_auction_market_snapshot.raw.v1",
-        rows=[_call_auction_market_raw_envelope(original), failed_row],
-        request_params={"trade_date": "2026-08-12", "expected_rows": 2},
-    )
-    persistence = StubReliabilityPersistence(source)
-    ids = iter((REPLAY_RUN_ID, QUALITY_ID))
-
-    summary = RawReplayService(
-        raw_store=store,
-        persistence=persistence,
-        clock=lambda: NOW,
-        uuid_factory=lambda: next(ids),
-    ).replay(SOURCE_RUN_ID)
-
-    assert summary.status == "partial"
-    assert (summary.fetched_rows, summary.accepted_rows, summary.rejected_rows) == (2, 1, 1)
-    completed, replay_manifest, records, quality_results = persistence.call_auction_market_commits[
-        0
-    ]
-    assert completed.status is IngestionStatus.PARTIAL
-    assert replay_manifest is None
-    assert tuple(records) == (original,)
-    assert [result.rule_code for result in quality_results] == [
-        "call_auction_market.normalization_error"
-    ]
+    assert str(error.value) == CALL_AUCTION_MARKET_REPLAY_DISABLED
+    assert store.read_count == 0
+    assert persistence.created == []
+    assert persistence.security_commits == []
+    assert persistence.calendar_commits == []
+    assert persistence.daily_commits == []
+    assert persistence.capital_commits == []
+    assert persistence.classification_catalog_commits == []
+    assert persistence.classification_member_commits == []
+    assert persistence.rejected_commits == []
+    assert raw_path.read_bytes() == raw_before
 
 
 def test_raw_replay_dry_run_validates_without_database_writes(tmp_path: Path) -> None:
@@ -666,47 +593,6 @@ def test_cross_source_comparison_reports_differences_without_writes(tmp_path: Pa
     assert changed_fields["close"] == {"akshare": "10.60", "baostock": "10.50"}
     assert persistence.created == []
     assert persistence.daily_commits == []
-
-
-def _call_auction_market_raw_envelope(
-    record: CallAuctionMarketSnapshotRecord,
-    *,
-    symbol: str | None = None,
-    observed_at: datetime | None = None,
-    price: str | None = None,
-) -> Mapping[str, str]:
-    selected_symbol = symbol or record.symbol
-    exchange, code = selected_symbol.split(":", 1)
-    selected_price = price or str(record.last_price or Decimal("0"))
-    provider_row: dict[str, str] = {
-        "market": "1" if exchange == "SSE" else "0",
-        "code": code,
-        "price": selected_price,
-        "last_close": str(record.previous_close or Decimal("0")),
-        "open": selected_price,
-        "high": str(record.high_price or Decimal("0")),
-        "low": str(record.low_price or Decimal("0")),
-        "server_time_raw": "92600",
-        "volume_lots": str((record.cumulative_volume or 0) // 100),
-        "current_volume_lots": "1",
-        "amount": str(record.cumulative_amount or Decimal("0")),
-        "sell_volume_lots": "2",
-        "buy_volume_lots": "3",
-    }
-    for level in range(1, 6):
-        provider_row[f"bid{level}"] = str(Decimal("10.00") - Decimal(level - 1) / 100)
-        provider_row[f"ask{level}"] = str(Decimal("10.01") + Decimal(level - 1) / 100)
-        provider_row[f"bid_vol{level}"] = str(level)
-        provider_row[f"ask_vol{level}"] = str(level + 5)
-    return {
-        "worker_observed_at": (observed_at or record.observed_at).isoformat(),
-        "provider_schema_version": "pytdx_hq.security_quotes.v1",
-        "provider_raw_json": dumps(
-            provider_row,
-            separators=(",", ":"),
-            sort_keys=True,
-        ),
-    }
 
 
 def _source(

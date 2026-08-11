@@ -12,7 +12,6 @@ STOCK_POOL_JOB_ID = "mainboard-price-limit-stock-pools-daily"
 AUCTION_COLLECTION_JOB_ID = "opening-auction-limit-up-quotes"
 EOD_QUOTE_SNAPSHOT_JOB_ID = "eod-quote-snapshot-daily"
 CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID = "call-auction-market-snapshot-daily"
-CALL_AUCTION_SNAPSHOT_JOB_ID = "call-auction-snapshot-daily"
 PYTDX_POOL_REFRESH_JOB_ID = "pytdx-pool-refresh"
 SCHEDULER_TIMEZONE = "Asia/Shanghai"
 JOB_TIMEOUT_SECONDS = 21_600
@@ -98,7 +97,7 @@ WORKFLOW_DEFINITIONS = (
     WorkflowDefinition(
         "call_auction_snapshot",
         "今日竞价量",
-        "盘后从当日完整晨间快照和 ready 涨停池最终化竞价量、额及溢价率。",
+        "保留数据库最终化的历史 operations 定义, Worker 不再自动调度。",
         ("finalize_call_auction_snapshot",),
     ),
     WorkflowDefinition(
@@ -218,21 +217,6 @@ def job_definitions(settings: SchedulerSettings) -> tuple[JobDefinition, ...]:
             day_of_week="mon-fri",
             hour=9,
             minute=26,
-        ),
-        JobDefinition(
-            CALL_AUCTION_SNAPSHOT_JOB_ID,
-            "今日竞价量",
-            "从当日成功晨间快照和 ready 涨停池最终化竞价量、额及溢价率。",
-            "call_auction_snapshot",
-            "cron",
-            "周一至周五 21:30",
-            timezone,
-            settings.call_auction_snapshot_enabled,
-            timeout,
-            "输入缺失时失败且不回退旧日期或 partial 批次; 下次调度重试",
-            day_of_week="mon-fri",
-            hour=21,
-            minute=30,
         ),
         JobDefinition(
             STALE_RUN_RECOVERY_JOB_ID,

@@ -1,7 +1,6 @@
 # 领域详设：RealtimeQuote 股票实时五档 v0
 
-> 沪深全市场开盘竞价来源快照与盘后最终化：
-> `adr/ADR-0027-沪深全市场开盘竞价快照与涨停池最终化.md`（Accepted）
+> 沪深全市场开盘竞价来源快照：ADR-0027；Raw replay 暂停及自动最终化移除：ADR-0028（Accepted）。
 
 ## 全市场开盘竞价来源快照（v2）
 
@@ -15,8 +14,6 @@ stock 来源事实。它不是逐笔成交、分钟行情或盘后历史重建�
   → 单 endpoint、每批 ≤80 的 pytdx_hq 采集
   → Raw JSONL + RawManifest + IngestionRun
   → realtime.call_auction_market_snapshot（append-only）
-  → 21:30 精确日期 succeeded ingestion × ready 涨停池
-  → realtime.call_auction_snapshot（最终涨停池结果）
 ```
 
 ### 标准记录
@@ -46,7 +43,8 @@ CallAuctionMarketSnapshotRecord
 - 每个 attempt 的预期 symbol 固定、排序且唯一；
 - 一个成功 ingestion 只使用一个 endpoint；失败后新 ingestion 才能换 endpoint 全量重试；
 - 响应集合与预期集合完全相同才能成功；停牌/空行情的明确响应仍是事实；
-- partial/failed ingestion 的行可用于审计和 Raw 重放，但不能作为 21:30 输入。
+- partial/failed ingestion 的行和 Raw 用于审计；本数据集 operational Raw replay 暂停，不能由通用
+  replay 路径创建新 ingestion。
 
 ### 存储和查询
 
@@ -57,20 +55,22 @@ CallAuctionMarketSnapshotRecord
 成功输入的选择先在 `ingestion.ingestion_run` 限定 dataset/status，再与精确日期事实连接；不得从
 `request_params` JSON 猜测交易日。
 
-21:30 最终化写入现有 `realtime.call_auction_snapshot`，保留晨间 ingestion lineage 和
-`observed_at`。公共 `query_daily_limit_up_list` 继续只连接最终表，不暴露全市场来源表。
+现有数据库最终化实现仍可写 `realtime.call_auction_snapshot`，保留晨间 ingestion lineage 和
+`observed_at`，但它是非调度内部能力。公共 `query_daily_limit_up_list` 继续只连接最终表，不暴露
+全市场来源表。
 
 ### 时间和调度
 
 - `call-auction-market-snapshot-daily`：工作日 09:26；
 - 09:29:30 后不发新请求，`observed_at >=09:30` 硬拒绝；
-- `call-auction-snapshot-daily`：工作日 21:30，只访问 PostgreSQL；
-- 两个任务共用 `CALL_AUCTION_SNAPSHOT_ENABLED`；时间只在代码目录；
+- `call-auction-snapshot-daily` 已移除，无替代自动调度；
+- `CALL_AUCTION_SNAPSHOT_ENABLED` 只控制 09:26 任务；时间只在代码目录；
 - 非交易日跳过，错过晨间窗口不补采，盘后不调用历史成交或实时行情伪造。
 
 ### 保留和容量
 
-每天约 5,200 行、每年约 130 万行。来源事实和 Raw 长期保留，首版不增加清理任务。每日单次
+每天约 5,200 行、每年约 130 万行。来源事实和 Raw 长期保留，首版不增加清理任务；只有原冻结全集
+的确定性身份被持久化并验证后，才可重新启用 Raw replay。每日单次
 快照不构成逐秒持续采集，也不改变 ADR-0012 对分钟、tick、逐笔和 Level-2 的禁止边界。
 
 > 集合竞价采集落地决策：`adr/ADR-0022-集合竞价涨停池五档快照采集.md`（Accepted）

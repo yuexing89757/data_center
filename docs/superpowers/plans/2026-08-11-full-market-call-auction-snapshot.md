@@ -2,21 +2,21 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 在工作日 09:26 采集完整、单 endpoint 的沪深 listed stock 开盘竞价来源快照，并在 21:30 只用该快照与当日 ready 涨停池生成最终“今日竞价量”。
+**Goal:** 在工作日 09:26 采集完整、单 endpoint 的沪深 listed stock 开盘竞价来源快照；保留 Raw 和内部最终化能力，但不自动执行最终化。
 
-**Architecture:** 新建 append-only `call_auction_market_snapshot` 来源事实和晨间采集服务；每个 IngestionRun 固定一个 PYTDX endpoint，失败后第二 IngestionRun 才能换 endpoint 全量重试。21:30 使用一个 PostgreSQL 事务选择精确日期最新 succeeded ingestion、校验涨停池完整覆盖并全量替换现有最终快照，不再访问行情网络。
+**Architecture:** 新建 append-only `call_auction_market_snapshot` 来源事实和晨间采集服务；每个 IngestionRun 固定一个 PYTDX endpoint，失败后第二 IngestionRun 才能换 endpoint 全量重试。ADR-0028 暂停本数据集 Raw replay，并从 Worker 移除自动最终化；数据库最终化仅作为非调度内部能力保留。
 
 **Tech Stack:** Python 3.12、uv、pytdx 1.72、SQLAlchemy 2、psycopg 3、PostgreSQL/Supabase migrations、APScheduler 3、pytest、Ruff、mypy。
 
 ## Global Constraints
 
 - 只采 `SSE/SZSE + security_type=stock + status=listed`；BSE 明确暂缓。
-- 09:26 和 21:30 固定在 `scheduling_catalog.py`；`.env` 只使用现有 `CALL_AUCTION_SNAPSHOT_ENABLED` 启停开关。
+- 只有 09:26 固定在 `scheduling_catalog.py`；`.env` 只使用现有 `CALL_AUCTION_SNAPSHOT_ENABLED` 启停开关。
 - 一个成功 IngestionRun 只使用一个 endpoint；每批最多 80 只；最多两个全量 endpoint attempt。
 - 观察窗口为上海时间 `[09:25:00,09:30:00)`；09:29:30 后不得发起新批次。
 - 来源事实 append-only，并保存 Raw JSONL、RawManifest、QualityResult 和 IngestionRun lineage。
 - `high_price`、`low_price` 是截至观察时点的当日最高/最低价；允许缺失，非空时必须满足价格区间约束。
-- 21:30 不调用 Provider，不回退旧日期、partial ingestion 或收盘累计量。
+- `call-auction-snapshot-daily` 不得注册或以其他计划替代；内部最终化不调用 Provider。
 - 全市场来源表不进入 `api_v1`、FastAPI 或 Agent 公共契约。
 - 生产 schema 只通过有序 migration 和受保护 workflow 修改；integration tests 只能连接 disposable `TEST_DATABASE_URL`。
 - 生产迁移、Worker 重启、推送和部署不由本计划自动授权，实施完成后另行请求确认。
@@ -562,7 +562,7 @@ git commit -m "feat: collect full-market morning auction facts"
 
 ---
 
-### Task 6: 将 21:30 改为数据库最终化并注册两个 Worker Job
+### Task 6: 只注册晨间来源采集并退役自动最终化
 
 **Files:**
 - Modify: `tests/test_snapshot_collector.py`
@@ -576,12 +576,12 @@ git commit -m "feat: collect full-market morning auction facts"
 - Produces job: `CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID = "call-auction-market-snapshot-daily"`
 - Produces: `WorkflowCode.CALL_AUCTION_MARKET_SNAPSHOT`
 - Produces workflow step: `collect_call_auction_market_snapshot`
-- Changes step: `finalize_call_auction_snapshot`
 - Preserves switch: `SchedulerSettings.call_auction_snapshot_enabled`
+- Preserves historical workflow/internal function: `call_auction_snapshot` / `finalize_call_auction_snapshot`
 
-- [ ] **Step 1: 写 21:30 无网络失败测试**
+- [ ] **Step 1: 保留内部最终化无网络测试**
 
-把旧“只从涨停池取 symbol 后请求 Provider”的测试替换为：
+内部最终化仍用下列测试证明只访问数据库，但它不对应 scheduled job：
 
 ```python
 def test_call_auction_finalization_delegates_to_database_only() -> None:
@@ -597,7 +597,7 @@ def test_call_auction_finalization_delegates_to_database_only() -> None:
 
 测试模块不得 monkeypatch/构造 `PytdxHqProvider`；运行后可用源码断言或依赖注入证明最终化路径无网络。
 
-- [ ] **Step 2: 写目录和 scheduler 失败测试**
+- [ ] **Step 2: 写晨间唯一注册和退役清理测试**
 
 在 operations/scheduler 测试中断言：
 
@@ -606,33 +606,29 @@ assert (
     jobs["call-auction-market-snapshot-daily"].hour,
     jobs["call-auction-market-snapshot-daily"].minute,
 ) == (9, 26)
-assert (jobs["call-auction-snapshot-daily"].hour, jobs["call-auction-snapshot-daily"].minute) == (
-    21,
-    30,
-)
 assert jobs["call-auction-market-snapshot-daily"].enabled is True
-assert jobs["call-auction-snapshot-daily"].enabled is True
+assert "call-auction-snapshot-daily" not in jobs
 ```
 
-禁用 switch 时两个 job 都不存在；启用时两个 job 都 `max_instances=1`、`coalesce=True`。workflow 枚举与目录
-集合必须完全相等。
+禁用 switch 时晨间 job 不存在；启用时只有晨间 job 且 `max_instances=1`、`coalesce=True`。另预置旧
+SQLite JobStore row，断言构建 Scheduler 会按精确 ID 删除它。workflow 枚举与目录集合仍完全相等。
 
 - [ ] **Step 3: 运行 RED**
 
 Run: `uv run pytest tests/test_snapshot_collector.py tests/test_operations.py tests/test_scheduler.py -q`
 
-Expected: FAIL，新 job/workflow 不存在且旧最终化仍访问 Provider。
+Expected: FAIL，晨间 job/退役清理尚未满足新决策。
 
 - [ ] **Step 4: 实现目录和执行函数**
 
 - 新 workflow `call_auction_market_snapshot`，step `collect_call_auction_market_snapshot`；
 - 同一提交加入 `WorkflowCode.CALL_AUCTION_MARKET_SNAPSHOT`，保持 enum 与 workflow catalog 集合完全相等；
-- 现 workflow `call_auction_snapshot` 的描述改为盘后最终化，step 改为 `finalize_call_auction_snapshot`；
-- job catalog 插入 09:26 job，两 job 读取同一 switch；
+- 现 workflow `call_auction_snapshot` 仅作为历史 operations/内部最终化定义保留；
+- job catalog 只保留读取现有 switch 的 09:26 job；
 - `run_call_auction_market_snapshot_job` 加载 quote endpoints，构建 Task 5 service，并完整记录 Operations；
-- `run_call_auction_snapshot_job` 使用 `WorkflowExecutionService` 调用纯数据库最终化；
-- `build_scheduler` functions 映射加入新 job；
-- 删除 `collect_call_auction` 中 21:30 Provider/Raw/IngestionRun 路径，保留或重命名为
+- 删除 `run_call_auction_snapshot_job` 及其 function-map 项，并在构建 Scheduler 时清理旧持久 job ID；
+- `build_scheduler` functions 映射只加入晨间新 job；
+- 删除 `collect_call_auction` 中旧 Provider/Raw/IngestionRun 路径，保留或重命名为
   `finalize_call_auction` 的薄封装。
 
 - [ ] **Step 5: 运行 GREEN**
@@ -645,7 +641,7 @@ Expected: PASS。
 
 ```bash
 git add tests/test_snapshot_collector.py tests/test_operations.py tests/test_scheduler.py src/market_data_center/snapshot_collector.py src/market_data_center/scheduling_catalog.py src/market_data_center/scheduler.py
-git commit -m "feat: schedule morning auction capture and finalization"
+git commit -m "feat: schedule morning auction capture"
 ```
 
 ---
@@ -665,24 +661,24 @@ git commit -m "feat: schedule morning auction capture and finalization"
 - Verify unchanged: `contracts/fastapi-openapi-v1.json`
 
 **Interfaces:**
-- Documents: 09:26 来源采集、21:30 最终化、同一开关、BSE 暂缓、live gate
+- Documents: 09:26 来源采集、自动最终化退役、replay 暂停、BSE 暂缓、live gate
 - Preserves: `.env` 无任务时间；公共 API 字段不变
 
 - [ ] **Step 1: 更新当前事实文档（经项目所有者批准的文档测试例外）**
 
 - Worker 表增加 09:26 job；
-- 21:30 描述改成只读晨间 succeeded ingestion 与 ready 涨停池；
+- 移除 21:30 job、入口和管理页陈述，不增加替代计划；
 - 故障说明区分 partial morning attempt、晨间无成功输入和 ready 空池；
 - 运行手册明确 09:29:30 cutoff、BSE 暂缓、单 endpoint 完整性与下一交易日 live gate；
-- 最小发布验收检查两个 job 均启用且没有 OS 调度。
+- 最小发布验收检查只有晨间 job 启用且没有 OS 调度。
 
-不改历史 plan/spec，不把尚未部署写成生产已运行事实。
+按项目所有者决策同步本 plan/spec，但不把尚未部署写成生产已运行事实。
 
 - [ ] **Step 2: 验证真实配置和调度行为**
 
 Run: `uv run pytest tests/test_settings.py tests/test_operations.py tests/test_scheduler.py -q`
 
-Expected: PASS；现有开关行为测试和 Task 6 调度测试共同证明同一启停开关控制两个代码内固定时间的 job。
+Expected: PASS；现有开关行为测试和 Task 6 调度测试共同证明开关只控制代码内固定的晨间 job。
 
 人工核对 `.env.example` 只有 `CALL_AUCTION_SNAPSHOT_ENABLED=true`，没有 hour/minute 字段；不为人类文档措辞新增源码文本断言。
 

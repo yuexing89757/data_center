@@ -58,14 +58,12 @@ pytdx 还可从通达信 `T0002/hq_cache` 读取行业和概念完整快照，�
 暂缓，ETF、可转债和指数不进入集合。每次尝试固定一个 quote-capable endpoint，按最多 80 只分批；
 每个 endpoint 只允许形成完整全集，至多进行两次完整尝试，绝不拼接 endpoint 的 partial 结果。新
 请求的硬截止为 09:29:30；09:30 后观察到的记录不能进入成功快照。失败或 partial 尝试仍保留 Raw、
-Manifest、质量结果和 ingestion lineage，但不是晚间可用输入。
+Manifest、质量结果和 ingestion lineage。
 
-今日竞价量在工作日 21:30 只做数据库最终化：读取精确交易日最新 `succeeded` 的晨间全集 ingestion
-和同日 `ready` 涨停池，写入竞价量、额及溢价率；不读取跌停池，不发起网络请求，不回退旧日期、
-partial 批次或 21:30 实时累计量。晨间没有成功输入、ready 池缺失，或任一池成员未被晨间成功快照
-覆盖时，整次最终化失败且不发布部分结果；ready 池合法为空时成功写入零行。三个可选任务只能通过
-`.env` 布尔开关启停，执行时间由受控代码目录固定；其中同一 `CALL_AUCTION_SNAPSHOT_ENABLED` 同时
-控制 09:26 与 21:30 两个任务。
+项目所有者已移除工作日 21:30 “今日竞价量”自动最终化，不提供替代调度、环境时间或 OS 计划任务。
+数据库最终化实现和历史 workflow code 仅作为非调度的内部能力保留。`CALL_AUCTION_SNAPSHOT_ENABLED`
+只控制 09:26 来源采集。该数据集的来源 Raw 继续长期保留，但 operational Raw replay 暂停；只有持久化并
+验证原始冻结 SSE/SZSE listed-stock 全集的确定性身份后，才可通过后续接受决策重新启用。
 
 Worker 启动时先探测一个有界候选集，按 quote、SSE 日 K、SZSE 日 K 和 BSE 日 K 能力生成
 统一的版本化 PYTDX 节点池，之后每 12 小时刷新。刷新失败时继续使用最后一个有效池；首次

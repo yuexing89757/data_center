@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make the controlled Worker catalog the sole owner of task times, keep only three optional-task enable switches in environment configuration, enable both five-level quote tasks by default, and run the limit-up-only call-auction snapshot at 21:30.
+**Goal:** Make the controlled Worker catalog the sole owner of task times, keep only three optional-task enable switches in environment configuration, enable both five-level quote tasks by default, and—after ADR-0028—schedule only the 09:26 full-market call-auction source job under the existing call-auction switch.
 
-**Architecture:** `scheduling_catalog.py` owns the fixed timezone, cron/interval values, cadence and timeout policy. `SchedulerSettings` retains only runtime paths/ports and three boolean task switches; scheduler execution resolves its intended fire time from `JobDefinition`, never from environment-provided hour/minute fields. The existing exact-date limit-up query remains the sole symbol source for call-auction collection.
+**Architecture:** `scheduling_catalog.py` owns the fixed timezone, cron/interval values, cadence and timeout policy. `SchedulerSettings` retains only runtime paths/ports and three boolean task switches; scheduler execution resolves its intended fire time from `JobDefinition`, never from environment-provided hour/minute fields. ADR-0028 removes automatic call-auction finalization while retaining the morning source collection and internal database finalizer.
 
 **Tech Stack:** Python 3.12, Pydantic Settings, APScheduler, SQLAlchemy, pytest, Ruff, mypy, uv.
 
@@ -15,7 +15,7 @@
 - No cron, Windows Task Scheduler, systemd timer or other OS-level collection trigger may be added.
 - `.env` may control only `AUCTION_COLLECTION_ENABLED`, `EOD_QUOTE_SNAPSHOT_ENABLED` and `CALL_AUCTION_SNAPSHOT_ENABLED` for optional scheduled tasks.
 - The three optional-task switches default to `true`; all task times and scheduling policies are fixed in the code catalog.
-- Call-auction snapshot runs on weekdays at 21:30 and reads only the exact-date ready limit-up pool.
+- The call-auction switch registers only the weekday 09:26 full-market source collection; automatic finalization is retired without replacement.
 - PYTDX pool refresh remains every 12 hours plus Worker startup refresh; auction cadence remains 5 seconds; misfire/timeout remains 21,600 seconds.
 - `SCHEDULER_STORE_PATH`, `WORKER_ADMIN_PORT` and `PYTDX_POOL_PATH` remain environment-owned runtime configuration.
 - Public PostgREST, FastAPI and agent-tools contracts do not change.
@@ -46,7 +46,7 @@ Make the controlled Worker catalog the sole owner of task times and scheduling p
 ## Requirements
 - `.env` keeps only the three existing optional-task enable switches.
 - Auction five-level and EOD five-level tasks default enabled.
-- Call-auction snapshot runs weekdays at 21:30 and reads only the exact-date ready limit-up pool.
+- The existing call-auction switch controls only the weekday 09:26 full-market source collection.
 - PYTDX refresh remains 12 hours; auction cadence remains 5 seconds.
 - No OS-level scheduler, schema change, public contract change or production mutation.
 
@@ -255,9 +255,10 @@ def test_job_catalog_owns_all_fixed_schedules() -> None:
         10,
     )
     assert (
-        jobs["call-auction-snapshot-daily"].hour,
-        jobs["call-auction-snapshot-daily"].minute,
-    ) == (21, 30)
+        jobs["call-auction-market-snapshot-daily"].hour,
+        jobs["call-auction-market-snapshot-daily"].minute,
+    ) == (9, 26)
+    assert "call-auction-snapshot-daily" not in jobs
     assert (jobs["deducted-profit-daily"].hour, jobs["deducted-profit-daily"].minute) == (20, 0)
     assert jobs["recover-stale-ingestion-runs"].interval_hours == 1
     assert jobs["pytdx-pool-refresh"].interval_hours == 12
@@ -265,10 +266,11 @@ def test_job_catalog_owns_all_fixed_schedules() -> None:
     assert all(job.timeout_seconds == 21_600 for job in jobs.values())
 ```
 
-Update the call-auction trigger assertion in `tests/test_scheduler.py` to:
+Update the call-auction trigger assertions in `tests/test_scheduler.py` to:
 
 ```python
-assert str(job.trigger) == "cron[day_of_week='mon-fri', hour='21', minute='30']"
+assert str(job.trigger) == "cron[day_of_week='mon-fri', hour='9', minute='26']"
+assert scheduler.get_job("call-auction-snapshot-daily") is None
 ```
 
 - [ ] **Step 2: Run tests and verify RED**
@@ -277,7 +279,7 @@ assert str(job.trigger) == "cron[day_of_week='mon-fri', hour='21', minute='30']"
 uv run pytest tests/test_operations.py::test_job_catalog_owns_all_fixed_schedules tests/test_scheduler.py::test_call_auction_snapshot_job_registered_when_enabled -q
 ```
 
-Expected: FAIL because `JobDefinition` has no `cadence_seconds`, call-auction is still 18:00, and catalog values still come from removed settings fields.
+Expected: FAIL because `JobDefinition` has no `cadence_seconds`, the morning job/retired-job cleanup is absent, and catalog values still come from removed settings fields.
 
 - [ ] **Step 3: Add fixed catalog constants and lookup**
 
@@ -313,7 +315,7 @@ settings.eod_quote_snapshot_enabled
 settings.call_auction_snapshot_enabled
 ```
 
-Use the literal schedule descriptions `周一至周五 09:15`, `周一至周五 21:30`, `每 12 小时`, and the other times from the fixed schedule table.
+Use the literal schedule descriptions `周一至周五 09:15`, `周一至周五 09:26`, `每 12 小时`, and the other times from the fixed schedule table.
 
 - [ ] **Step 4: Update existing catalog consumers in tests**
 
@@ -432,7 +434,7 @@ run_daily_market_job
 run_deducted_profit_job
 run_stock_pool_job
 run_eod_quote_snapshot_job
-run_call_auction_snapshot_job
+run_call_auction_market_snapshot_job
 ```
 
 In `run_auction_collection_job`, get `definition = job_definition(AUCTION_COLLECTION_JOB_ID, scheduling)`, use `definition.timezone`, `definition.hour`, `definition.minute`, and require non-null `definition.cadence_seconds` before passing it to `AuctionCollectionService.collect`.
@@ -687,7 +689,7 @@ Make these statements consistent across the listed documents:
 任务执行时间由 scheduling_catalog.py 固定，.env 只控制三个可选任务的启用或停用。
 集合竞价五档默认启用，工作日 09:15 开始。
 收盘五档默认启用，工作日 21:10 执行。
-今日竞价量默认启用，工作日 21:30 执行，只读取当日 ready 涨停池。
+全市场开盘竞价来源采集默认启用，工作日 09:26 执行；自动最终化已移除且无替代计划。
 PYTDX 节点池由 Worker 启动时刷新，并每 12 小时刷新。
 ```
 
