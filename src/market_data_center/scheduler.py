@@ -50,6 +50,7 @@ from market_data_center.scheduling_catalog import (
     STOCK_DAILY_INDICATOR_JOB_ID,
     STOCK_POOL_JOB_ID,
     JobDefinition,
+    job_definition,
     job_definitions,
 )
 from market_data_center.settings import (
@@ -172,11 +173,7 @@ def run_stock_daily_indicator_job() -> None:
     try:
         execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
             WorkflowCode.STOCK_DAILY_INDICATOR,
-            _scheduled_fire_time(
-                scheduling.stock_daily_indicator_hour,
-                scheduling.stock_daily_indicator_minute,
-                scheduling.scheduler_timezone,
-            ),
+            _scheduled_job_fire_time(STOCK_DAILY_INDICATOR_JOB_ID, scheduling),
             TriggerSource.SCHEDULED,
         )
         try:
@@ -204,11 +201,7 @@ def run_daily_market_job() -> None:
     try:
         execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
             WorkflowCode.DAILY_MARKET,
-            _scheduled_fire_time(
-                scheduling.daily_run_hour,
-                scheduling.daily_run_minute,
-                scheduling.scheduler_timezone,
-            ),
+            _scheduled_job_fire_time(DAILY_RUN_JOB_ID, scheduling),
             TriggerSource.SCHEDULED,
         )
         try:
@@ -294,12 +287,7 @@ def run_deducted_profit_job() -> None:
     try:
         execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
             WorkflowCode.DEDUCTED_PROFIT,
-            _scheduled_fire_time(
-                scheduling.deducted_profit_hour,
-                scheduling.deducted_profit_minute,
-                scheduling.scheduler_timezone,
-                weekdays_only=False,
-            ),
+            _scheduled_job_fire_time(DEDUCTED_PROFIT_JOB_ID, scheduling, weekdays_only=False),
             TriggerSource.SCHEDULED,
         )
         try:
@@ -337,16 +325,12 @@ def run_stock_pool_job() -> None:
         operations = PostgreSQLOperationsPersistence(engine)
         execution = WorkflowExecutionService(operations).start(
             WorkflowCode.STOCK_POOL,
-            _scheduled_fire_time(
-                scheduling.stock_pool_hour,
-                scheduling.stock_pool_minute,
-                scheduling.scheduler_timezone,
-            ),
+            _scheduled_job_fire_time(STOCK_POOL_JOB_ID, scheduling),
             TriggerSource.SCHEDULED,
         )
         try:
             persistence = PostgreSQLStockPoolPersistence(engine)
-            as_of = datetime.now(ZoneInfo(scheduling.scheduler_timezone)).date()
+            as_of = datetime.now(ZoneInfo(SCHEDULER_TIMEZONE)).date()
             basis, _ = persistence.resolve_basis_date(as_of)
             execution.step(
                 "build_stock_pools", 1, lambda: StockPoolService(persistence).build(basis)
@@ -363,6 +347,9 @@ def run_auction_collection_job() -> None:
     """Collect one bounded opening-auction session for today's exact limit-up pool."""
     settings = WorkerSettings()  # type: ignore[call-arg]
     scheduling = SchedulerSettings()
+    definition = job_definition(AUCTION_COLLECTION_JOB_ID, scheduling)
+    if definition.cadence_seconds is None:
+        raise ValueError(f"job has no cadence: {AUCTION_COLLECTION_JOB_ID}")
     quote_settings = PytdxHqSettings()
     engine = create_engine(
         sqlalchemy_url(settings.database_url.get_secret_value()), pool_pre_ping=True
@@ -371,21 +358,17 @@ def run_auction_collection_job() -> None:
         operations = PostgreSQLOperationsPersistence(engine)
         execution = WorkflowExecutionService(operations).start(
             WorkflowCode.AUCTION_COLLECTION,
-            _scheduled_fire_time(
-                scheduling.auction_collection_hour,
-                scheduling.auction_collection_minute,
-                scheduling.scheduler_timezone,
-            ),
+            _scheduled_job_fire_time(AUCTION_COLLECTION_JOB_ID, scheduling),
             TriggerSource.SCHEDULED,
         )
         try:
-            trade_date = datetime.now(ZoneInfo(scheduling.scheduler_timezone)).date()
+            trade_date = datetime.now(ZoneInfo(definition.timezone)).date()
             with PytdxHqProvider(quote_settings) as provider:
                 service = AuctionCollectionService(
                     PostgreSQLAuctionPersistence(engine),
                     provider,
                     LocalRawStore(settings.raw_data_root),
-                    cadence_seconds=scheduling.auction_collection_cadence_seconds,
+                    cadence_seconds=definition.cadence_seconds,
                     max_retries=quote_settings.pytdx_hq_max_retries,
                     retry_budget_seconds=quote_settings.pytdx_hq_timeout_seconds,
                 )
@@ -408,15 +391,10 @@ def run_eod_quote_snapshot_job() -> None:
         sqlalchemy_url(settings.database_url.get_secret_value()), pool_pre_ping=True
     )
     try:
-        fire_time = _scheduled_fire_time(
-            scheduling.eod_quote_hour,
-            scheduling.eod_quote_minute,
-            scheduling.scheduler_timezone,
-            weekdays_only=True,
-        )
+        fire_time = _scheduled_job_fire_time(EOD_QUOTE_SNAPSHOT_JOB_ID, scheduling)
         collect_eod_quotes(
             engine,
-            fire_time.astimezone(ZoneInfo(scheduling.scheduler_timezone)).date(),
+            fire_time.astimezone(ZoneInfo(SCHEDULER_TIMEZONE)).date(),
             raw_store=LocalRawStore(settings.raw_data_root),
         )
     finally:
@@ -433,15 +411,8 @@ def run_call_auction_snapshot_job() -> None:
         sqlalchemy_url(settings.database_url.get_secret_value()), pool_pre_ping=True
     )
     try:
-        fire_time = _scheduled_fire_time(
-            scheduling.call_auction_hour,
-            scheduling.call_auction_minute,
-            scheduling.scheduler_timezone,
-            weekdays_only=True,
-        )
-        collect_call_auction(
-            engine, fire_time.astimezone(ZoneInfo(scheduling.scheduler_timezone)).date()
-        )
+        fire_time = _scheduled_job_fire_time(CALL_AUCTION_SNAPSHOT_JOB_ID, scheduling)
+        collect_call_auction(engine, fire_time.astimezone(ZoneInfo(SCHEDULER_TIMEZONE)).date())
     finally:
         engine.dispose()
 
@@ -462,6 +433,23 @@ def _scheduled_fire_time(
     while weekdays_only and candidate.weekday() >= 5:
         candidate -= timedelta(days=1)
     return candidate.astimezone(UTC)
+
+
+def _scheduled_job_fire_time(
+    job_code: str,
+    settings: SchedulerSettings,
+    *,
+    weekdays_only: bool = True,
+) -> datetime:
+    definition = job_definition(job_code, settings)
+    if definition.hour is None or definition.minute is None:
+        raise ValueError(f"job has no cron time: {job_code}")
+    return _scheduled_fire_time(
+        definition.hour,
+        definition.minute,
+        definition.timezone,
+        weekdays_only=weekdays_only,
+    )
 
 
 def build_scheduler(settings: SchedulerSettings | None = None) -> BlockingScheduler:
@@ -517,14 +505,11 @@ def _trigger(definition: JobDefinition) -> CronTrigger | IntervalTrigger:
 
 def prepare_locked_worker(
     scheduler_settings: SchedulerSettings,
-    pool_settings: PytdxPoolSettings,
     persistence: PostgreSQLPersistence,
     operations_persistence: PostgreSQLOperationsPersistence,
     *,
     startup_refresh: Callable[[TriggerSource], PytdxPoolRefreshResult] = run_pytdx_pool_refresh_job,
-    scheduler_factory: Callable[
-        [SchedulerSettings, PytdxPoolSettings], BlockingScheduler
-    ] = build_scheduler,
+    scheduler_factory: Callable[[SchedulerSettings], BlockingScheduler] = build_scheduler,
     admin_factory: Callable[
         [SchedulerSettings, PostgreSQLPersistence, PostgreSQLOperationsPersistence],
         WorkerAdminServer,
@@ -533,7 +518,7 @@ def prepare_locked_worker(
 ) -> tuple[BlockingScheduler, WorkerAdminServer]:
     """Prepare the runtime after the caller has acquired the global lock."""
     startup_refresh(TriggerSource.RECOVERY)
-    scheduler = scheduler_factory(scheduler_settings, pool_settings)
+    scheduler = scheduler_factory(scheduler_settings)
     if admin_factory is None:
         from market_data_center.worker_admin import start_worker_admin_server
 
@@ -591,7 +576,6 @@ def run_worker(*, check: bool = False) -> None:
         finally:
             health_engine.dispose()
         raise SystemExit(0 if report.healthy else 1)
-    pool_settings = PytdxPoolSettings()
     worker_settings = WorkerSettings()  # type: ignore[call-arg]
     lock_engine = create_engine(
         sqlalchemy_url(worker_settings.database_url.get_secret_value()), pool_pre_ping=True
@@ -613,7 +597,6 @@ def run_worker(*, check: bool = False) -> None:
             run_stale_recovery_job()
             scheduler, admin_server = prepare_locked_worker(
                 scheduler_settings,
-                pool_settings,
                 PostgreSQLPersistence(lock_engine),
                 PostgreSQLOperationsPersistence(lock_engine),
             )
