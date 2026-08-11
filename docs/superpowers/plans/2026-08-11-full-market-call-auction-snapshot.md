@@ -232,6 +232,7 @@ git commit -m "feat: bound full-market quote endpoint requests"
 **Files:**
 - Create: `supabase/migrations/20260811000400_create_call_auction_market_snapshot.sql`
 - Modify: `tests/test_production_checks.py`
+- Modify: `tests/test_postgres_integration.py`
 - Modify: `scripts/apply_migrations.py`
 - Modify: `src/market_data_center/recovery.py`
 
@@ -241,33 +242,43 @@ git commit -m "feat: bound full-market quote endpoint requests"
 - Extends constraints: ingestion dataset、audit dataset、operations workflow code
 - Grants: market_data_worker 对新表仅 `select,insert`；对最终表增加受控 `delete`
 
-- [ ] **Step 1: 写 migration 结构失败测试**
+- [ ] **Step 1: 写 migration 行为失败测试**
 
-在 `tests/test_production_checks.py` 增加：
+在 `tests/test_postgres_integration.py` 增加 integration 测试，通过现有 disposable
+`database_engine`（它会按顺序执行全部 migration）查询 PostgreSQL catalog，断言：
 
 ```python
-def test_call_auction_market_snapshot_migration_is_internal_and_bounded() -> None:
-    migration = (
-        MIGRATION_DIR / "20260811000400_create_call_auction_market_snapshot.sql"
-    ).read_text(encoding="utf-8")
-    assert "create table realtime.call_auction_market_snapshot" in migration
-    assert "primary key (ingestion_id, symbol)" in migration
-    assert "high_price numeric(18, 4)" in migration
-    assert "low_price numeric(18, 4)" in migration
-    assert "call_auction_market_snapshot" in migration
-    assert "call_auction_snapshot add column observed_at" in migration
-    assert "enable row level security" in migration
-    assert "grant select, insert" in migration
-    assert "api_v1" not in migration
+assert connection.scalar(text(
+    "select to_regclass('realtime.call_auction_market_snapshot')"
+)) == "realtime.call_auction_market_snapshot"
+
+columns = connection.execute(text("""
+    select column_name, data_type, numeric_precision, numeric_scale, is_nullable
+    from information_schema.columns
+    where table_schema='realtime' and table_name='call_auction_market_snapshot'
+    order by ordinal_position
+""")).mappings().all()
+assert {row["column_name"] for row in columns} >= {
+    "ingestion_id", "symbol", "trade_date", "observed_at", "last_price",
+    "previous_close", "high_price", "low_price", "cumulative_volume",
+    "cumulative_amount", "source_code", "created_at",
+}
 ```
 
-并把 `EXPECTED_TABLES` 对应断言期望扩展到新表。
+同一测试继续查询 `pg_constraint`、`pg_policies` 和 `information_schema.role_table_grants`，验证
+主键 `(ingestion_id,symbol)`、价格/非负/观察窗口约束、RLS 已启用、Worker 对来源表只有
+`SELECT/INSERT`，并验证 `realtime.call_auction_snapshot.observed_at` 存在。另用枚举值插入最小
+IngestionRun/WorkflowRun，证明数据库 check constraint 接受新 dataset/workflow code；查询
+`information_schema.tables` 证明 `api_v1` 没有同名表或视图。
+
+`tests/test_production_checks.py` 只扩展 `scripts/apply_migrations.py::EXPECTED_TABLES` 的可执行清单
+行为断言，不读取 migration 文本或锁定 SQL 措辞。
 
 - [ ] **Step 2: 运行 RED**
 
-Run: `uv run pytest tests/test_production_checks.py::test_call_auction_market_snapshot_migration_is_internal_and_bounded tests/test_production_checks.py::test_production_schema_expectations_follow_all_migrations -q`
+Run: `uv run pytest -m integration tests/test_postgres_integration.py -k "call_auction_market_schema" -q`
 
-Expected: FAIL，migration 文件和新表清单不存在。
+Expected: FAIL，migration 尚未创建新表/约束/权限。必须使用 disposable `TEST_DATABASE_URL`；不得连接生产库。
 
 - [ ] **Step 3: 编写 migration**
 
@@ -318,14 +329,16 @@ create table realtime.call_auction_market_snapshot (
 - orphan-fact UNION 加入新表 ingestion_id；
 - 不新增 `EXPECTED_VIEWS` 或公共 API。
 
+Run: `uv run pytest -m integration tests/test_postgres_integration.py -k "call_auction_market_schema" -q`
+
 Run: `uv run pytest tests/test_production_checks.py tests/test_recovery.py -q`
 
-Expected: PASS。
+Expected: 两条命令均 PASS。
 
 - [ ] **Step 5: 提交 migration**
 
 ```bash
-git add supabase/migrations/20260811000400_create_call_auction_market_snapshot.sql tests/test_production_checks.py scripts/apply_migrations.py src/market_data_center/recovery.py
+git add supabase/migrations/20260811000400_create_call_auction_market_snapshot.sql tests/test_production_checks.py tests/test_postgres_integration.py scripts/apply_migrations.py src/market_data_center/recovery.py
 git commit -m "feat: add full-market call auction storage"
 ```
 
@@ -606,7 +619,10 @@ git commit -m "feat: schedule morning auction capture and finalization"
 - Modify: `docs/Worker调度系统.md`
 - Modify: `docs/Worker日常采集与调度.md`
 - Modify: `docs/最小生产发布运行手册.md`
-- Modify: `tests/test_production_checks.py`
+- Verify: `.env.example`
+- Verify: `tests/test_settings.py`
+- Verify: `tests/test_operations.py`
+- Verify: `tests/test_scheduler.py`
 - Verify unchanged: `contracts/postgrest-openapi-v1.json`
 - Verify unchanged: `contracts/agent-tools-v1.json`
 - Verify unchanged: `contracts/fastapi-openapi-v1.json`
@@ -615,19 +631,7 @@ git commit -m "feat: schedule morning auction capture and finalization"
 - Documents: 09:26 来源采集、21:30 最终化、同一开关、BSE 暂缓、live gate
 - Preserves: `.env` 无任务时间；公共 API 字段不变
 
-- [ ] **Step 1: 写文档/模板失败测试**
-
-扩展 `tests/test_production_checks.py`：读取三份运行文档并断言同时包含
-`call-auction-market-snapshot-daily`、`09:26`、`call-auction-snapshot-daily`、`21:30`、
-`CALL_AUCTION_SNAPSHOT_ENABLED`，且环境模板仍不含 `CALL_AUCTION_*HOUR/MINUTE`。
-
-- [ ] **Step 2: 运行 RED**
-
-Run: `uv run pytest tests/test_production_checks.py -q`
-
-Expected: FAIL，文档仍描述 21:30 网络采集。
-
-- [ ] **Step 3: 更新当前事实文档**
+- [ ] **Step 1: 更新当前事实文档（经项目所有者批准的文档测试例外）**
 
 - Worker 表增加 09:26 job；
 - 21:30 描述改成只读晨间 succeeded ingestion 与 ready 涨停池；
@@ -637,18 +641,24 @@ Expected: FAIL，文档仍描述 21:30 网络采集。
 
 不改历史 plan/spec，不把尚未部署写成生产已运行事实。
 
-- [ ] **Step 4: 运行 GREEN 与契约兼容检查**
+- [ ] **Step 2: 验证真实配置和调度行为**
 
-Run: `uv run pytest tests/test_production_checks.py -q`
+Run: `uv run pytest tests/test_settings.py tests/test_operations.py tests/test_scheduler.py -q`
+
+Expected: PASS；现有开关行为测试和 Task 6 调度测试共同证明同一启停开关控制两个代码内固定时间的 job。
+
+人工核对 `.env.example` 只有 `CALL_AUCTION_SNAPSHOT_ENABLED=true`，没有 hour/minute 字段；不为人类文档措辞新增源码文本断言。
+
+- [ ] **Step 3: 验证契约兼容**
 
 Run: `git diff --exit-code c29d893 -- contracts/postgrest-openapi-v1.json contracts/agent-tools-v1.json contracts/fastapi-openapi-v1.json`
 
-Expected: 测试 PASS；contracts 无差异。
+Expected: contracts 无差异。
 
-- [ ] **Step 5: 提交文档与门禁**
+- [ ] **Step 4: 提交文档**
 
 ```bash
-git add docs/Worker调度系统.md docs/Worker日常采集与调度.md docs/最小生产发布运行手册.md tests/test_production_checks.py
+git add docs/Worker调度系统.md docs/Worker日常采集与调度.md docs/最小生产发布运行手册.md
 git commit -m "docs: operate full-market call auction workflow"
 ```
 
