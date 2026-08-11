@@ -3,10 +3,19 @@ from pathlib import Path
 from sqlite3 import connect
 from typing import cast
 
+import pytest
+
 from market_data_center.persistence import PostgreSQLPersistence
+from market_data_center.persistence.operations_postgres import PostgreSQLOperationsPersistence
+from market_data_center.providers.contracts import ProviderError
+from market_data_center.providers.pytdx_pool import (
+    PytdxEndpointPool,
+    PytdxPoolRefreshResult,
+)
 from market_data_center.scheduler import (
     build_scheduler,
     check_scheduler_health,
+    prepare_locked_worker,
 )
 from market_data_center.scheduling_catalog import (
     AUCTION_COLLECTION_JOB_ID,
@@ -14,11 +23,12 @@ from market_data_center.scheduling_catalog import (
     DAILY_RUN_JOB_ID,
     DEDUCTED_PROFIT_JOB_ID,
     EOD_QUOTE_SNAPSHOT_JOB_ID,
+    PYTDX_POOL_REFRESH_JOB_ID,
     STALE_RUN_RECOVERY_JOB_ID,
     STOCK_DAILY_INDICATOR_JOB_ID,
     STOCK_POOL_JOB_ID,
 )
-from market_data_center.settings import SchedulerSettings
+from market_data_center.settings import PytdxPoolSettings, SchedulerSettings
 
 
 def test_scheduler_registers_persistent_single_instance_market_job(tmp_path: Path) -> None:
@@ -49,6 +59,101 @@ def test_scheduler_registers_persistent_single_instance_market_job(tmp_path: Pat
     assert str(stock_pool.trigger) == "cron[day_of_week='mon-fri', hour='21', minute='0']"
     assert store_path.parent.is_dir()
     assert scheduler.get_job(AUCTION_COLLECTION_JOB_ID) is None
+
+
+def test_scheduler_registers_twelve_hour_pytdx_pool_refresh(tmp_path: Path) -> None:
+    scheduler = build_scheduler(
+        SchedulerSettings(scheduler_store_path=tmp_path / "refresh.sqlite", _env_file=None),
+        PytdxPoolSettings(pytdx_pool_refresh_hours=12, _env_file=None),
+    )
+
+    refresh = scheduler.get_job(PYTDX_POOL_REFRESH_JOB_ID)
+    assert refresh is not None
+    assert str(refresh.trigger) == "interval[12:00:00]"
+    assert refresh.max_instances == 1
+    assert refresh.coalesce
+
+
+class FakeScheduler:
+    running = False
+
+
+class FakeAdminServer:
+    def shutdown(self) -> None:
+        return None
+
+    def server_close(self) -> None:
+        return None
+
+
+def test_locked_worker_refreshes_before_scheduler_and_admin(tmp_path: Path) -> None:
+    events: list[str] = []
+    pool_settings = PytdxPoolSettings(
+        pytdx_pool_path=tmp_path / "pytdx_pool.json", _env_file=None
+    )
+    last_good = PytdxPoolRefreshResult(
+        candidate_count=3,
+        usable_node_count=0,
+        rejected_node_count=3,
+        published=False,
+        used_last_good=True,
+        pool=PytdxEndpointPool(datetime(2026, 8, 11, tzinfo=UTC), ()),
+    )
+
+    def refresh(_trigger_source):
+        events.append("pool-refreshed")
+        return last_good
+
+    def scheduler_factory(_settings, _pool_settings):
+        events.append("scheduler-built")
+        return FakeScheduler()
+
+    def admin_factory(_settings, _persistence, _operations):
+        events.append("admin-started")
+        return FakeAdminServer()
+
+    scheduler, admin = prepare_locked_worker(
+        SchedulerSettings(_env_file=None),
+        pool_settings,
+        cast(PostgreSQLPersistence, object()),
+        cast(PostgreSQLOperationsPersistence, object()),
+        startup_refresh=refresh,
+        scheduler_factory=scheduler_factory,
+        admin_factory=admin_factory,
+    )
+
+    assert isinstance(scheduler, FakeScheduler)
+    assert isinstance(admin, FakeAdminServer)
+    assert events == ["pool-refreshed", "scheduler-built", "admin-started"]
+
+
+def test_locked_worker_does_not_build_runtime_when_refresh_fails(tmp_path: Path) -> None:
+    events: list[str] = []
+
+    def fail_refresh(_trigger_source):
+        events.append("pool-failed")
+        raise ProviderError("no usable pytdx endpoint pool")
+
+    def scheduler_factory(_settings, _pool_settings):
+        events.append("scheduler-built")
+        return FakeScheduler()
+
+    def admin_factory(_settings, _persistence, _operations):
+        events.append("admin-started")
+        return FakeAdminServer()
+
+    with pytest.raises(ProviderError, match="no usable"):
+        prepare_locked_worker(
+            SchedulerSettings(_env_file=None),
+            PytdxPoolSettings(pytdx_pool_path=tmp_path / "missing.json", _env_file=None),
+            cast(PostgreSQLPersistence, object()),
+            cast(PostgreSQLOperationsPersistence, object()),
+            startup_refresh=fail_refresh,
+            scheduler_factory=scheduler_factory,
+            admin_factory=admin_factory,
+        )
+
+    assert events == ["pool-failed"]
 
 
 def test_scheduler_registers_one_auction_session_job_only_when_enabled(tmp_path: Path) -> None:
@@ -137,6 +242,7 @@ def test_scheduler_health_requires_jobs_fresh_snapshot_and_no_stale_runs(tmp_pat
         (
             DAILY_RUN_JOB_ID,
             DEDUCTED_PROFIT_JOB_ID,
+            PYTDX_POOL_REFRESH_JOB_ID,
             STALE_RUN_RECOVERY_JOB_ID,
             STOCK_DAILY_INDICATOR_JOB_ID,
             STOCK_POOL_JOB_ID,

@@ -26,6 +26,9 @@ class WorkflowCode(StrEnum):
     DEDUCTED_PROFIT = "deducted_profit"
     STOCK_POOL = "stock_pool"
     AUCTION_COLLECTION = "auction_collection"
+    EOD_QUOTE_SNAPSHOT = "eod_quote_snapshot"
+    CALL_AUCTION_SNAPSHOT = "call_auction_snapshot"
+    PYTDX_POOL_REFRESH = "pytdx_pool_refresh"
 
 
 @dataclass(frozen=True, slots=True)

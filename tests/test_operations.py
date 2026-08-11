@@ -17,8 +17,9 @@ from market_data_center.providers.pytdx_pool import (
     PytdxEndpointPool,
     PytdxPoolRefreshResult,
 )
+from market_data_center.scheduler import execute_pytdx_pool_refresh
 from market_data_center.scheduling_catalog import WORKFLOW_DEFINITIONS, job_definitions
-from market_data_center.settings import SchedulerSettings
+from market_data_center.settings import PytdxPoolSettings, SchedulerSettings
 
 NOW = datetime(2026, 8, 2, 10, tzinfo=UTC)
 
@@ -102,6 +103,23 @@ def test_job_catalog_is_stable_and_references_defined_workflows() -> None:
     assert workflows["daily_market"].step_codes == ("security", "trading_calendar", "daily_bar")
     assert workflows["stock_pool"].step_codes == ("build_stock_pools",)
     assert all(job.timezone == "Asia/Shanghai" for job in jobs)
+    assert {workflow.value for workflow in WorkflowCode} == set(workflows)
+
+
+def test_catalog_registers_twelve_hour_pytdx_pool_refresh() -> None:
+    jobs = {
+        job.code: job
+        for job in job_definitions(
+            SchedulerSettings(_env_file=None),
+            PytdxPoolSettings(pytdx_pool_refresh_hours=12, _env_file=None),
+        )
+    }
+
+    refresh = jobs["pytdx-pool-refresh"]
+    assert refresh.workflow_code == "pytdx_pool_refresh"
+    assert refresh.trigger_type == "interval"
+    assert refresh.interval_hours == 12
+    assert refresh.enabled is True
 
 
 def test_execution_service_records_failed_step_and_redacted_workflow_error() -> None:
@@ -152,3 +170,37 @@ def test_execution_service_records_pool_refresh_statistics(
     assert (job.fetched_rows, job.accepted_rows, job.rejected_rows) == (4, 3, 1)
     assert job.status is expected_status
     assert workflow.status is expected_status
+
+
+def test_execute_pytdx_pool_refresh_records_the_controlled_workflow(tmp_path) -> None:
+    persistence = MemoryOperationsPersistence()
+    pool_settings = PytdxPoolSettings(
+        pytdx_pool_path=tmp_path / "pytdx_pool.json", _env_file=None
+    )
+    expected = PytdxPoolRefreshResult(
+        candidate_count=3,
+        usable_node_count=3,
+        rejected_node_count=0,
+        published=True,
+        used_last_good=False,
+        pool=PytdxEndpointPool(NOW, ()),
+    )
+    refreshed_paths = []
+
+    def refresh(path):
+        refreshed_paths.append(path)
+        return expected
+
+    actual = execute_pytdx_pool_refresh(
+        cast(PostgreSQLOperationsPersistence, persistence),
+        pool_settings,
+        TriggerSource.RECOVERY,
+        clock=lambda: NOW,
+        refresh=refresh,
+    )
+
+    assert actual is expected
+    assert refreshed_paths == [pool_settings.pytdx_pool_path]
+    assert persistence.finished_jobs[0].job_code == "refresh_pytdx_pool"
+    assert persistence.finished_workflows[0].workflow_code is WorkflowCode.PYTDX_POOL_REFRESH
+    assert persistence.finished_workflows[0].trigger_source is TriggerSource.RECOVERY

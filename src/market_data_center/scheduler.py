@@ -1,14 +1,17 @@
 """Embedded scheduling for the unified long-lived collection Worker."""
 
 from argparse import Namespace
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, time, timedelta
 from json import dumps
 from logging import INFO, basicConfig, getLogger
+from pathlib import Path
 from signal import SIGINT, SIGTERM, signal
 from sqlite3 import Error as SQLiteError
 from sqlite3 import connect
 from types import FrameType
+from typing import Protocol
 from zoneinfo import ZoneInfo
 
 from apscheduler.executors.pool import ThreadPoolExecutor  # type: ignore[import-untyped]
@@ -29,6 +32,10 @@ from market_data_center.persistence.operations_postgres import PostgreSQLOperati
 from market_data_center.persistence.stock_pool_postgres import PostgreSQLStockPoolPersistence
 from market_data_center.pipeline import IngestionPipeline
 from market_data_center.providers.pytdx_hq import PytdxHqProvider
+from market_data_center.providers.pytdx_pool import (
+    PytdxPoolRefreshResult,
+    refresh_endpoint_pool,
+)
 from market_data_center.raw_store import LocalRawStore
 from market_data_center.reliability import recover_stale_runs
 from market_data_center.scheduling_catalog import (
@@ -37,13 +44,19 @@ from market_data_center.scheduling_catalog import (
     DAILY_RUN_JOB_ID,
     DEDUCTED_PROFIT_JOB_ID,
     EOD_QUOTE_SNAPSHOT_JOB_ID,
+    PYTDX_POOL_REFRESH_JOB_ID,
     STALE_RUN_RECOVERY_JOB_ID,
     STOCK_DAILY_INDICATOR_JOB_ID,
     STOCK_POOL_JOB_ID,
     JobDefinition,
     job_definitions,
 )
-from market_data_center.settings import PytdxHqSettings, SchedulerSettings, WorkerSettings
+from market_data_center.settings import (
+    PytdxHqSettings,
+    PytdxPoolSettings,
+    SchedulerSettings,
+    WorkerSettings,
+)
 from market_data_center.stock_pool_service import StockPoolService
 
 SCHEDULER_LOCK_KEY = "market-data-center:scheduler"
@@ -71,6 +84,12 @@ class JobStoreSnapshot:
     tasks: tuple[PersistedScheduledTask, ...]
 
 
+class WorkerAdminServer(Protocol):
+    def shutdown(self) -> None: ...
+
+    def server_close(self) -> None: ...
+
+
 def read_job_store_snapshot(settings: SchedulerSettings) -> JobStoreSnapshot:
     """Read only APScheduler IDs and next-run timestamps from SQLite."""
     store_uri = f"{settings.scheduler_store_path.resolve().as_uri()}?mode=ro"
@@ -94,6 +113,52 @@ def read_job_store_snapshot(settings: SchedulerSettings) -> JobStoreSnapshot:
         for row in rows
     )
     return JobStoreSnapshot(available=True, tasks=tasks)
+
+
+def execute_pytdx_pool_refresh(
+    operations: PostgreSQLOperationsPersistence,
+    pool_settings: PytdxPoolSettings,
+    trigger_source: TriggerSource,
+    *,
+    clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+    refresh: Callable[[Path], PytdxPoolRefreshResult] = refresh_endpoint_pool,
+) -> PytdxPoolRefreshResult:
+    """Refresh the shared pool as one controlled Operations workflow."""
+    scheduled_for = clock()
+    execution = WorkflowExecutionService(operations).start(
+        WorkflowCode.PYTDX_POOL_REFRESH,
+        scheduled_for,
+        trigger_source,
+    )
+    try:
+        result = execution.step(
+            "refresh_pytdx_pool",
+            1,
+            lambda: refresh(pool_settings.pytdx_pool_path),
+        )
+    except BaseException as error:
+        execution.fail(error)
+        raise
+    execution.succeed()
+    return result
+
+
+def run_pytdx_pool_refresh_job(
+    trigger_source: TriggerSource = TriggerSource.SCHEDULED,
+) -> PytdxPoolRefreshResult:
+    """Run one scheduled or startup refresh using the Worker database."""
+    worker_settings = WorkerSettings()  # type: ignore[call-arg]
+    engine = create_engine(
+        sqlalchemy_url(worker_settings.database_url.get_secret_value()), pool_pre_ping=True
+    )
+    try:
+        return execute_pytdx_pool_refresh(
+            PostgreSQLOperationsPersistence(engine),
+            PytdxPoolSettings(),
+            trigger_source,
+        )
+    finally:
+        engine.dispose()
 
 
 def run_stock_daily_indicator_job() -> None:
@@ -398,8 +463,12 @@ def _scheduled_fire_time(
     return candidate.astimezone(UTC)
 
 
-def build_scheduler(settings: SchedulerSettings | None = None) -> BlockingScheduler:
+def build_scheduler(
+    settings: SchedulerSettings | None = None,
+    pool_settings: PytdxPoolSettings | None = None,
+) -> BlockingScheduler:
     settings = settings or SchedulerSettings()
+    pool_settings = pool_settings or PytdxPoolSettings()
     store_path = settings.scheduler_store_path.resolve()
     store_path.parent.mkdir(parents=True, exist_ok=True)
     job_store_engine = create_engine(URL.create("sqlite", database=str(store_path)))
@@ -417,8 +486,9 @@ def build_scheduler(settings: SchedulerSettings | None = None) -> BlockingSchedu
         AUCTION_COLLECTION_JOB_ID: run_auction_collection_job,
         EOD_QUOTE_SNAPSHOT_JOB_ID: run_eod_quote_snapshot_job,
         CALL_AUCTION_SNAPSHOT_JOB_ID: run_call_auction_snapshot_job,
+        PYTDX_POOL_REFRESH_JOB_ID: run_pytdx_pool_refresh_job,
     }
-    for definition in job_definitions(settings):
+    for definition in job_definitions(settings, pool_settings):
         if not definition.enabled:
             continue
         scheduler.add_job(
@@ -446,6 +516,35 @@ def _trigger(definition: JobDefinition) -> CronTrigger | IntervalTrigger:
     if definition.trigger_type == "interval" and definition.interval_hours is not None:
         return IntervalTrigger(hours=definition.interval_hours, timezone=definition.timezone)
     raise ValueError(f"unsupported trigger definition: {definition.code}")
+
+
+def prepare_locked_worker(
+    scheduler_settings: SchedulerSettings,
+    pool_settings: PytdxPoolSettings,
+    persistence: PostgreSQLPersistence,
+    operations_persistence: PostgreSQLOperationsPersistence,
+    *,
+    startup_refresh: Callable[
+        [TriggerSource], PytdxPoolRefreshResult
+    ] = run_pytdx_pool_refresh_job,
+    scheduler_factory: Callable[
+        [SchedulerSettings, PytdxPoolSettings], BlockingScheduler
+    ] = build_scheduler,
+    admin_factory: Callable[
+        [SchedulerSettings, PostgreSQLPersistence, PostgreSQLOperationsPersistence],
+        WorkerAdminServer,
+    ]
+    | None = None,
+) -> tuple[BlockingScheduler, WorkerAdminServer]:
+    """Prepare the runtime after the caller has acquired the global lock."""
+    startup_refresh(TriggerSource.RECOVERY)
+    scheduler = scheduler_factory(scheduler_settings, pool_settings)
+    if admin_factory is None:
+        from market_data_center.worker_admin import start_worker_admin_server
+
+        admin_factory = start_worker_admin_server
+    admin_server = admin_factory(scheduler_settings, persistence, operations_persistence)
+    return scheduler, admin_server
 
 
 def check_scheduler_health(
@@ -497,16 +596,18 @@ def run_worker(*, check: bool = False) -> None:
         finally:
             health_engine.dispose()
         raise SystemExit(0 if report.healthy else 1)
-    scheduler = build_scheduler(scheduler_settings)
+    pool_settings = PytdxPoolSettings()
     worker_settings = WorkerSettings()  # type: ignore[call-arg]
     lock_engine = create_engine(
         sqlalchemy_url(worker_settings.database_url.get_secret_value()), pool_pre_ping=True
     )
 
+    scheduler: BlockingScheduler | None = None
+
     def stop_scheduler(signum: int, frame: FrameType | None) -> None:
         del frame
         LOGGER.info("received signal=%d; waiting for scheduled jobs to stop", signum)
-        if scheduler.running:
+        if scheduler is not None and scheduler.running:
             scheduler.shutdown(wait=True)
 
     signal(SIGINT, stop_scheduler)
@@ -514,11 +615,10 @@ def run_worker(*, check: bool = False) -> None:
     admin_server = None
     try:
         with PostgreSQLPersistence(lock_engine).task_lock(SCHEDULER_LOCK_KEY):
-            from market_data_center.worker_admin import start_worker_admin_server
-
             run_stale_recovery_job()
-            admin_server = start_worker_admin_server(
+            scheduler, admin_server = prepare_locked_worker(
                 scheduler_settings,
+                pool_settings,
                 PostgreSQLPersistence(lock_engine),
                 PostgreSQLOperationsPersistence(lock_engine),
             )
@@ -528,6 +628,6 @@ def run_worker(*, check: bool = False) -> None:
         if admin_server is not None:
             admin_server.shutdown()
             admin_server.server_close()
-        if scheduler.running:
+        if scheduler is not None and scheduler.running:
             scheduler.shutdown(wait=True)
         lock_engine.dispose()

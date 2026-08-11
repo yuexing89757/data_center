@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from market_data_center.settings import SchedulerSettings
+from market_data_center.settings import PytdxPoolSettings, SchedulerSettings
 
 DAILY_RUN_JOB_ID = "daily-run"
 STOCK_DAILY_INDICATOR_JOB_ID = "stock-daily-indicators-daily"
@@ -12,6 +12,7 @@ STOCK_POOL_JOB_ID = "mainboard-price-limit-stock-pools-daily"
 AUCTION_COLLECTION_JOB_ID = "opening-auction-limit-up-quotes"
 EOD_QUOTE_SNAPSHOT_JOB_ID = "eod-quote-snapshot-daily"
 CALL_AUCTION_SNAPSHOT_JOB_ID = "call-auction-snapshot-daily"
+PYTDX_POOL_REFRESH_JOB_ID = "pytdx-pool-refresh"
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,10 +90,20 @@ WORKFLOW_DEFINITIONS = (
         "收盘后采集涨停池成员的当日集合竞价量、额及溢价率。",
         ("collect_call_auction",),
     ),
+    WorkflowDefinition(
+        "pytdx_pool_refresh",
+        "PYTDX 节点池刷新",
+        "探测候选节点能力并原子发布最后有效节点池。",
+        ("refresh_pytdx_pool",),
+    ),
 )
 
 
-def job_definitions(settings: SchedulerSettings) -> tuple[JobDefinition, ...]:
+def job_definitions(
+    settings: SchedulerSettings,
+    pool_settings: PytdxPoolSettings | None = None,
+) -> tuple[JobDefinition, ...]:
+    pool_settings = pool_settings or PytdxPoolSettings()
     timezone = settings.scheduler_timezone
     timeout = settings.scheduler_misfire_grace_seconds
     return (
@@ -214,6 +225,19 @@ def job_definitions(settings: SchedulerSettings) -> tuple[JobDefinition, ...]:
             timeout,
             "失败后等待下一小时重试",
             interval_hours=1,
+        ),
+        JobDefinition(
+            PYTDX_POOL_REFRESH_JOB_ID,
+            "PYTDX 节点池刷新",
+            "有界探测节点能力, 成功时原子发布, 失败时保留 last-good。",
+            "pytdx_pool_refresh",
+            "interval",
+            f"每 {pool_settings.pytdx_pool_refresh_hours} 小时",
+            timezone,
+            True,
+            timeout,
+            "刷新失败保留 last-good; 新旧池均无效时 Worker 启动失败",
+            interval_hours=pool_settings.pytdx_pool_refresh_hours,
         ),
     )
 
