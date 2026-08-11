@@ -185,11 +185,13 @@ def test_market_provider_uses_one_explicit_endpoint_and_batches_by_eighty(tmp_pa
 def test_provider_stops_starting_batches_at_deadline() -> None:
     batches: list[tuple[tuple[int, str], ...]] = []
     client = BatchRecordedClient(batches)
-    clock = iter((
-        datetime(2026, 8, 12, 1, 29, 29, tzinfo=UTC),
-        datetime(2026, 8, 12, 1, 29, 29, 500000, tzinfo=UTC),
-        datetime(2026, 8, 12, 1, 29, 31, tzinfo=UTC),
-    )).__next__
+    clock = iter(
+        (
+            datetime(2026, 8, 12, 1, 29, 29, tzinfo=UTC),
+            datetime(2026, 8, 12, 1, 29, 29, 500000, tzinfo=UTC),
+            datetime(2026, 8, 12, 1, 29, 31, tzinfo=UTC),
+        )
+    ).__next__
     provider = PytdxHqProvider(
         PytdxHqSettings(_env_file=None),
         endpoints=(("only.quote", 7709),),
@@ -257,20 +259,36 @@ git commit -m "feat: bound full-market quote endpoint requests"
 `database_engine`（它会按顺序执行全部 migration）查询 PostgreSQL catalog，断言：
 
 ```python
-assert connection.scalar(text(
-    "select to_regclass('realtime.call_auction_market_snapshot')"
-)) == "realtime.call_auction_market_snapshot"
+assert (
+    connection.scalar(text("select to_regclass('realtime.call_auction_market_snapshot')"))
+    == "realtime.call_auction_market_snapshot"
+)
 
-columns = connection.execute(text("""
+columns = (
+    connection.execute(
+        text("""
     select column_name, data_type, numeric_precision, numeric_scale, is_nullable
     from information_schema.columns
     where table_schema='realtime' and table_name='call_auction_market_snapshot'
     order by ordinal_position
-""")).mappings().all()
+""")
+    )
+    .mappings()
+    .all()
+)
 assert {row["column_name"] for row in columns} >= {
-    "ingestion_id", "symbol", "trade_date", "observed_at", "last_price",
-    "previous_close", "high_price", "low_price", "cumulative_volume",
-    "cumulative_amount", "source_code", "created_at",
+    "ingestion_id",
+    "symbol",
+    "trade_date",
+    "observed_at",
+    "last_price",
+    "previous_close",
+    "high_price",
+    "low_price",
+    "cumulative_volume",
+    "cumulative_amount",
+    "source_code",
+    "created_at",
 }
 ```
 
@@ -381,17 +399,21 @@ assert persistence.listed_sse_szse_stock_symbols() == ["SSE:600000", "SZSE:00000
 ```python
 written = persistence.finalize_call_auction_snapshot(date(2026, 8, 12))
 assert written == 2
-rows = connection.execute(text("""
+rows = connection.execute(
+    text("""
     select symbol, observed_at, high_price, low_price, ingestion_id
     from realtime.call_auction_market_snapshot
     order by ingestion_id, symbol
-""")).all()
+""")
+).all()
 assert len(rows) == 3
-final = connection.execute(text("""
+final = connection.execute(
+    text("""
     select symbol, cumulative_volume, cumulative_amount, auction_premium_pct,
            observed_at, ingestion_id
     from realtime.call_auction_snapshot order by symbol
-""")).all()
+""")
+).all()
 assert {row.ingestion_id for row in final} == {succeeded.ingestion_id}
 ```
 
@@ -580,10 +602,14 @@ def test_call_auction_finalization_delegates_to_database_only() -> None:
 在 operations/scheduler 测试中断言：
 
 ```python
-assert (jobs["call-auction-market-snapshot-daily"].hour,
-        jobs["call-auction-market-snapshot-daily"].minute) == (9, 26)
-assert (jobs["call-auction-snapshot-daily"].hour,
-        jobs["call-auction-snapshot-daily"].minute) == (21, 30)
+assert (
+    jobs["call-auction-market-snapshot-daily"].hour,
+    jobs["call-auction-market-snapshot-daily"].minute,
+) == (9, 26)
+assert (jobs["call-auction-snapshot-daily"].hour, jobs["call-auction-snapshot-daily"].minute) == (
+    21,
+    30,
+)
 assert jobs["call-auction-market-snapshot-daily"].enabled is True
 assert jobs["call-auction-snapshot-daily"].enabled is True
 ```
