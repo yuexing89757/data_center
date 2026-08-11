@@ -33,7 +33,11 @@ from market_data_center.settings import PytdxPoolSettings, SchedulerSettings
 
 def test_scheduler_registers_persistent_single_instance_market_job(tmp_path: Path) -> None:
     store_path = tmp_path / "scheduler" / "jobs.sqlite"
-    settings = SchedulerSettings(scheduler_store_path=store_path, auction_collection_enabled=False)
+    settings = SchedulerSettings(
+        scheduler_store_path=store_path,
+        auction_collection_enabled=False,
+        _env_file=None,
+    )
     scheduler = build_scheduler(settings)
 
     daily_run = scheduler.get_job(DAILY_RUN_JOB_ID)
@@ -159,6 +163,7 @@ def test_scheduler_registers_one_auction_session_job_only_when_enabled(tmp_path:
         SchedulerSettings(
             scheduler_store_path=tmp_path / "auction.sqlite",
             auction_collection_enabled=True,
+            _env_file=None,
         )
     )
 
@@ -173,6 +178,7 @@ def test_call_auction_snapshot_job_registered_when_enabled(tmp_path: Path) -> No
         SchedulerSettings(
             scheduler_store_path=tmp_path / "call_auction.sqlite",
             call_auction_snapshot_enabled=True,
+            _env_file=None,
         )
     )
 
@@ -188,6 +194,7 @@ def test_eod_quote_snapshot_job_registered_after_stock_pool_when_enabled(tmp_pat
         SchedulerSettings(
             scheduler_store_path=tmp_path / "eod.sqlite",
             eod_quote_snapshot_enabled=True,
+            _env_file=None,
         )
     )
 
@@ -203,6 +210,7 @@ def test_call_auction_snapshot_job_absent_when_disabled(tmp_path: Path) -> None:
         SchedulerSettings(
             scheduler_store_path=tmp_path / "no_call_auction.sqlite",
             call_auction_snapshot_enabled=False,
+            _env_file=None,
         )
     )
 
@@ -250,6 +258,7 @@ def test_scheduler_health_requires_jobs_fresh_snapshot_and_no_stale_runs(tmp_pat
         scheduler_store_path=store_path,
         auction_collection_enabled=False,
         call_auction_snapshot_enabled=False,
+        _env_file=None,
     )
 
     healthy = check_scheduler_health(

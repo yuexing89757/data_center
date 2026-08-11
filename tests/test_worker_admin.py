@@ -63,7 +63,7 @@ def _job_store(path: Path) -> None:
 def test_job_store_snapshot_is_read_only_and_does_not_expose_job_state(tmp_path: Path) -> None:
     store_path = tmp_path / "jobs.sqlite"
     _job_store(store_path)
-    settings = SchedulerSettings(scheduler_store_path=store_path)
+    settings = SchedulerSettings(scheduler_store_path=store_path, _env_file=None)
 
     snapshot = read_job_store_snapshot(settings)
 
@@ -82,7 +82,7 @@ def test_job_store_snapshot_is_read_only_and_does_not_expose_job_state(tmp_path:
 def test_admin_page_distinguishes_persistence_from_worker_liveness(tmp_path: Path) -> None:
     store_path = tmp_path / "jobs.sqlite"
     _job_store(store_path)
-    settings = SchedulerSettings(scheduler_store_path=store_path)
+    settings = SchedulerSettings(scheduler_store_path=store_path, _env_file=None)
 
     page = render_scheduled_tasks_page(
         settings,
@@ -104,7 +104,7 @@ def test_admin_page_distinguishes_persistence_from_worker_liveness(tmp_path: Pat
 def test_admin_http_is_loopback_read_only_and_sets_security_headers(tmp_path: Path) -> None:
     store_path = tmp_path / "jobs.sqlite"
     _job_store(store_path)
-    settings = SchedulerSettings(scheduler_store_path=store_path)
+    settings = SchedulerSettings(scheduler_store_path=store_path, _env_file=None)
     server = start_worker_admin_server(
         settings,
         cast(PostgreSQLPersistence, AdminPersistence()),
@@ -131,7 +131,7 @@ def test_admin_http_is_loopback_read_only_and_sets_security_headers(tmp_path: Pa
 def test_admin_page_localizes_datetimes_and_badges_status(tmp_path: Path) -> None:
     store_path = tmp_path / "jobs.sqlite"
     _job_store(store_path)
-    settings = SchedulerSettings(scheduler_store_path=store_path)
+    settings = SchedulerSettings(scheduler_store_path=store_path, _env_file=None)
 
     def _v(value: str) -> SimpleNamespace:
         return SimpleNamespace(value=value)

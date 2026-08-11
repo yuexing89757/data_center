@@ -96,7 +96,7 @@ def test_error_summary_is_category_only() -> None:
 
 def test_job_catalog_is_stable_and_references_defined_workflows() -> None:
     workflows = {definition.code: definition for definition in WORKFLOW_DEFINITIONS}
-    jobs = job_definitions(SchedulerSettings())
+    jobs = job_definitions(SchedulerSettings(_env_file=None))
 
     assert len({job.code for job in jobs}) == len(jobs)
     assert all(job.workflow_code in workflows for job in jobs)
