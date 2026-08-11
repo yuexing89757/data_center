@@ -12,6 +12,7 @@ class WorkerSettings(BaseSettings):
 
     database_url: SecretStr
     raw_data_root: Path = Path("data/raw")
+    daily_bar_write_batch_size: int = Field(default=100, ge=1, le=500)
 
 
 class TushareSettings(BaseSettings):

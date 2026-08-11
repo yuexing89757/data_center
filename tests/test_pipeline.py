@@ -7,6 +7,7 @@ from uuid import uuid4
 
 import pytest
 
+from market_data_center.daily_bar_batch import PreparedDailyBarBatch
 from market_data_center.domain import (
     BoardIndexConstituentSnapshotRecord,
     BoardIndexDailyBarRecord,
@@ -330,6 +331,7 @@ class StubPersistence:
                 Sequence[QualityResult],
             ]
         ] = []
+        self.daily_multi_commits: list[Sequence[PreparedDailyBarBatch]] = []
         self.capital_commits: list[
             tuple[
                 IngestionRun,
@@ -441,6 +443,9 @@ class StubPersistence:
         quality_results: Sequence[QualityResult],
     ) -> None:
         self.daily_commits.append((run, manifest, records, quality_results))
+
+    def commit_daily_bar_batches(self, batches: Sequence[PreparedDailyBarBatch]) -> None:
+        self.daily_multi_commits.append(batches)
 
     def commit_capital_batch(
         self,
@@ -677,6 +682,25 @@ def test_daily_bar_reference_failure_is_recorded_and_blocked(tmp_path: Path) -> 
     assert run.rejected_rows == 1
     assert not persistence.daily_commits[0][2]
     assert persistence.daily_commits[0][3][0].blocks_core_write
+
+
+def test_daily_bar_can_be_prepared_without_committing_facts(tmp_path: Path) -> None:
+    persistence = StubPersistence()
+    pipeline = _pipeline(tmp_path, StubProvider(), persistence)
+
+    prepared = pipeline.prepare_daily_bars(
+        "sh.600000",
+        date(2026, 7, 28),
+        date(2026, 7, 28),
+        known_symbols={"SSE:600000"},
+        known_trading_dates={date(2026, 7, 28)},
+    )
+
+    assert prepared.run.status is IngestionStatus.SUCCEEDED
+    assert prepared.manifest.ingestion_id == prepared.run.ingestion_id
+    assert prepared.records[0].record.symbol == "SSE:600000"
+    assert persistence.daily_commits == []
+    assert len(persistence.created) == 1
 
 
 def test_provider_failure_marks_run_failed_without_leaking_message(tmp_path: Path) -> None:

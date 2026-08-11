@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from typing import TypeVar
 
 from market_data_center.call_auction_market_service import CallAuctionMarketCollectionSummary
+from market_data_center.daily_bar_batch import DailyBarBulkSummary
 from market_data_center.domain.auction import AuctionCollectionSummary
 from market_data_center.domain.ingestion import IngestionRun, IngestionStatus
 from market_data_center.domain.operations import (
@@ -109,6 +110,18 @@ def safe_error_summary(error: BaseException) -> str:
 
 
 def _result_statistics(result: object) -> tuple[int, int, int, ExecutionStatus]:
+    if isinstance(result, DailyBarBulkSummary):
+        status = {
+            "succeeded": ExecutionStatus.SUCCEEDED,
+            "partial": ExecutionStatus.PARTIAL,
+            "failed": ExecutionStatus.FAILED,
+        }[result.status]
+        return (
+            result.expected_symbols,
+            result.accepted_symbols,
+            result.rejected_symbols,
+            status,
+        )
     if isinstance(result, CallAuctionMarketCollectionSummary):
         status = {
             "succeeded": ExecutionStatus.SUCCEEDED,

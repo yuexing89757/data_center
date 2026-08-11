@@ -7,6 +7,7 @@ from datetime import UTC, date, datetime
 from typing import Protocol, cast
 from uuid import UUID, uuid4
 
+from market_data_center.daily_bar_batch import PreparedDailyBarBatch
 from market_data_center.domain.board_index import (
     BoardIndexConstituentSnapshotRecord,
     BoardIndexDailyBarRecord,
@@ -110,6 +111,8 @@ class PipelinePersistence(Protocol):
         records: Sequence[IngestionEnvelope[DailyBarRecord]],
         quality_results: Sequence[QualityResult],
     ) -> None: ...
+
+    def commit_daily_bar_batches(self, batches: Sequence[PreparedDailyBarBatch]) -> None: ...
 
     def commit_stock_daily_indicator_batch(
         self,
@@ -257,6 +260,25 @@ class IngestionPipeline:
     def ingest_daily_bars(
         self, source_symbol: str, start_date: date, end_date: date
     ) -> IngestionRun:
+        prepared = self.prepare_daily_bars(source_symbol, start_date, end_date)
+        self._persistence.commit_daily_bar_batch(
+            prepared.run,
+            prepared.manifest,
+            prepared.records,
+            prepared.quality_results,
+        )
+        return prepared.run
+
+    def prepare_daily_bars(
+        self,
+        source_symbol: str,
+        start_date: date,
+        end_date: date,
+        *,
+        known_symbols: Collection[str] | None = None,
+        known_trading_dates: Collection[date] | None = None,
+    ) -> PreparedDailyBarBatch:
+        """Fetch, capture and validate one symbol without committing its facts yet."""
         params = {
             "source_symbol": source_symbol,
             "start_date": start_date.isoformat(),
@@ -268,15 +290,21 @@ class IngestionPipeline:
                 batch = self._provider.fetch_daily_bars(source_symbol, start_date, end_date)
                 manifest, normalized = self._stage_batch(run, batch)
                 records = list(normalized)
-                known_symbols = self._persistence.known_symbols(
-                    {record.symbol for record in records}
+                resolved_symbols = (
+                    set(known_symbols)
+                    if known_symbols is not None
+                    else self._persistence.known_symbols({record.symbol for record in records})
                 )
-                known_dates = self._persistence.known_trading_dates(
-                    {record.trade_date for record in records}
+                known_dates = (
+                    set(known_trading_dates)
+                    if known_trading_dates is not None
+                    else self._persistence.known_trading_dates(
+                        {record.trade_date for record in records}
+                    )
                 )
                 findings = validate_daily_bars(
                     records,
-                    known_symbols=known_symbols,
+                    known_symbols=resolved_symbols,
                     known_trading_dates=known_dates,
                 )
                 blocked_keys = {
@@ -311,13 +339,12 @@ class IngestionPipeline:
                 completed = self._completed_run(
                     run, len(batch.raw_rows), len(accepted), rejected_rows
                 )
-                self._persistence.commit_daily_bar_batch(
-                    completed,
-                    manifest,
-                    self._envelopes(run.ingestion_id, accepted),
-                    quality_results,
+                return PreparedDailyBarBatch(
+                    run=completed,
+                    manifest=manifest,
+                    records=tuple(self._envelopes(run.ingestion_id, accepted)),
+                    quality_results=tuple(quality_results),
                 )
-                return completed
             except _RecordedProviderError:
                 raise
             except Exception as error:

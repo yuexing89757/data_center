@@ -1,6 +1,8 @@
 from pathlib import Path
 
-from market_data_center.settings import PytdxPoolSettings, SchedulerSettings
+from pydantic import SecretStr
+
+from market_data_center.settings import PytdxPoolSettings, SchedulerSettings, WorkerSettings
 
 
 def test_optional_scheduled_tasks_default_enabled() -> None:
@@ -54,3 +56,9 @@ def test_pytdx_pool_settings_have_safe_defaults() -> None:
     settings = PytdxPoolSettings(_env_file=None)
 
     assert settings.pytdx_pool_path == Path("data/pytdx_pool.json")
+
+
+def test_worker_daily_bar_write_batch_size_is_bounded() -> None:
+    settings = WorkerSettings(database_url=SecretStr("unused"), _env_file=None)
+
+    assert settings.daily_bar_write_batch_size == 100

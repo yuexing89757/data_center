@@ -17,6 +17,7 @@ from psycopg.errors import CheckViolation, InsufficientPrivilege
 from sqlalchemy import Connection, Engine, create_engine, text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
+from market_data_center.daily_bar_batch import PreparedDailyBarBatch
 from market_data_center.derivation import DerivationService
 from market_data_center.domain import (
     BoardIndexConstituentSnapshotRecord,
@@ -2041,6 +2042,59 @@ def test_daily_bar_batch_commit_is_atomic(database_engine: Engine) -> None:
         )
         == "baostock"
     )
+
+
+def test_multi_run_daily_bar_commit_preserves_lineage_and_is_atomic(
+    database_engine: Engine,
+) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    _commit_security_prerequisite(persistence)
+    _commit_calendar_prerequisite(persistence)
+    security_run = _running_run(DatasetCode.SECURITY)
+    persistence.create_ingestion_run(security_run)
+    second_security = replace(
+        _security(), symbol="SZSE:000001", code="000001", exchange=Exchange.SZSE
+    )
+    persistence.commit_security_batch(
+        _completed_run(security_run),
+        _manifest(security_run.ingestion_id, "batch-security"),
+        _envelopes(security_run.ingestion_id, [second_security]),
+    )
+    first_run = _running_run(DatasetCode.DAILY_BAR)
+    second_run = _running_run(DatasetCode.DAILY_BAR)
+    persistence.create_ingestion_run(first_run)
+    persistence.create_ingestion_run(second_run)
+    batches = [
+        PreparedDailyBarBatch(
+            _completed_run(first_run),
+            _manifest(first_run.ingestion_id, "daily-bar-first"),
+            tuple(_envelopes(first_run.ingestion_id, [_daily_bar()])),
+            (),
+        ),
+        PreparedDailyBarBatch(
+            _completed_run(second_run),
+            _manifest(second_run.ingestion_id, "daily-bar-second"),
+            tuple(
+                _envelopes(
+                    second_run.ingestion_id,
+                    [replace(_daily_bar(), symbol="SZSE:000001")],
+                )
+            ),
+            (),
+        ),
+    ]
+
+    persistence.commit_daily_bar_batches(batches)
+
+    with database_engine.connect() as connection:
+        rows = connection.execute(
+            text(
+                "select symbol,ingestion_id from core.daily_bar "
+                "where trade_date=:trade_date order by symbol"
+            ),
+            {"trade_date": TRADE_DATE},
+        ).all()
+    assert rows == [(SYMBOL, first_run.ingestion_id), ("SZSE:000001", second_run.ingestion_id)]
 
 
 def test_bulk_resume_requires_complete_eligible_trading_range(database_engine: Engine) -> None:

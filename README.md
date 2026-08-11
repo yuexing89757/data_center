@@ -101,6 +101,10 @@ exact event-date mainboard limit-up snapshot. Its free-float market capitalizati
 the same-date unadjusted close multiplied by same-date free-float shares; no other market-value
 field or date fallback is used.
 
+Daily Bar bulk ingestion keeps one provider/Raw/ingestion lineage unit per security while writing
+validated facts in bounded PostgreSQL transactions. Configure `DAILY_BAR_WRITE_BATCH_SIZE`
+(default 100, range 1..500); see `docs/DailyBar批量写入与性能基线-2026-08-11.md`.
+
 Classification uses complete, Shanghai-date snapshots. Capture the catalog before its members:
 
 ```bash

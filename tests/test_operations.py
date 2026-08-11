@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 
 from market_data_center.call_auction_market_service import CallAuctionMarketCollectionSummary
+from market_data_center.daily_bar_batch import DailyBarBulkSummary
 from market_data_center.domain.operations import (
     ExecutionStatus,
     JobExecution,
@@ -228,6 +229,28 @@ def test_execution_service_records_call_auction_market_statistics() -> None:
     job = persistence.finished_jobs[0]
     workflow = persistence.finished_workflows[0]
     assert (job.fetched_rows, job.accepted_rows, job.rejected_rows) == (5_200, 5_199, 1)
+    assert job.status is ExecutionStatus.PARTIAL
+    assert workflow.status is ExecutionStatus.PARTIAL
+
+
+def test_execution_service_keeps_daily_bar_gaps_as_partial() -> None:
+    persistence = MemoryOperationsPersistence()
+    execution = WorkflowExecutionService(cast(PostgreSQLOperationsPersistence, persistence)).start(
+        WorkflowCode.DAILY_MARKET, NOW, TriggerSource.SCHEDULED
+    )
+    summary = DailyBarBulkSummary(
+        expected_symbols=5_208,
+        accepted_symbols=5_204,
+        failed_symbols=3,
+        unavailable_symbols=1,
+    )
+
+    execution.step("daily_bar", 3, lambda: summary)
+    execution.succeed()
+
+    job = persistence.finished_jobs[0]
+    workflow = persistence.finished_workflows[0]
+    assert (job.fetched_rows, job.accepted_rows, job.rejected_rows) == (5_208, 5_204, 4)
     assert job.status is ExecutionStatus.PARTIAL
     assert workflow.status is ExecutionStatus.PARTIAL
 

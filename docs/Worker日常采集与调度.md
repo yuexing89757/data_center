@@ -1,5 +1,15 @@
 # Worker 日常采集与调度
 
+Daily Bar 的 Provider 请求与 Raw lineage 仍逐证券独立，但验证后的数据库事实按
+`DAILY_BAR_WRITE_BATCH_SIZE`（默认 100，1..500）有界成批提交。每批单事务，失败整批回滚并让
+工作流失败；日志中的 `daily_bar_commit` 给出位置、run/row 数和提交耗时。不要用超大批次绕过
+内存背压或延长锁持有时间。
+
+全市场任务中，少量证券的 provider 失败或请求不可用保留为明确缺口，Daily Bar job 与
+`daily_market` workflow 记为 `partial`，成功证券照常提交，使依赖方可以按既有
+`succeeded`/`partial` 门槛继续。若请求非空且没有任何证券成功，或数据库批量事务失败，任务
+仍记为 `failed`。系统不使用其他证券、日期或 provider 填补缺口。
+
 第一阶段使用 `daily-run` 完成每天的行情入库，不由 GitHub Actions 调度生产采集。一次运行按固定顺序执行：
 
 1. 同步证券主数据；

@@ -9,6 +9,7 @@ from uuid import UUID
 
 from sqlalchemy import Connection, Engine, RowMapping, bindparam, text
 
+from market_data_center.daily_bar_batch import PreparedDailyBarBatch
 from market_data_center.domain.board_index import (
     BoardIndexConstituentSnapshotRecord,
     BoardIndexDailyBarRecord,
@@ -1095,6 +1096,45 @@ where market = 'CN_A_SHARE'
                 self._ensure_envelope_ids(records, run.ingestion_id)
                 connection.execute(UPSERT_DAILY_BAR, self._daily_bar_envelope_parameters(records))
             connection.execute(UPDATE_INGESTION_RUN, self._run_update_parameters(run))
+
+    def commit_daily_bar_batches(self, batches: Sequence[PreparedDailyBarBatch]) -> None:
+        """Atomically commit a bounded group while retaining one lineage run per source request."""
+        if not batches:
+            return
+        run_ids = [batch.run.ingestion_id for batch in batches]
+        if len(run_ids) != len(set(run_ids)):
+            raise ValueError("Daily Bar commit batch contains duplicate ingestion IDs")
+        natural_keys: set[tuple[str, date]] = set()
+        for batch in batches:
+            if batch.manifest.ingestion_id != batch.run.ingestion_id:
+                raise ValueError("Raw manifest does not match its Daily Bar ingestion run")
+            self._ensure_envelope_ids(batch.records, batch.run.ingestion_id)
+            for envelope in batch.records:
+                key = (envelope.record.symbol, envelope.record.trade_date)
+                if key in natural_keys:
+                    raise ValueError("Daily Bar commit batch contains duplicate natural keys")
+                natural_keys.add(key)
+            if any(
+                result.ingestion_id != batch.run.ingestion_id for result in batch.quality_results
+            ):
+                raise ValueError("Quality result does not match its Daily Bar ingestion run")
+
+        manifests = [batch.manifest for batch in batches]
+        quality_results = [result for batch in batches for result in batch.quality_results]
+        records = [record for batch in batches for record in batch.records]
+        with self._engine.begin() as connection:
+            connection.execute(
+                INSERT_RAW_MANIFEST,
+                [self._manifest_parameters(manifest) for manifest in manifests],
+            )
+            if quality_results:
+                connection.execute(INSERT_QUALITY_RESULT, self._quality_parameters(quality_results))
+            if records:
+                connection.execute(UPSERT_DAILY_BAR, self._daily_bar_envelope_parameters(records))
+            connection.execute(
+                UPDATE_INGESTION_RUN,
+                [self._run_update_parameters(batch.run) for batch in batches],
+            )
 
     def commit_stock_daily_indicator_batch(
         self,

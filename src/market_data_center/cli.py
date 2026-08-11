@@ -8,12 +8,15 @@ from datetime import UTC, date, datetime, timedelta
 from functools import partial
 from json import dumps
 from sys import stderr
+from time import monotonic
+from typing import cast
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import create_engine
 
 from market_data_center.auction_service import AuctionCollectionService
+from market_data_center.daily_bar_batch import DailyBarBulkSummary, PreparedDailyBarBatch
 from market_data_center.database_urls import sqlalchemy_url
 from market_data_center.derivation import (
     DEFAULT_ALGORITHM_VERSION,
@@ -258,7 +261,7 @@ def main() -> None:
             execution.fail(error)
             raise
         execution.succeed()
-        if run is None:
+        if not isinstance(run, IngestionRun):
             raise RuntimeError("deducted-profit workflow returned no ingestion run")
         print(
             f"{run.dataset_code.value} {run.status.value} "
@@ -279,7 +282,7 @@ def main() -> None:
         run = _run_automatic(args, persistence, raw_store)
     else:
         run = _run_explicit(args, persistence, raw_store)
-    if run is not None:
+    if isinstance(run, IngestionRun):
         print(
             f"{run.dataset_code.value} {run.status.value} "
             f"provider={run.provider_code.value} ingestion_id={run.ingestion_id}"
@@ -331,7 +334,7 @@ def _run_explicit(
     args: Namespace,
     persistence: PostgreSQLPersistence,
     raw_store: LocalRawStore,
-) -> IngestionRun | None:
+) -> IngestionRun | DailyBarBulkSummary | None:
     with create_provider(args.provider) as provider:
         pipeline = IngestionPipeline(
             provider=provider,
@@ -346,12 +349,25 @@ def _run_explicit(
             symbols = _bulk_symbols(args, persistence, start_date, end_date)
             failures = 0
             unavailable = 0
+            pending: list[PreparedDailyBarBatch] = []
+            batch_size = _daily_bar_write_batch_size(args)
+            known_symbols = set(symbols)
+            known_dates = persistence.known_trading_dates(
+                {
+                    start_date + timedelta(days=offset)
+                    for offset in range((end_date - start_date).days + 1)
+                }
+            )
             for position, symbol in enumerate(symbols, start=1):
                 try:
-                    pipeline.ingest_daily_bars(
-                        provider.source_symbol(symbol),
-                        start_date,
-                        end_date,
+                    pending.append(
+                        pipeline.prepare_daily_bars(
+                            provider.source_symbol(symbol),
+                            start_date,
+                            end_date,
+                            known_symbols=known_symbols,
+                            known_trading_dates=known_dates,
+                        )
                     )
                 except ProviderRequestUnavailable as error:
                     if getattr(args, "allow_unavailable", False):
@@ -362,14 +378,17 @@ def _run_explicit(
                 except Exception as error:
                     failures += 1
                     print(f"failed {symbol}: {type(error).__name__}", file=stderr)
+                if len(pending) >= batch_size:
+                    _commit_daily_bar_batches(persistence, pending, position, len(symbols))
+                    pending.clear()
                 if position % 100 == 0 or position == len(symbols):
                     print(
                         f"progress={position}/{len(symbols)} failures={failures} "
                         f"unavailable={unavailable}"
                     )
-            if failures:
-                raise SystemExit(f"bulk ingestion completed with {failures} failures")
-            return None
+            if pending:
+                _commit_daily_bar_batches(persistence, pending, len(symbols), len(symbols))
+            return _daily_bar_bulk_summary(len(symbols), failures, unavailable)
         return _execute(args, pipeline)
 
 
@@ -412,11 +431,10 @@ def _run_automatic(
     args: Namespace,
     persistence: PostgreSQLPersistence,
     raw_store: LocalRawStore,
-) -> IngestionRun | None:
+) -> IngestionRun | DailyBarBulkSummary | None:
     with ProviderRouter() as router:
         if args.dataset == "daily-bars-bulk":
-            _run_automatic_bulk(args, router, persistence, raw_store)
-            return None
+            return _run_automatic_bulk(args, router, persistence, raw_store)
         routed = router.route(
             _dataset_code(args.dataset),
             lambda provider: _execute_automatic_provider(args, provider, persistence, raw_store),
@@ -464,7 +482,7 @@ def _run_automatic_bulk(
     router: ProviderRouter,
     persistence: PostgreSQLPersistence,
     raw_store: LocalRawStore,
-) -> None:
+) -> DailyBarBulkSummary:
     if args.shard_count < 1 or not 0 <= args.shard_index < args.shard_count:
         raise SystemExit("shard-index must be in [0, shard-count)")
     start_date = date.fromisoformat(args.start_date)
@@ -472,20 +490,29 @@ def _run_automatic_bulk(
     symbols = _bulk_symbols(args, persistence, start_date, end_date)
     failures = 0
     unavailable = 0
+    pending: list[PreparedDailyBarBatch] = []
+    batch_size = _daily_bar_write_batch_size(args)
+    known_symbols = set(symbols)
+    known_dates = persistence.known_trading_dates(
+        {start_date + timedelta(days=offset) for offset in range((end_date - start_date).days + 1)}
+    )
     for position, symbol in enumerate(symbols, start=1):
         try:
             routed = router.route(
                 DatasetCode.DAILY_BAR,
                 partial(
-                    _ingest_automatic_daily_bar,
+                    _prepare_automatic_daily_bar,
                     symbol=symbol,
                     start_date=start_date,
                     end_date=end_date,
                     persistence=persistence,
                     raw_store=raw_store,
+                    known_symbols=known_symbols,
+                    known_trading_dates=known_dates,
                 ),
             )
             _report_route(symbol, routed)
+            pending.append(routed.value)
         except ProviderRoutingError as error:
             request_unavailable = error.attempts and all(
                 attempt.error_type == "ProviderRequestUnavailable" for attempt in error.attempts
@@ -498,12 +525,33 @@ def _run_automatic_bulk(
         except Exception as error:
             failures += 1
             print(f"failed {symbol}: {type(error).__name__}", file=stderr)
+        if len(pending) >= batch_size:
+            _commit_daily_bar_batches(persistence, pending, position, len(symbols))
+            pending.clear()
         if position % 100 == 0 or position == len(symbols):
             print(
                 f"progress={position}/{len(symbols)} failures={failures} unavailable={unavailable}"
             )
-    if failures:
-        raise SystemExit(f"bulk ingestion completed with {failures} failures")
+    if pending:
+        _commit_daily_bar_batches(persistence, pending, len(symbols), len(symbols))
+    return _daily_bar_bulk_summary(len(symbols), failures, unavailable)
+
+
+def _daily_bar_bulk_summary(
+    expected_symbols: int, failures: int, unavailable: int
+) -> DailyBarBulkSummary:
+    summary = DailyBarBulkSummary(
+        expected_symbols=expected_symbols,
+        accepted_symbols=expected_symbols - failures - unavailable,
+        failed_symbols=failures,
+        unavailable_symbols=unavailable,
+    )
+    print(
+        f"daily-bars-bulk status={summary.status} expected={summary.expected_symbols} "
+        f"accepted={summary.accepted_symbols} failed={summary.failed_symbols} "
+        f"unavailable={summary.unavailable_symbols}"
+    )
+    return summary
 
 
 def _bulk_symbols(
@@ -617,7 +665,10 @@ def run_stock_daily_indicator_workflow(
         1,
         lambda: _execute_operation(calendar_args, persistence, raw_store),
     )
-    if calendar_run is None or calendar_run.status is not IngestionStatus.SUCCEEDED:
+    if calendar_run is None:
+        raise RuntimeError("trading calendar synchronization did not succeed")
+    calendar_ingestion = cast(IngestionRun, calendar_run)
+    if calendar_ingestion.status is not IngestionStatus.SUCCEEDED:
         raise RuntimeError("trading calendar synchronization did not succeed")
     if persistence.latest_trading_date(as_of_date, as_of_date) != as_of_date:
         print(f"stock-daily-indicators-daily market closed on {as_of_date.isoformat()}")
@@ -635,11 +686,10 @@ def run_stock_daily_indicator_workflow(
         lambda: _execute_operation(snapshot_args, persistence, raw_store),
     )
     allowed_statuses = {IngestionStatus.SUCCEEDED, IngestionStatus.PARTIAL}
-    if (
-        snapshot_run is None
-        or snapshot_run.status not in allowed_statuses
-        or snapshot_run.accepted_rows <= 0
-    ):
+    if snapshot_run is None:
+        raise RuntimeError("stock daily indicator snapshot is not safe for retention")
+    snapshot_ingestion = cast(IngestionRun, snapshot_run)
+    if snapshot_ingestion.status not in allowed_statuses or snapshot_ingestion.accepted_rows <= 0:
         raise RuntimeError("stock daily indicator snapshot is not safe for retention")
     cutoff_date = _one_month_before(as_of_date)
     deleted = _execute_workflow_step(
@@ -651,8 +701,8 @@ def run_stock_daily_indicator_workflow(
     print(f"stock-daily-indicator-retention cutoff={cutoff_date.isoformat()} deleted={deleted}")
     return StockDailyIndicatorWorkflowResult(
         as_of_date=as_of_date,
-        calendar_run=calendar_run,
-        snapshot_run=snapshot_run,
+        calendar_run=calendar_ingestion,
+        snapshot_run=snapshot_ingestion,
         cutoff_date=cutoff_date,
         deleted_rows=deleted,
     )
@@ -677,12 +727,12 @@ def _execute_operation(
     args: Namespace,
     persistence: PostgreSQLPersistence,
     raw_store: LocalRawStore,
-) -> IngestionRun | None:
+) -> IngestionRun | DailyBarBulkSummary | None:
     if args.provider == AUTO_PROVIDER_CODE:
         run = _run_automatic(args, persistence, raw_store)
     else:
         run = _run_explicit(args, persistence, raw_store)
-    if run is not None:
+    if isinstance(run, IngestionRun):
         print(
             f"{run.dataset_code.value} {run.status.value} "
             f"provider={run.provider_code.value} ingestion_id={run.ingestion_id}"
@@ -696,7 +746,7 @@ def _derived_args(args: Namespace, **overrides: object) -> Namespace:
     return Namespace(**values)
 
 
-def _ingest_automatic_daily_bar(
+def _prepare_automatic_daily_bar(
     provider: ManagedMarketDataProvider,
     *,
     symbol: str,
@@ -704,19 +754,23 @@ def _ingest_automatic_daily_bar(
     end_date: date,
     persistence: PostgreSQLPersistence,
     raw_store: LocalRawStore,
-) -> IngestionRun:
+    known_symbols: set[str],
+    known_trading_dates: set[date],
+) -> PreparedDailyBarBatch:
     return IngestionPipeline(
         provider=provider,
         raw_store=raw_store,
         persistence=persistence,
-    ).ingest_daily_bars(
+    ).prepare_daily_bars(
         provider.source_symbol(symbol),
         start_date,
         end_date,
+        known_symbols=known_symbols,
+        known_trading_dates=known_trading_dates,
     )
 
 
-def _report_route(label: str, routed: RoutedResult[IngestionRun]) -> None:
+def _report_route[T](label: str, routed: RoutedResult[T]) -> None:
     if not routed.failed_attempts:
         return
     failed = ",".join(
@@ -725,6 +779,30 @@ def _report_route(label: str, routed: RoutedResult[IngestionRun]) -> None:
     print(
         f"route {label}: selected={routed.provider_code} failed_attempts={failed}",
         file=stderr,
+    )
+
+
+def _daily_bar_write_batch_size(args: Namespace) -> int:
+    configured = getattr(args, "write_batch_size", None)
+    value = configured or WorkerSettings().daily_bar_write_batch_size  # type: ignore[call-arg]
+    if not 1 <= value <= 500:
+        raise SystemExit("write-batch-size must be in [1, 500]")
+    return value
+
+
+def _commit_daily_bar_batches(
+    persistence: PostgreSQLPersistence,
+    pending: list[PreparedDailyBarBatch],
+    position: int,
+    total: int,
+) -> None:
+    started = monotonic()
+    persistence.commit_daily_bar_batches(pending)
+    elapsed = monotonic() - started
+    rows = sum(batch.run.accepted_rows for batch in pending)
+    print(
+        f"daily_bar_commit position={position}/{total} runs={len(pending)} "
+        f"rows={rows} seconds={elapsed:.3f}"
     )
 
 
@@ -972,6 +1050,7 @@ def _parser() -> ArgumentParser:
     _add_date_range(bulk)
     bulk.add_argument("--shard-count", type=int, default=1)
     bulk.add_argument("--shard-index", type=int, default=0)
+    bulk.add_argument("--write-batch-size", type=int)
 
     daily_run = subparsers.add_parser(
         "daily-run",
@@ -995,6 +1074,7 @@ def _parser() -> ArgumentParser:
     )
     daily_run.add_argument("--shard-count", type=int, default=1)
     daily_run.add_argument("--shard-index", type=int, default=0)
+    daily_run.add_argument("--write-batch-size", type=int)
 
     worker = subparsers.add_parser(
         "worker",
