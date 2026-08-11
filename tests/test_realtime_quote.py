@@ -83,6 +83,32 @@ def test_market_auction_record_rejects_bse_and_invalid_price_range() -> None:
         )
 
 
+def test_market_auction_record_rejects_last_price_above_supplied_high() -> None:
+    with pytest.raises(ValueError, match="within"):
+        _market_auction(
+            last_price=Decimal("10.20"),
+            high_price=Decimal("10.10"),
+            low_price=None,
+        )
+
+
+def test_market_auction_record_rejects_last_price_below_supplied_low() -> None:
+    with pytest.raises(ValueError, match="within"):
+        _market_auction(
+            last_price=Decimal("9.90"),
+            high_price=None,
+            low_price=Decimal("10.00"),
+        )
+
+
+@pytest.mark.parametrize("cumulative_volume", [True, 123.4])
+def test_market_auction_record_requires_integer_cumulative_volume(
+    cumulative_volume: object,
+) -> None:
+    with pytest.raises(TypeError, match="integer"):
+        _market_auction(cumulative_volume=cumulative_volume)
+
+
 def test_call_auction_snapshot_preserves_optional_aware_observation_time() -> None:
     observed_at = datetime(2026, 8, 12, 1, 26, tzinfo=UTC)
 

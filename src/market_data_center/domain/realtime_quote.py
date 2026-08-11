@@ -425,13 +425,28 @@ class CallAuctionMarketSnapshotRecord:
             raise TypeError("call-auction prices and amount must use Decimal")
         if any(value is not None and value < 0 for value in prices_and_amount):
             raise ValueError("call-auction prices and amount must not be negative")
-        if self.cumulative_volume is not None and self.cumulative_volume < 0:
-            raise ValueError("cumulative_volume must not be negative")
-        if self.high_price is not None and self.low_price is not None:
-            if self.high_price < self.low_price:
-                raise ValueError("high_price must not be lower than low_price")
-            if (
-                self.last_price is not None
-                and not self.low_price <= self.last_price <= self.high_price
+        if self.cumulative_volume is not None:
+            if isinstance(self.cumulative_volume, bool) or not isinstance(
+                self.cumulative_volume, int
             ):
-                raise ValueError("last_price must be within [low_price, high_price]")
+                raise TypeError("cumulative_volume must be an integer share count")
+            if self.cumulative_volume < 0:
+                raise ValueError("cumulative_volume must not be negative")
+        if (
+            self.high_price is not None
+            and self.low_price is not None
+            and self.high_price < self.low_price
+        ):
+            raise ValueError("high_price must not be lower than low_price")
+        if (
+            self.last_price is not None
+            and self.high_price is not None
+            and self.last_price > self.high_price
+        ):
+            raise ValueError("last_price must be within supplied price bounds")
+        if (
+            self.last_price is not None
+            and self.low_price is not None
+            and self.last_price < self.low_price
+        ):
+            raise ValueError("last_price must be within supplied price bounds")
