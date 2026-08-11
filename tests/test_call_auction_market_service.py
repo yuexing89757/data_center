@@ -2,15 +2,15 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from json import loads
 from typing import Self
+from zoneinfo import ZoneInfo
 
 import pytest
 
-from market_data_center.call_auction_market_service import (
-    CallAuctionMarketSnapshotService,
-)
+from market_data_center.call_auction_market_service import CallAuctionMarketSnapshotService
 from market_data_center.domain.ingestion import IngestionRun, IngestionStatus, QualityResult
 from market_data_center.domain.realtime_quote import (
     FiveLevelQuoteSnapshotRecord,
@@ -88,8 +88,13 @@ def _fetch(*records: FiveLevelQuoteSnapshotRecord) -> RealtimeQuoteFetch:
 
 
 class FakePersistence:
-    def __init__(self, universe: Sequence[str] = EXPECTED_UNIVERSE) -> None:
+    def __init__(
+        self,
+        universe: Sequence[str] = EXPECTED_UNIVERSE,
+        on_universe: Callable[[], None] | None = None,
+    ) -> None:
         self.universe = list(universe)
+        self.on_universe = on_universe
         self.requested_universe: tuple[str, ...] = ()
         self.created_runs: list[IngestionRun] = []
         self.committed_runs: list[IngestionRun] = []
@@ -102,6 +107,8 @@ class FakePersistence:
 
     def listed_sse_szse_stock_symbols(self) -> list[str]:
         self.requested_universe = tuple(self.universe)
+        if self.on_universe is not None:
+            self.on_universe()
         return list(self.universe)
 
     def create_ingestion_run(self, run: IngestionRun) -> None:
@@ -123,6 +130,7 @@ class FakePersistence:
 class FakeRawStore:
     def __init__(self) -> None:
         self.rows: list[tuple[Mapping[str, str], ...]] = []
+        self.schema_versions: list[str] = []
 
     def write_jsonl(
         self,
@@ -137,6 +145,7 @@ class FakeRawStore:
         del provider, dataset, partition_date, ingestion_id
         captured = tuple(rows)
         self.rows.append(captured)
+        self.schema_versions.append(schema_version)
         return StoredRawObject(
             "raw/attempt.jsonl",
             "0" * 64,
@@ -249,6 +258,76 @@ def test_single_endpoint_complete_collection_succeeds() -> None:
     assert persistence.manifest_row_counts == [2]
 
 
+def test_raw_envelope_preserves_distinct_worker_observations_and_source_fields() -> None:
+    persistence = FakePersistence()
+    raw_store = FakeRawStore()
+    second_time = COLLECTION_TIME + timedelta(seconds=1)
+    records = (_quote("SSE:600000"), _quote("SZSE:000001", observed_at=second_time))
+    fetch = RealtimeQuoteFetch(
+        raw_rows=(
+            {"symbol": "SSE:600000", "provider_only": "first"},
+            {"symbol": "SZSE:000001", "provider_only": "second"},
+        ),
+        records=records,
+        requested_symbols=EXPECTED_UNIVERSE,
+        failed_symbols=(),
+        schema_version="pytdx_hq.security_quotes.v1",
+    )
+
+    summary = _service(persistence, FakeProviderFactory([fetch]), raw_store).collect(TRADE_DATE)
+
+    assert summary.status == "succeeded"
+    assert [row["worker_observed_at"] for row in raw_store.rows[0]] == [
+        COLLECTION_TIME.isoformat(),
+        second_time.isoformat(),
+    ]
+    assert [row["provider_schema_version"] for row in raw_store.rows[0]] == [
+        "pytdx_hq.security_quotes.v1",
+        "pytdx_hq.security_quotes.v1",
+    ]
+    assert [loads(row["provider_raw_json"]) for row in raw_store.rows[0]] == [
+        {"symbol": "SSE:600000", "provider_only": "first"},
+        {"symbol": "SZSE:000001", "provider_only": "second"},
+    ]
+    assert raw_store.schema_versions == ["market_data_center.call_auction_market_snapshot.raw.v1"]
+
+
+@pytest.mark.parametrize(
+    "raw_rows",
+    [
+        ({"raw": "first-only"},),
+        ({"raw": "first"}, {"raw": "second"}, {"raw": "unexpected-third"}),
+    ],
+)
+def test_raw_record_cardinality_mismatch_blocks_facts_without_dropping_raw_rows(
+    raw_rows: tuple[Mapping[str, str], ...],
+) -> None:
+    persistence = FakePersistence()
+    raw_store = FakeRawStore()
+    records = tuple(_quote(symbol) for symbol in EXPECTED_UNIVERSE)
+    fetch = RealtimeQuoteFetch(
+        raw_rows=raw_rows,
+        records=records,
+        requested_symbols=EXPECTED_UNIVERSE,
+        failed_symbols=(),
+        schema_version="pytdx_hq.security_quotes.v1",
+    )
+
+    summary = _service(persistence, FakeProviderFactory([fetch, fetch]), raw_store).collect(
+        TRADE_DATE
+    )
+
+    assert summary.status == "partial"
+    assert persistence.committed_records == []
+    assert persistence.manifest_row_counts == [len(raw_rows), len(raw_rows)]
+    assert [len(rows) for rows in raw_store.rows] == [len(raw_rows), len(raw_rows)]
+    assert [
+        result.rule_code
+        for result in persistence.committed_quality
+        if result.rule_code == "call_auction_market.raw_record_cardinality"
+    ] == ["call_auction_market.raw_record_cardinality"] * 2
+
+
 def test_partial_attempt_restarts_complete_universe_on_second_endpoint() -> None:
     persistence = FakePersistence()
     provider_factory = FakeProviderFactory(
@@ -267,6 +346,7 @@ def test_partial_attempt_restarts_complete_universe_on_second_endpoint() -> None
         IngestionStatus.PARTIAL,
         IngestionStatus.SUCCEEDED,
     ]
+    assert [run.fetched_rows for run in persistence.committed_runs] == [1, 2]
     assert persistence.committed_runs[0].ingestion_id != persistence.committed_runs[1].ingestion_id
     assert provider_factory.endpoints == [
         ("first.quote", 7709),
@@ -319,6 +399,7 @@ def test_duplicate_response_is_rejected_with_dataset_quality_result() -> None:
 
     assert summary.status == "partial"
     assert persistence.committed_runs[0].status is IngestionStatus.PARTIAL
+    assert [run.fetched_rows for run in persistence.committed_runs] == [3, 1]
     assert [record.symbol for record in persistence.committed_records[:1]] == ["SZSE:000001"]
     duplicate_results = [
         result
@@ -447,6 +528,24 @@ def test_service_rejects_non_trading_date_before_freezing_universe() -> None:
     assert persistence.requested_universe == ()
 
 
+def test_aware_shanghai_clock_samples_are_normalized_to_utc() -> None:
+    persistence = FakePersistence()
+    provider_factory = FakeProviderFactory(
+        [_fetch(*(_quote(symbol) for symbol in EXPECTED_UNIVERSE))]
+    )
+    shanghai_now = COLLECTION_TIME.astimezone(ZoneInfo("Asia/Shanghai"))
+
+    summary = _service(persistence, provider_factory, clock=lambda: shanghai_now).collect(
+        TRADE_DATE
+    )
+
+    assert summary.status == "succeeded"
+    run = persistence.committed_runs[0]
+    assert run.requested_at.utcoffset() == timedelta(0)
+    assert run.started_at is not None and run.started_at.utcoffset() == timedelta(0)
+    assert run.finished_at is not None and run.finished_at.utcoffset() == timedelta(0)
+
+
 def test_no_second_attempt_starts_at_request_cutoff() -> None:
     persistence = FakePersistence()
     clock = MutableClock(COLLECTION_TIME)
@@ -475,6 +574,20 @@ def test_no_initial_attempt_starts_at_request_cutoff() -> None:
     assert provider_factory.endpoints == []
 
 
+def test_cutoff_is_rechecked_after_loading_universe_before_first_attempt() -> None:
+    clock = MutableClock(datetime(2026, 8, 12, 1, 29, 29, tzinfo=UTC))
+    persistence = FakePersistence(
+        on_universe=lambda: setattr(clock, "current", datetime(2026, 8, 12, 1, 29, 30, tzinfo=UTC))
+    )
+    provider_factory = FakeProviderFactory([])
+
+    with pytest.raises(ValueError, match="request cutoff"):
+        _service(persistence, provider_factory, clock=clock).collect(TRADE_DATE)
+
+    assert persistence.created_runs == []
+    assert provider_factory.endpoints == []
+
+
 def test_two_endpoint_errors_are_preserved_as_partial_attempts() -> None:
     persistence = FakePersistence()
     raw_store = FakeRawStore()
@@ -492,6 +605,7 @@ def test_two_endpoint_errors_are_preserved_as_partial_attempts() -> None:
         IngestionStatus.PARTIAL,
         IngestionStatus.PARTIAL,
     ]
+    assert [run.fetched_rows for run in persistence.committed_runs] == [0, 0]
     assert persistence.manifest_row_counts == [0, 0]
     assert [len(rows) for rows in raw_store.rows] == [0, 0]
     assert [

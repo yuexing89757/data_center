@@ -6,6 +6,7 @@ from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, time
+from json import dumps
 from types import TracebackType
 from typing import Protocol, Self
 from uuid import UUID, uuid4
@@ -36,6 +37,7 @@ WINDOW_START = time(9, 25)
 REQUEST_CUTOFF = time(9, 29, 30)
 WINDOW_END = time(9, 30)
 MAX_ENDPOINT_ATTEMPTS = 2
+CALL_AUCTION_MARKET_RAW_SCHEMA_VERSION = "market_data_center.call_auction_market_snapshot.raw.v1"
 
 
 class CallAuctionMarketPersistence(Protocol):
@@ -111,7 +113,7 @@ class CallAuctionMarketSnapshotService:
         self._clock = clock
 
     def collect(self, trade_date: date) -> CallAuctionMarketCollectionSummary:
-        now = self._clock()
+        now = _utc_clock_sample(self._clock)
         _validate_collection_time(now, trade_date)
         if not self._persistence.is_trading_day(trade_date):
             raise ValueError(f"{trade_date.isoformat()} is not a CN_A_SHARE trading day")
@@ -124,8 +126,10 @@ class CallAuctionMarketSnapshotService:
         expected = set(universe)
         last_summary: CallAuctionMarketCollectionSummary | None = None
         for attempt_number, endpoint in enumerate(self._quote_endpoints, start=1):
-            attempt_time = self._clock()
-            if attempt_number > 1 and attempt_time >= deadline:
+            attempt_time = _utc_clock_sample(self._clock)
+            if attempt_time >= deadline:
+                if last_summary is None:
+                    raise ValueError("call-auction market request cutoff has passed")
                 break
             run = _running_attempt(trade_date, endpoint, len(universe), attempt_time)
             self._persistence.create_ingestion_run(run)
@@ -148,10 +152,15 @@ class CallAuctionMarketSnapshotService:
                 dataset=DatasetCode.CALL_AUCTION_MARKET_SNAPSHOT.value,
                 partition_date=trade_date,
                 ingestion_id=run.ingestion_id,
-                rows=fetch.raw_rows,
-                schema_version=fetch.schema_version,
+                rows=_raw_envelopes(fetch),
+                schema_version=CALL_AUCTION_MARKET_RAW_SCHEMA_VERSION,
             )
             manifest = _manifest(run.ingestion_id, stored)
+            raw_record_cardinality = (
+                None
+                if len(fetch.raw_rows) == len(fetch.records)
+                else (len(fetch.raw_rows), len(fetch.records))
+            )
             response_counts = Counter(record.symbol for record in fetch.records)
             duplicate_symbols = {symbol for symbol, count in response_counts.items() if count > 1}
             out_of_window_symbols = {
@@ -162,42 +171,58 @@ class CallAuctionMarketSnapshotService:
             candidate_records = tuple(
                 record
                 for record in fetch.records
-                if record.symbol not in duplicate_symbols
+                if raw_record_cardinality is None
+                and record.symbol not in duplicate_symbols
                 and record.symbol not in out_of_window_symbols
             )
             validation = validate_realtime_quotes(
                 candidate_records,
                 known_symbols=expected,
                 known_stock_symbols=expected,
-                now=self._clock(),
+                now=_utc_clock_sample(self._clock),
             )
             records = tuple(_to_market_record(record, trade_date) for record in validation.accepted)
             missing_symbols = expected - {record.symbol for record in records}
-            dataset_rejected_symbols = missing_symbols | duplicate_symbols | out_of_window_symbols
-            rejected_rows = validation.rejected_rows + len(dataset_rejected_symbols)
-            succeeded = rejected_rows == 0
+            prevalidation_rejected_rows = sum(
+                response_counts[symbol] for symbol in duplicate_symbols | out_of_window_symbols
+            )
+            attempt_rejected_rows = (
+                len(fetch.raw_rows)
+                if raw_record_cardinality is not None
+                else validation.rejected_rows + prevalidation_rejected_rows
+            )
+            dataset_extra_failure_symbols = (duplicate_symbols | out_of_window_symbols) - expected
+            summary_rejected_rows = (
+                len(missing_symbols) + validation.rejected_rows + len(dataset_extra_failure_symbols)
+            )
+            succeeded = (
+                summary_rejected_rows == 0
+                and raw_record_cardinality is None
+                and provider_error is None
+            )
             quality_results = _quality_results(
-                run.ingestion_id,
-                validation.findings,
-                missing_symbols,
-                duplicate_symbols,
-                out_of_window_symbols,
-                provider_error,
+                ingestion_id=run.ingestion_id,
+                findings=validation.findings,
+                missing_symbols=missing_symbols,
+                duplicate_symbols=duplicate_symbols,
+                out_of_window_symbols=out_of_window_symbols,
+                provider_error=provider_error,
+                raw_record_cardinality=raw_record_cardinality,
             )
             completed = replace(
                 run,
                 status=(IngestionStatus.SUCCEEDED if succeeded else IngestionStatus.PARTIAL),
-                finished_at=self._clock(),
-                fetched_rows=max(len(fetch.requested_symbols), len(records) + rejected_rows),
+                finished_at=_utc_clock_sample(self._clock),
+                fetched_rows=len(fetch.raw_rows),
                 accepted_rows=len(records),
-                rejected_rows=rejected_rows,
+                rejected_rows=attempt_rejected_rows,
                 error_summary=(
                     None
                     if succeeded
                     else (
                         f"{provider_error}: quote endpoint attempt failed"
                         if provider_error is not None
-                        else f"{rejected_rows} expected symbol response(s) were rejected or missing"
+                        else f"{summary_rejected_rows} response(s) were rejected or missing"
                     )
                 ),
             )
@@ -209,7 +234,7 @@ class CallAuctionMarketSnapshotService:
                 attempt_number,
                 len(universe),
                 len(records),
-                rejected_rows,
+                summary_rejected_rows,
                 completed.ingestion_id,
             )
             if succeeded:
@@ -230,6 +255,13 @@ def _validate_collection_time(now: datetime, trade_date: date) -> None:
         raise ValueError("call-auction market collection must run in [09:25,09:30) Asia/Shanghai")
     if local.time().replace(tzinfo=None) >= REQUEST_CUTOFF:
         raise ValueError("call-auction market request cutoff has passed")
+
+
+def _utc_clock_sample(clock: Callable[[], datetime]) -> datetime:
+    value = clock()
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("call-auction collection clock must be timezone-aware")
+    return value.astimezone(UTC)
 
 
 def _validate_universe(universe: tuple[str, ...]) -> None:
@@ -275,6 +307,22 @@ def _manifest(ingestion_id: UUID, stored: StoredRawObject) -> RawManifest:
     )
 
 
+def _raw_envelopes(fetch: RealtimeQuoteFetch) -> tuple[Mapping[str, str], ...]:
+    cardinality_matches = len(fetch.raw_rows) == len(fetch.records)
+    return tuple(
+        {
+            "worker_observed_at": (
+                fetch.records[index].observed_at.isoformat() if cardinality_matches else ""
+            ),
+            "provider_schema_version": fetch.schema_version,
+            "provider_raw_json": dumps(
+                dict(raw_row), ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            ),
+        }
+        for index, raw_row in enumerate(fetch.raw_rows)
+    )
+
+
 def _to_market_record(
     quote: FiveLevelQuoteSnapshotRecord, trade_date: date
 ) -> CallAuctionMarketSnapshotRecord:
@@ -307,6 +355,7 @@ def _quality_results(
     duplicate_symbols: set[str] | None = None,
     out_of_window_symbols: set[str] | None = None,
     provider_error: str | None = None,
+    raw_record_cardinality: tuple[int, int] | None = None,
 ) -> tuple[QualityResult, ...]:
     results = [
         QualityResult(
@@ -358,6 +407,20 @@ def _quality_results(
                 QualityStatus.FAILED,
                 "quote endpoint attempt failed before returning a complete response",
                 details={"error_type": provider_error},
+            )
+        )
+    if raw_record_cardinality is not None:
+        raw_rows, records = raw_record_cardinality
+        results.append(
+            QualityResult(
+                uuid4(),
+                ingestion_id,
+                DatasetCode.CALL_AUCTION_MARKET_SNAPSHOT,
+                "call_auction_market.raw_record_cardinality",
+                QualitySeverity.ERROR,
+                QualityStatus.FAILED,
+                "provider Raw row count does not match normalized record count",
+                details={"raw_rows": raw_rows, "records": records},
             )
         )
     results.extend(
