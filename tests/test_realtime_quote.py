@@ -1,9 +1,10 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
 
 from market_data_center.domain import (
+    CallAuctionMarketSnapshotRecord,
     FiveLevelQuoteSnapshotRecord,
     Market,
     OrderBookLevel,
@@ -11,6 +12,7 @@ from market_data_center.domain import (
     calculate_five_level_quote_metric,
     validate_realtime_quotes,
 )
+from market_data_center.domain.realtime_quote import CallAuctionSnapshotRecord
 
 OBSERVED_AT = datetime(2026, 8, 3, 1, 30, tzinfo=UTC)
 
@@ -41,6 +43,64 @@ def _quote(**changes: object) -> FiveLevelQuoteSnapshotRecord:
     }
     values.update(changes)
     return FiveLevelQuoteSnapshotRecord(**values)  # type: ignore[arg-type]
+
+
+def _market_auction(**changes: object) -> CallAuctionMarketSnapshotRecord:
+    values: dict[str, object] = {
+        "symbol": "SSE:600000",
+        "trade_date": date(2026, 8, 12),
+        "observed_at": datetime(2026, 8, 12, 1, 26, tzinfo=UTC),
+        "source_code": "pytdx_hq",
+        "last_price": Decimal("10.10"),
+        "previous_close": Decimal("10.00"),
+        "high_price": Decimal("10.10"),
+        "low_price": Decimal("10.10"),
+        "cumulative_volume": 123_400,
+        "cumulative_amount": Decimal("1246340.00"),
+    }
+    values.update(changes)
+    return CallAuctionMarketSnapshotRecord(**values)  # type: ignore[arg-type]
+
+
+def test_market_auction_record_preserves_high_low_and_morning_window() -> None:
+    record = _market_auction()
+    assert record.high_price == Decimal("10.10")
+    assert record.low_price == Decimal("10.10")
+    with pytest.raises(ValueError, match="before 09:30"):
+        _market_auction(observed_at=datetime(2026, 8, 12, 1, 30, tzinfo=UTC))
+
+
+def test_market_auction_record_rejects_bse_and_invalid_price_range() -> None:
+    with pytest.raises(ValueError, match="SSE/SZSE"):
+        _market_auction(symbol="BSE:920000")
+    with pytest.raises(ValueError, match="high_price"):
+        _market_auction(high_price=Decimal("9.90"), low_price=Decimal("10.00"))
+    with pytest.raises(ValueError, match="within"):
+        _market_auction(
+            last_price=Decimal("10.20"),
+            high_price=Decimal("10.10"),
+            low_price=Decimal("10.00"),
+        )
+
+
+def test_call_auction_snapshot_preserves_optional_aware_observation_time() -> None:
+    observed_at = datetime(2026, 8, 12, 1, 26, tzinfo=UTC)
+
+    record = CallAuctionSnapshotRecord(
+        symbol="SSE:600000",
+        trade_date=date(2026, 8, 12),
+        source_code="pytdx_hq",
+        observed_at=observed_at,
+    )
+
+    assert record.observed_at == observed_at
+    with pytest.raises(ValueError, match="timezone-aware"):
+        CallAuctionSnapshotRecord(
+            symbol="SSE:600000",
+            trade_date=date(2026, 8, 12),
+            source_code="pytdx_hq",
+            observed_at=datetime(2026, 8, 12, 9, 26),
+        )
 
 
 def test_quote_requires_decimal_and_ordered_contiguous_levels() -> None:

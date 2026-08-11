@@ -28,6 +28,7 @@ class WorkflowCode(StrEnum):
     AUCTION_COLLECTION = "auction_collection"
     EOD_QUOTE_SNAPSHOT = "eod_quote_snapshot"
     CALL_AUCTION_SNAPSHOT = "call_auction_snapshot"
+    CALL_AUCTION_MARKET_SNAPSHOT = "call_auction_market_snapshot"
     PYTDX_POOL_REFRESH = "pytdx_pool_refresh"
 
 

@@ -2,11 +2,12 @@
 
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from enum import StrEnum
 from itertools import pairwise
 from re import fullmatch
+from zoneinfo import ZoneInfo
 
 from market_data_center.domain.ingestion import QualitySeverity
 from market_data_center.domain.records import Market
@@ -366,9 +367,71 @@ class CallAuctionSnapshotRecord:
     cumulative_volume: int | None = None
     cumulative_amount: Decimal | None = None
     auction_premium_pct: Decimal | None = None
+    observed_at: datetime | None = None
 
     def __post_init__(self) -> None:
+        if self.observed_at is not None and self.observed_at.utcoffset() is None:
+            raise ValueError("observed_at must be timezone-aware")
         if self.cumulative_volume is not None and self.cumulative_volume < 0:
             raise ValueError("cumulative_volume must be non-negative")
         if self.cumulative_amount is not None and self.cumulative_amount < 0:
             raise ValueError("cumulative_amount must be non-negative")
+
+
+@dataclass(frozen=True, slots=True)
+class CallAuctionMarketSnapshotRecord:
+    """Full-market call-auction source fact observed before continuous trading."""
+
+    symbol: str
+    trade_date: date
+    observed_at: datetime
+    source_code: str
+    last_price: Decimal | None = None
+    previous_close: Decimal | None = None
+    high_price: Decimal | None = None
+    low_price: Decimal | None = None
+    cumulative_volume: int | None = None
+    cumulative_amount: Decimal | None = None
+
+    def __post_init__(self) -> None:
+        if fullmatch(r"(?:SSE|SZSE):[0-9]{6}", self.symbol) is None:
+            raise ValueError("call-auction market snapshot symbol must use SSE/SZSE:code format")
+        if self.observed_at.utcoffset() is None:
+            raise ValueError("observed_at must be timezone-aware")
+        observed_at_shanghai = self.observed_at.astimezone(ZoneInfo("Asia/Shanghai"))
+        if observed_at_shanghai.date() != self.trade_date:
+            raise ValueError("observed_at Shanghai date must equal trade_date")
+        window_start = datetime.combine(
+            self.trade_date, time(9, 25), tzinfo=ZoneInfo("Asia/Shanghai")
+        )
+        window_end = datetime.combine(
+            self.trade_date, time(9, 30), tzinfo=ZoneInfo("Asia/Shanghai")
+        )
+        if observed_at_shanghai < window_start:
+            raise ValueError("observed_at must be at or after 09:25 Asia/Shanghai")
+        if observed_at_shanghai >= window_end:
+            raise ValueError("observed_at must be before 09:30 Asia/Shanghai")
+        if not self.source_code.strip():
+            raise ValueError("source_code must not be blank")
+
+        prices_and_amount = (
+            self.last_price,
+            self.previous_close,
+            self.high_price,
+            self.low_price,
+            self.cumulative_amount,
+        )
+        if any(value is not None and not isinstance(value, Decimal) for value in prices_and_amount):
+            raise TypeError("call-auction prices and amount must use Decimal")
+        if any(value is not None and value < 0 for value in prices_and_amount):
+            raise ValueError("call-auction prices and amount must not be negative")
+        if self.cumulative_volume is not None and self.cumulative_volume < 0:
+            raise ValueError("cumulative_volume must not be negative")
+        if self.high_price is not None and self.low_price is not None:
+            if self.high_price < self.low_price:
+                raise ValueError("high_price must not be lower than low_price")
+            if (
+                self.last_price is not None
+                and not self.low_price <= self.last_price <= self.high_price
+            ):
+                raise ValueError("last_price must be within [low_price, high_price]")

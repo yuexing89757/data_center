@@ -73,6 +73,7 @@ from market_data_center.domain.ingestion import (
     RawManifest,
 )
 from market_data_center.domain.realtime_quote import (
+    CallAuctionMarketSnapshotRecord,
     FiveLevelQuoteMetric,
     FiveLevelQuoteSnapshotRecord,
     OrderBookLevel,
@@ -147,6 +148,7 @@ __all__ = [
     "CalculationMode",
     "CalculationRun",
     "CalculationStatus",
+    "CallAuctionMarketSnapshotRecord",
     "CapitalFinding",
     "CapitalRecord",
     "CapitalValidationResult",
