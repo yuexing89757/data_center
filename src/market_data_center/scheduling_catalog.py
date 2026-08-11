@@ -12,6 +12,7 @@ STOCK_POOL_JOB_ID = "mainboard-price-limit-stock-pools-daily"
 AUCTION_COLLECTION_JOB_ID = "opening-auction-limit-up-quotes"
 EOD_QUOTE_SNAPSHOT_JOB_ID = "eod-quote-snapshot-daily"
 CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID = "call-auction-market-snapshot-daily"
+TODAY_LIMIT_UP_SNAPSHOT_JOB_ID = "today-limit-up-snapshot-daily"
 PYTDX_POOL_REFRESH_JOB_ID = "pytdx-pool-refresh"
 SCHEDULER_TIMEZONE = "Asia/Shanghai"
 JOB_TIMEOUT_SECONDS = 21_600
@@ -99,6 +100,12 @@ WORKFLOW_DEFINITIONS = (
         "今日竞价量",
         "保留数据库最终化的历史 operations 定义, Worker 不再自动调度。",
         ("finalize_call_auction_snapshot",),
+    ),
+    WorkflowDefinition(
+        "today_limit_up_snapshot",
+        "Same-day immutable limit-up snapshot",
+        "Build a versioned snapshot after exact-date upstream dependency checks.",
+        ("fill_today_limit_up_snapshot",),
     ),
     WorkflowDefinition(
         "pytdx_pool_refresh",
@@ -217,6 +224,21 @@ def job_definitions(settings: SchedulerSettings) -> tuple[JobDefinition, ...]:
             day_of_week="mon-fri",
             hour=9,
             minute=26,
+        ),
+        JobDefinition(
+            TODAY_LIMIT_UP_SNAPSHOT_JOB_ID,
+            "Same-day limit-up snapshot fill",
+            "Freeze a versioned snapshot after exact-date bar, share and pool checks.",
+            "today_limit_up_snapshot",
+            "cron",
+            "Monday-Friday 22:00",
+            timezone,
+            settings.today_limit_up_snapshot_enabled,
+            timeout,
+            "Record deferred/partial for incomplete upstreams; never publish false ready state",
+            day_of_week="mon-fri",
+            hour=22,
+            minute=0,
         ),
         JobDefinition(
             STALE_RUN_RECOVERY_JOB_ID,

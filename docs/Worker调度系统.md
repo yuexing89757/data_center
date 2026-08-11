@@ -93,6 +93,7 @@ BlockingScheduler
 | 4 | `daily-run` | 日 K 与基础数据更新 | `daily_market` | cron 周一至周五 | 20:00 | ✅ |
 | 5 | `stock-daily-indicators-daily` | 股票每日指标更新 | `stock_daily_indicator` | cron 周一至周五 | 20:30 | ✅ |
 | 6 | `mainboard-price-limit-stock-pools-daily` | 沪深主板昨日涨跌停股票池 | `stock_pool` | cron 周一至周五 | 21:00 | ✅ |
+| 7 | `today-limit-up-snapshot-daily` | 同日涨停不可变快照 | `today_limit_up_snapshot` | cron 周一至周五 | 22:00 | 默认关闭 |
 | 7 | `deducted-profit-daily` | 扣非净利润增量同步 | `deducted_profit` | cron 每天 | 20:00 | ✅ |
 | 8 | `recover-stale-ingestion-runs` | 陈旧运行恢复 | `stale_run_recovery` | interval | 每 1 小时 | ✅ |
 | 9 | `pytdx-pool-refresh` | PYTDX 节点池刷新 | `pytdx_pool_refresh` | interval | 每 12 小时 | ✅ |
@@ -137,6 +138,7 @@ BlockingScheduler
 | `AUCTION_COLLECTION_ENABLED` | `true` | 集合竞价采集开关 |
 | `EOD_QUOTE_SNAPSHOT_ENABLED` | `true` | 收盘五档任务开关 |
 | `CALL_AUCTION_SNAPSHOT_ENABLED` | `true` | 只控制 09:26 沪深全市场开盘竞价来源采集 |
+| `TODAY_LIMIT_UP_SNAPSHOT_ENABLED` | `false` | 只控制 22:00 同日涨停快照；迁移和出站预检前保持关闭 |
 | `PYTDX_POOL_PATH` | `data/pytdx_pool.json` | 统一版本化能力节点池路径；生产使用持久化绝对路径 |
 
 ## 健康检查（`worker --check`）

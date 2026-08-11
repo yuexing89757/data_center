@@ -21,6 +21,7 @@ TARGET_SCHEMAS = (
     "operations",
     "realtime",
     "stock_pool",
+    "today_limit_up",
 )
 EXPECTED_TABLES = {
     ("audit", "quality_result"),
@@ -66,6 +67,10 @@ EXPECTED_TABLES = {
     ("realtime", "call_auction_snapshot"),
     ("realtime", "call_auction_market_snapshot"),
     ("realtime", "eod_quote_snapshot"),
+    ("today_limit_up", "source_observation"),
+    ("today_limit_up", "snapshot"),
+    ("today_limit_up", "member"),
+    ("today_limit_up", "calculation_quality"),
 }
 EXPECTED_VIEWS = {
     ("api_v1", "adjusted_daily_bars"),

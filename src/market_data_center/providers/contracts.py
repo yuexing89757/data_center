@@ -18,6 +18,7 @@ from market_data_center.domain.records import (
     TradingDayRecord,
 )
 from market_data_center.domain.stock_daily_indicator import StockDailyIndicatorSnapshotRecord
+from market_data_center.domain.today_limit_up import LimitUpSourceRecord
 
 type ProviderRecord = (
     SecurityRecord
@@ -30,6 +31,7 @@ type ProviderRecord = (
     | DeductedProfitRecord
     | FiveLevelQuoteSnapshotRecord
     | ConvertibleBondRecord
+    | LimitUpSourceRecord
 )
 type RawRow = Mapping[str, str]
 
@@ -109,6 +111,14 @@ class ConvertibleBondProvider(Protocol):
     def fetch_convertible_bond_daily_bars(
         self, source_symbol: str, start_date: date, end_date: date
     ) -> "ProviderBatch[ConvertibleBondRecord]": ...
+
+
+class CurrentDayLimitUpPoolProvider(Protocol):
+    """Dedicated current-day source capability; it does not decide canonical membership."""
+
+    source_code: str
+
+    def fetch_limit_up_pool(self, trade_date: date) -> "ProviderBatch[LimitUpSourceRecord]": ...
 
 
 @dataclass(frozen=True, slots=True)

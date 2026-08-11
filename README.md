@@ -34,6 +34,21 @@ See [INSTALL-WINDOWS.md](INSTALL-WINDOWS.md) for the Chinese installation and ve
 
 ## Development
 
+Build one exact-date same-day limit-up snapshot manually (never falls back to an older date):
+
+```bash
+uv run market-data-center today-limit-up-snapshot --trade-date 2026-08-11
+```
+
+The command checks exact-date Daily Bar, stock-indicator/free-float-share and ready mainboard
+limit-up-pool dependencies before provider I/O. Missing/failed dependencies create an idempotent
+`deferred` snapshot; partial inputs or row/source/order-book gaps create `partial`. The scheduled
+Worker job is fixed at 22:00 Asia/Shanghai on weekdays and remains opt-in through
+`TODAY_LIMIT_UP_SNAPSHOT_ENABLED=false` until its migration and network preflight are deployed.
+Public-node access uses two whole-request attempts by default, each with a 10-second HTTP timeout;
+configure the bounds with `TODAY_LIMIT_UP_TIMEOUT_SECONDS` and
+`TODAY_LIMIT_UP_MAX_ATTEMPTS`. The provider has no availability or historical-backfill SLA.
+
 GitHub Issues are the project's only task backlog and planning system. Linear is not used or synchronized.
 
 ```bash

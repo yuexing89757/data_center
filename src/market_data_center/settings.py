@@ -33,6 +33,8 @@ class SchedulerSettings(BaseSettings):
     auction_collection_enabled: bool = True
     eod_quote_snapshot_enabled: bool = True
     call_auction_snapshot_enabled: bool = True
+    # Remains opt-in until the new migration and provider preflight are explicitly deployed.
+    today_limit_up_snapshot_enabled: bool = False
 
 
 class PytdxPoolSettings(BaseSettings):
@@ -63,6 +65,15 @@ class PytdxDailyBarSettings(BaseSettings):
     pytdx_daily_bar_max_attempts: int = Field(default=2, ge=1, le=5)
     pytdx_daily_bar_page_size: int = Field(default=800, ge=1, le=800)
     pytdx_daily_bar_max_pages: int = Field(default=16, ge=1, le=64)
+
+
+class TodayLimitUpProviderSettings(BaseSettings):
+    """Bounded public-node access for the current-day AKShare/Eastmoney pool."""
+
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    today_limit_up_timeout_seconds: float = Field(default=10.0, gt=0, le=30)
+    today_limit_up_max_attempts: int = Field(default=2, ge=1, le=3)
 
 
 class ApiSettings(BaseSettings):

@@ -45,6 +45,15 @@ def test_production_schema_inventory_includes_call_auction_market_snapshot() -> 
     assert ("realtime", "call_auction_market_snapshot") in EXPECTED_TABLES
 
 
+def test_production_schema_inventory_includes_today_limit_up_domain() -> None:
+    assert {
+        ("today_limit_up", "source_observation"),
+        ("today_limit_up", "snapshot"),
+        ("today_limit_up", "member"),
+        ("today_limit_up", "calculation_quality"),
+    } <= EXPECTED_TABLES
+
+
 def test_smoke_required_metrics_cover_phase_one_and_board_index() -> None:
     assert {
         "security",

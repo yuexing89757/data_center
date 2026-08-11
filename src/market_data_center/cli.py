@@ -3,7 +3,7 @@
 from argparse import ArgumentParser, Namespace
 from calendar import monthrange
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime, timedelta
 from functools import partial
 from json import dumps
@@ -193,6 +193,29 @@ def main() -> None:
             raise
         execution.succeed()
         print(dumps(_stock_pool_summary_json(pool_summary), sort_keys=True))
+        return
+
+    if args.dataset == "today-limit-up-snapshot":
+        from market_data_center.today_limit_up_service import fill_today_limit_up_snapshot
+
+        execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
+            WorkflowCode.TODAY_LIMIT_UP_SNAPSHOT,
+            datetime.now(UTC).replace(second=0, microsecond=0),
+            TriggerSource.MANUAL,
+        )
+        try:
+            limit_up_summary = execution.step(
+                "fill_today_limit_up_snapshot",
+                1,
+                lambda: fill_today_limit_up_snapshot(
+                    engine, raw_store, date.fromisoformat(args.trade_date)
+                ),
+            )
+        except BaseException as error:
+            execution.fail(error)
+            raise
+        execution.succeed()
+        print(dumps(asdict(limit_up_summary), default=str, sort_keys=True))
         return
 
     if args.dataset in {"raw-replay", "recover-stale-runs", "compare-daily-bars"}:
@@ -1123,6 +1146,12 @@ def _parser() -> ArgumentParser:
         required=True,
         help="exact price-limit event trading date YYYY-MM-DD",
     )
+
+    today_limit_up = subparsers.add_parser(
+        "today-limit-up-snapshot",
+        help="idempotently fill one exact-date immutable same-day limit-up snapshot",
+    )
+    today_limit_up.add_argument("--trade-date", required=True, help="exact YYYY-MM-DD")
 
     stock_pool_check = subparsers.add_parser(
         "stock-pool-check",

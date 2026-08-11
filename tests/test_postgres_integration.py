@@ -125,6 +125,7 @@ def test_migrations_apply_to_empty_database_and_are_idempotent(
     assert versions == expected_versions
     assert all(f"skip {migration.name}" in second_output for migration in MIGRATIONS)
     assert first_snapshot == second_snapshot
+
     assert ("api_v1", "daily_bars") in first_snapshot["views"]
     assert ("api_v1", "securities") in first_snapshot["views"]
     assert ("api_v1", "trading_calendar") in first_snapshot["views"]
@@ -154,6 +155,35 @@ def test_migrations_apply_to_empty_database_and_are_idempotent(
         "query_limit_up_pool",
         "query_auction_quotes",
     }.issubset({row[1] for row in first_snapshot["routines"]})
+
+
+def test_today_limit_up_schema_is_internal_and_append_only(
+    database_engine: Engine,
+) -> None:
+    with database_engine.connect() as connection:
+        tables = {
+            connection.scalar(text("select to_regclass(:name)"), {"name": name})
+            for name in (
+                "today_limit_up.source_observation",
+                "today_limit_up.snapshot",
+                "today_limit_up.member",
+                "today_limit_up.calculation_quality",
+            )
+        }
+        assert None not in tables
+        assert connection.scalar(
+            text("""
+select count(*) = 4 from pg_class c join pg_namespace n on n.oid=c.relnamespace
+where n.nspname='today_limit_up' and c.relname in
+ ('source_observation','snapshot','member','calculation_quality') and c.relrowsecurity
+""")
+        )
+        assert not connection.scalar(
+            text("""
+select has_schema_privilege('public','today_limit_up','usage')
+ or has_table_privilege('public','today_limit_up.snapshot','select')
+""")
+        )
 
 
 def test_operations_repository_records_attempts_steps_and_stale_recovery(

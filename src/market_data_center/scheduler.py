@@ -53,6 +53,7 @@ from market_data_center.scheduling_catalog import (
     STALE_RUN_RECOVERY_JOB_ID,
     STOCK_DAILY_INDICATOR_JOB_ID,
     STOCK_POOL_JOB_ID,
+    TODAY_LIMIT_UP_SNAPSHOT_JOB_ID,
     JobDefinition,
     job_definition,
     job_definitions,
@@ -449,6 +450,39 @@ def run_call_auction_market_snapshot_job() -> None:
         engine.dispose()
 
 
+def run_today_limit_up_snapshot_job() -> None:
+    """Fill the exact-date immutable limit-up snapshot after dependency checks."""
+    from market_data_center.today_limit_up_service import fill_today_limit_up_snapshot
+
+    settings = WorkerSettings()  # type: ignore[call-arg]
+    scheduling = SchedulerSettings()
+    engine = create_engine(
+        sqlalchemy_url(settings.database_url.get_secret_value()), pool_pre_ping=True
+    )
+    try:
+        fire_time = _scheduled_job_fire_time(TODAY_LIMIT_UP_SNAPSHOT_JOB_ID, scheduling)
+        execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
+            WorkflowCode.TODAY_LIMIT_UP_SNAPSHOT,
+            fire_time,
+            TriggerSource.SCHEDULED,
+        )
+        try:
+            trade_date = fire_time.astimezone(ZoneInfo(SCHEDULER_TIMEZONE)).date()
+            execution.step(
+                "fill_today_limit_up_snapshot",
+                1,
+                lambda: fill_today_limit_up_snapshot(
+                    engine, LocalRawStore(settings.raw_data_root), trade_date
+                ),
+            )
+        except BaseException as error:
+            execution.fail(error)
+            raise
+        execution.succeed()
+    finally:
+        engine.dispose()
+
+
 def _scheduled_fire_time(
     hour: int,
     minute: int,
@@ -504,6 +538,7 @@ def build_scheduler(settings: SchedulerSettings | None = None) -> BlockingSchedu
         AUCTION_COLLECTION_JOB_ID: run_auction_collection_job,
         EOD_QUOTE_SNAPSHOT_JOB_ID: run_eod_quote_snapshot_job,
         CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID: run_call_auction_market_snapshot_job,
+        TODAY_LIMIT_UP_SNAPSHOT_JOB_ID: run_today_limit_up_snapshot_job,
         PYTDX_POOL_REFRESH_JOB_ID: run_pytdx_pool_refresh_job,
     }
     for definition in job_definitions(settings):
