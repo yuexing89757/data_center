@@ -97,8 +97,10 @@ def main() -> None:
         class _NoNetworkProvider:
             source_code = "preflight"
 
-            def fetch_five_level_quotes(self, symbols: object) -> object:
-                del symbols
+            def fetch_five_level_quotes(
+                self, symbols: object, *, deadline: object = None
+            ) -> object:
+                del symbols, deadline
                 raise AssertionError("preflight must not access a quote provider")
 
         report = AuctionCollectionService(

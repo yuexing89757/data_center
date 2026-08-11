@@ -3,9 +3,8 @@
 from collections import OrderedDict
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from itertools import batched
 from struct import unpack
 from types import TracebackType
 from typing import Protocol, Self, cast
@@ -161,6 +160,7 @@ class PytdxHqProvider(AbstractContextManager["PytdxHqProvider"]):
         self,
         settings: PytdxHqSettings,
         *,
+        endpoints: Sequence[tuple[str, int]] | None = None,
         pool_settings: PytdxPoolSettings | None = None,
         client_factory: (
             Callable[[Sequence[tuple[str, int]], float], ManagedQuoteClient] | None
@@ -168,16 +168,19 @@ class PytdxHqProvider(AbstractContextManager["PytdxHqProvider"]):
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self._settings = settings
+        self._explicit_endpoints = _validate_endpoints(endpoints) if endpoints is not None else None
         self._pool_settings = pool_settings or PytdxPoolSettings()
         self._client_factory = client_factory or _NetworkQuoteClient
         self._clock = clock
         self._managed_client: ManagedQuoteClient | None = None
 
     def __enter__(self) -> "PytdxHqProvider":
-        pool = load_endpoint_pool(self._pool_settings.pytdx_pool_path)
-        hosts = endpoints_for(pool, PytdxCapability.QUOTE)
-        if not hosts:
-            raise ProviderError("pytdx endpoint pool has no quote-capable node")
+        hosts = self._explicit_endpoints
+        if hosts is None:
+            pool = load_endpoint_pool(self._pool_settings.pytdx_pool_path)
+            hosts = endpoints_for(pool, PytdxCapability.QUOTE)
+            if not hosts:
+                raise ProviderError("pytdx endpoint pool has no quote-capable node")
         self._managed_client = self._client_factory(
             hosts, self._settings.pytdx_hq_timeout_seconds
         ).__enter__()
@@ -193,16 +196,23 @@ class PytdxHqProvider(AbstractContextManager["PytdxHqProvider"]):
             self._managed_client.__exit__(exc_type, exc_value, traceback)
             self._managed_client = None
 
-    def fetch_five_level_quotes(self, symbols: Sequence[str]) -> RealtimeQuoteFetch:
+    def fetch_five_level_quotes(
+        self, symbols: Sequence[str], *, deadline: datetime | None = None
+    ) -> RealtimeQuoteFetch:
         if self._managed_client is None:
             raise ProviderError("pytdx_hq provider must be used as a managed context")
+        _validate_deadline(deadline)
         requested = tuple(dict.fromkeys(symbols))
         if not requested or len(requested) != len(symbols):
             raise ProviderError("pytdx_hq symbols must be non-empty and unique")
         raw_rows: list[Mapping[str, str]] = []
         records: list[FiveLevelQuoteSnapshotRecord] = []
         failed: list[str] = []
-        for symbol_batch in batched(requested, self._settings.pytdx_hq_batch_size):
+        for start in range(0, len(requested), self._settings.pytdx_hq_batch_size):
+            symbol_batch = requested[start : start + self._settings.pytdx_hq_batch_size]
+            if deadline is not None and self._clock() >= deadline:
+                failed.extend(requested[start:])
+                break
             requests = tuple(_source_identity(symbol) for symbol in symbol_batch)
             try:
                 response = self._managed_client.fetch(requests)
@@ -228,6 +238,27 @@ class PytdxHqProvider(AbstractContextManager["PytdxHqProvider"]):
             tuple(failed),
             "pytdx_hq.security_quotes.v1",
         )
+
+
+def _validate_endpoints(endpoints: Sequence[tuple[str, int]]) -> tuple[tuple[str, int], ...]:
+    if not endpoints:
+        raise ProviderError("pytdx_hq explicit endpoints must be non-empty")
+    validated: list[tuple[str, int]] = []
+    for host, port in endpoints:
+        if not isinstance(host, str) or not host or host != host.strip():
+            raise ProviderError("pytdx_hq endpoint host is invalid")
+        if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65_535:
+            raise ProviderError("pytdx_hq endpoint port is invalid")
+        endpoint = (host, port)
+        if endpoint in validated:
+            raise ProviderError("pytdx_hq explicit endpoints must be unique")
+        validated.append(endpoint)
+    return tuple(validated)
+
+
+def _validate_deadline(deadline: datetime | None) -> None:
+    if deadline is not None and (deadline.tzinfo is None or deadline.utcoffset() != timedelta()):
+        raise ProviderError("pytdx_hq deadline must be an aware UTC datetime")
 
 
 def _record(

@@ -2,7 +2,7 @@
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from types import TracebackType
 from typing import Protocol, Self
 
@@ -123,7 +123,9 @@ class RealtimeQuoteFetch:
 class RealtimeQuoteProvider(Protocol):
     source_code: str
 
-    def fetch_five_level_quotes(self, symbols: Sequence[str]) -> RealtimeQuoteFetch: ...
+    def fetch_five_level_quotes(
+        self, symbols: Sequence[str], *, deadline: datetime | None = None
+    ) -> RealtimeQuoteFetch: ...
 
 
 class BoardIndexProvider(Protocol):

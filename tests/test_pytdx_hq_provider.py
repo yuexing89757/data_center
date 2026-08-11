@@ -48,6 +48,10 @@ def _write_pool(tmp_path: Path, nodes: list[dict[str, object]]) -> Path:
     return pool
 
 
+def _symbols(count: int) -> tuple[str, ...]:
+    return tuple(f"SSE:{600000 + index:06d}" for index in range(count))
+
+
 class RecordedClient:
     def __enter__(self) -> "RecordedClient":
         return self
@@ -61,7 +65,9 @@ class RecordedClient:
         return None
 
     def fetch(self, requests: Sequence[tuple[int, str]]) -> Sequence[Mapping[str, object]]:
-        market, code = requests[0]
+        return [self._row(*requests[0])]
+
+    def _row(self, market: int, code: str) -> Mapping[str, object]:
         row: dict[str, object] = {
             "market": market,
             "code": code,
@@ -82,7 +88,21 @@ class RecordedClient:
             row[f"ask{level}"] = Decimal("10.01") + Decimal(level - 1) / 100
             row[f"bid_vol{level}"] = level
             row[f"ask_vol{level}"] = level + 5
-        return [row]
+        return row
+
+
+class BatchRecordedClient(RecordedClient):
+    def __init__(self, batches: list[tuple[tuple[int, str], ...]]) -> None:
+        self.batches = batches
+        self.hosts: tuple[tuple[str, int], ...] = ()
+
+    def record_hosts(self, hosts: Sequence[tuple[str, int]]) -> "BatchRecordedClient":
+        self.hosts = tuple(hosts)
+        return self
+
+    def fetch(self, requests: Sequence[tuple[int, str]]) -> Sequence[Mapping[str, object]]:
+        self.batches.append(tuple(requests))
+        return [self._row(market, code) for market, code in requests]
 
 
 def test_pytdx_hq_contract_keeps_decimal_and_converts_lots_to_shares(tmp_path: Path) -> None:
@@ -156,6 +176,47 @@ def test_hq_provider_does_not_fallback_when_pool_is_corrupt(tmp_path: Path) -> N
 
     with pytest.raises(ProviderError, match="pool is unreadable"), provider:
         pass
+
+
+def test_market_provider_uses_one_explicit_endpoint_and_batches_by_eighty(tmp_path: Path) -> None:
+    batches: list[tuple[tuple[int, str], ...]] = []
+    client = BatchRecordedClient(batches)
+    provider = PytdxHqProvider(
+        PytdxHqSettings(_env_file=None),
+        endpoints=(("second.quote", 7709),),
+        client_factory=lambda hosts, _timeout: client.record_hosts(hosts),
+    )
+    symbols = _symbols(161)
+    with provider:
+        result = provider.fetch_five_level_quotes(symbols)
+    assert client.hosts == (("second.quote", 7709),)
+    assert [len(batch) for batch in batches] == [80, 80, 1]
+    assert result.requested_symbols == symbols
+
+
+def test_provider_stops_starting_batches_at_deadline() -> None:
+    batches: list[tuple[tuple[int, str], ...]] = []
+    client = BatchRecordedClient(batches)
+    clock = iter(
+        (
+            datetime(2026, 8, 12, 1, 29, 29, tzinfo=UTC),
+            datetime(2026, 8, 12, 1, 29, 29, 500000, tzinfo=UTC),
+            datetime(2026, 8, 12, 1, 29, 31, tzinfo=UTC),
+        )
+    ).__next__
+    provider = PytdxHqProvider(
+        PytdxHqSettings(_env_file=None),
+        endpoints=(("only.quote", 7709),),
+        client_factory=lambda hosts, _timeout: client.record_hosts(hosts),
+        clock=clock,
+    )
+    with provider:
+        result = provider.fetch_five_level_quotes(
+            _symbols(161),
+            deadline=datetime(2026, 8, 12, 1, 29, 30, tzinfo=UTC),
+        )
+    assert len(result.records) == 80
+    assert result.failed_symbols == _symbols(161)[80:]
 
 
 class _FakeApi:
