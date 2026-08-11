@@ -13,6 +13,10 @@ from market_data_center.domain.operations import (
 )
 from market_data_center.operations_service import WorkflowExecutionService, safe_error_summary
 from market_data_center.persistence.operations_postgres import PostgreSQLOperationsPersistence
+from market_data_center.providers.pytdx_pool import (
+    PytdxEndpointPool,
+    PytdxPoolRefreshResult,
+)
 from market_data_center.scheduling_catalog import WORKFLOW_DEFINITIONS, job_definitions
 from market_data_center.settings import SchedulerSettings
 
@@ -115,3 +119,36 @@ def test_execution_service_records_failed_step_and_redacted_workflow_error() -> 
     assert persistence.finished_jobs[0].status is ExecutionStatus.FAILED
     assert persistence.finished_jobs[0].error_summary == "RuntimeError"
     assert persistence.finished_workflows[0].error_summary == "RuntimeError"
+
+
+@pytest.mark.parametrize(
+    ("used_last_good", "expected_status"),
+    [
+        (False, ExecutionStatus.SUCCEEDED),
+        (True, ExecutionStatus.PARTIAL),
+    ],
+)
+def test_execution_service_records_pool_refresh_statistics(
+    used_last_good: bool, expected_status: ExecutionStatus
+) -> None:
+    persistence = MemoryOperationsPersistence()
+    execution = WorkflowExecutionService(cast(PostgreSQLOperationsPersistence, persistence)).start(
+        WorkflowCode.DAILY_MARKET, NOW, TriggerSource.SCHEDULED
+    )
+    result = PytdxPoolRefreshResult(
+        candidate_count=4,
+        usable_node_count=3,
+        rejected_node_count=1,
+        published=not used_last_good,
+        used_last_good=used_last_good,
+        pool=PytdxEndpointPool(NOW, ()),
+    )
+
+    execution.step("refresh_pytdx_pool", 1, lambda: result)
+    execution.succeed()
+
+    job = persistence.finished_jobs[0]
+    workflow = persistence.finished_workflows[0]
+    assert (job.fetched_rows, job.accepted_rows, job.rejected_rows) == (4, 3, 1)
+    assert job.status is expected_status
+    assert workflow.status is expected_status

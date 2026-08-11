@@ -14,6 +14,7 @@ from market_data_center.domain.operations import (
 )
 from market_data_center.domain.stock_pool import StockPoolBuildSummary
 from market_data_center.persistence.operations_postgres import PostgreSQLOperationsPersistence
+from market_data_center.providers.pytdx_pool import PytdxPoolRefreshResult
 
 T = TypeVar("T")
 
@@ -121,6 +122,13 @@ def _result_statistics(result: object) -> tuple[int, int, int, ExecutionStatus]:
             result.member_count,
             result.rejected_count,
             ExecutionStatus.PARTIAL if result.rejected_count else ExecutionStatus.SUCCEEDED,
+        )
+    if isinstance(result, PytdxPoolRefreshResult):
+        return (
+            result.candidate_count,
+            result.usable_node_count,
+            result.rejected_node_count,
+            ExecutionStatus.PARTIAL if result.used_last_good else ExecutionStatus.SUCCEEDED,
         )
     if not isinstance(result, IngestionRun):
         return 0, 0, 0, ExecutionStatus.SUCCEEDED
