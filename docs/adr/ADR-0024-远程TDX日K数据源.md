@@ -1,10 +1,12 @@
 # ADR-0024：远程 TDX 日 K 数据源
 
-- 状态：Accepted
+- 状态：Accepted（显式 endpoint 配置与禁止运行时发现的决定已由 ADR-0026 取代）
 - 日期：2026-08-09
 - 关联 Issue：#37
 - 取代：ADR-0004 中普通股票 Daily Bar 使用本地 `vipdoc` Reader 的决定
 - 澄清：ADR-0005 的 Daily Bar 路由仍固定为 `pytdx`，但实现改为远程 TDX 节点
+- 后续决定：ADR-0026 统一节点池取代本文的 endpoint 配置与节点发现限制；未复权日 K、
+  Raw lineage、有限连接 failover、单批次固定 endpoint 和缺口可见语义继续有效
 
 ## 背景
 

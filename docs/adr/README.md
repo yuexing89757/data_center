@@ -18,6 +18,7 @@ ADR 记录已经接受的架构决策。其优先级低于项目宪法，高于�
 
 ## 当前 ADR
 
+- `ADR-0026-统一PYTDX能力节点池.md`：Daily Bar 与五档行情共用带能力标记的本地节点池，由 Worker 启动时及每 12 小时有界刷新，失败时保留 last-good。
 - `ADR-0023-可转债领域.md`：新增 `convertible_bond` 独立 schema（基础条款/每日行情/转股价调整/赎回事件），复用 core.security 但不复用 core.daily_bar；Tushare cb_* 主源。
 - `ADR-0022-集合竞价涨停池五档快照采集.md`：冻结当日涨停池，由单个 Worker 会话在 09:15–09:25 有界采样，并以 live validation 门禁防止误解竞价档位。
 - `ADR-0021-沪深主板涨跌停事实与通用股票池.md`：内部未复权日 K 与每日指标确定性计算对称涨跌停事实和不可变股票池，不依赖第三方榜单。
@@ -42,7 +43,7 @@ ADR 记录已经接受的架构决策。其优先级低于项目宪法，高于�
 - `ADR-0002-AKShare第二数据源接入.md`：允许显式选择 AKShare 第二数据源，不引入自动路由或回退。
 - `ADR-0003-同花顺动态板块指数.md`：以独立 BoardIndex 领域接入同花顺动态板块指数及每日成分股快照。
 - `ADR-0004-pytdx日K补数源.md`：历史决定；本地 `.day` Daily Bar Reader 已被 ADR-0024 取代。
-- `ADR-0024-远程TDX日K数据源.md`：以显式配置、有限 failover 的远程 TDX 节点提供未复权 Daily Bar。
+- `ADR-0024-远程TDX日K数据源.md`：远程未复权 Daily Bar 语义继续有效；显式 endpoint 配置和禁止运行时发现的决定已由 ADR-0026 取代。
 - `ADR-0025-Standalone-PostgreSQL-FastAPI.md`：独立 FastAPI 直接读取 PostgreSQL；首版复用现有数据库但不依赖 Supabase 服务，并保留未来 standalone 切换门禁。
 - `ADR-0005-Provider自动路由与故障切换.md`：按数据集能力自动选择 Provider，仅对来源错误执行确定性回退和进程内熔断。
 - `ADR-0006-Raw重放与运行恢复.md`：重放创建新 IngestionRun 并引用原 RawManifest，同时定义僵尸运行恢复与只读多源差异报告。

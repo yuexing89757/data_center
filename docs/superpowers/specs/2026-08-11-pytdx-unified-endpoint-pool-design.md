@@ -2,7 +2,7 @@
 
 > 状态：设计已获项目所有者批准
 > 日期：2026-08-11
-> 治理门禁：替代 ADR 与实现必须关联一个 GitHub Issue；当前本机 GitHub CLI 未认证，因此 Issue 建立、ADR 编号关联和实现尚未开始。
+> 治理门禁：GitHub Issue #39 已建立；Accepted ADR-0026 与实现均关联该 Issue。
 
 ## 1. 背景
 
