@@ -59,8 +59,8 @@ order by version desc limit 1
             )
             if snapshot is None:
                 raise AuctionDependencyNotReady("exact ready limit-up pool snapshot is missing")
-            if snapshot["rejected_count"] != 0 or snapshot["member_count"] < 1:
-                raise AuctionDependencyNotReady("limit-up pool quality gate did not pass")
+            if snapshot["member_count"] < 1:
+                raise AuctionDependencyNotReady("limit-up pool has no members")
             rows = (
                 connection.execute(
                     text("""
