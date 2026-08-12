@@ -6,7 +6,7 @@
 
 **Architecture:** 新建 append-only `call_auction_market_snapshot` 来源事实和晨间采集服务；每个 IngestionRun 固定一个 PYTDX endpoint，失败后第二 IngestionRun 才能换 endpoint 全量重试。ADR-0028 暂停本数据集 Raw replay，并从 Worker 移除自动最终化；数据库最终化仅作为非调度内部能力保留。
 
-**Tech Stack:** Python 3.12、uv、pytdx 1.72、SQLAlchemy 2、psycopg 3、PostgreSQL/Supabase migrations、APScheduler 3、pytest、Ruff、mypy。
+**Tech Stack:** Python 3.12、uv、pytdx 1.72、SQLAlchemy 2、psycopg 3、PostgreSQL migrations、APScheduler 3、pytest、Ruff、mypy。
 
 ## Global Constraints
 

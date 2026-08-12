@@ -94,4 +94,4 @@ CALL_AUCTION_SNAPSHOT_ENABLED=true
 
 TDX 连接失败：检查 `PYTDX_POOL_PATH` 所在目录可写、出站端口、防火墙和公共节点可用性。刷新失败时 Worker 会使用最后一个有效节点池；首次启动没有有效池时会拒绝启动。
 
-数据库连接失败：检查 `DATABASE_URL`、Supabase PostgreSQL 端口和网络连通性，不要把连接串粘贴到 Issue 或日志中。
+数据库连接失败：检查 `DATABASE_URL`、PostgreSQL 端口和网络连通性，不要把连接串粘贴到 Issue 或日志中。

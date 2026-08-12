@@ -46,7 +46,7 @@ GET /rest/v1/daily_bars
 
 ## 部署检查
 
-部署时确认 PostgREST/Supabase API 的公开 Schema 配置等价于：
+部署时确认 PostgREST 的公开 Schema 配置等价于：
 
 ```toml
 [api]

@@ -169,4 +169,4 @@ Windows 使用 `deploy/testing/run-postgres-integration.ps1`。两者都会设�
 uv run python scripts/smoke_check.py --require-board-index
 ```
 
-GitHub `production` Environment 需要配置 `MIGRATION_DATABASE_URL`、`DATABASE_URL`、`SUPABASE_URL` 和 `SUPABASE_PUBLISHABLE_KEY`。仓库只引用 Secret 名称，不保存值。Environment 审批、备份确认和凭据轮换可在功能闭环完成后继续加固。
+GitHub `production` Environment 需要配置 `MIGRATION_DATABASE_URL` 和 `DATABASE_URL`。仓库只引用 Secret 名称，不保存值。Environment 审批、备份确认和凭据轮换可在功能闭环完成后继续加固。

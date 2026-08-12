@@ -1,8 +1,8 @@
 # Optional future standalone PostgreSQL cutover plan
 
-FastAPI initially uses the existing Supabase-hosted PostgreSQL through a direct database connection.
-No data migration is required for that deployment. This document is optional future work and is not
-authorization to provision, copy, stop, migrate, or switch production.
+FastAPI connects to PostgreSQL through a direct database connection. No data migration is required
+for the current deployment. This document is optional future work and is not authorization to
+provision, copy, stop, migrate, or switch production.
 
 ## Portability
 
@@ -29,8 +29,8 @@ roles are absent. Historical names `supabase/migrations` and
 3. Apply every ordered repository migration. Never use ORM `create_all`, a schema dump, or manual DDL.
 4. Transfer data only for repository-owned schemas: `ingestion`, `audit`, `core`, `capital`,
    `classification`, `derived`, `metrics`, `operations`, `realtime`, `stock_pool`, and
-   `convertible_bond`. Do not copy Supabase Auth/Storage/Realtime metadata, gateway configuration,
-   ownership, ACLs, or secrets. Retain migration history produced in step 3.
+   `convertible_bond`. Do not copy gateway configuration, ownership, ACLs, or secrets. Retain
+   migration history produced in step 3.
 5. Verify migration/schema checks, per-table row counts, natural keys, min/max business dates,
    FK/orphans, representative decimal aggregates, ingestion/Raw lineage, and sampled content hashes.
    Run Worker/API read-only smoke with distinct target credentials. Complete and time a target restore.

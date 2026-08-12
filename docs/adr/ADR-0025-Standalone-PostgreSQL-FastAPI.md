@@ -8,9 +8,8 @@
 ## Context
 
 The collection Worker is already an independent Linux process. External consumers now need a
-stable HTTP interface. The first API deployment will reuse the existing Supabase-hosted PostgreSQL
-database, but it connects to PostgreSQL directly: Supabase gateway, keys, Auth, Studio, and
-PostgREST are not API runtime dependencies.
+stable HTTP interface. The first API deployment will reuse the existing PostgreSQL database, but it
+connects to PostgreSQL directly: the PostgREST gateway is not an API runtime dependency.
 
 ## Decision
 
@@ -18,7 +17,7 @@ PostgREST are not API runtime dependencies.
    provider, Raw-data, persistence, migration, or ingestion entry point.
 2. The API connects directly to the existing PostgreSQL endpoint through `FASTAPI_DATABASE_URL`.
    Database hosting does not change this boundary. It never falls back to the Worker's
-   `DATABASE_URL` and accepts no Supabase URL or key.
+   `DATABASE_URL` and accepts no platform-specific URL or key.
 3. SQL is restricted to the accepted, bounded `api_v1` query functions. The API does not query
    internal schemas or expose lineage, provider payload fields, Raw objects, or credentials.
 4. A `market_data_api` NOLOGIN group role receives only schema usage and EXECUTE on the explicitly
@@ -35,8 +34,8 @@ PostgREST are not API runtime dependencies.
 7. HTTPS, domain/DNS, reverse proxy, public binding, firewall changes, rate limiting, and credential
    provisioning are deployment gates and are not performed by this change.
 8. The current migration sequence is retained, including its historical directory and history
-   schema names. Those names do not create a Supabase runtime dependency. A later rename would add
-   migration risk without changing behavior.
+   schema names. Those names do not create a runtime dependency on any platform service. A later
+   rename would add migration risk without changing behavior.
 
 ## Optional standalone PostgreSQL portability
 
@@ -44,8 +43,8 @@ The ordered migrations use ordinary PostgreSQL DDL, RLS, PL/pgSQL, `btree_gist`,
 They are portable to a supported standalone PostgreSQL installation when those two contrib
 extensions are available and the migration role can create extensions, schemas, roles, functions,
 policies, and grants. Conditional `anon`, `authenticated`, and `authenticator` blocks become no-ops
-when Supabase roles are absent. The PostgREST configuration migration is likewise a no-op without
-`authenticator`. These compatibility blocks are historical, not runtime dependencies.
+when these optional PostgreSQL roles are absent. The PostgREST configuration migration is likewise
+a no-op without `authenticator`. These compatibility blocks are historical, not runtime dependencies.
 
 ## Consequences
 

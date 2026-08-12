@@ -19,9 +19,9 @@
 ## Current architecture
 
 - Runtime: Python 3.12 managed by `uv`.
-- Storage: self-hosted Supabase PostgreSQL. Production schema changes are made only by
-  ordered files in `supabase/migrations/*.sql`; never use `create_all()`, Alembic, or Studio
-  to mutate the production schema.
+- Storage: PostgreSQL. Production schema changes are made only by ordered files in
+  `supabase/migrations/*.sql`; never use `create_all()`, Alembic, or ad-hoc DDL to mutate the
+  production schema.
 - Public reads: bounded, read-only PostgREST views and RPCs in `api_v1`. Consumers must not
   depend directly on `core`, `capital`, `classification`, `derived`, `metrics`, `ingestion`,
   or `audit`. Keep `contracts/postgrest-openapi-v1.json` and

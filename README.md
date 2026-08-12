@@ -60,14 +60,13 @@ uv run pytest
 ```
 
 External read-only HTTP queries are provided by an independent FastAPI process that connects
-directly to PostgreSQL and calls only bounded `api_v1` functions. The initial deployment may reuse
-the existing Supabase-hosted PostgreSQL without using Supabase URLs, keys, Auth, Studio, or PostgREST.
-See [the API guide](docs/FastAPI外部接口.md) and
+directly to PostgreSQL and calls only bounded `api_v1` functions. PostgREST is an independent layer
+that is not part of the current deployment. See [the API guide](docs/FastAPI外部接口.md) and
 [Linux runbook](docs/Standalone-PostgreSQL-FastAPI-Linux.md). MCP remains deferred.
 
 Configuration is loaded from environment variables. Copy `.env.example` locally and replace placeholders; never commit the resulting `.env` file.
 
-Backup, independent restore verification, credential rotation, and database network hardening are documented in [docs/Supabase备份恢复与凭据轮换.md](docs/Supabase备份恢复与凭据轮换.md).
+Backup, independent restore verification, credential rotation, and database network hardening are documented in [docs/PostgreSQL备份恢复与凭据轮换.md](docs/PostgreSQL备份恢复与凭据轮换.md).
 
 The repeatable Daily Bar coverage, invariant, source, and lineage audit is documented in [docs/DailyBar数据质量验收.md](docs/DailyBar数据质量验收.md).
 

@@ -51,7 +51,7 @@ Market Data Center 是一个独立的证券数据产品，负责数据的采集�
 - BaoStock 默认 Provider，以及 Accepted ADR 明确批准的显式可选 Provider；
 - Raw Store 与采集审计；
 - 数据质量校验；
-- 自托管 Supabase PostgreSQL/PostgREST；
+- PostgreSQL/PostgREST；
 - migration、测试、CI/CD 和备份流程。
 
 当前进入 MVP 后的增量阶段。新增领域必须先有 Issue、Accepted ADR、领域详设、migration 和测试；BoardIndex、Capital、Classification、Derived/Metrics 已分别由 ADR-0003、ADR-0007、ADR-0008、ADR-0009 接受，稳定 PostgREST/Agent 查询契约由 ADR-0010 接受，外部只读 FastAPI 由 ADR-0011 接受，可转债领域由 ADR-0023 接受。当前仍不建设 MCP 和分钟行情。Provider 自动路由按 ADR-0005 的确定性策略实现，普通 Daily Bar 的远程 TDX 边界由 ADR-0024 约束。

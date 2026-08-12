@@ -46,7 +46,7 @@ ADR 记录已经接受的架构决策。其优先级低于项目宪法，高于�
 - `ADR-0003-同花顺动态板块指数.md`：以独立 BoardIndex 领域接入同花顺动态板块指数及每日成分股快照。
 - `ADR-0004-pytdx日K补数源.md`：历史决定；本地 `.day` Daily Bar Reader 已被 ADR-0024 取代。
 - `ADR-0024-远程TDX日K数据源.md`：远程未复权 Daily Bar 语义继续有效；显式 endpoint 配置和禁止运行时发现的决定已由 ADR-0026 取代。
-- `ADR-0025-Standalone-PostgreSQL-FastAPI.md`：独立 FastAPI 直接读取 PostgreSQL；首版复用现有数据库但不依赖 Supabase 服务，并保留未来 standalone 切换门禁。
+- `ADR-0025-Standalone-PostgreSQL-FastAPI.md`：独立 FastAPI 直接读取 PostgreSQL；首版复用现有数据库，不引入额外平台服务依赖，并保留未来 standalone 切换门禁。
 - `ADR-0029-同日涨停不可变快照与22点填充任务.md`：定义同日涨停来源观察、版本化快照、封板口径和 22:00 依赖门禁。
 - `ADR-0030-DailyLimitUpList切换TodayLimitUp契约.md`：将既有 daily-limit-up-list 明确切换为版本化同日涨停领域读契约。
 - `ADR-0005-Provider自动路由与故障切换.md`：按数据集能力自动选择 Provider，仅对来源错误执行确定性回退和进程内熔断。

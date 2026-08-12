@@ -1,10 +1,8 @@
 # FastAPI external read-only API
 
-The FastAPI process is an independent protocol boundary that connects directly to the existing
-Supabase-hosted PostgreSQL. It does not call or require Supabase URLs/keys, PostgREST, Auth, Studio,
-providers, the Worker scheduler, Raw storage, or persistence services. Its SQL is limited to the
-explicitly granted bounded `api_v1` functions. A future move to standalone PostgreSQL does not
-change the API contract.
+The FastAPI process is an independent protocol boundary that connects directly to PostgreSQL. It
+does not call or require PostgREST, providers, the Worker scheduler, Raw storage, or persistence
+services. Its SQL is limited to the explicitly granted bounded `api_v1` functions.
 
 ```dotenv
 FASTAPI_DATABASE_URL='postgresql+psycopg://<api-login>:<password>@<host>:5432/<database>'
