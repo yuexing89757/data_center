@@ -145,6 +145,10 @@ class DailyLimitUpListItem(ApiModel):
     source_observation_ingestion_id: UUID | None
     source_observation_raw_id: UUID | None
     order_book_ingestion_id: UUID | None
+    volume: int | None = Field(default=None, ge=0)
+    amount_cny: Decimal | None
+    free_float_turnover_rate_pct: Decimal | None
+    consecutive_limit_up_days: int | None = Field(default=None, ge=1)
 
 
 class DailyLimitUpQualitySummary(ApiModel):

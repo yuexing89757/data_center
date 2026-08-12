@@ -214,6 +214,18 @@
       "DailyLimitUpListItem": {
         "additionalProperties": false,
         "properties": {
+          "amount_cny": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Cny"
+          },
           "change_percent": {
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Change Percent",
@@ -360,6 +372,18 @@
             "title": "Code",
             "type": "string"
           },
+          "consecutive_limit_up_days": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Consecutive Limit Up Days"
+          },
           "daily_bar_ingestion_id": {
             "format": "uuid",
             "title": "Daily Bar Ingestion Id",
@@ -390,6 +414,18 @@
             "exclusiveMinimum": 0.0,
             "title": "Free Float Shares",
             "type": "integer"
+          },
+          "free_float_turnover_rate_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Free Float Turnover Rate Pct"
           },
           "indicator_ingestion_id": {
             "format": "uuid",
@@ -507,6 +543,18 @@
           "symbol": {
             "title": "Symbol",
             "type": "string"
+          },
+          "volume": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume"
           }
         },
         "required": [
@@ -535,7 +583,9 @@
           "pool_calculation_id",
           "source_observation_ingestion_id",
           "source_observation_raw_id",
-          "order_book_ingestion_id"
+          "order_book_ingestion_id",
+          "amount_cny",
+          "free_float_turnover_rate_pct"
         ],
         "title": "DailyLimitUpListItem",
         "type": "object"

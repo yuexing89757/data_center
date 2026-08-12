@@ -199,6 +199,10 @@ class FakeQueryService:
                     source_observation_ingestion_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
                     source_observation_raw_id="bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
                     order_book_ingestion_id="cccccccc-cccc-cccc-cccc-cccccccccccc",
+                    volume=62542540,
+                    amount_cny=Decimal("580000000"),
+                    free_float_turnover_rate_pct=Decimal("2.5"),
+                    consecutive_limit_up_days=3,
                 )
             ],
         )
@@ -420,7 +424,8 @@ def test_daily_limit_up_list_returns_items() -> None:
     assert item["source_reported_sealed_funds_cny"] == "1200000"
     assert item["closing_bid1_sealing_amount_cny"] == "929000"
     assert item["limit_up_duration_seconds"] is None
-    assert "consecutive_limit_up_days" not in item
+    assert item["consecutive_limit_up_days"] == 3
+    assert item["volume"] == 62542540
     assert service.daily_limit_up_calls == [(date(2026, 8, 10), 1, 10, 200)]
 
 

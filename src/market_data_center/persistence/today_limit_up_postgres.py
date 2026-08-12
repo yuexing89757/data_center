@@ -196,8 +196,10 @@ for share
 select m.symbol, split_part(m.symbol,':',2) code,
        nh.name historical_name, nh.ingestion_id name_ingestion_id,
        db.close, db.previous_close, db.ingestion_id daily_bar_ingestion_id,
+       db.volume as daily_bar_volume, db.amount as daily_bar_amount,
        ple.limit_price, dpl.calculation_id pool_calculation_id,
        ind.free_float_shares, ind.ingestion_id indicator_ingestion_id,
+       ind.free_float_turnover_rate_pct as indicator_turnover,
        e.ingestion_id order_book_ingestion_id,
        e.bid1_price,e.bid1_volume,e.bid2_price,e.bid2_volume,e.bid3_price,e.bid3_volume,
        e.bid4_price,e.bid4_volume,e.bid5_price,e.bid5_volume
@@ -469,13 +471,15 @@ insert into today_limit_up.member (
  closing_bid3_volume_shares,closing_bid4_price,closing_bid4_volume_shares,closing_bid5_price,
  closing_bid5_volume_shares,closing_bid1_sealing_amount_cny,daily_bar_ingestion_id,
  indicator_ingestion_id,name_ingestion_id,pool_calculation_id,source_observation_ingestion_id,
- source_observation_raw_id,order_book_ingestion_id
+ source_observation_raw_id,order_book_ingestion_id,
+ volume,amount_cny,free_float_turnover_rate_pct,consecutive_limit_up_days
 ) values (
  :snapshot_id,:symbol,:code,:name,:previous,:close,:limit,:change,:shares,:cap,:first,:last,
  :opens,'unavailable_without_event_stream',:source_funds,:bid1_price,:bid1_volume,:bid2_price,
  :bid2_volume,:bid3_price,:bid3_volume,:bid4_price,:bid4_volume,:bid5_price,:bid5_volume,
  :bid1_amount,:daily_ingestion,:indicator_ingestion,:name_ingestion,:pool_calculation,
- :source_ingestion,:source_raw,:order_book_ingestion
+ :source_ingestion,:source_raw,:order_book_ingestion,
+ :volume,:amount_cny,:turnover_pct,:consecutive_days
 )
 """)
 
@@ -539,6 +543,18 @@ def _member(row: RowMapping, source: LimitUpSourceRecord | None) -> TodayLimitUp
         closing_bid1_price=bid1_price,
         closing_bid1_volume_shares=bid1_volume,
         closing_bid1_sealing_amount_cny=bid1_amount,
+        volume=int(row["daily_bar_volume"]) if row["daily_bar_volume"] is not None else None,
+        amount_cny=Decimal(row["daily_bar_amount"])
+        if row["daily_bar_amount"] is not None
+        else None,
+        free_float_turnover_rate_pct=(
+            Decimal(row["indicator_turnover"]) if row["indicator_turnover"] is not None else None
+        ),
+        consecutive_limit_up_days=(
+            source.consecutive_limit_up_days
+            if source and source.consecutive_limit_up_days
+            else None
+        ),
     )
 
 
@@ -566,6 +582,10 @@ def _member_params(
         "bid1_price": member.closing_bid1_price,
         "bid1_volume": member.closing_bid1_volume_shares,
         "bid1_amount": member.closing_bid1_sealing_amount_cny,
+        "volume": member.volume,
+        "amount_cny": member.amount_cny,
+        "turnover_pct": member.free_float_turnover_rate_pct,
+        "consecutive_days": member.consecutive_limit_up_days,
         "daily_ingestion": row["daily_bar_ingestion_id"],
         "indicator_ingestion": row["indicator_ingestion_id"],
         "name_ingestion": row["name_ingestion_id"],

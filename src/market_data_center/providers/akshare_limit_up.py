@@ -111,6 +111,7 @@ def _map_row(row: Mapping[str, str], trade_date: date) -> LimitUpSourceRecord:
         last_limit_up_at=_source_time(row.get("最后封板时间"), trade_date),
         open_count=_integer(row.get("炸板次数")),
         source_reported_sealed_funds_cny=_decimal(row.get("封板资金")),
+        consecutive_limit_up_days=_integer(row.get("连板数")),
     )
 
 

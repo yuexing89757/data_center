@@ -43,6 +43,7 @@ class LimitUpSourceRecord:
     last_limit_up_at: datetime | None
     open_count: int | None
     source_reported_sealed_funds_cny: Decimal | None
+    consecutive_limit_up_days: int | None = None
     source_code: str = "akshare"
 
     def __post_init__(self) -> None:
@@ -50,6 +51,8 @@ class LimitUpSourceRecord:
             raise ValueError("limit-up source record requires the akshare boundary")
         if self.open_count is not None and self.open_count < 0:
             raise ValueError("open_count must be nonnegative")
+        if self.consecutive_limit_up_days is not None and self.consecutive_limit_up_days < 1:
+            raise ValueError("consecutive_limit_up_days must be positive")
         if (
             self.first_limit_up_at is not None
             and self.last_limit_up_at is not None
@@ -88,6 +91,10 @@ class TodayLimitUpMember:
     closing_bid1_price: Decimal | None = None
     closing_bid1_volume_shares: int | None = None
     closing_bid1_sealing_amount_cny: Decimal | None = None
+    volume: int | None = None
+    amount_cny: Decimal | None = None
+    free_float_turnover_rate_pct: Decimal | None = None
+    consecutive_limit_up_days: int | None = None
 
     def __post_init__(self) -> None:
         if min(self.previous_close, self.close, self.limit_price) <= 0:
@@ -120,3 +127,11 @@ class TodayLimitUpMember:
                 raise ValueError("missing duration requires unavailable semantics")
         elif self.duration_semantics is not DurationSemantics.SOURCE_REPORTED_CUMULATIVE:
             raise ValueError("duration must be source-reported cumulative in v1")
+        if self.volume is not None and self.volume < 0:
+            raise ValueError("volume must be nonnegative")
+        if self.amount_cny is not None and self.amount_cny < 0:
+            raise ValueError("amount_cny must be nonnegative")
+        if self.free_float_turnover_rate_pct is not None and self.free_float_turnover_rate_pct < 0:
+            raise ValueError("free_float_turnover_rate_pct must be nonnegative")
+        if self.consecutive_limit_up_days is not None and self.consecutive_limit_up_days < 1:
+            raise ValueError("consecutive_limit_up_days must be positive")
