@@ -51,7 +51,7 @@ class DailyBarBulkSummary:
 
     @property
     def status(self) -> str:
-        if self.expected_symbols and not self.accepted_symbols:
+        if self.expected_symbols and not self.accepted_symbols and self.failed_symbols:
             return "failed"
         if self.rejected_symbols:
             return "partial"
