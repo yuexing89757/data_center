@@ -196,6 +196,30 @@ def test_daily_limit_up_list_switches_to_bounded_today_limit_up_contract() -> No
     assert not re.search(r"(?im)^grant\s+(insert|update|delete|all)", migration)
 
 
+def test_daily_limit_up_list_quality_fix_uses_calculation_quality_table() -> None:
+    """Regression guard: the quality CTE must read today_limit_up.calculation_quality,
+    not the non-existent today_limit_up.member_quality that caused HTTP 503."""
+    migration = (
+        MIGRATION_DIR / "20260813000100_fix_daily_limit_up_list_quality_table.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "from today_limit_up.calculation_quality" in migration
+    # No executable reference to the non-existent table. The bug name may appear
+    # in comments, so strip SQL comments before checking.
+    stripped = "\n".join(
+        line for line in migration.splitlines() if not line.lstrip().startswith("--")
+    )
+    assert "today_limit_up.member_quality" not in stripped
+    # Preserves the (date, integer, integer, integer) signature and bounded grants.
+    assert (
+        "drop function if exists api_v1.query_daily_limit_up_list(date, integer, integer, integer)"
+        in migration
+    )
+    assert "p_limit integer default 500" in migration
+    assert "to market_data_api" in migration
+    assert not re.search(r"(?im)^grant\s+(insert|update|delete|all)", migration)
+
+
 def test_snapshot_quality_dataset_codes_are_migrated_forward() -> None:
     migration = (MIGRATION_DIR / "20260811000200_allow_snapshot_quality_results.sql").read_text(
         encoding="utf-8"

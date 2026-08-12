@@ -1,9 +1,11 @@
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr, ValidationError
+from sqlalchemy.exc import DBAPIError
 
 from market_data_center.domain import (
     ClassificationType,
@@ -27,6 +29,7 @@ from market_data_center.public_api.models import (
 from market_data_center.public_api.queries import (
     PublicQueryNotFound,
     PublicQueryUnavailable,
+    _raise_safe_query_error,
 )
 from market_data_center.settings import ApiSettings
 
@@ -253,6 +256,27 @@ def test_readiness_hides_database_error_details() -> None:
         }
     }
     assert "secret" not in response.text
+
+
+def test_safe_query_error_logs_sqlstate_but_hides_detail(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Server logs carry sqlstate/detail for diagnostics; the raised exception does not."""
+    orig = SimpleNamespace(sqlstate="08006", args=("connection refused",))
+    error = DBAPIError(statement=None, params=None, orig=orig)
+
+    with (
+        caplog.at_level("WARNING", logger="market_data_center.public_api.queries"),
+        pytest.raises(PublicQueryUnavailable) as exc_info,
+    ):
+        _raise_safe_query_error(error)
+
+    # Raised exception keeps a fixed, detail-free message for the client.
+    assert "connection refused" not in str(exc_info.value)
+    assert exc_info.value.__cause__ is error
+    # Server-side log records the sqlstate and original detail for operators.
+    assert any("08006" in r.message for r in caplog.records)
+    assert any("connection refused" in r.message for r in caplog.records)
 
 
 def test_market_routes_require_the_api_key() -> None:
