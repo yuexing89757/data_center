@@ -301,6 +301,27 @@ def main() -> None:
         and args.provider == AUTO_PROVIDER_CODE
     ):
         raise SystemExit(f"{args.dataset} requires --provider tushare")
+    if args.dataset in ("eod-quote-snapshot", "call-auction-snapshot"):
+        from market_data_center.snapshot_collector import (
+            collect_call_auction,
+            collect_eod_quotes,
+        )
+
+        trade_date = (
+            date.fromisoformat(args.trade_date)
+            if args.trade_date
+            else datetime.now(SHANGHAI_TIME_ZONE).date()
+        )
+        snapshot_engine = create_engine(
+            sqlalchemy_url(WorkerSettings().database_url.get_secret_value()),  # type: ignore[call-arg]
+            pool_pre_ping=True,
+        )
+        if args.dataset == "eod-quote-snapshot":
+            collect_eod_quotes(snapshot_engine, trade_date)
+        else:
+            collect_call_auction(snapshot_engine, trade_date)
+        snapshot_engine.dispose()
+        return
     if args.provider == AUTO_PROVIDER_CODE:
         run = _run_automatic(args, persistence, raw_store)
     else:
@@ -868,40 +889,6 @@ def _execute(args: Namespace, pipeline: IngestionPipeline) -> IngestionRun:
             date.fromisoformat(args.start_date),
             date.fromisoformat(args.end_date),
         )
-    if args.dataset == "eod-quote-snapshot":
-        from market_data_center.snapshot_collector import collect_eod_quotes
-
-        trade_date = (
-            date.fromisoformat(args.trade_date)
-            if args.trade_date
-            else datetime.now(SHANGHAI_TIME_ZONE).date()
-        )
-        engine = create_engine(
-            sqlalchemy_url(
-                WorkerSettings().database_url.get_secret_value()  # type: ignore[call-arg]
-            ),
-            pool_pre_ping=True,
-        )
-        collect_eod_quotes(engine, trade_date)
-        engine.dispose()
-        raise SystemExit(0)
-    if args.dataset == "call-auction-snapshot":
-        from market_data_center.snapshot_collector import collect_call_auction
-
-        trade_date = (
-            date.fromisoformat(args.trade_date)
-            if args.trade_date
-            else datetime.now(SHANGHAI_TIME_ZONE).date()
-        )
-        engine = create_engine(
-            sqlalchemy_url(
-                WorkerSettings().database_url.get_secret_value()  # type: ignore[call-arg]
-            ),
-            pool_pre_ping=True,
-        )
-        collect_call_auction(engine, trade_date)
-        engine.dispose()
-        raise SystemExit(0)
     if args.dataset == "classification-catalog":
         return pipeline.ingest_classification_catalog(
             args.classification_type,
