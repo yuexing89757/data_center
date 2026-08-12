@@ -1,5 +1,6 @@
 """Read-only access to the bounded api_v1 PostgreSQL contract."""
 
+import logging
 from collections.abc import Mapping, Sequence
 from datetime import date
 from typing import Any, Never, Protocol
@@ -15,6 +16,8 @@ from market_data_center.public_api.models import (
     LimitUpPoolResponse,
     SecurityItem,
 )
+
+LOGGER = logging.getLogger(__name__)
 
 QUERY_SECURITIES = text("""
 select *
@@ -191,6 +194,14 @@ class PostgreSQLPublicQueryService:
 
 def _raise_safe_query_error(error: DBAPIError) -> Never:
     sqlstate = getattr(error.orig, "sqlstate", None)
+    driver = getattr(getattr(error, "connection", None), "dialect", None)
+    driver_name = getattr(driver, "driver", None)
+    LOGGER.warning(
+        "public query failed: sqlstate=%s driver=%s detail=%r",
+        sqlstate,
+        driver_name,
+        str(error.orig),
+    )
     if sqlstate == "22023":
         raise PublicQueryInvalid("query parameters were rejected") from error
     if sqlstate == "P0002":
