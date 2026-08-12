@@ -200,6 +200,20 @@ select m.symbol, split_part(m.symbol,':',2) code,
        ple.limit_price, dpl.calculation_id pool_calculation_id,
        ind.free_float_shares, ind.ingestion_id indicator_ingestion_id,
        ind.free_float_turnover_rate_pct as indicator_turnover,
+       (
+         select count(*)::int
+         from core.stock_daily_indicator si
+         where si.symbol = m.symbol
+           and si.price_limit_status in ('limit_up','one_price_limit_up')
+           and si.trade_date <= s.basis_trade_date
+           and si.trade_date > coalesce((
+               select max(si2.trade_date)
+               from core.stock_daily_indicator si2
+               where si2.symbol = m.symbol
+                 and si2.price_limit_status not in ('limit_up','one_price_limit_up')
+                 and si2.trade_date <= s.basis_trade_date
+           ), '-infinity'::date)
+       ) as computed_consecutive_days,
        e.ingestion_id order_book_ingestion_id,
        e.bid1_price,e.bid1_volume,e.bid2_price,e.bid2_volume,e.bid3_price,e.bid3_volume,
        e.bid4_price,e.bid4_volume,e.bid5_price,e.bid5_volume
@@ -553,7 +567,11 @@ def _member(row: RowMapping, source: LimitUpSourceRecord | None) -> TodayLimitUp
         consecutive_limit_up_days=(
             source.consecutive_limit_up_days
             if source and source.consecutive_limit_up_days
-            else None
+            else (
+                int(row["computed_consecutive_days"])
+                if row["computed_consecutive_days"] is not None
+                else None
+            )
         ),
     )
 
