@@ -66,6 +66,8 @@ EXPECTED_TABLES = {
     ("convertible_bond", "daily_bar"),
     ("realtime", "call_auction_snapshot"),
     ("realtime", "call_auction_market_snapshot"),
+    ("realtime", "call_auction_indicative_snapshot"),
+    ("realtime", "call_auction_indicative_detail"),
     ("realtime", "eod_quote_snapshot"),
     ("today_limit_up", "source_observation"),
     ("today_limit_up", "snapshot"),

@@ -117,7 +117,6 @@ def test_migrations_apply_to_empty_database_and_are_idempotent(
         ]
         first_snapshot = _schema_snapshot(connection)
         connection.commit()
-
         apply_migrations(connection, MIGRATIONS)
         second_output = capsys.readouterr().out
         second_snapshot = _schema_snapshot(connection)
@@ -155,6 +154,27 @@ def test_migrations_apply_to_empty_database_and_are_idempotent(
         "query_limit_up_pool",
         "query_auction_quotes",
     }.issubset({row[1] for row in first_snapshot["routines"]})
+
+
+def test_auction_indicative_schema_and_api_permission_boundary(
+    migrated_database_url: str,
+) -> None:
+    with psycopg.connect(migrated_database_url) as connection:
+        assert connection.execute(
+            "select to_regclass('realtime.call_auction_indicative_snapshot')"
+        ).fetchone() == ("realtime.call_auction_indicative_snapshot",)
+        assert connection.execute(
+            "select to_regclass('realtime.call_auction_indicative_detail')"
+        ).fetchone() == ("realtime.call_auction_indicative_detail",)
+        assert connection.execute(
+            "select has_function_privilege('market_data_api', "
+            "'api_v1.query_call_auction_indicative_details(text,date,integer,integer)', "
+            "'execute')"
+        ).fetchone() == (True,)
+        assert connection.execute(
+            "select has_table_privilege('market_data_api', "
+            "'realtime.call_auction_indicative_detail', 'select')"
+        ).fetchone() == (False,)
 
 
 def test_today_limit_up_schema_is_internal_and_append_only(

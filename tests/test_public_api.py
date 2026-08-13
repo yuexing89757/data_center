@@ -16,6 +16,11 @@ from market_data_center.domain import (
 )
 from market_data_center.public_api import create_app
 from market_data_center.public_api.models import (
+    AuctionIndicativeDetailItem,
+    AuctionIndicativeDetailResponse,
+    AuctionIndicativeQuality,
+    AuctionOnePriceLimitItem,
+    AuctionOnePriceLimitResponse,
     CallAuctionMarketSnapshotItem,
     CallAuctionMarketSnapshotResponse,
     ClassificationMembersResponse,
@@ -27,6 +32,9 @@ from market_data_center.public_api.models import (
     LimitUpPoolOmissionReasons,
     LimitUpPoolResponse,
     SecurityItem,
+    TopGainer20dItem,
+    TopGainer20dOmissions,
+    TopGainers20dResponse,
 )
 from market_data_center.public_api.queries import (
     PublicQueryNotFound,
@@ -47,6 +55,9 @@ class FakeQueryService:
         self.limit_up_calls: list[tuple[date, int | None, int]] = []
         self.daily_limit_up_calls: list[tuple[date, int | None, int, int]] = []
         self.call_auction_market_snapshot_calls: list[tuple[date, tuple[str, ...]]] = []
+        self.top_gainer_calls: list[tuple[date | None, int]] = []
+        self.auction_one_price_limit_calls: list[date | None] = []
+        self.auction_indicative_calls: list[tuple[str, date, int, int]] = []
 
     def ready(self) -> None:
         if self.ready_error is not None:
@@ -235,6 +246,99 @@ class FakeQueryService:
                     low_price=Decimal("9.9800"),
                     cumulative_volume=123400,
                     cumulative_amount=Decimal("1248808.0000"),
+                )
+            ],
+        )
+
+    def top_gainers_20d(self, end_date: date | None, limit: int) -> TopGainers20dResponse:
+        self.top_gainer_calls.append((end_date, limit))
+        return TopGainers20dResponse(
+            start_trade_date=date(2026, 7, 16),
+            end_trade_date=end_date or date(2026, 8, 13),
+            trading_session_count=20,
+            return_interval_count=19,
+            total_candidate_count=2,
+            eligible_count=1,
+            omitted_count=1,
+            returned_count=1,
+            omissions=TopGainer20dOmissions(
+                missing_start_bar=1,
+                missing_end_bar=0,
+                non_trading_bar=0,
+                nonpositive_price=0,
+                missing_name=0,
+            ),
+            items=[
+                TopGainer20dItem(
+                    symbol="SSE:600000",
+                    code="600000",
+                    name="浦发银行",
+                    start_trade_date=date(2026, 7, 16),
+                    end_trade_date=end_date or date(2026, 8, 13),
+                    start_close=Decimal("10"),
+                    end_close=Decimal("12"),
+                    return_pct=Decimal("20"),
+                )
+            ],
+        )
+
+    def auction_one_price_limits(self, trade_date: date | None) -> AuctionOnePriceLimitResponse:
+        self.auction_one_price_limit_calls.append(trade_date)
+        day = trade_date or date(2026, 8, 13)
+        item = AuctionOnePriceLimitItem(
+            symbol="SSE:600000",
+            code="600000",
+            name="浦发银行",
+            direction="up",
+            observed_at=datetime(2026, 8, 13, 1, 26, tzinfo=UTC),
+            indicated_price=Decimal("11"),
+            limit_price=Decimal("11"),
+            previous_close=Decimal("10"),
+            cumulative_volume=100,
+            cumulative_amount=Decimal("1100"),
+        )
+        return AuctionOnePriceLimitResponse(
+            trade_date=day,
+            ingestion_id="dddddddd-dddd-dddd-dddd-dddddddddddd",
+            ingestion_status="partial",
+            price_limit_calculation_id="eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+            snapshot_window="09:26:00-09:26:59 Asia/Shanghai",
+            candidate_count=2,
+            omitted_incomplete_count=1,
+            up_count=1,
+            down_count=0,
+            up=[item],
+            down=[],
+        )
+
+    def auction_indicative_details(
+        self, symbol: str, trade_date: date, offset: int, limit: int
+    ) -> AuctionIndicativeDetailResponse:
+        self.auction_indicative_calls.append((symbol, trade_date, offset, limit))
+        return AuctionIndicativeDetailResponse(
+            symbol=symbol,
+            trade_date=trade_date,
+            version=1,
+            ingestion_id="11111111-1111-1111-1111-111111111111",
+            raw_id="22222222-2222-2222-2222-222222222222",
+            status="partial",
+            semantics="auction_virtual_indicative_matching_detail",
+            is_exchange_trade_tick=False,
+            is_order_by_order=False,
+            total_count=2,
+            offset=offset,
+            returned_count=1,
+            has_more=True,
+            quality=AuctionIndicativeQuality(
+                partial=True, source_display_classification_trusted=False
+            ),
+            items=[
+                AuctionIndicativeDetailItem(
+                    observed_at=datetime(2026, 8, 14, 1, 15, 5, tzinfo=UTC),
+                    source_sequence=0,
+                    indicative_price=Decimal("133.99"),
+                    displayed_volume_shares=200,
+                    source_display_classification="unknown",
                 )
             ],
         )
@@ -563,3 +667,63 @@ def test_call_auction_market_snapshot_request_is_bounded(codes: list[str]) -> No
 
     assert response.status_code == 422
     assert service.call_auction_market_snapshot_calls == []
+
+
+def test_top_gainers_20d_contract_and_bounds() -> None:
+    service = FakeQueryService()
+    response = _client(service).get(
+        "/api/v1/top-gainers-20d",
+        params={"end_date": "2026-08-13", "limit": 10},
+        headers=_headers(),
+    )
+    assert response.status_code == 200
+    assert response.json()["return_interval_count"] == 19
+    assert response.json()["items"][0]["return_pct"] == "20"
+    assert service.top_gainer_calls == [(date(2026, 8, 13), 10)]
+    assert (
+        _client(service)
+        .get("/api/v1/top-gainers-20d", params={"limit": 11}, headers=_headers())
+        .status_code
+        == 422
+    )
+
+
+def test_auction_one_price_limits_returns_separate_sets() -> None:
+    service = FakeQueryService()
+    response = _client(service).get(
+        "/api/v1/call-auction-one-price-limits",
+        params={"trade_date": "2026-08-13"},
+        headers=_headers(),
+    )
+    assert response.status_code == 200
+    assert response.json()["up"][0]["direction"] == "up"
+    assert response.json()["down"] == []
+    assert response.json()["ingestion_status"] == "partial"
+
+
+def test_auction_indicative_details_are_explicitly_not_trade_ticks() -> None:
+    service = FakeQueryService()
+    response = _client(service).get(
+        "/api/v1/call-auction-indicative-details",
+        params={"symbol": "SSE:688796", "trade_date": "2026-08-14", "limit": 200},
+        headers=_headers(),
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["semantics"] == "auction_virtual_indicative_matching_detail"
+    assert payload["is_exchange_trade_tick"] is False
+    assert payload["is_order_by_order"] is False
+    assert payload["items"][0]["displayed_volume_shares"] == 200
+    assert payload["quality"]["source_display_classification_trusted"] is False
+    assert service.auction_indicative_calls == [("SSE:688796", date(2026, 8, 14), 0, 200)]
+
+
+def test_auction_indicative_details_validate_symbol_and_bounds() -> None:
+    service = FakeQueryService()
+    response = _client(service).get(
+        "/api/v1/call-auction-indicative-details",
+        params={"symbol": "BSE:920000", "trade_date": "2026-08-14", "limit": 501},
+        headers=_headers(),
+    )
+    assert response.status_code == 422
+    assert service.auction_indicative_calls == []

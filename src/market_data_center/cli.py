@@ -93,6 +93,32 @@ def main() -> None:
     persistence = PostgreSQLPersistence(engine)
     raw_store = LocalRawStore(settings.raw_data_root)
 
+    if args.dataset == "call-auction-indicative-detail":
+        if not args.confirm_current_day_single_symbol:
+            raise SystemExit(
+                "operator confirmation is required; this command is disabled by default"
+            )
+        from market_data_center.auction_indicative_service import (
+            collect_current_day_auction_indicative,
+        )
+        from market_data_center.persistence.auction_indicative_postgres import (
+            PostgreSQLAuctionIndicativePersistence,
+        )
+
+        requested_date = date.fromisoformat(args.trade_date)
+        indicative_run, version = collect_current_day_auction_indicative(
+            PostgreSQLAuctionIndicativePersistence(engine),
+            raw_store,
+            args.symbol,
+            requested_date,
+            now=datetime.now(SHANGHAI_TIME_ZONE),
+        )
+        print(
+            f"call_auction_indicative_detail {indicative_run.status.value} "
+            f"ingestion_id={indicative_run.ingestion_id} version={version}"
+        )
+        return
+
     if args.dataset == "auction-quotes-preflight":
         trade_date = date.fromisoformat(args.trade_date)
         repository = PostgreSQLAuctionPersistence(engine)
@@ -996,6 +1022,18 @@ def _parser() -> ArgumentParser:
         help="finalize call-auction facts from persisted morning data",
     )
     auction_parser.add_argument("--trade-date", help="YYYY-MM-DD; defaults to today")
+
+    indicative = subparsers.add_parser(
+        "call-auction-indicative-detail",
+        help="operator-controlled current-day single-stock virtual indicative detail collection",
+    )
+    indicative.add_argument("--symbol", required=True, help="SSE:600000 or SZSE:000001")
+    indicative.add_argument("--trade-date", required=True, help="current Asia/Shanghai date")
+    indicative.add_argument(
+        "--confirm-current-day-single-symbol",
+        action="store_true",
+        help="explicitly allow one bounded provider request; no schedule is registered",
+    )
 
     catalog = subparsers.add_parser(
         "classification-catalog", help="capture a complete industry or concept catalog snapshot"

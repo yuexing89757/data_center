@@ -10,12 +10,15 @@ from sqlalchemy.exc import DBAPIError
 
 from market_data_center.domain import ClassificationType
 from market_data_center.public_api.models import (
+    AuctionIndicativeDetailResponse,
+    AuctionOnePriceLimitResponse,
     CallAuctionMarketSnapshotResponse,
     ClassificationMembersResponse,
     DailyBarItem,
     DailyLimitUpListResponse,
     LimitUpPoolResponse,
     SecurityItem,
+    TopGainers20dResponse,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -70,6 +73,21 @@ select api_v1.query_call_auction_market_snapshots(
 ) as payload
 """)
 
+QUERY_TOP_GAINERS_20D = text("""
+select api_v1.query_top_gainers_20d(p_end_date => :end_date, p_limit => :limit) as payload
+""")
+
+QUERY_AUCTION_ONE_PRICE_LIMITS = text("""
+select api_v1.query_auction_one_price_limits(p_trade_date => :trade_date) as payload
+""")
+
+QUERY_AUCTION_INDICATIVE_DETAILS = text("""
+select api_v1.query_call_auction_indicative_details(
+    p_symbol => :symbol, p_trade_date => :trade_date,
+    p_offset => :offset, p_limit => :limit
+) as payload
+""")
+
 
 class PublicQueryError(RuntimeError):
     """Safe application-level query error."""
@@ -120,6 +138,14 @@ class PublicQueryService(Protocol):
     def call_auction_market_snapshots(
         self, trade_date: date, codes: tuple[str, ...]
     ) -> CallAuctionMarketSnapshotResponse: ...
+
+    def top_gainers_20d(self, end_date: date | None, limit: int) -> TopGainers20dResponse: ...
+
+    def auction_one_price_limits(self, trade_date: date | None) -> AuctionOnePriceLimitResponse: ...
+
+    def auction_indicative_details(
+        self, symbol: str, trade_date: date, offset: int, limit: int
+    ) -> AuctionIndicativeDetailResponse: ...
 
 
 class PostgreSQLPublicQueryService:
@@ -206,6 +232,23 @@ class PostgreSQLPublicQueryService:
         if not rows:
             raise PublicQueryNotFound("call-auction market snapshot was not found")
         return CallAuctionMarketSnapshotResponse.model_validate(rows[0]["payload"])
+
+    def top_gainers_20d(self, end_date: date | None, limit: int) -> TopGainers20dResponse:
+        rows = self._execute(QUERY_TOP_GAINERS_20D, {"end_date": end_date, "limit": limit})
+        return TopGainers20dResponse.model_validate(rows[0]["payload"])
+
+    def auction_one_price_limits(self, trade_date: date | None) -> AuctionOnePriceLimitResponse:
+        rows = self._execute(QUERY_AUCTION_ONE_PRICE_LIMITS, {"trade_date": trade_date})
+        return AuctionOnePriceLimitResponse.model_validate(rows[0]["payload"])
+
+    def auction_indicative_details(
+        self, symbol: str, trade_date: date, offset: int, limit: int
+    ) -> AuctionIndicativeDetailResponse:
+        rows = self._execute(
+            QUERY_AUCTION_INDICATIVE_DETAILS,
+            {"symbol": symbol, "trade_date": trade_date, "offset": offset, "limit": limit},
+        )
+        return AuctionIndicativeDetailResponse.model_validate(rows[0]["payload"])
 
     def _execute(self, statement: Any, parameters: Mapping[str, object]) -> Sequence[RowMapping]:
         try:

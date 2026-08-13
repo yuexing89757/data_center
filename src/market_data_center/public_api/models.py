@@ -210,3 +210,93 @@ class CallAuctionMarketSnapshotResponse(ApiModel):
     returned_count: int = Field(ge=0)
     missing_codes: list[SixDigitCode]
     items: list[CallAuctionMarketSnapshotItem]
+
+
+class TopGainer20dItem(ApiModel):
+    symbol: str
+    code: SixDigitCode
+    name: str
+    start_trade_date: date
+    end_trade_date: date
+    start_close: Decimal
+    end_close: Decimal
+    return_pct: Decimal
+
+
+class TopGainer20dOmissions(ApiModel):
+    missing_start_bar: int = Field(ge=0)
+    missing_end_bar: int = Field(ge=0)
+    non_trading_bar: int = Field(ge=0)
+    nonpositive_price: int = Field(ge=0)
+    missing_name: int = Field(ge=0)
+
+
+class TopGainers20dResponse(ApiModel):
+    start_trade_date: date
+    end_trade_date: date
+    trading_session_count: Literal[20]
+    return_interval_count: Literal[19]
+    total_candidate_count: int = Field(ge=0)
+    eligible_count: int = Field(ge=0)
+    omitted_count: int = Field(ge=0)
+    returned_count: int = Field(ge=0, le=10)
+    omissions: TopGainer20dOmissions
+    items: list[TopGainer20dItem]
+
+
+class AuctionOnePriceLimitItem(ApiModel):
+    symbol: str
+    code: SixDigitCode
+    name: str
+    direction: Literal["up", "down"]
+    observed_at: datetime
+    indicated_price: Decimal
+    limit_price: Decimal
+    previous_close: Decimal
+    cumulative_volume: int | None = Field(default=None, ge=0)
+    cumulative_amount: Decimal | None
+
+
+class AuctionOnePriceLimitResponse(ApiModel):
+    trade_date: date
+    ingestion_id: UUID
+    ingestion_status: Literal["succeeded", "partial"]
+    price_limit_calculation_id: UUID
+    snapshot_window: Literal["09:26:00-09:26:59 Asia/Shanghai"]
+    candidate_count: int = Field(ge=0)
+    omitted_incomplete_count: int = Field(ge=0)
+    up_count: int = Field(ge=0)
+    down_count: int = Field(ge=0)
+    up: list[AuctionOnePriceLimitItem]
+    down: list[AuctionOnePriceLimitItem]
+
+
+class AuctionIndicativeDetailItem(ApiModel):
+    observed_at: datetime
+    source_sequence: int = Field(ge=0)
+    indicative_price: Decimal
+    displayed_volume_shares: int = Field(ge=0)
+    source_display_classification: Literal["internal", "external", "unknown"]
+
+
+class AuctionIndicativeQuality(ApiModel):
+    partial: bool
+    source_display_classification_trusted: Literal[False]
+
+
+class AuctionIndicativeDetailResponse(ApiModel):
+    symbol: str
+    trade_date: date
+    version: int = Field(ge=1)
+    ingestion_id: UUID
+    raw_id: UUID
+    status: Literal["succeeded", "partial"]
+    semantics: Literal["auction_virtual_indicative_matching_detail"]
+    is_exchange_trade_tick: Literal[False]
+    is_order_by_order: Literal[False]
+    total_count: int = Field(ge=0)
+    offset: int = Field(ge=0)
+    returned_count: int = Field(ge=0, le=500)
+    has_more: bool
+    quality: AuctionIndicativeQuality
+    items: list[AuctionIndicativeDetailItem]

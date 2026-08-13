@@ -56,3 +56,16 @@ both standardized symbols. `missing_codes` reports requested codes absent from t
 The envelope includes the selected provider-neutral ingestion ID and status so consumers can prove
 batch coherence. Items expose observation time, latest/previous-close/high/low prices, cumulative
 volume and amount; source codes, Raw fields and internal timestamps remain private.
+
+`GET /api/v1/top-gainers-20d?end_date=&limit=10` ranks unadjusted close-to-close returns over
+exactly 20 calendar trading sessions (19 intervals), with exact observation dates/prices, end-date
+historical names and bounded omission counts. Ties break by symbol; explicit dates never fall back.
+
+`GET /api/v1/call-auction-one-price-limits?trade_date=` returns separate up/down lists only when
+the stored 09:26 Asia/Shanghai snapshot has complete equal last/high/low evidence at the applicable
+versioned price limit. Partial status and incomplete omissions remain visible; later bars are unused.
+
+`GET /api/v1/call-auction-indicative-details?symbol=SSE:688796&trade_date=YYYY-MM-DD&offset=0&limit=200`
+returns only stored current-day 09:15:00-09:25:59 Asia/Shanghai virtual indicative/reference and
+matching-volume observations for one SSE/SZSE stock. It is not a trade-tick or order-by-order API;
+the source display classification is untrusted. Non-current dates are rejected without fallback.

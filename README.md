@@ -184,4 +184,9 @@ Verified Raw replay, stale-run recovery, and read-only cross-provider Daily Bar 
 
 Production migration and smoke verification can be started manually through the protected `Production migration and smoke check` GitHub Actions workflow.
 
+The operator-controlled `call-auction-indicative-detail` command captures one SSE/SZSE symbol for
+the current Shanghai trading date only. It remains disabled unless
+`--confirm-current-day-single-symbol` is supplied, is never scheduled, and stores virtual auction
+indicative/matching observations—not exchange trade ticks or order-by-order data.
+
 The CLI uses deterministic provider routing by default: BaoStock then AKShare for security/calendar, and pytdx only for Daily Bars. At startup and every 12 hours, the Worker probes a bounded candidate set and atomically publishes one versioned pool with quote, SSE, SZSE and BSE capability flags. Consumers filter that pool by capability, use bounded connection failover, and keep one endpoint for a successful batch. Missing or unavailable bars remain explicit gaps and are not filled from other providers. Public TDX nodes have no availability or rate-limit guarantee. Use `--provider baostock|akshare|pytdx` to bypass routing for reproducible diagnostics.

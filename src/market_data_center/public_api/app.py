@@ -18,6 +18,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from market_data_center.database_urls import sqlalchemy_url
 from market_data_center.domain import ClassificationType
 from market_data_center.public_api.models import (
+    AuctionIndicativeDetailResponse,
+    AuctionOnePriceLimitResponse,
     CallAuctionMarketSnapshotQuery,
     CallAuctionMarketSnapshotResponse,
     ClassificationMembersResponse,
@@ -28,6 +30,7 @@ from market_data_center.public_api.models import (
     HealthResponse,
     LimitUpPoolResponse,
     SecuritySearchResponse,
+    TopGainers20dResponse,
 )
 from market_data_center.public_api.queries import (
     PostgreSQLPublicQueryService,
@@ -240,6 +243,56 @@ def create_app(
         request: CallAuctionMarketSnapshotQuery,
     ) -> CallAuctionMarketSnapshotResponse:
         return service.call_auction_market_snapshots(request.trade_date, tuple(request.codes))
+
+    @app.get(
+        "/api/v1/top-gainers-20d",
+        response_model=TopGainers20dResponse,
+        tags=["market-data"],
+        summary="Rank the top gainers over an exact 20-session window",
+    )
+    def top_gainers_20d(
+        _: ApiKeyDependency,
+        service: QueryServiceDependency,
+        end_date: Annotated[date | None, Query()] = None,
+        limit: Annotated[int, Query(ge=1, le=10)] = 10,
+    ) -> TopGainers20dResponse:
+        return service.top_gainers_20d(end_date, limit)
+
+    @app.get(
+        "/api/v1/call-auction-one-price-limits",
+        response_model=AuctionOnePriceLimitResponse,
+        tags=["market-data"],
+        summary="Query evidence-complete 09:26 one-price limit stocks",
+    )
+    def auction_one_price_limits(
+        _: ApiKeyDependency,
+        service: QueryServiceDependency,
+        trade_date: Annotated[date | None, Query()] = None,
+    ) -> AuctionOnePriceLimitResponse:
+        return service.auction_one_price_limits(trade_date)
+
+    @app.get(
+        "/api/v1/call-auction-indicative-details",
+        response_model=AuctionIndicativeDetailResponse,
+        tags=["market-data"],
+        summary="Query current-day call-auction virtual indicative matching details",
+        description=(
+            "Returns stored 09:15:00-09:25:59 Asia/Shanghai virtual indicative/reference "
+            "price and displayed matching-volume observations for one SSE/SZSE stock. "
+            "These are not exchange trade ticks or order-by-order records. The source display "
+            "classification is untrusted and is not a trade direction. Historical dates are "
+            "rejected rather than silently substituted."
+        ),
+    )
+    def auction_indicative_details(
+        _: ApiKeyDependency,
+        service: QueryServiceDependency,
+        symbol: Annotated[str, Query(pattern=r"^(SSE|SZSE):[0-9]{6}$")],
+        trade_date: Annotated[date, Query()],
+        offset: Annotated[int, Query(ge=0, le=5000)] = 0,
+        limit: Annotated[int, Query(ge=1, le=500)] = 200,
+    ) -> AuctionIndicativeDetailResponse:
+        return service.auction_indicative_details(symbol, trade_date, offset, limit)
 
     return app
 

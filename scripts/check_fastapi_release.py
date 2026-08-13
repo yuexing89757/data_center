@@ -13,6 +13,7 @@ PUBLISHED_FUNCTIONS = (
     "api_v1.query_classification_members_as_of(text,text,text,date,integer)",
     "api_v1.query_limit_up_pool(date,integer,integer)",
     "api_v1.query_call_auction_market_snapshots(date,text[])",
+    "api_v1.query_call_auction_indicative_details(text,date,integer,integer)",
 )
 
 
