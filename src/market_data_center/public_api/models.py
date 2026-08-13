@@ -2,10 +2,10 @@
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from market_data_center.domain import (
     Exchange,
@@ -175,3 +175,38 @@ class DailyLimitUpListResponse(ApiModel):
     has_more: bool
     quality: DailyLimitUpQualitySummary
     items: list[DailyLimitUpListItem]
+
+
+SixDigitCode = Annotated[str, Field(pattern=r"^[0-9]{6}$")]
+
+
+class CallAuctionMarketSnapshotQuery(ApiModel):
+    trade_date: date
+    codes: list[SixDigitCode] = Field(min_length=1, max_length=500)
+
+    @field_validator("codes")
+    @classmethod
+    def deduplicate_codes(cls, codes: list[str]) -> list[str]:
+        return list(dict.fromkeys(codes))
+
+
+class CallAuctionMarketSnapshotItem(ApiModel):
+    symbol: str
+    code: SixDigitCode
+    observed_at: datetime
+    last_price: Decimal | None
+    previous_close: Decimal | None
+    high_price: Decimal | None
+    low_price: Decimal | None
+    cumulative_volume: int | None = Field(default=None, ge=0)
+    cumulative_amount: Decimal | None
+
+
+class CallAuctionMarketSnapshotResponse(ApiModel):
+    trade_date: date
+    ingestion_id: UUID
+    ingestion_status: Literal["succeeded", "partial"]
+    requested_count: int = Field(ge=1, le=500)
+    returned_count: int = Field(ge=0)
+    missing_codes: list[SixDigitCode]
+    items: list[CallAuctionMarketSnapshotItem]

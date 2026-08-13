@@ -12,12 +12,18 @@ from market_data_center.migrations import MIGRATION_DIR
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 MIGRATION_CHECKS = run_path(str(PROJECT_ROOT / "scripts" / "apply_migrations.py"))
 SMOKE_CHECKS = run_path(str(PROJECT_ROOT / "scripts" / "smoke_check.py"))
+FASTAPI_CHECKS = run_path(str(PROJECT_ROOT / "scripts" / "check_fastapi_release.py"))
 EXPECTED_TABLES = cast(set[tuple[str, str]], MIGRATION_CHECKS["EXPECTED_TABLES"])
 EXPECTED_VIEWS = cast(set[tuple[str, str]], MIGRATION_CHECKS["EXPECTED_VIEWS"])
 API_VIEWS = cast(tuple[str, ...], SMOKE_CHECKS["API_VIEWS"])
 BASE_REQUIRED_METRICS = cast(set[str], SMOKE_CHECKS["BASE_REQUIRED_METRICS"])
 BOARD_REQUIRED_METRICS = cast(set[str], SMOKE_CHECKS["BOARD_REQUIRED_METRICS"])
 VIEW_COUNT = cast(Any, SMOKE_CHECKS["_view_count"])
+PUBLISHED_FUNCTIONS = cast(tuple[str, ...], FASTAPI_CHECKS["PUBLISHED_FUNCTIONS"])
+
+
+def test_fastapi_preflight_checks_call_auction_market_snapshot_rpc() -> None:
+    assert "api_v1.query_call_auction_market_snapshots(date,text[])" in PUBLISHED_FUNCTIONS
 
 
 def _migration_sql() -> str:

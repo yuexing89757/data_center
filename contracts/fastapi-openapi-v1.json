@@ -1,6 +1,195 @@
 {
   "components": {
     "schemas": {
+      "CallAuctionMarketSnapshotItem": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "cumulative_amount": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cumulative Amount"
+          },
+          "cumulative_volume": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cumulative Volume"
+          },
+          "high_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "High Price"
+          },
+          "last_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Price"
+          },
+          "low_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Low Price"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "previous_close": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Close"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "code",
+          "observed_at",
+          "last_price",
+          "previous_close",
+          "high_price",
+          "low_price",
+          "cumulative_amount"
+        ],
+        "title": "CallAuctionMarketSnapshotItem",
+        "type": "object"
+      },
+      "CallAuctionMarketSnapshotQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "codes": {
+            "items": {
+              "pattern": "^[0-9]{6}$",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Codes",
+            "type": "array"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "trade_date",
+          "codes"
+        ],
+        "title": "CallAuctionMarketSnapshotQuery",
+        "type": "object"
+      },
+      "CallAuctionMarketSnapshotResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "ingestion_id": {
+            "format": "uuid",
+            "title": "Ingestion Id",
+            "type": "string"
+          },
+          "ingestion_status": {
+            "enum": [
+              "succeeded",
+              "partial"
+            ],
+            "title": "Ingestion Status",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CallAuctionMarketSnapshotItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "missing_codes": {
+            "items": {
+              "pattern": "^[0-9]{6}$",
+              "type": "string"
+            },
+            "title": "Missing Codes",
+            "type": "array"
+          },
+          "requested_count": {
+            "maximum": 500.0,
+            "minimum": 1.0,
+            "title": "Requested Count",
+            "type": "integer"
+          },
+          "returned_count": {
+            "minimum": 0.0,
+            "title": "Returned Count",
+            "type": "integer"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "trade_date",
+          "ingestion_id",
+          "ingestion_status",
+          "requested_count",
+          "returned_count",
+          "missing_codes",
+          "items"
+        ],
+        "title": "CallAuctionMarketSnapshotResponse",
+        "type": "object"
+      },
       "ClassificationMembersResponse": {
         "additionalProperties": false,
         "properties": {
@@ -1152,6 +1341,83 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/call-auction-market-snapshots/query": {
+      "post": {
+        "description": "Returns facts from the latest succeeded ingestion for the exact trade date, or the latest partial ingestion only when no succeeded ingestion exists. A six-digit code can return both SSE and SZSE symbols. Missing codes are reported explicitly; no date or batch fallback is used.",
+        "operationId": "call_auction_market_snapshots_api_v1_call_auction_market_snapshots_query_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CallAuctionMarketSnapshotQuery"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallAuctionMarketSnapshotResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Batch query one opening-auction market snapshot",
+        "tags": [
+          "market-data"
+        ]
+      }
+    },
     "/api/v1/classifications/{namespace}/{classification_type}/{classification_code}/members": {
       "get": {
         "operationId": "classification_members_api_v1_classifications__namespace___classification_type___classification_code__members_get",

@@ -122,6 +122,11 @@ facts, and provider-neutral lineage. It never substitutes an older date or missi
 members are deterministically ordered by symbol. The generic `/api/v1/limit-up-pool` contract is
 unchanged.
 
+`POST /api/v1/call-auction-market-snapshots/query` batch-reads the exact-date 09:26 Shanghai and
+Shenzhen market source facts for 1–500 six-digit codes. It selects one coherent succeeded batch,
+falling back to one partial batch only when no succeeded batch exists, and reports missing codes
+without substituting another date or combining ingestions.
+
 Daily Bar bulk ingestion keeps one provider/Raw/ingestion lineage unit per security while writing
 validated facts in bounded PostgreSQL transactions. Configure `DAILY_BAR_WRITE_BATCH_SIZE`
 (default 100, range 1..500); see `docs/DailyBar批量写入与性能基线-2026-08-11.md`.
