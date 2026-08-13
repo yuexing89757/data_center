@@ -26,6 +26,7 @@ import sys
 import tarfile
 import tomllib
 import zipfile
+from io import BytesIO
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -68,7 +69,15 @@ def _build_linux_tar(version: str, files: list[str]) -> Path:
     prefix = f"market-data-center-{version}"
     with tarfile.open(output, "w:gz") as archive:
         for relative in files:
-            archive.add(ROOT / relative, arcname=f"{prefix}/{relative}", recursive=False)
+            source = ROOT / relative
+            archive_name = f"{prefix}/{relative}"
+            if source.suffix == ".sh":
+                content = source.read_bytes().replace(b"\r\n", b"\n")
+                info = archive.gettarinfo(str(source), arcname=archive_name)
+                info.size = len(content)
+                archive.addfile(info, BytesIO(content))
+            else:
+                archive.add(source, arcname=archive_name, recursive=False)
     return output
 
 

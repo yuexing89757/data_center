@@ -16,6 +16,7 @@ from market_data_center.domain.auction import (
     AuctionQuoteSample,
     AuctionRoundSummary,
     AuctionSessionStatus,
+    auction_phase,
 )
 from market_data_center.domain.ingestion import IngestionRun, QualityResult, RawManifest
 from market_data_center.domain.stock_pool import MAINBOARD_LIMIT_UP_POOL
@@ -502,4 +503,4 @@ def _round_parameters(value: AuctionRoundSummary) -> dict[str, object]:
         name: (item.value if hasattr(item, "value") else item)
         for name in value.__slots__
         for item in (getattr(value, name),)
-    }
+    } | {"phase": auction_phase(value.scheduled_at).value}

@@ -261,6 +261,133 @@ select api_v1.query_daily_limit_up_list(
     assert payload["items"] == []
 
 
+def test_call_auction_market_snapshot_rpc_selects_one_preferred_batch(
+    database_engine: Engine,
+) -> None:
+    security_ingestion_id = uuid4()
+    succeeded_ingestion_id = uuid4()
+    partial_ingestion_id = uuid4()
+    trade_date = date(2026, 8, 13)
+    observed_at = datetime(2026, 8, 13, 1, 26, tzinfo=UTC)
+    with database_engine.begin() as connection:
+        connection.execute(
+            text("""
+insert into ingestion.ingestion_run (
+    ingestion_id, provider_code, dataset_code, status,
+    requested_at, started_at, finished_at, fetched_rows, accepted_rows
+) values
+    (:security_id, 'baostock', 'security', 'running',
+     :security_at, :security_at, null, 0, 0),
+    (:succeeded_id, 'pytdx_hq', 'call_auction_market_snapshot', 'succeeded',
+     :succeeded_at, :succeeded_at, :succeeded_finished_at, 2, 2),
+    (:partial_id, 'pytdx_hq', 'call_auction_market_snapshot', 'partial',
+     :partial_at, :partial_at, :partial_finished_at, 1, 1)
+"""),
+            {
+                "security_id": security_ingestion_id,
+                "security_at": observed_at - timedelta(days=1),
+                "succeeded_id": succeeded_ingestion_id,
+                "succeeded_at": observed_at - timedelta(minutes=2),
+                "succeeded_finished_at": observed_at - timedelta(minutes=1),
+                "partial_id": partial_ingestion_id,
+                "partial_at": observed_at,
+                "partial_finished_at": observed_at + timedelta(minutes=1),
+            },
+        )
+        connection.execute(
+            text("""
+insert into core.security (
+    symbol, code, exchange, current_name, security_type, status,
+    source_code, ingestion_id
+) values
+    ('SSE:600000', '600000', 'SSE', '上海样本', 'stock', 'listed',
+     'baostock', :security_id),
+    ('SZSE:600000', '600000', 'SZSE', '深圳样本', 'stock', 'listed',
+     'baostock', :security_id)
+"""),
+            {"security_id": security_ingestion_id},
+        )
+        connection.execute(
+            text("""
+insert into realtime.call_auction_market_snapshot (
+    ingestion_id, symbol, trade_date, observed_at, last_price,
+    previous_close, high_price, low_price, cumulative_volume,
+    cumulative_amount, source_code
+) values
+    (:succeeded_id, 'SSE:600000', :trade_date, :observed_at,
+     10.1200, 10.0000, 10.1500, 9.9800, 123400, 1248808.0000, 'pytdx_hq'),
+    (:succeeded_id, 'SZSE:600000', :trade_date, :observed_at,
+     20.1200, 20.0000, 20.1500, 19.9800, 223400, 4494808.0000, 'pytdx_hq'),
+    (:partial_id, 'SSE:600000', :trade_date, :observed_at,
+     99.0000, 98.0000, 99.0000, 98.0000, 1, 99.0000, 'pytdx_hq')
+"""),
+            {
+                "succeeded_id": succeeded_ingestion_id,
+                "partial_id": partial_ingestion_id,
+                "trade_date": trade_date,
+                "observed_at": observed_at,
+            },
+        )
+        assert connection.scalar(
+            text("""
+select has_function_privilege(
+    'market_data_api',
+    'api_v1.query_call_auction_market_snapshots(date,text[])',
+    'execute'
+)
+""")
+        )
+        assert not connection.scalar(
+            text("""
+select has_table_privilege(
+    'market_data_api', 'realtime.call_auction_market_snapshot', 'select'
+)
+""")
+        )
+        connection.execute(text("set local role market_data_api"))
+        payload = connection.scalar(
+            text("""
+select api_v1.query_call_auction_market_snapshots(
+    :trade_date, array['600000', '300001', '600000']::text[]
+)
+"""),
+            {"trade_date": trade_date},
+        )
+        connection.execute(text("reset role"))
+        connection.execute(
+            text("""
+update ingestion.ingestion_run
+set status = 'failed'
+where ingestion_id = :succeeded_id
+"""),
+            {"succeeded_id": succeeded_ingestion_id},
+        )
+        connection.execute(text("set local role market_data_api"))
+        partial_payload = connection.scalar(
+            text("""
+select api_v1.query_call_auction_market_snapshots(
+    :trade_date, array['600000']::text[]
+)
+"""),
+            {"trade_date": trade_date},
+        )
+
+    assert payload["ingestion_id"] == str(succeeded_ingestion_id)
+    assert payload["ingestion_status"] == "succeeded"
+    assert payload["requested_count"] == 2
+    assert payload["returned_count"] == 2
+    assert payload["missing_codes"] == ["300001"]
+    assert [(item["code"], item["symbol"]) for item in payload["items"]] == [
+        ("600000", "SSE:600000"),
+        ("600000", "SZSE:600000"),
+    ]
+    assert payload["items"][0]["last_price"] == 10.1200
+    assert partial_payload["ingestion_id"] == str(partial_ingestion_id)
+    assert partial_payload["ingestion_status"] == "partial"
+    assert partial_payload["returned_count"] == 1
+    assert partial_payload["items"][0]["last_price"] == 99.0000
+
+
 def test_operations_repository_records_attempts_steps_and_stale_recovery(
     database_engine: Engine,
 ) -> None:

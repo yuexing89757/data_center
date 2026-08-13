@@ -16,6 +16,8 @@ from market_data_center.domain import (
 )
 from market_data_center.public_api import create_app
 from market_data_center.public_api.models import (
+    CallAuctionMarketSnapshotItem,
+    CallAuctionMarketSnapshotResponse,
     ClassificationMembersResponse,
     DailyBarItem,
     DailyLimitUpListItem,
@@ -44,6 +46,7 @@ class FakeQueryService:
         self.daily_bar_calls: list[tuple[str, date, date, int]] = []
         self.limit_up_calls: list[tuple[date, int | None, int]] = []
         self.daily_limit_up_calls: list[tuple[date, int | None, int, int]] = []
+        self.call_auction_market_snapshot_calls: list[tuple[date, tuple[str, ...]]] = []
 
     def ready(self) -> None:
         if self.ready_error is not None:
@@ -206,6 +209,32 @@ class FakeQueryService:
                     amount_cny=Decimal("580000000"),
                     free_float_turnover_rate_pct=Decimal("2.5"),
                     consecutive_limit_up_days=3,
+                )
+            ],
+        )
+
+    def call_auction_market_snapshots(
+        self, trade_date: date, codes: tuple[str, ...]
+    ) -> CallAuctionMarketSnapshotResponse:
+        self.call_auction_market_snapshot_calls.append((trade_date, codes))
+        return CallAuctionMarketSnapshotResponse(
+            trade_date=trade_date,
+            ingestion_id="dddddddd-dddd-dddd-dddd-dddddddddddd",
+            ingestion_status="partial",
+            requested_count=2,
+            returned_count=1,
+            missing_codes=["000001"],
+            items=[
+                CallAuctionMarketSnapshotItem(
+                    symbol="SSE:600000",
+                    code="600000",
+                    observed_at=datetime(2026, 8, 13, 1, 26, tzinfo=UTC),
+                    last_price=Decimal("10.1200"),
+                    previous_close=Decimal("10.0000"),
+                    high_price=Decimal("10.1500"),
+                    low_price=Decimal("9.9800"),
+                    cumulative_volume=123400,
+                    cumulative_amount=Decimal("1248808.0000"),
                 )
             ],
         )
@@ -415,6 +444,7 @@ def test_openapi_only_contains_the_active_non_derived_routes() -> None:
     assert "/api/v1/daily-bars/{symbol}" in schema["paths"]
     assert "/api/v1/limit-up-pool" in schema["paths"]
     assert "/api/v1/daily-limit-up-list" in schema["paths"]
+    assert "/api/v1/call-auction-market-snapshots/query" in schema["paths"]
     assert not any("adjusted" in path or "metric" in path for path in schema["paths"])
 
 
@@ -482,3 +512,54 @@ def test_daily_limit_up_list_version_and_pagination_are_bounded() -> None:
         == 422
     )
     assert service.daily_limit_up_calls == []
+
+
+def test_call_auction_market_snapshots_deduplicate_codes_and_keep_decimals() -> None:
+    service = FakeQueryService()
+
+    response = _client(service).post(
+        "/api/v1/call-auction-market-snapshots/query",
+        json={"trade_date": "2026-08-13", "codes": ["600000", "000001", "600000"]},
+        headers=_headers(),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "trade_date": "2026-08-13",
+        "ingestion_id": "dddddddd-dddd-dddd-dddd-dddddddddddd",
+        "ingestion_status": "partial",
+        "requested_count": 2,
+        "returned_count": 1,
+        "missing_codes": ["000001"],
+        "items": [
+            {
+                "symbol": "SSE:600000",
+                "code": "600000",
+                "observed_at": "2026-08-13T01:26:00Z",
+                "last_price": "10.1200",
+                "previous_close": "10.0000",
+                "high_price": "10.1500",
+                "low_price": "9.9800",
+                "cumulative_volume": 123400,
+                "cumulative_amount": "1248808.0000",
+            }
+        ],
+    }
+    assert service.call_auction_market_snapshot_calls == [(date(2026, 8, 13), ("600000", "000001"))]
+
+
+@pytest.mark.parametrize(
+    "codes",
+    [[], ["60000"], ["60000A"], [f"{value:06d}" for value in range(501)]],
+)
+def test_call_auction_market_snapshot_request_is_bounded(codes: list[str]) -> None:
+    service = FakeQueryService()
+
+    response = _client(service).post(
+        "/api/v1/call-auction-market-snapshots/query",
+        json={"trade_date": "2026-08-13", "codes": codes},
+        headers=_headers(),
+    )
+
+    assert response.status_code == 422
+    assert service.call_auction_market_snapshot_calls == []

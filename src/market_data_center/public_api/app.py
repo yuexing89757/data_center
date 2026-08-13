@@ -18,6 +18,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from market_data_center.database_urls import sqlalchemy_url
 from market_data_center.domain import ClassificationType
 from market_data_center.public_api.models import (
+    CallAuctionMarketSnapshotQuery,
+    CallAuctionMarketSnapshotResponse,
     ClassificationMembersResponse,
     DailyBarResponse,
     DailyLimitUpListResponse,
@@ -214,6 +216,30 @@ def create_app(
         limit: Annotated[int, Query(ge=1, le=500)] = 200,
     ) -> DailyLimitUpListResponse:
         return service.daily_limit_up_list(trade_date, version, offset, limit)
+
+    @app.post(
+        "/api/v1/call-auction-market-snapshots/query",
+        response_model=CallAuctionMarketSnapshotResponse,
+        responses={
+            401: {"model": ErrorResponse},
+            404: {"model": ErrorResponse},
+            503: {"model": ErrorResponse},
+        },
+        tags=["market-data"],
+        summary="Batch query one opening-auction market snapshot",
+        description=(
+            "Returns facts from the latest succeeded ingestion for the exact trade date, "
+            "or the latest partial ingestion only when no succeeded ingestion exists. "
+            "A six-digit code can return both SSE and SZSE symbols. Missing codes are "
+            "reported explicitly; no date or batch fallback is used."
+        ),
+    )
+    def call_auction_market_snapshots(
+        _: ApiKeyDependency,
+        service: QueryServiceDependency,
+        request: CallAuctionMarketSnapshotQuery,
+    ) -> CallAuctionMarketSnapshotResponse:
+        return service.call_auction_market_snapshots(request.trade_date, tuple(request.codes))
 
     return app
 

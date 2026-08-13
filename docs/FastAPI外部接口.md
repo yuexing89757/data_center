@@ -16,8 +16,9 @@ FASTAPI_PORT=8000
 force read-only transactions and a five-second statement timeout.
 
 Stable v1 routes are security search (100 rows), unadjusted daily bars (5,000 rows and 3,661 days),
-classification members (5,000 rows), the exact-date generic limit-up pool (5,000 rows), and the
-versioned same-day limit-up snapshot (500 rows per page). Business routes require `X-API-Key`. `/healthz` is
+classification members (5,000 rows), the exact-date generic limit-up pool (5,000 rows), the
+versioned same-day limit-up snapshot (500 rows per page), and exact-date call-auction market
+snapshots (500 requested six-digit codes). Business routes require `X-API-Key`. `/healthz` is
 process-local and `/readyz` verifies a bounded database query. Prices and amounts remain decimal
 strings. Errors never return SQL, internal schema names, database addresses, or credentials.
 
@@ -46,3 +47,12 @@ closing bid levels and computed bid-1 sealing amount, plus provider-neutral line
 Missing enrichment remains `null`; a non-ready snapshot is never presented as complete. Members
 are ordered by `symbol`; `offset` is bounded to 50,000 and `limit` to 500. This route intentionally
 replaces its former rich-list response under ADR-0030. `/api/v1/limit-up-pool` is unchanged.
+
+`POST /api/v1/call-auction-market-snapshots/query` accepts one exact `trade_date` and 1–500
+six-digit `codes`. Duplicate codes are removed. It returns the latest successful ingestion for that
+date; only when no successful ingestion has facts does it select the latest partial ingestion. It
+never combines ingestions or falls back to another date. A code shared by SSE and SZSE can return
+both standardized symbols. `missing_codes` reports requested codes absent from the selected batch.
+The envelope includes the selected provider-neutral ingestion ID and status so consumers can prove
+batch coherence. Items expose observation time, latest/previous-close/high/low prices, cumulative
+volume and amount; source codes, Raw fields and internal timestamps remain private.
