@@ -23,3 +23,4 @@ build/
 .zcode/
 .worktrees/
 .idea/
+/.project
