@@ -89,6 +89,18 @@
         "requestBody": {"$ref": "#/components/requestBodies/AuctionQuotes"},
         "responses": {"200": {"description": "Authenticated quote samples and safe metrics"}}
       }
+    },
+    "/rpc/query_call_auction_market_snapshots": {
+      "post": {
+        "operationId": "queryCallAuctionMarketSnapshots",
+        "summary": "Read one exact-date opening-auction market batch",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {"$ref": "#/components/requestBodies/CallAuctionMarketSnapshots"},
+        "responses": {
+          "200": {"description": "One succeeded or partial batch with explicit missing codes"},
+          "404": {"description": "No eligible batch exists for the exact date"}
+        }
+      }
     }
   },
   "components": {
@@ -230,6 +242,23 @@
             "p_limit": {"type": "integer", "minimum": 1, "maximum": 5000, "default": 1000}
           },
           "anyOf": [{"required": ["p_trade_date"]}, {"required": ["p_session_id"]}]
+        }}}
+      },
+      "CallAuctionMarketSnapshots": {
+        "required": true,
+        "content": {"application/json": {"schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["p_trade_date", "p_codes"],
+          "properties": {
+            "p_trade_date": {"$ref": "#/components/schemas/Date"},
+            "p_codes": {
+              "type": "array",
+              "items": {"type": "string", "pattern": "^[0-9]{6}$"},
+              "minItems": 1,
+              "maxItems": 500
+            }
+          }
         }}}
       }
     }

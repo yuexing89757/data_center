@@ -56,8 +56,15 @@ CallAuctionMarketSnapshotRecord
 `request_params` JSON 猜测交易日。
 
 现有数据库最终化实现仍可写 `realtime.call_auction_snapshot`，保留晨间 ingestion lineage 和
-`observed_at`，但它是非调度内部能力。公共 `query_daily_limit_up_list` 继续只连接最终表，不暴露
-全市场来源表。
+`observed_at`，但它是非调度内部能力。公共 `query_daily_limit_up_list` 继续只连接最终表。
+
+外部只读服务可调用受限的
+`api_v1.query_call_auction_market_snapshots(p_trade_date date,p_codes text[])` 查询全市场来源事实：
+代码数量为 1～500，格式固定为六位数字；重复代码去重；同一代码若同时属于 SSE/SZSE，返回两条
+标准 symbol。精确日期优先选择最新 `succeeded` ingestion；没有成功批次时才选择最新 `partial`
+ingestion；不得拼接批次或回退日期。响应显式返回 provider-neutral ingestion ID/status、缺失代码和
+最高价/最低价等事实，不公开 `source_code`、Raw、节点或内部创建时间。内部表仍不直接授权 API
+角色，RPC 使用五秒 statement timeout。
 
 ### 时间和调度
 

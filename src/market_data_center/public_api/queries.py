@@ -10,6 +10,7 @@ from sqlalchemy.exc import DBAPIError
 
 from market_data_center.domain import ClassificationType
 from market_data_center.public_api.models import (
+    CallAuctionMarketSnapshotResponse,
     ClassificationMembersResponse,
     DailyBarItem,
     DailyLimitUpListResponse,
@@ -62,6 +63,13 @@ select api_v1.query_daily_limit_up_list(
 ) as payload
 """)
 
+QUERY_CALL_AUCTION_MARKET_SNAPSHOTS = text("""
+select api_v1.query_call_auction_market_snapshots(
+    p_trade_date => :trade_date,
+    p_codes => :codes
+) as payload
+""")
+
 
 class PublicQueryError(RuntimeError):
     """Safe application-level query error."""
@@ -108,6 +116,10 @@ class PublicQueryService(Protocol):
     def daily_limit_up_list(
         self, trade_date: date, version: int | None, offset: int, limit: int
     ) -> DailyLimitUpListResponse: ...
+
+    def call_auction_market_snapshots(
+        self, trade_date: date, codes: tuple[str, ...]
+    ) -> CallAuctionMarketSnapshotResponse: ...
 
 
 class PostgreSQLPublicQueryService:
@@ -183,6 +195,17 @@ class PostgreSQLPublicQueryService:
         if not rows:
             raise PublicQueryNotFound("daily limit-up list was not found")
         return DailyLimitUpListResponse.model_validate(rows[0]["payload"])
+
+    def call_auction_market_snapshots(
+        self, trade_date: date, codes: tuple[str, ...]
+    ) -> CallAuctionMarketSnapshotResponse:
+        rows = self._execute(
+            QUERY_CALL_AUCTION_MARKET_SNAPSHOTS,
+            {"trade_date": trade_date, "codes": list(codes)},
+        )
+        if not rows:
+            raise PublicQueryNotFound("call-auction market snapshot was not found")
+        return CallAuctionMarketSnapshotResponse.model_validate(rows[0]["payload"])
 
     def _execute(self, statement: Any, parameters: Mapping[str, object]) -> Sequence[RowMapping]:
         try:

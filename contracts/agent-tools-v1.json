@@ -154,6 +154,26 @@
         },
         "anyOf": [{"required": ["p_trade_date"]}, {"required": ["p_session_id"]}]
       }
+    },
+    {
+      "name": "market_call_auction_snapshots",
+      "description": "Read one exact-date opening-auction market batch by six-digit codes.",
+      "endpoint": "query_call_auction_market_snapshots",
+      "read_only": true,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["p_trade_date", "p_codes"],
+        "properties": {
+          "p_trade_date": {"type": "string", "format": "date"},
+          "p_codes": {
+            "type": "array",
+            "items": {"type": "string", "pattern": "^[0-9]{6}$"},
+            "minItems": 1,
+            "maxItems": 500
+          }
+        }
+      }
     }
   ]
 }
