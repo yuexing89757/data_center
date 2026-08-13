@@ -7,6 +7,8 @@ from pathlib import Path
 from runpy import run_path
 from typing import Any, cast
 
+import pytest
+
 from market_data_center.migrations import MIGRATION_DIR
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -24,6 +26,10 @@ PUBLISHED_FUNCTIONS = cast(tuple[str, ...], FASTAPI_CHECKS["PUBLISHED_FUNCTIONS"
 
 def test_fastapi_preflight_checks_call_auction_market_snapshot_rpc() -> None:
     assert "api_v1.query_call_auction_market_snapshots(date,text[])" in PUBLISHED_FUNCTIONS
+    assert (
+        "api_v1.query_call_auction_indicative_details(text,date,integer,integer)"
+        in PUBLISHED_FUNCTIONS
+    )
 
 
 def _migration_sql() -> str:
@@ -199,6 +205,72 @@ def test_daily_limit_up_list_switches_to_bounded_today_limit_up_contract() -> No
     assert "to authenticated" not in migration
     assert "realtime." not in migration
     assert "core." not in migration
+    assert not re.search(r"(?im)^grant\s+(insert|update|delete|all)", migration)
+
+
+def test_daily_limit_up_list_execute_is_restricted_to_fastapi_role() -> None:
+    migration = (
+        MIGRATION_DIR / "20260814000100_restrict_daily_limit_up_list_execute.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "from public" in migration
+    assert "from anon" in migration
+    assert "from authenticated" in migration
+    assert "to market_data_api" in migration
+    assert not re.search(r"(?im)^grant\s+execute.*\bto\s+(anon|authenticated)\b", migration)
+    assert not re.search(r"(?im)^grant\s+(insert|update|delete|all)", migration)
+
+
+@pytest.mark.parametrize(
+    "filename,function_name",
+    [
+        ("20260814000200_add_top_gainers_20d_api.sql", "query_top_gainers_20d"),
+        (
+            "20260814000300_add_auction_one_price_limits_api.sql",
+            "query_auction_one_price_limits",
+        ),
+    ],
+)
+def test_new_ranked_market_api_rpcs_are_fastapi_only(filename: str, function_name: str) -> None:
+    migration = (MIGRATION_DIR / filename).read_text(encoding="utf-8")
+    assert function_name in migration
+    assert "from public" in migration
+    assert "to market_data_api" in migration
+    assert "to anon" not in migration
+    assert "to authenticated" not in migration
+    assert not re.search(r"(?im)^grant\s+(insert|update|delete|all)", migration)
+
+
+def test_auction_indicative_rpc_is_bounded_fastapi_only_and_not_a_trade_contract() -> None:
+    migration = (
+        MIGRATION_DIR / "20260814000400_create_call_auction_indicative_detail.sql"
+    ).read_text(encoding="utf-8")
+    assert "p_trade_date <> (now() at time zone 'Asia/Shanghai')::date" in migration
+    assert "p_limit > 500" in migration
+    assert "'is_exchange_trade_tick', false" in migration
+    assert "'is_order_by_order', false" in migration
+    assert "from public, anon, authenticated" in migration
+    assert "to market_data_api" in migration
+    assert not re.search(r"(?im)^grant\s+(insert|update|delete|all)", migration)
+
+
+def test_live_auction_persistence_is_narrow_idempotent_and_not_direct_table_dml() -> None:
+    migration = (
+        (MIGRATION_DIR / "20260814000500_persist_live_auction_indicative.sql")
+        .read_text(encoding="utf-8")
+        .lower()
+    )
+
+    assert "security definer" in migration
+    assert "p_trade_date <> (now() at time zone 'asia/shanghai')::date" in migration
+    assert "p_symbol !~ '^(sse|szse):[0-9]{6}$'" in migration
+    assert "p_byte_size > 2000000" in migration
+    assert "p_source_row_count >= 5000" in migration
+    assert "pg_advisory_xact_lock" in migration
+    assert "call_auction_indicative_input_unique unique (symbol,trade_date,input_hash)" in migration
+    assert "revoke all on function api_v1.persist_call_auction_indicative_details" in migration
+    assert "from public,anon,authenticated" in migration
+    assert "to market_data_api" in migration
     assert not re.search(r"(?im)^grant\s+(insert|update|delete|all)", migration)
 
 

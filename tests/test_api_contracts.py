@@ -100,5 +100,6 @@ def test_fastapi_openapi_contract_matches_the_application() -> None:
         == create_app(
             settings=settings,
             query_service=cast(PublicQueryService, object()),
+            auction_indicative_service=cast(object, object()),  # type: ignore[arg-type]
         ).openapi()
     )

@@ -18,6 +18,11 @@ separate services, users, environment files, credentials, and failure domains.
 4. Create OS user/group `market-data-api` without a login shell. Install the API environment template
    as `/etc/market-data-center/api.env`, root-owned mode 0600, and replace placeholders locally.
 5. Install the API unit, run `systemd-analyze verify`, and retain `FASTAPI_HOST=127.0.0.1`.
+6. For the live single-symbol auction endpoint, keep
+   `FASTAPI_AUCTION_RAW_ROOT=/var/lib/market-data-api/raw`. The unit creates the owning state
+   directory; verify it is writable only by the API OS identity. The API database login receives
+   no table DML. Its sole mutation capability is EXECUTE on the bounded SECURITY DEFINER function
+   that appends this domain's current-date, single-symbol facts.
 
 The exact database setup gate is:
 

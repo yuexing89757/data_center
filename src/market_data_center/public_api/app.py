@@ -17,7 +17,22 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from market_data_center.database_urls import sqlalchemy_url
 from market_data_center.domain import ClassificationType
+from market_data_center.providers.eastmoney_auction import EastmoneyAuctionIndicativeProvider
+from market_data_center.public_api.auction_indicative_live import (
+    AuctionIndicativeLiveBusy,
+    AuctionIndicativeLiveInvalid,
+    AuctionIndicativeLivePersistence,
+    AuctionIndicativeLiveUnavailable,
+    AuctionIndicativeLiveUpstream,
+    LiveAuctionIndicativeService,
+)
+from market_data_center.public_api.auction_indicative_write import (
+    AuctionIndicativeApiPersistence,
+    AuctionIndicativePersistenceQueue,
+)
 from market_data_center.public_api.models import (
+    AuctionIndicativeDetailResponse,
+    AuctionOnePriceLimitResponse,
     CallAuctionMarketSnapshotQuery,
     CallAuctionMarketSnapshotResponse,
     ClassificationMembersResponse,
@@ -28,6 +43,7 @@ from market_data_center.public_api.models import (
     HealthResponse,
     LimitUpPoolResponse,
     SecuritySearchResponse,
+    TopGainers20dResponse,
 )
 from market_data_center.public_api.queries import (
     PostgreSQLPublicQueryService,
@@ -37,6 +53,7 @@ from market_data_center.public_api.queries import (
     PublicQueryTimeout,
     PublicQueryUnavailable,
 )
+from market_data_center.raw_store import LocalRawStore
 from market_data_center.settings import ApiSettings
 
 API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
@@ -47,9 +64,12 @@ def create_app(
     *,
     settings: ApiSettings | None = None,
     query_service: PublicQueryService | None = None,
+    auction_indicative_service: LiveAuctionIndicativeService | None = None,
 ) -> FastAPI:
     configured = settings or ApiSettings()  # type: ignore[call-arg]
     owned_engine: Engine | None = None
+    owned_write_engine: Engine | None = None
+    owned_persistence_queue: AuctionIndicativePersistenceQueue | None = None
     if query_service is None:
         owned_engine = create_engine(
             sqlalchemy_url(configured.resolved_database_url()),
@@ -61,11 +81,30 @@ def create_app(
         )
         query_service = PostgreSQLPublicQueryService(owned_engine)
 
+    if auction_indicative_service is None:
+        if owned_engine is None:
+            raise RuntimeError("live auction service must be injected with a query-service stub")
+        # This connection does not force a read-only transaction because it invokes one
+        # narrowly granted SECURITY DEFINER persistence function.  The login role still has
+        # no direct table-write privileges.
+        owned_write_engine = create_engine(
+            sqlalchemy_url(configured.resolved_database_url()),
+            pool_pre_ping=True,
+            pool_recycle=1800,
+            connect_args={
+                "options": "-c default_transaction_read_only=off -c statement_timeout=5000"
+            },
+        )
+
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         yield
+        if owned_persistence_queue is not None:
+            owned_persistence_queue.shutdown()
         if owned_engine is not None:
             owned_engine.dispose()
+        if owned_write_engine is not None:
+            owned_write_engine.dispose()
 
     app = FastAPI(
         title="Market Data Center API",
@@ -75,6 +114,22 @@ def create_app(
     )
     app.state.api_settings = configured
     app.state.query_service = query_service
+    if auction_indicative_service is None:
+        assert owned_write_engine is not None
+        raw_root = configured.fastapi_auction_raw_root
+        owned_persistence_queue = AuctionIndicativePersistenceQueue(
+            AuctionIndicativeApiPersistence(owned_write_engine, LocalRawStore(raw_root), raw_root)
+        )
+        auction_indicative_service = LiveAuctionIndicativeService(
+            EastmoneyAuctionIndicativeProvider(
+                timeout_seconds=configured.fastapi_auction_live_timeout_seconds,
+                max_attempts=configured.fastapi_auction_live_max_attempts,
+            ),
+            owned_persistence_queue,
+            cache_seconds=configured.fastapi_auction_live_cache_seconds,
+            minimum_interval_seconds=configured.fastapi_auction_live_minimum_interval_seconds,
+        )
+    app.state.auction_indicative_service = auction_indicative_service
 
     _install_exception_handlers(app)
 
@@ -241,11 +296,67 @@ def create_app(
     ) -> CallAuctionMarketSnapshotResponse:
         return service.call_auction_market_snapshots(request.trade_date, tuple(request.codes))
 
+    @app.get(
+        "/api/v1/top-gainers-20d",
+        response_model=TopGainers20dResponse,
+        tags=["market-data"],
+        summary="Rank the top gainers over an exact 20-session window",
+    )
+    def top_gainers_20d(
+        _: ApiKeyDependency,
+        service: QueryServiceDependency,
+        end_date: Annotated[date | None, Query()] = None,
+        limit: Annotated[int, Query(ge=1, le=10)] = 10,
+    ) -> TopGainers20dResponse:
+        return service.top_gainers_20d(end_date, limit)
+
+    @app.get(
+        "/api/v1/call-auction-one-price-limits",
+        response_model=AuctionOnePriceLimitResponse,
+        tags=["market-data"],
+        summary="Query evidence-complete 09:26 one-price limit stocks",
+    )
+    def auction_one_price_limits(
+        _: ApiKeyDependency,
+        service: QueryServiceDependency,
+        trade_date: Annotated[date | None, Query()] = None,
+    ) -> AuctionOnePriceLimitResponse:
+        return service.auction_one_price_limits(trade_date)
+
+    @app.get(
+        "/api/v1/call-auction-indicative-details",
+        response_model=AuctionIndicativeDetailResponse,
+        tags=["market-data"],
+        summary="Query current-day call-auction virtual indicative matching details",
+        description=(
+            "Fetches 09:15:00-09:25:59 Asia/Shanghai virtual indicative/reference price and "
+            "displayed matching-volume observations directly from Eastmoney for one SSE/SZSE "
+            "stock. Immutable Raw is captured before response and database registration is "
+            "queued through a narrowly bounded append-only function; queued status is explicit. "
+            "These are not exchange trade ticks or order-by-order records. The source display "
+            "classification is untrusted and is not a trade direction. Historical dates are "
+            "rejected rather than silently substituted."
+        ),
+    )
+    def auction_indicative_details(
+        _: ApiKeyDependency,
+        live_service: AuctionIndicativeServiceDependency,
+        symbol: Annotated[str, Query(pattern=r"^(SSE|SZSE):[0-9]{6}$")],
+        trade_date: Annotated[date, Query()],
+        offset: Annotated[int, Query(ge=0, le=5000)] = 0,
+        limit: Annotated[int, Query(ge=1, le=500)] = 200,
+    ) -> AuctionIndicativeDetailResponse:
+        return live_service.fetch(symbol, trade_date, offset, limit)
+
     return app
 
 
 def _query_service(request: Request) -> PublicQueryService:
     return cast(PublicQueryService, request.app.state.query_service)
+
+
+def _auction_indicative_service(request: Request) -> LiveAuctionIndicativeService:
+    return cast(LiveAuctionIndicativeService, request.app.state.auction_indicative_service)
 
 
 def _require_api_key(
@@ -259,10 +370,35 @@ def _require_api_key(
 
 
 QueryServiceDependency = Annotated[PublicQueryService, Depends(_query_service)]
+AuctionIndicativeServiceDependency = Annotated[
+    LiveAuctionIndicativeService, Depends(_auction_indicative_service)
+]
 ApiKeyDependency = Annotated[None, Depends(_require_api_key)]
 
 
 def _install_exception_handlers(app: FastAPI) -> None:
+    @app.exception_handler(AuctionIndicativeLiveInvalid)
+    async def live_invalid(_: Request, __: AuctionIndicativeLiveInvalid) -> JSONResponse:
+        return _error_response(422, "validation_error", "live auction request is invalid")
+
+    @app.exception_handler(AuctionIndicativeLiveBusy)
+    async def live_busy(_: Request, __: AuctionIndicativeLiveBusy) -> JSONResponse:
+        return _error_response(429, "rate_limited", "live auction provider access is busy")
+
+    @app.exception_handler(AuctionIndicativeLiveUpstream)
+    async def live_upstream(_: Request, __: AuctionIndicativeLiveUpstream) -> JSONResponse:
+        return _error_response(502, "upstream_error", "external auction provider request failed")
+
+    @app.exception_handler(AuctionIndicativeLiveUnavailable)
+    async def live_unavailable(_: Request, __: AuctionIndicativeLiveUnavailable) -> JSONResponse:
+        return _error_response(503, "upstream_unavailable", "auction observations are unavailable")
+
+    @app.exception_handler(AuctionIndicativeLivePersistence)
+    async def live_persistence(_: Request, __: AuctionIndicativeLivePersistence) -> JSONResponse:
+        return _error_response(
+            503, "persistence_unavailable", "auction observations were not saved"
+        )
+
     @app.exception_handler(PublicQueryInvalid)
     async def invalid_query(_: Request, __: PublicQueryInvalid) -> JSONResponse:
         return _error_response(400, "invalid_query", "query parameters were rejected")

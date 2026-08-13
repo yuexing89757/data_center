@@ -21,6 +21,7 @@ def main() -> None:
     schema = create_app(
         settings=settings,
         query_service=cast(PublicQueryService, object()),
+        auction_indicative_service=cast(object, object()),  # type: ignore[arg-type]
     ).openapi()
     CONTRACT_PATH.write_text(
         dumps(schema, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
