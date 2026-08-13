@@ -280,17 +280,25 @@ class AuctionIndicativeDetailItem(ApiModel):
 
 
 class AuctionIndicativeQuality(ApiModel):
-    partial: bool
+    status: Literal["complete"]
+    source_row_count: int = Field(ge=0, le=5000)
+    accepted_auction_row_count: int = Field(ge=1, lt=5000)
     source_display_classification_trusted: Literal[False]
+    raw_captured: Literal[True]
+    database_persistence: Literal["queued"]
 
 
 class AuctionIndicativeDetailResponse(ApiModel):
     symbol: str
     trade_date: date
-    version: int = Field(ge=1)
+    fetched_at: datetime
+    source: Literal["eastmoney"]
+    live_provider_derived: Literal[True]
+    cache_hit: bool
+    persistence_status: Literal["queued"]
     ingestion_id: UUID
     raw_id: UUID
-    status: Literal["succeeded", "partial"]
+    input_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     semantics: Literal["auction_virtual_indicative_matching_detail"]
     is_exchange_trade_tick: Literal[False]
     is_order_by_order: Literal[False]

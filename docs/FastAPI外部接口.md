@@ -1,8 +1,9 @@
 # FastAPI external read-only API
 
 The FastAPI process is an independent protocol boundary that connects directly to PostgreSQL. It
-does not call or require PostgREST, providers, the Worker scheduler, Raw storage, or persistence
-services. Its SQL is limited to the explicitly granted bounded `api_v1` functions.
+does not require PostgREST or the Worker scheduler. Except for the explicitly documented bounded
+single-symbol live-auction endpoint, it does not call providers or write Raw data. Its SQL is
+limited to explicitly granted bounded `api_v1` functions.
 
 ```dotenv
 FASTAPI_DATABASE_URL='postgresql+psycopg://<api-login>:<password>@<host>:5432/<database>'
@@ -66,6 +67,14 @@ the stored 09:26 Asia/Shanghai snapshot has complete equal last/high/low evidenc
 versioned price limit. Partial status and incomplete omissions remain visible; later bars are unused.
 
 `GET /api/v1/call-auction-indicative-details?symbol=SSE:688796&trade_date=YYYY-MM-DD&offset=0&limit=200`
-returns only stored current-day 09:15:00-09:25:59 Asia/Shanghai virtual indicative/reference and
-matching-volume observations for one SSE/SZSE stock. It is not a trade-tick or order-by-order API;
-the source display classification is untrusted. Non-current dates are rejected without fallback.
+performs one bounded live Eastmoney fetch for current-day 09:15:00-09:25:59 Asia/Shanghai virtual
+indicative/reference and matching-volume observations for one SSE/SZSE stock. It synchronously
+captures immutable Raw, queues the bounded database registration, and returns the market data with
+`persistence_status=queued`; it does not claim that database persistence has completed. The single
+writer queue has one waiting slot. Full queue or Raw failure rejects the request rather than
+returning untracked data. Identical content later reuses its version; changed content creates an
+immutable revision. It is not a trade-tick or order-by-order API; the
+source display classification is untrusted. Non-current dates and pre-09:26 requests are rejected
+without fallback. Provider failure maps to 502, provider absence/Raw failure to 503, and the
+single-process concurrency/rate/queue gate to 429. A later database failure is logged with Raw
+retained for operational recovery; it cannot retroactively change an already returned response.

@@ -311,17 +311,26 @@ class FakeQueryService:
             down=[],
         )
 
-    def auction_indicative_details(
+
+class FakeLiveAuctionService:
+    def __init__(self, query_service: FakeQueryService) -> None:
+        self._query_service = query_service
+
+    def fetch(
         self, symbol: str, trade_date: date, offset: int, limit: int
     ) -> AuctionIndicativeDetailResponse:
-        self.auction_indicative_calls.append((symbol, trade_date, offset, limit))
+        self._query_service.auction_indicative_calls.append((symbol, trade_date, offset, limit))
         return AuctionIndicativeDetailResponse(
             symbol=symbol,
             trade_date=trade_date,
-            version=1,
+            fetched_at=datetime(2026, 8, 14, 1, 26, tzinfo=UTC),
+            source="eastmoney",
+            live_provider_derived=True,
+            cache_hit=False,
+            persistence_status="queued",
             ingestion_id="11111111-1111-1111-1111-111111111111",
             raw_id="22222222-2222-2222-2222-222222222222",
-            status="partial",
+            input_hash="a" * 64,
             semantics="auction_virtual_indicative_matching_detail",
             is_exchange_trade_tick=False,
             is_order_by_order=False,
@@ -330,7 +339,12 @@ class FakeQueryService:
             returned_count=1,
             has_more=True,
             quality=AuctionIndicativeQuality(
-                partial=True, source_display_classification_trusted=False
+                status="complete",
+                source_row_count=3,
+                accepted_auction_row_count=2,
+                source_display_classification_trusted=False,
+                raw_captured=True,
+                database_persistence="queued",
             ),
             items=[
                 AuctionIndicativeDetailItem(
@@ -349,7 +363,13 @@ def _client(service: FakeQueryService) -> TestClient:
         fastapi_database_url=SecretStr("unused"),
         fastapi_api_key=SecretStr(API_KEY),
     )
-    return TestClient(create_app(settings=settings, query_service=service))
+    return TestClient(
+        create_app(
+            settings=settings,
+            query_service=service,
+            auction_indicative_service=FakeLiveAuctionService(service),  # type: ignore[arg-type]
+        )
+    )
 
 
 def _headers() -> dict[str, str]:
@@ -715,6 +735,9 @@ def test_auction_indicative_details_are_explicitly_not_trade_ticks() -> None:
     assert payload["is_order_by_order"] is False
     assert payload["items"][0]["displayed_volume_shares"] == 200
     assert payload["quality"]["source_display_classification_trusted"] is False
+    assert payload["quality"]["raw_captured"] is True
+    assert payload["quality"]["database_persistence"] == "queued"
+    assert payload["live_provider_derived"] is True
     assert service.auction_indicative_calls == [("SSE:688796", date(2026, 8, 14), 0, 200)]
 
 

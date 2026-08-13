@@ -47,6 +47,15 @@
       "AuctionIndicativeDetailResponse": {
         "additionalProperties": false,
         "properties": {
+          "cache_hit": {
+            "title": "Cache Hit",
+            "type": "boolean"
+          },
+          "fetched_at": {
+            "format": "date-time",
+            "title": "Fetched At",
+            "type": "string"
+          },
           "has_more": {
             "title": "Has More",
             "type": "boolean"
@@ -54,6 +63,11 @@
           "ingestion_id": {
             "format": "uuid",
             "title": "Ingestion Id",
+            "type": "string"
+          },
+          "input_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Input Hash",
             "type": "string"
           },
           "is_exchange_trade_tick": {
@@ -73,10 +87,20 @@
             "title": "Items",
             "type": "array"
           },
+          "live_provider_derived": {
+            "const": true,
+            "title": "Live Provider Derived",
+            "type": "boolean"
+          },
           "offset": {
             "minimum": 0.0,
             "title": "Offset",
             "type": "integer"
+          },
+          "persistence_status": {
+            "const": "queued",
+            "title": "Persistence Status",
+            "type": "string"
           },
           "quality": {
             "$ref": "#/components/schemas/AuctionIndicativeQuality"
@@ -97,12 +121,9 @@
             "title": "Semantics",
             "type": "string"
           },
-          "status": {
-            "enum": [
-              "succeeded",
-              "partial"
-            ],
-            "title": "Status",
+          "source": {
+            "const": "eastmoney",
+            "title": "Source",
             "type": "string"
           },
           "symbol": {
@@ -118,20 +139,19 @@
             "format": "date",
             "title": "Trade Date",
             "type": "string"
-          },
-          "version": {
-            "minimum": 1.0,
-            "title": "Version",
-            "type": "integer"
           }
         },
         "required": [
           "symbol",
           "trade_date",
-          "version",
+          "fetched_at",
+          "source",
+          "live_provider_derived",
+          "cache_hit",
+          "persistence_status",
           "ingestion_id",
           "raw_id",
-          "status",
+          "input_hash",
           "semantics",
           "is_exchange_trade_tick",
           "is_order_by_order",
@@ -148,19 +168,46 @@
       "AuctionIndicativeQuality": {
         "additionalProperties": false,
         "properties": {
-          "partial": {
-            "title": "Partial",
+          "accepted_auction_row_count": {
+            "exclusiveMaximum": 5000.0,
+            "minimum": 1.0,
+            "title": "Accepted Auction Row Count",
+            "type": "integer"
+          },
+          "database_persistence": {
+            "const": "queued",
+            "title": "Database Persistence",
+            "type": "string"
+          },
+          "raw_captured": {
+            "const": true,
+            "title": "Raw Captured",
             "type": "boolean"
           },
           "source_display_classification_trusted": {
             "const": false,
             "title": "Source Display Classification Trusted",
             "type": "boolean"
+          },
+          "source_row_count": {
+            "maximum": 5000.0,
+            "minimum": 0.0,
+            "title": "Source Row Count",
+            "type": "integer"
+          },
+          "status": {
+            "const": "complete",
+            "title": "Status",
+            "type": "string"
           }
         },
         "required": [
-          "partial",
-          "source_display_classification_trusted"
+          "status",
+          "source_row_count",
+          "accepted_auction_row_count",
+          "source_display_classification_trusted",
+          "raw_captured",
+          "database_persistence"
         ],
         "title": "AuctionIndicativeQuality",
         "type": "object"
@@ -1836,7 +1883,7 @@
   "paths": {
     "/api/v1/call-auction-indicative-details": {
       "get": {
-        "description": "Returns stored 09:15:00-09:25:59 Asia/Shanghai virtual indicative/reference price and displayed matching-volume observations for one SSE/SZSE stock. These are not exchange trade ticks or order-by-order records. The source display classification is untrusted and is not a trade direction. Historical dates are rejected rather than silently substituted.",
+        "description": "Fetches 09:15:00-09:25:59 Asia/Shanghai virtual indicative/reference price and displayed matching-volume observations directly from Eastmoney for one SSE/SZSE stock. Immutable Raw is captured before response and database registration is queued through a narrowly bounded append-only function; queued status is explicit. These are not exchange trade ticks or order-by-order records. The source display classification is untrusted and is not a trade direction. Historical dates are rejected rather than silently substituted.",
         "operationId": "auction_indicative_details_api_v1_call_auction_indicative_details_get",
         "parameters": [
           {

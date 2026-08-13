@@ -54,3 +54,4 @@ ADR 记录已经接受的架构决策。其优先级低于项目宪法，高于�
 - `ADR-0031-近20交易日涨幅Top10只读契约.md`：定义未复权收盘价 20 交易日（19 区间）确定性排名与遗漏语义。
 - `ADR-0032-0926集合竞价一字涨跌停只读契约.md`：定义只使用 09:26 快照和版本化涨跌停价的一字板证据。
 - `ADR-0033-当日集合竞价虚拟撮合明细.md`：定义当日单证券虚拟参考/匹配明细、Raw/版本/许可门禁和只读 API；明确它不是逐笔成交或逐笔委托。
+- `ADR-0033-live-fetch-clarification.md`: accepts bounded on-request fetch with narrow append-only persistence before response.

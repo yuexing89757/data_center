@@ -254,6 +254,26 @@ def test_auction_indicative_rpc_is_bounded_fastapi_only_and_not_a_trade_contract
     assert not re.search(r"(?im)^grant\s+(insert|update|delete|all)", migration)
 
 
+def test_live_auction_persistence_is_narrow_idempotent_and_not_direct_table_dml() -> None:
+    migration = (
+        (MIGRATION_DIR / "20260814000500_persist_live_auction_indicative.sql")
+        .read_text(encoding="utf-8")
+        .lower()
+    )
+
+    assert "security definer" in migration
+    assert "p_trade_date <> (now() at time zone 'asia/shanghai')::date" in migration
+    assert "p_symbol !~ '^(sse|szse):[0-9]{6}$'" in migration
+    assert "p_byte_size > 2000000" in migration
+    assert "p_source_row_count >= 5000" in migration
+    assert "pg_advisory_xact_lock" in migration
+    assert "call_auction_indicative_input_unique unique (symbol,trade_date,input_hash)" in migration
+    assert "revoke all on function api_v1.persist_call_auction_indicative_details" in migration
+    assert "from public,anon,authenticated" in migration
+    assert "to market_data_api" in migration
+    assert not re.search(r"(?im)^grant\s+(insert|update|delete|all)", migration)
+
+
 def test_daily_limit_up_list_quality_fix_uses_calculation_quality_table() -> None:
     """Regression guard: the quality CTE must read today_limit_up.calculation_quality,
     not the non-existent today_limit_up.member_quality that caused HTTP 503."""
