@@ -196,6 +196,19 @@ def test_daily_limit_up_list_switches_to_bounded_today_limit_up_contract() -> No
     assert not re.search(r"(?im)^grant\s+(insert|update|delete|all)", migration)
 
 
+def test_daily_limit_up_list_execute_is_restricted_to_fastapi_role() -> None:
+    migration = (
+        MIGRATION_DIR / "20260814000100_restrict_daily_limit_up_list_execute.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "from public" in migration
+    assert "from anon" in migration
+    assert "from authenticated" in migration
+    assert "to market_data_api" in migration
+    assert not re.search(r"(?im)^grant\s+execute.*\bto\s+(anon|authenticated)\b", migration)
+    assert not re.search(r"(?im)^grant\s+(insert|update|delete|all)", migration)
+
+
 def test_daily_limit_up_list_quality_fix_uses_calculation_quality_table() -> None:
     """Regression guard: the quality CTE must read today_limit_up.calculation_quality,
     not the non-existent today_limit_up.member_quality that caused HTTP 503."""
