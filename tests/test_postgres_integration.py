@@ -57,9 +57,20 @@ from market_data_center.domain import (
     TradeStatus,
     deducted_profit_revision_key,
 )
+from market_data_center.domain.call_auction_market_series import (
+    MarketSeriesRound,
+    MarketSeriesSession,
+    MarketSeriesSnapshotRecord,
+    MarketSeriesStatus,
+    series_slots,
+    universe_hash,
+)
 from market_data_center.domain.operations import ExecutionStatus, TriggerSource, WorkflowCode
 from market_data_center.migrations import MIGRATION_DIR, apply_migrations
 from market_data_center.persistence import PostgreSQLDerivedPersistence, PostgreSQLPersistence
+from market_data_center.persistence.call_auction_market_series_postgres import (
+    PostgreSQLCallAuctionMarketSeriesPersistence,
+)
 from market_data_center.persistence.operations_postgres import PostgreSQLOperationsPersistence
 from market_data_center.quality_audit import audit_daily_bars
 from market_data_center.recovery import (
@@ -300,6 +311,300 @@ def test_call_auction_market_series_schema_is_partitioned_and_internal(
     assert inventory["call_auction_market_series_session"] == 0
     assert inventory["call_auction_market_series_round"] == 0
     assert inventory["call_auction_market_series_snapshot"] == 0
+
+
+def test_market_series_persistence_commits_attempt_and_finishes_partial_session(
+    database_engine: Engine,
+) -> None:
+    trade_date = date(2026, 8, 17)
+    slots = series_slots(trade_date)
+    persistence = PostgreSQLCallAuctionMarketSeriesPersistence(database_engine)
+    operations = PostgreSQLOperationsPersistence(database_engine)
+    with database_engine.begin() as connection:
+        _insert_call_auction_security_universe(connection)
+        _insert_trading_calendar_day(connection, trade_date, is_trading_day=True)
+
+    workflow = operations.start_workflow(
+        WorkflowCode.CALL_AUCTION_MARKET_SERIES,
+        slots[0],
+        TriggerSource.SCHEDULED,
+    )
+    symbols = ("SSE:600000", "SZSE:000001")
+    session = MarketSeriesSession(
+        session_id=uuid4(),
+        workflow_run_id=workflow.workflow_run_id,
+        trade_date=trade_date,
+        window_start=slots[0],
+        window_end=slots[-1] + timedelta(seconds=20),
+        cadence_seconds=20,
+        expected_rounds=32,
+        universe_symbols=symbols,
+        universe_count=2,
+        universe_hash=universe_hash(symbols),
+        status=MarketSeriesStatus.RUNNING,
+        started_at=slots[0],
+    )
+
+    assert persistence.is_trading_day(trade_date)
+    assert persistence.listed_sse_szse_stock_symbols() == list(symbols)
+    assert persistence.load_recovery_universe(trade_date) is None
+    persistence.create_session(session)
+    assert persistence.load_recovery_universe(trade_date) == symbols
+
+    running_round = MarketSeriesRound(
+        session_id=session.session_id,
+        sample_seq=0,
+        scheduled_at=slots[0],
+        collected_at=None,
+        status=MarketSeriesStatus.RUNNING,
+        attempt_count=0,
+        expected_quotes=2,
+        successful_quotes=0,
+        failed_quotes=0,
+        selected_ingestion_id=None,
+    )
+    persistence.start_round(running_round)
+    ingestion_id = uuid4()
+    running_run = IngestionRun(
+        ingestion_id=ingestion_id,
+        provider_code=ProviderCode.PYTDX_HQ,
+        dataset_code=DatasetCode.CALL_AUCTION_MARKET_SERIES,
+        status=IngestionStatus.RUNNING,
+        requested_at=slots[0],
+        started_at=slots[0],
+        request_params={
+            "trade_date": trade_date.isoformat(),
+            "session_id": str(session.session_id),
+            "sample_seq": 0,
+            "scheduled_at": slots[0].isoformat(),
+            "endpoint": "first.quote:7709",
+            "expected_rows": 2,
+        },
+    )
+    persistence.create_ingestion_run(running_run)
+    completed_run = replace(
+        running_run,
+        status=IngestionStatus.PARTIAL,
+        finished_at=slots[0] + timedelta(seconds=2),
+        fetched_rows=1,
+        accepted_rows=1,
+    )
+    records = (
+        MarketSeriesSnapshotRecord(
+            symbol="SSE:600000",
+            trade_date=trade_date,
+            session_id=session.session_id,
+            sample_seq=0,
+            scheduled_at=slots[0],
+            observed_at=slots[0] + timedelta(seconds=1),
+            source_code="pytdx_hq",
+            last_price=Decimal("10.10"),
+            previous_close=Decimal("10.00"),
+            high_price=Decimal("10.10"),
+            low_price=Decimal("10.00"),
+            cumulative_volume=100,
+            cumulative_amount=Decimal("1010.00"),
+        ),
+    )
+    persistence.commit_attempt(
+        completed_run,
+        records,
+        _manifest(ingestion_id, "market-series-partial", row_count=1, provider="pytdx_hq"),
+        (),
+    )
+    persistence.finish_round(
+        replace(
+            running_round,
+            collected_at=slots[0] + timedelta(seconds=2),
+            status=MarketSeriesStatus.PARTIAL,
+            attempt_count=1,
+            successful_quotes=1,
+            failed_quotes=1,
+            selected_ingestion_id=ingestion_id,
+        )
+    )
+    finished = persistence.finish_session(session.session_id, slots[-1] + timedelta(seconds=20))
+
+    assert finished.status is MarketSeriesStatus.PARTIAL
+    assert (finished.successful_rounds, finished.partial_rounds, finished.failed_rounds) == (
+        0,
+        1,
+        31,
+    )
+    assert (finished.successful_quotes, finished.failed_quotes) == (1, 63)
+    with database_engine.connect() as connection:
+        assert (
+            connection.scalar(
+                text("select count(*) from realtime.call_auction_market_series_snapshot")
+            )
+            == 1
+        )
+        assert (
+            connection.scalar(
+                text("select status from ingestion.ingestion_run where ingestion_id=:id"),
+                {"id": ingestion_id},
+            )
+            == "partial"
+        )
+
+
+def test_market_series_attempt_rolls_back_manifest_quality_and_facts(
+    database_engine: Engine,
+) -> None:
+    trade_date = date(2026, 8, 17)
+    slots = series_slots(trade_date)
+    persistence = PostgreSQLCallAuctionMarketSeriesPersistence(database_engine)
+    operations = PostgreSQLOperationsPersistence(database_engine)
+    with database_engine.begin() as connection:
+        _insert_call_auction_security_universe(connection)
+    workflow = operations.start_workflow(
+        WorkflowCode.CALL_AUCTION_MARKET_SERIES, slots[0], TriggerSource.SCHEDULED
+    )
+    symbols = ("SSE:600000", "SZSE:000001")
+    session = MarketSeriesSession(
+        uuid4(),
+        workflow.workflow_run_id,
+        trade_date,
+        slots[0],
+        slots[-1] + timedelta(seconds=20),
+        20,
+        32,
+        symbols,
+        2,
+        universe_hash(symbols),
+        MarketSeriesStatus.RUNNING,
+        slots[0],
+    )
+    persistence.create_session(session)
+    running_round = MarketSeriesRound(
+        session.session_id,
+        0,
+        slots[0],
+        None,
+        MarketSeriesStatus.RUNNING,
+        0,
+        2,
+        0,
+        0,
+        None,
+    )
+    persistence.start_round(running_round)
+    running_run = IngestionRun(
+        uuid4(),
+        ProviderCode.PYTDX_HQ,
+        DatasetCode.CALL_AUCTION_MARKET_SERIES,
+        IngestionStatus.RUNNING,
+        slots[0],
+        slots[0],
+        request_params={"session_id": str(session.session_id), "sample_seq": 0},
+    )
+    persistence.create_ingestion_run(running_run)
+    record = MarketSeriesSnapshotRecord(
+        "SSE:600000",
+        trade_date,
+        session.session_id,
+        0,
+        slots[0],
+        slots[0] + timedelta(seconds=1),
+        "pytdx_hq",
+        Decimal("10.00"),
+        Decimal("9.90"),
+        Decimal("10.00"),
+        Decimal("10.00"),
+        100,
+        Decimal("1000.00"),
+    )
+    completed = replace(
+        running_run,
+        status=IngestionStatus.SUCCEEDED,
+        finished_at=slots[0] + timedelta(seconds=2),
+        fetched_rows=2,
+        accepted_rows=2,
+    )
+    quality = QualityResult(
+        uuid4(),
+        running_run.ingestion_id,
+        DatasetCode.CALL_AUCTION_MARKET_SERIES,
+        "call_auction_market_series.complete",
+        QualitySeverity.INFO,
+        QualityStatus.PASSED,
+        "complete",
+    )
+
+    with pytest.raises(IntegrityError):
+        persistence.commit_attempt(
+            completed,
+            (record, record),
+            _manifest(
+                running_run.ingestion_id,
+                "market-series-rollback",
+                row_count=2,
+                provider="pytdx_hq",
+            ),
+            (quality,),
+        )
+
+    with database_engine.connect() as connection:
+        counts = connection.execute(
+            text("""
+                select
+                  (select count(*) from ingestion.raw_manifest where ingestion_id=:id),
+                  (select count(*) from audit.quality_result where ingestion_id=:id),
+                  (select count(*) from realtime.call_auction_market_series_snapshot
+                   where ingestion_id=:id),
+                  (select status from ingestion.ingestion_run where ingestion_id=:id)
+            """),
+            {"id": running_run.ingestion_id},
+        ).one()
+    assert tuple(counts) == (0, 0, 0, "running")
+
+    mismatched_ingestion_id = uuid4()
+    with database_engine.begin() as connection:
+        connection.execute(
+            text("""
+                insert into ingestion.ingestion_run (
+                  ingestion_id,provider_code,dataset_code,status,requested_at,started_at,
+                  finished_at,request_params
+                ) values (
+                  :ingestion_id,'pytdx_hq','call_auction_market_series','partial',
+                  :started_at,:started_at,:finished_at,
+                  jsonb_build_object(
+                    'session_id',cast(:wrong_session_id as text),'sample_seq',0
+                  )
+                )
+            """),
+            {
+                "ingestion_id": mismatched_ingestion_id,
+                "started_at": slots[0],
+                "finished_at": slots[0] + timedelta(seconds=1),
+                "wrong_session_id": str(uuid4()),
+            },
+        )
+    with pytest.raises(ValueError, match="does not match"):
+        persistence.finish_round(
+            replace(
+                running_round,
+                collected_at=slots[0] + timedelta(seconds=2),
+                status=MarketSeriesStatus.PARTIAL,
+                attempt_count=1,
+                failed_quotes=2,
+                selected_ingestion_id=mismatched_ingestion_id,
+            )
+        )
+
+    recovered = persistence.recover_expired_sessions(slots[-1] + timedelta(seconds=21))
+    assert recovered == 1
+    with database_engine.connect() as connection:
+        terminal = connection.execute(
+            text("""
+                select session.status,round.status,round.failed_quotes
+                from realtime.call_auction_market_series_session session
+                join realtime.call_auction_market_series_round round using (session_id)
+                where session.session_id=:session_id
+            """),
+            {"session_id": session.session_id},
+        ).one()
+    assert tuple(terminal) == ("failed", "failed", 2)
 
 
 def test_auction_indicative_schema_and_api_permission_boundary(
