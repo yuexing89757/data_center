@@ -1,6 +1,6 @@
 # 领域详设：CallAuctionMarketSeries
 
-> 状态：有效，待实现
+> 状态：有效，已实现
 > 日期：2026-08-14
 > GitHub Issue：#48
 > 上级决策：`adr/ADR-0034-沪深全市场开盘竞价序列快照.md`（Accepted）
@@ -113,7 +113,15 @@ JobStore仅保存调度定义，WorkflowRun/JobExecution、Session/Round和Inges
 
 ## 11. 读取边界
 
-首版没有公共RPC、View或FastAPI端点。消费者不得直接依赖realtime内部表。后续读取需求必须另建Issue，设计按日期、slot和code有界的`api_v1`契约，并同步签入contracts。
+消费者不得直接依赖realtime内部表。只读
+`api_v1.query_call_auction_market_series_snapshots(p_trade_date,p_codes)` 接受精确交易日和
+1～500个六位代码，优先选择最新succeeded Session；没有成功Session时选择最新partial
+Session，不拼Session、不回退日期。响应按sample sequence正序返回每轮，并逐轮公开缺失代码、
+规范事实和provider-neutral selected ingestion ID。
+
+FastAPI通过`POST /api/v1/call-auction-market-series-snapshots/query`代理该RPC，只使用
+`market_data_api`最小执行权限，不直接读取realtime表。PostgREST、Agent和FastAPI contracts
+必须同步签入；Raw、source code、节点及内部创建时间不进入公共契约。
 
 ## 12. 测试与上线
 

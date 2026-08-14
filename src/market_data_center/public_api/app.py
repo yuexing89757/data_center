@@ -33,6 +33,8 @@ from market_data_center.public_api.auction_indicative_write import (
 from market_data_center.public_api.models import (
     AuctionIndicativeDetailResponse,
     AuctionOnePriceLimitResponse,
+    CallAuctionMarketSeriesSnapshotQuery,
+    CallAuctionMarketSeriesSnapshotResponse,
     CallAuctionMarketSnapshotQuery,
     CallAuctionMarketSnapshotResponse,
     ClassificationMembersResponse,
@@ -295,6 +297,32 @@ def create_app(
         request: CallAuctionMarketSnapshotQuery,
     ) -> CallAuctionMarketSnapshotResponse:
         return service.call_auction_market_snapshots(request.trade_date, tuple(request.codes))
+
+    @app.post(
+        "/api/v1/call-auction-market-series-snapshots/query",
+        response_model=CallAuctionMarketSeriesSnapshotResponse,
+        responses={
+            401: {"model": ErrorResponse},
+            404: {"model": ErrorResponse},
+            503: {"model": ErrorResponse},
+        },
+        tags=["market-data"],
+        summary="Batch query one opening-auction market series session",
+        description=(
+            "Returns all recorded rounds from the latest succeeded session for the exact "
+            "trade date, or the latest partial session only when no succeeded session exists. "
+            "Rounds are ordered by scheduled time and report missing six-digit codes "
+            "independently. Sessions and dates are never merged or substituted."
+        ),
+    )
+    def call_auction_market_series_snapshots(
+        _: ApiKeyDependency,
+        service: QueryServiceDependency,
+        request: CallAuctionMarketSeriesSnapshotQuery,
+    ) -> CallAuctionMarketSeriesSnapshotResponse:
+        return service.call_auction_market_series_snapshots(
+            request.trade_date, tuple(request.codes)
+        )
 
     @app.get(
         "/api/v1/top-gainers-20d",

@@ -101,6 +101,18 @@
           "404": {"description": "No eligible batch exists for the exact date"}
         }
       }
+    },
+    "/rpc/query_call_auction_market_series_snapshots": {
+      "post": {
+        "operationId": "queryCallAuctionMarketSeriesSnapshots",
+        "summary": "Read one exact-date opening-auction market series session",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {"$ref": "#/components/requestBodies/CallAuctionMarketSnapshots"},
+        "responses": {
+          "200": {"description": "One succeeded or partial session with time-ordered rounds"},
+          "404": {"description": "No eligible session exists for the exact date"}
+        }
+      }
     }
   },
   "components": {

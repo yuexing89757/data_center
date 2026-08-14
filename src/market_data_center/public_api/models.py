@@ -213,6 +213,36 @@ class CallAuctionMarketSnapshotResponse(ApiModel):
     items: list[CallAuctionMarketSnapshotItem]
 
 
+class CallAuctionMarketSeriesSnapshotQuery(CallAuctionMarketSnapshotQuery):
+    pass
+
+
+class CallAuctionMarketSeriesSnapshotItem(CallAuctionMarketSnapshotItem):
+    pass
+
+
+class CallAuctionMarketSeriesRound(ApiModel):
+    sample_seq: int = Field(ge=0, le=31)
+    scheduled_at: datetime
+    collected_at: datetime
+    round_status: Literal["succeeded", "partial", "failed"]
+    selected_ingestion_id: UUID | None
+    requested_count: int = Field(ge=1, le=500)
+    returned_count: int = Field(ge=0)
+    missing_codes: list[SixDigitCode]
+    items: list[CallAuctionMarketSeriesSnapshotItem]
+
+
+class CallAuctionMarketSeriesSnapshotResponse(ApiModel):
+    trade_date: date
+    session_id: UUID
+    session_status: Literal["succeeded", "partial"]
+    expected_rounds: Literal[32]
+    returned_rounds: int = Field(ge=0, le=32)
+    requested_count: int = Field(ge=1, le=500)
+    rounds: list[CallAuctionMarketSeriesRound]
+
+
 class TopGainer20dItem(ApiModel):
     symbol: str
     code: SixDigitCode

@@ -428,6 +428,274 @@
         "title": "AuctionOnePriceLimitResponse",
         "type": "object"
       },
+      "CallAuctionMarketSeriesRound": {
+        "additionalProperties": false,
+        "properties": {
+          "collected_at": {
+            "format": "date-time",
+            "title": "Collected At",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CallAuctionMarketSeriesSnapshotItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "missing_codes": {
+            "items": {
+              "pattern": "^[0-9]{6}$",
+              "type": "string"
+            },
+            "title": "Missing Codes",
+            "type": "array"
+          },
+          "requested_count": {
+            "maximum": 500.0,
+            "minimum": 1.0,
+            "title": "Requested Count",
+            "type": "integer"
+          },
+          "returned_count": {
+            "minimum": 0.0,
+            "title": "Returned Count",
+            "type": "integer"
+          },
+          "round_status": {
+            "enum": [
+              "succeeded",
+              "partial",
+              "failed"
+            ],
+            "title": "Round Status",
+            "type": "string"
+          },
+          "sample_seq": {
+            "maximum": 31.0,
+            "minimum": 0.0,
+            "title": "Sample Seq",
+            "type": "integer"
+          },
+          "scheduled_at": {
+            "format": "date-time",
+            "title": "Scheduled At",
+            "type": "string"
+          },
+          "selected_ingestion_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Ingestion Id"
+          }
+        },
+        "required": [
+          "sample_seq",
+          "scheduled_at",
+          "collected_at",
+          "round_status",
+          "selected_ingestion_id",
+          "requested_count",
+          "returned_count",
+          "missing_codes",
+          "items"
+        ],
+        "title": "CallAuctionMarketSeriesRound",
+        "type": "object"
+      },
+      "CallAuctionMarketSeriesSnapshotItem": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "cumulative_amount": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cumulative Amount"
+          },
+          "cumulative_volume": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cumulative Volume"
+          },
+          "high_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "High Price"
+          },
+          "last_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Price"
+          },
+          "low_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Low Price"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "previous_close": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Close"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "code",
+          "observed_at",
+          "last_price",
+          "previous_close",
+          "high_price",
+          "low_price",
+          "cumulative_amount"
+        ],
+        "title": "CallAuctionMarketSeriesSnapshotItem",
+        "type": "object"
+      },
+      "CallAuctionMarketSeriesSnapshotQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "codes": {
+            "items": {
+              "pattern": "^[0-9]{6}$",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Codes",
+            "type": "array"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "trade_date",
+          "codes"
+        ],
+        "title": "CallAuctionMarketSeriesSnapshotQuery",
+        "type": "object"
+      },
+      "CallAuctionMarketSeriesSnapshotResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_rounds": {
+            "const": 32,
+            "title": "Expected Rounds",
+            "type": "integer"
+          },
+          "requested_count": {
+            "maximum": 500.0,
+            "minimum": 1.0,
+            "title": "Requested Count",
+            "type": "integer"
+          },
+          "returned_rounds": {
+            "maximum": 32.0,
+            "minimum": 0.0,
+            "title": "Returned Rounds",
+            "type": "integer"
+          },
+          "rounds": {
+            "items": {
+              "$ref": "#/components/schemas/CallAuctionMarketSeriesRound"
+            },
+            "title": "Rounds",
+            "type": "array"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "session_status": {
+            "enum": [
+              "succeeded",
+              "partial"
+            ],
+            "title": "Session Status",
+            "type": "string"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "trade_date",
+          "session_id",
+          "session_status",
+          "expected_rounds",
+          "returned_rounds",
+          "requested_count",
+          "rounds"
+        ],
+        "title": "CallAuctionMarketSeriesSnapshotResponse",
+        "type": "object"
+      },
       "CallAuctionMarketSnapshotItem": {
         "additionalProperties": false,
         "properties": {
@@ -2000,6 +2268,83 @@
           }
         ],
         "summary": "Query current-day call-auction virtual indicative matching details",
+        "tags": [
+          "market-data"
+        ]
+      }
+    },
+    "/api/v1/call-auction-market-series-snapshots/query": {
+      "post": {
+        "description": "Returns all recorded rounds from the latest succeeded session for the exact trade date, or the latest partial session only when no succeeded session exists. Rounds are ordered by scheduled time and report missing six-digit codes independently. Sessions and dates are never merged or substituted.",
+        "operationId": "call_auction_market_series_snapshots_api_v1_call_auction_market_series_snapshots_query_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CallAuctionMarketSeriesSnapshotQuery"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallAuctionMarketSeriesSnapshotResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Batch query one opening-auction market series session",
         "tags": [
           "market-data"
         ]

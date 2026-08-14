@@ -56,6 +56,7 @@ class FakeQueryService:
         self.limit_up_calls: list[tuple[date, int | None, int]] = []
         self.daily_limit_up_calls: list[tuple[date, int | None, int, int]] = []
         self.call_auction_market_snapshot_calls: list[tuple[date, tuple[str, ...]]] = []
+        self.call_auction_market_series_snapshot_calls: list[tuple[date, tuple[str, ...]]] = []
         self.top_gainer_calls: list[tuple[date | None, int]] = []
         self.auction_one_price_limit_calls: list[date | None] = []
         self.auction_indicative_database_calls: list[tuple[str, int, int]] = []
@@ -252,6 +253,44 @@ class FakeQueryService:
                 )
             ],
         )
+
+    def call_auction_market_series_snapshots(
+        self, trade_date: date, codes: tuple[str, ...]
+    ) -> object:
+        self.call_auction_market_series_snapshot_calls.append((trade_date, codes))
+        return {
+            "trade_date": trade_date,
+            "session_id": "11111111-1111-1111-1111-111111111111",
+            "session_status": "partial",
+            "expected_rounds": 32,
+            "returned_rounds": 1,
+            "requested_count": 2,
+            "rounds": [
+                {
+                    "sample_seq": 0,
+                    "scheduled_at": "2026-08-14T01:15:00Z",
+                    "collected_at": "2026-08-14T01:15:02Z",
+                    "round_status": "partial",
+                    "selected_ingestion_id": "22222222-2222-2222-2222-222222222222",
+                    "requested_count": 2,
+                    "returned_count": 1,
+                    "missing_codes": ["000001"],
+                    "items": [
+                        {
+                            "symbol": "SSE:600000",
+                            "code": "600000",
+                            "observed_at": "2026-08-14T01:15:01Z",
+                            "last_price": "10.1200",
+                            "previous_close": "10.0000",
+                            "high_price": "10.1500",
+                            "low_price": "9.9800",
+                            "cumulative_volume": 123400,
+                            "cumulative_amount": "1248808.0000",
+                        }
+                    ],
+                }
+            ],
+        }
 
     def top_gainers_20d(self, end_date: date | None, limit: int) -> TopGainers20dResponse:
         self.top_gainer_calls.append((end_date, limit))
@@ -645,6 +684,7 @@ def test_openapi_only_contains_the_active_non_derived_routes() -> None:
     assert "/api/v1/limit-up-pool" in schema["paths"]
     assert "/api/v1/daily-limit-up-list" in schema["paths"]
     assert "/api/v1/call-auction-market-snapshots/query" in schema["paths"]
+    assert "/api/v1/call-auction-market-series-snapshots/query" in schema["paths"]
     assert not any("adjusted" in path or "metric" in path for path in schema["paths"])
 
 
@@ -763,6 +803,68 @@ def test_call_auction_market_snapshot_request_is_bounded(codes: list[str]) -> No
 
     assert response.status_code == 422
     assert service.call_auction_market_snapshot_calls == []
+
+
+def test_call_auction_market_series_snapshots_return_rounds_in_one_session() -> None:
+    service = FakeQueryService()
+
+    response = _client(service).post(
+        "/api/v1/call-auction-market-series-snapshots/query",
+        json={"trade_date": "2026-08-14", "codes": ["600000", "000001", "600000"]},
+        headers=_headers(),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "trade_date": "2026-08-14",
+        "session_id": "11111111-1111-1111-1111-111111111111",
+        "session_status": "partial",
+        "expected_rounds": 32,
+        "returned_rounds": 1,
+        "requested_count": 2,
+        "rounds": [
+            {
+                "sample_seq": 0,
+                "scheduled_at": "2026-08-14T01:15:00Z",
+                "collected_at": "2026-08-14T01:15:02Z",
+                "round_status": "partial",
+                "selected_ingestion_id": "22222222-2222-2222-2222-222222222222",
+                "requested_count": 2,
+                "returned_count": 1,
+                "missing_codes": ["000001"],
+                "items": [
+                    {
+                        "symbol": "SSE:600000",
+                        "code": "600000",
+                        "observed_at": "2026-08-14T01:15:01Z",
+                        "last_price": "10.1200",
+                        "previous_close": "10.0000",
+                        "high_price": "10.1500",
+                        "low_price": "9.9800",
+                        "cumulative_volume": 123400,
+                        "cumulative_amount": "1248808.0000",
+                    }
+                ],
+            }
+        ],
+    }
+    assert service.call_auction_market_series_snapshot_calls == [
+        (date(2026, 8, 14), ("600000", "000001"))
+    ]
+
+
+@pytest.mark.parametrize("codes", [[], ["60000"], ["60000A"], ["000001"] * 501])
+def test_call_auction_market_series_snapshot_request_is_bounded(codes: list[str]) -> None:
+    service = FakeQueryService()
+
+    response = _client(service).post(
+        "/api/v1/call-auction-market-series-snapshots/query",
+        json={"trade_date": "2026-08-14", "codes": codes},
+        headers=_headers(),
+    )
+
+    assert response.status_code == 422
+    assert service.call_auction_market_series_snapshot_calls == []
 
 
 def test_top_gainers_20d_contract_and_bounds() -> None:

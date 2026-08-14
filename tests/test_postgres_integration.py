@@ -932,6 +932,207 @@ select api_v1.query_call_auction_market_snapshots(
     assert partial_payload["items"][0]["last_price"] == 99.0000
 
 
+def test_call_auction_market_series_rpc_selects_one_session_and_orders_rounds(
+    database_engine: Engine,
+) -> None:
+    trade_date = date(2026, 8, 14)
+    slots = series_slots(trade_date)
+    succeeded_session_id = uuid4()
+    partial_session_id = uuid4()
+    succeeded_workflow_id = uuid4()
+    partial_workflow_id = uuid4()
+    round_zero_ingestion_id = uuid4()
+    round_one_ingestion_id = uuid4()
+    partial_ingestion_id = uuid4()
+
+    with database_engine.begin() as connection:
+        _insert_call_auction_security_universe(connection)
+        connection.execute(
+            text("""
+insert into operations.workflow_run (
+    workflow_run_id, workflow_code, scheduled_for, trigger_source,
+    attempt, status, started_at, finished_at
+) values
+    (:succeeded_workflow_id, 'call_auction_market_series', :started_at,
+     'scheduled', 1, 'succeeded', :started_at, :succeeded_finished_at),
+    (:partial_workflow_id, 'call_auction_market_series', :started_at,
+     'scheduled', 2, 'succeeded', :started_at, :partial_finished_at)
+"""),
+            {
+                "succeeded_workflow_id": succeeded_workflow_id,
+                "partial_workflow_id": partial_workflow_id,
+                "started_at": slots[0],
+                "succeeded_finished_at": slots[2],
+                "partial_finished_at": slots[3],
+            },
+        )
+        connection.execute(
+            text("""
+insert into realtime.call_auction_market_series_session (
+    session_id, workflow_run_id, trade_date, window_start, window_end,
+    cadence_seconds, expected_rounds, universe_symbols, universe_count,
+    universe_hash, status, started_at, finished_at, successful_rounds,
+    partial_rounds, failed_rounds, successful_quotes, failed_quotes
+) values
+    (:succeeded_session_id, :succeeded_workflow_id, :trade_date, :window_start,
+     :window_end, 20, 32, array['SSE:600000','SZSE:000001'], 2, :universe_hash,
+     'succeeded', :window_start, :succeeded_finished_at, 2, 0, 0, 4, 0),
+    (:partial_session_id, :partial_workflow_id, :trade_date, :window_start,
+     :window_end, 20, 32, array['SSE:600000','SZSE:000001'], 2, :universe_hash,
+     'partial', :window_start, :partial_finished_at, 0, 1, 0, 1, 1)
+"""),
+            {
+                "succeeded_session_id": succeeded_session_id,
+                "partial_session_id": partial_session_id,
+                "succeeded_workflow_id": succeeded_workflow_id,
+                "partial_workflow_id": partial_workflow_id,
+                "trade_date": trade_date,
+                "window_start": slots[0],
+                "window_end": slots[-1] + timedelta(seconds=20),
+                "universe_hash": universe_hash(("SSE:600000", "SZSE:000001")),
+                "succeeded_finished_at": slots[2],
+                "partial_finished_at": slots[3],
+            },
+        )
+        connection.execute(
+            text("""
+insert into ingestion.ingestion_run (
+    ingestion_id, provider_code, dataset_code, status, requested_at,
+    started_at, finished_at, fetched_rows, accepted_rows
+) values
+    (:round_zero_id, 'pytdx_hq', 'call_auction_market_series', 'succeeded',
+     :slot_zero, :slot_zero, :round_zero_finished, 2, 2),
+    (:round_one_id, 'pytdx_hq', 'call_auction_market_series', 'succeeded',
+     :slot_one, :slot_one, :round_one_finished, 2, 2),
+    (:partial_id, 'pytdx_hq', 'call_auction_market_series', 'partial',
+     :slot_zero, :slot_zero, :partial_finished, 1, 1)
+"""),
+            {
+                "round_zero_id": round_zero_ingestion_id,
+                "round_one_id": round_one_ingestion_id,
+                "partial_id": partial_ingestion_id,
+                "slot_zero": slots[0],
+                "slot_one": slots[1],
+                "round_zero_finished": slots[0] + timedelta(seconds=2),
+                "round_one_finished": slots[1] + timedelta(seconds=2),
+                "partial_finished": slots[0] + timedelta(seconds=3),
+            },
+        )
+        connection.execute(
+            text("""
+insert into realtime.call_auction_market_series_round (
+    session_id, sample_seq, scheduled_at, collected_at, status, attempt_count,
+    expected_quotes, successful_quotes, failed_quotes, selected_ingestion_id
+) values
+    (:succeeded_session_id, 1, :slot_one, :round_one_finished, 'succeeded',
+     1, 2, 2, 0, :round_one_id),
+    (:succeeded_session_id, 0, :slot_zero, :round_zero_finished, 'succeeded',
+     1, 2, 2, 0, :round_zero_id),
+    (:partial_session_id, 0, :slot_zero, :partial_finished, 'partial',
+     1, 2, 1, 1, :partial_id)
+"""),
+            {
+                "succeeded_session_id": succeeded_session_id,
+                "partial_session_id": partial_session_id,
+                "slot_zero": slots[0],
+                "slot_one": slots[1],
+                "round_zero_finished": slots[0] + timedelta(seconds=2),
+                "round_one_finished": slots[1] + timedelta(seconds=2),
+                "partial_finished": slots[0] + timedelta(seconds=3),
+                "round_zero_id": round_zero_ingestion_id,
+                "round_one_id": round_one_ingestion_id,
+                "partial_id": partial_ingestion_id,
+            },
+        )
+        connection.execute(
+            text("""
+insert into realtime.call_auction_market_series_snapshot (
+    trade_date, ingestion_id, session_id, sample_seq, scheduled_at, symbol,
+    observed_at, last_price, previous_close, high_price, low_price,
+    cumulative_volume, cumulative_amount, source_code
+) values
+    (:trade_date, :round_zero_id, :succeeded_session_id, 0, :slot_zero,
+     'SSE:600000', :round_zero_observed, 10.1000, 10.0000, 10.1000, 10.0000,
+     100, 1010.0000, 'pytdx_hq'),
+    (:trade_date, :round_one_id, :succeeded_session_id, 1, :slot_one,
+     'SSE:600000', :round_one_observed, 10.2000, 10.0000, 10.2000, 10.0000,
+     200, 2040.0000, 'pytdx_hq'),
+    (:trade_date, :partial_id, :partial_session_id, 0, :slot_zero,
+     'SSE:600000', :partial_observed, 99.0000, 98.0000, 99.0000, 98.0000,
+     1, 99.0000, 'pytdx_hq')
+"""),
+            {
+                "trade_date": trade_date,
+                "round_zero_id": round_zero_ingestion_id,
+                "round_one_id": round_one_ingestion_id,
+                "partial_id": partial_ingestion_id,
+                "succeeded_session_id": succeeded_session_id,
+                "partial_session_id": partial_session_id,
+                "slot_zero": slots[0],
+                "slot_one": slots[1],
+                "round_zero_observed": slots[0] + timedelta(seconds=1),
+                "round_one_observed": slots[1] + timedelta(seconds=1),
+                "partial_observed": slots[0] + timedelta(seconds=1),
+            },
+        )
+
+        assert connection.scalar(
+            text("""
+select has_function_privilege(
+    'market_data_api',
+    'api_v1.query_call_auction_market_series_snapshots(date,text[])',
+    'execute'
+)
+""")
+        )
+        assert not connection.scalar(
+            text("""
+select has_table_privilege(
+    'market_data_api', 'realtime.call_auction_market_series_snapshot', 'select'
+)
+""")
+        )
+        connection.execute(text("set local role market_data_api"))
+        payload = connection.scalar(
+            text("""
+select api_v1.query_call_auction_market_series_snapshots(
+    :trade_date, array['600000','000001','600000']::text[]
+)
+"""),
+            {"trade_date": trade_date},
+        )
+        connection.execute(text("reset role"))
+        connection.execute(
+            text("""
+update realtime.call_auction_market_series_session
+set status='failed'
+where session_id=:session_id
+"""),
+            {"session_id": succeeded_session_id},
+        )
+        connection.execute(text("set local role market_data_api"))
+        partial_payload = connection.scalar(
+            text("""
+select api_v1.query_call_auction_market_series_snapshots(
+    :trade_date, array['600000']::text[]
+)
+"""),
+            {"trade_date": trade_date},
+        )
+
+    assert payload["session_id"] == str(succeeded_session_id)
+    assert payload["session_status"] == "succeeded"
+    assert payload["requested_count"] == 2
+    assert payload["returned_rounds"] == 2
+    assert [item["sample_seq"] for item in payload["rounds"]] == [0, 1]
+    assert payload["rounds"][0]["missing_codes"] == ["000001"]
+    assert payload["rounds"][0]["items"][0]["last_price"] == 10.1000
+    assert payload["rounds"][1]["items"][0]["last_price"] == 10.2000
+    assert partial_payload["session_id"] == str(partial_session_id)
+    assert partial_payload["session_status"] == "partial"
+    assert partial_payload["rounds"][0]["items"][0]["last_price"] == 99.0000
+
+
 def test_operations_repository_records_attempts_steps_and_stale_recovery(
     database_engine: Engine,
 ) -> None:

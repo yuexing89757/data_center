@@ -12,6 +12,7 @@ from market_data_center.domain import ClassificationType
 from market_data_center.public_api.models import (
     AuctionIndicativeDetailResponse,
     AuctionOnePriceLimitResponse,
+    CallAuctionMarketSeriesSnapshotResponse,
     CallAuctionMarketSnapshotResponse,
     ClassificationMembersResponse,
     DailyBarItem,
@@ -68,6 +69,13 @@ select api_v1.query_daily_limit_up_list(
 
 QUERY_CALL_AUCTION_MARKET_SNAPSHOTS = text("""
 select api_v1.query_call_auction_market_snapshots(
+    p_trade_date => :trade_date,
+    p_codes => :codes
+) as payload
+""")
+
+QUERY_CALL_AUCTION_MARKET_SERIES_SNAPSHOTS = text("""
+select api_v1.query_call_auction_market_series_snapshots(
     p_trade_date => :trade_date,
     p_codes => :codes
 ) as payload
@@ -140,6 +148,10 @@ class PublicQueryService(Protocol):
     def call_auction_market_snapshots(
         self, trade_date: date, codes: tuple[str, ...]
     ) -> CallAuctionMarketSnapshotResponse: ...
+
+    def call_auction_market_series_snapshots(
+        self, trade_date: date, codes: tuple[str, ...]
+    ) -> CallAuctionMarketSeriesSnapshotResponse: ...
 
     def top_gainers_20d(self, end_date: date | None, limit: int) -> TopGainers20dResponse: ...
 
@@ -234,6 +246,17 @@ class PostgreSQLPublicQueryService:
         if not rows:
             raise PublicQueryNotFound("call-auction market snapshot was not found")
         return CallAuctionMarketSnapshotResponse.model_validate(rows[0]["payload"])
+
+    def call_auction_market_series_snapshots(
+        self, trade_date: date, codes: tuple[str, ...]
+    ) -> CallAuctionMarketSeriesSnapshotResponse:
+        rows = self._execute(
+            QUERY_CALL_AUCTION_MARKET_SERIES_SNAPSHOTS,
+            {"trade_date": trade_date, "codes": list(codes)},
+        )
+        if not rows:
+            raise PublicQueryNotFound("call-auction market series snapshot was not found")
+        return CallAuctionMarketSeriesSnapshotResponse.model_validate(rows[0]["payload"])
 
     def top_gainers_20d(self, end_date: date | None, limit: int) -> TopGainers20dResponse:
         rows = self._execute(QUERY_TOP_GAINERS_20D, {"end_date": end_date, "limit": limit})

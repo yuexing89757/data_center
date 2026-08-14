@@ -19,6 +19,7 @@ EXPECTED_ENDPOINTS = {
     "query_stock_pool_snapshot",
     "query_auction_quotes",
     "query_call_auction_market_snapshots",
+    "query_call_auction_market_series_snapshots",
 }
 
 

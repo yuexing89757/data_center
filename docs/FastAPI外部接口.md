@@ -19,7 +19,8 @@ force read-only transactions and a five-second statement timeout.
 Stable v1 routes are security search (100 rows), unadjusted daily bars (5,000 rows and 3,661 days),
 classification members (5,000 rows), the exact-date generic limit-up pool (5,000 rows), the
 versioned same-day limit-up snapshot (500 rows per page), and exact-date call-auction market
-snapshots (500 requested six-digit codes). Business routes require `X-API-Key`. `/healthz` is
+snapshots and market-series sessions (500 requested six-digit codes). Business routes require
+`X-API-Key`. `/healthz` is
 process-local and `/readyz` verifies a bounded database query. Prices and amounts remain decimal
 strings. Errors never return SQL, internal schema names, database addresses, or credentials.
 
@@ -57,6 +58,15 @@ both standardized symbols. `missing_codes` reports requested codes absent from t
 The envelope includes the selected provider-neutral ingestion ID and status so consumers can prove
 batch coherence. Items expose observation time, latest/previous-close/high/low prices, cumulative
 volume and amount; source codes, Raw fields and internal timestamps remain private.
+
+`POST /api/v1/call-auction-market-series-snapshots/query` accepts the same exact `trade_date` and
+1–500 six-digit `codes`. It selects the latest succeeded session for that date, or the latest
+partial session only when no succeeded session exists; sessions and dates are never merged or
+substituted. The response contains session status and all persisted rounds ordered by
+`sample_seq`. Every round reports its scheduled/collected times, status, selected provider-neutral
+ingestion ID, returned facts and its own `missing_codes`, so partial coverage remains explicit.
+Snapshot fields use the same provider-neutral price, cumulative volume/amount and observation-time
+semantics as the 09:26 batch route.
 
 `GET /api/v1/top-gainers-20d?end_date=&limit=10` ranks unadjusted close-to-close returns over
 exactly 20 calendar trading sessions (19 intervals), with exact observation dates/prices, end-date
