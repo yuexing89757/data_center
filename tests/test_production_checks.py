@@ -57,6 +57,22 @@ def test_production_schema_inventory_includes_call_auction_market_snapshot() -> 
     assert ("realtime", "call_auction_market_snapshot") in EXPECTED_TABLES
 
 
+def test_production_schema_inventory_includes_partitioned_call_auction_series() -> None:
+    assert {
+        ("realtime", "call_auction_market_series_session"),
+        ("realtime", "call_auction_market_series_round"),
+        ("realtime", "call_auction_market_series_snapshot"),
+        *(
+            ("realtime", f"call_auction_market_series_snapshot_{month}")
+            for month in range(202608, 202613)
+        ),
+        *(
+            ("realtime", f"call_auction_market_series_snapshot_{month}")
+            for month in range(202701, 202710)
+        ),
+    } <= EXPECTED_TABLES
+
+
 def test_production_schema_inventory_includes_today_limit_up_domain() -> None:
     assert {
         ("today_limit_up", "source_observation"),

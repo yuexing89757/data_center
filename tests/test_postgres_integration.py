@@ -156,6 +156,152 @@ def test_migrations_apply_to_empty_database_and_are_idempotent(
     }.issubset({row[1] for row in first_snapshot["routines"]})
 
 
+def test_call_auction_market_series_schema_is_partitioned_and_internal(
+    database_engine: Engine,
+) -> None:
+    table_names = (
+        "call_auction_market_series_session",
+        "call_auction_market_series_round",
+        "call_auction_market_series_snapshot",
+    )
+    with database_engine.connect() as connection:
+        assert {
+            name: connection.scalar(
+                text("select to_regclass('realtime.' || :name)"), {"name": name}
+            )
+            for name in table_names
+        } == {name: f"realtime.{name}" for name in table_names}
+        assert (
+            connection.scalar(
+                text("""
+                select partstrat from pg_partitioned_table
+                where partrelid='realtime.call_auction_market_series_snapshot'::regclass
+            """)
+            )
+            == "r"
+        )
+        assert (
+            connection.scalar(
+                text("""
+                select count(*) from pg_inherits
+                where inhparent='realtime.call_auction_market_series_snapshot'::regclass
+            """)
+            )
+            == 14
+        )
+        rls_tables = set(
+            connection.execute(
+                text("""
+                    select tablename from pg_tables
+                    where schemaname='realtime' and rowsecurity
+                      and tablename like 'call_auction_market_series%'
+                """)
+            ).scalars()
+        )
+        assert rls_tables == {
+            *table_names,
+            *(f"call_auction_market_series_snapshot_{month}" for month in range(202608, 202613)),
+            *(f"call_auction_market_series_snapshot_{month}" for month in range(202701, 202710)),
+        }
+        constraints = {
+            row.name: row.definition
+            for row in connection.execute(
+                text("""
+                    select conname name, pg_get_constraintdef(oid) definition
+                    from pg_constraint
+                    where conrelid in (
+                      'realtime.call_auction_market_series_session'::regclass,
+                      'realtime.call_auction_market_series_round'::regclass,
+                      'realtime.call_auction_market_series_snapshot'::regclass
+                    )
+                """)
+            )
+        }
+        assert constraints["call_auction_market_series_session_workflow_run_id_key"] == (
+            "UNIQUE (workflow_run_id)"
+        )
+        assert constraints["call_auction_market_series_round_pkey"] == (
+            "PRIMARY KEY (session_id, sample_seq)"
+        )
+        assert constraints["call_auction_market_series_snapshot_pkey"] == (
+            "PRIMARY KEY (trade_date, ingestion_id, symbol)"
+        )
+        grants = {
+            (row.table_name, row.privilege_type)
+            for row in connection.execute(
+                text("""
+                    select table_name, privilege_type
+                    from information_schema.role_table_grants
+                    where table_schema='realtime' and grantee='market_data_worker'
+                      and table_name = any(:table_names)
+                """),
+                {"table_names": list(table_names)},
+            )
+        }
+        assert grants == {
+            ("call_auction_market_series_session", "SELECT"),
+            ("call_auction_market_series_session", "INSERT"),
+            ("call_auction_market_series_session", "UPDATE"),
+            ("call_auction_market_series_round", "SELECT"),
+            ("call_auction_market_series_round", "INSERT"),
+            ("call_auction_market_series_round", "UPDATE"),
+            ("call_auction_market_series_snapshot", "SELECT"),
+            ("call_auction_market_series_snapshot", "INSERT"),
+        }
+        assert (
+            connection.scalar(
+                text("""
+                select count(*) from information_schema.role_table_grants
+                where table_schema='realtime'
+                  and grantee in ('anon','authenticated','market_data_api')
+                  and table_name = any(:table_names)
+            """),
+                {"table_names": list(table_names)},
+            )
+            == 0
+        )
+        assert (
+            connection.scalar(
+                text("""
+                select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+                where n.nspname='api_v1' and p.proname like 'call_auction_market_series%'
+            """)
+            )
+            == 0
+        )
+
+        connection.execute(
+            text("""
+                insert into ingestion.ingestion_run (
+                  ingestion_id,provider_code,dataset_code,status,requested_at
+                ) values (
+                  :ingestion_id,'pytdx_hq','call_auction_market_series','running',now()
+                )
+            """),
+            {"ingestion_id": uuid4()},
+        )
+        connection.execute(
+            text("""
+                insert into operations.workflow_run (
+                  workflow_run_id,workflow_code,scheduled_for,trigger_source,
+                  attempt,status,started_at
+                ) values (
+                  :workflow_run_id,'call_auction_market_series',now(),'scheduled',1,'running',now()
+                )
+            """),
+            {"workflow_run_id": uuid4()},
+        )
+
+    inventory = dict(
+        capture_database_snapshot(
+            database_engine.url.render_as_string(hide_password=False)
+        ).row_counts
+    )
+    assert inventory["call_auction_market_series_session"] == 0
+    assert inventory["call_auction_market_series_round"] == 0
+    assert inventory["call_auction_market_series_snapshot"] == 0
+
+
 def test_auction_indicative_schema_and_api_permission_boundary(
     migrated_database_url: str,
 ) -> None:
