@@ -78,3 +78,8 @@ runs asynchronously. The single-writer queue has one waiting slot. Full queue or
 the request rather than returning untracked data. It is not a trade-tick or order-by-order API; the
 source display classification is untrusted. Provider failure maps to 502, provider absence/Raw
 failure to 503, and the single-process concurrency/rate/queue gate to 429.
+
+The live adapter uses two fixed Eastmoney hosts without endpoint discovery: `push2delay` first and
+`push2` second. Each host is attempted at most once, preserving the existing two-attempt bound. A
+safe server-side warning records the standardized symbol and deepest provider exception when both
+fixed hosts fail; the public response remains the generic 502 contract.

@@ -9,8 +9,10 @@
 the standardized symbol and current Asia/Shanghai date. It first calls the bounded database RPC;
 the latest succeeded or partial snapshot is returned without provider I/O. Only SQLSTATE `P0002`
 permits the Eastmoney request. Database invalid/timeout/unavailable failures remain API failures and
-must not be converted into live fetches. Per API process, provider concurrency is one, attempts are
-at most two with bounded timeout/backoff, and the response is capped below 5,000 source rows. A
+must not be converted into live fetches. Per API process, provider concurrency is one. The adapter
+uses the fixed `push2delay.eastmoney.com` endpoint first and the fixed `push2.eastmoney.com` endpoint
+second, with no discovery and at most two total attempts with bounded timeout/backoff. The response
+is capped below 5,000 source rows. A
 private cache of no more than five seconds and a minimum request interval prevent the endpoint
 becoming a general scraping proxy. It never schedules or expands a request to other symbols.
 

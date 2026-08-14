@@ -126,6 +126,14 @@ def test_fetch_maps_provider_and_persistence_failures_without_returning_data() -
         _service(persistence=FakePersistence(error=True)).fetch("SSE:688796", TODAY, 0, 200)
 
 
+def test_fetch_logs_provider_failure_cause(caplog: pytest.LogCaptureFixture) -> None:
+    with pytest.raises(AuctionIndicativeLiveUpstream):
+        _service(provider=FakeProvider(error=True)).fetch("SSE:688796", TODAY, 0, 200)
+
+    assert "SSE:688796" in caplog.text
+    assert "unavailable" in caplog.text
+
+
 def test_fetch_enforces_single_request_slot() -> None:
     service = _service()
     assert service._lock.acquire(blocking=False)  # exercise the nonblocking resource gate

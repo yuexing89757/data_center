@@ -45,6 +45,51 @@ def test_adapter_keeps_only_auction_window_and_converts_lots_to_shares() -> None
     assert batch.raw_rows[2]["source_auxiliary"] == "76"
 
 
+def test_adapter_uses_reachable_fixed_primary_endpoint() -> None:
+    seen: list[str] = []
+
+    def request(url: str, _timeout: float) -> dict[str, object]:
+        seen.append(url)
+        if "push2delay.eastmoney.com" not in url:
+            raise OSError("remote end closed connection without response")
+        return {
+            "rc": 0,
+            "data": {"details": ["09:20:00,10.01,2,0,1"]},
+        }
+
+    batch = EastmoneyAuctionIndicativeProvider(request).fetch_current_day(
+        "SSE:600123", TODAY, now=NOW
+    )
+
+    assert [record.displayed_volume_shares for record in batch.records] == [200]
+    assert [url.split("/api/", maxsplit=1)[0] for url in seen] == [
+        "https://push2delay.eastmoney.com"
+    ]
+
+
+def test_adapter_uses_fixed_secondary_endpoint_after_primary_connection_failure() -> None:
+    seen: list[str] = []
+
+    def request(url: str, _timeout: float) -> dict[str, object]:
+        seen.append(url)
+        if "push2delay.eastmoney.com" in url:
+            raise OSError("remote end closed connection without response")
+        return {
+            "rc": 0,
+            "data": {"details": ["09:20:00,10.01,2,0,1"]},
+        }
+
+    batch = EastmoneyAuctionIndicativeProvider(request).fetch_current_day(
+        "SSE:600123", TODAY, now=NOW
+    )
+
+    assert [record.displayed_volume_shares for record in batch.records] == [200]
+    assert [url.split("/api/", maxsplit=1)[0] for url in seen] == [
+        "https://push2delay.eastmoney.com",
+        "https://push2.eastmoney.com",
+    ]
+
+
 def test_adapter_rejects_history_unknown_exchange_and_fractional_lots() -> None:
     provider = EastmoneyAuctionIndicativeProvider(
         lambda _url, _timeout: {"rc": 0, "data": {"details": ["09:20:00,10,1.5,0,4"]}}

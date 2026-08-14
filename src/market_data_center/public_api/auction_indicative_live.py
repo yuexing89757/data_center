@@ -3,6 +3,7 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time
+from logging import getLogger
 from threading import Lock
 from time import monotonic
 
@@ -23,6 +24,8 @@ from market_data_center.public_api.models import (
     AuctionIndicativeDetailResponse,
     AuctionIndicativeQuality,
 )
+
+LOGGER = getLogger(__name__)
 
 
 class AuctionIndicativeLiveError(RuntimeError):
@@ -118,6 +121,15 @@ class LiveAuctionIndicativeService:
                     batch = self._provider.fetch_current_day(symbol, trade_date, now=now)
                     records = tuple(batch.records)
                 except ProviderError as error:
+                    root_cause: BaseException = error
+                    while root_cause.__cause__ is not None:
+                        root_cause = root_cause.__cause__
+                    LOGGER.warning(
+                        "live auction provider failed for %s: %s: %s",
+                        symbol,
+                        type(root_cause).__name__,
+                        root_cause,
+                    )
                     raise AuctionIndicativeLiveUpstream(
                         "the external auction provider request failed"
                     ) from error

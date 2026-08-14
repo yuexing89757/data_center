@@ -19,7 +19,10 @@ from market_data_center.providers.contracts import ProviderBatch, ProviderError,
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 SCHEMA_VERSION = "eastmoney.call_auction_indicative_detail.v1"
-ENDPOINT = "https://push2.eastmoney.com/api/qt/stock/details/get"
+ENDPOINTS = (
+    "https://push2delay.eastmoney.com/api/qt/stock/details/get",
+    "https://push2.eastmoney.com/api/qt/stock/details/get",
+)
 MAX_SOURCE_ROWS = 5000
 
 
@@ -57,9 +60,9 @@ class EastmoneyAuctionIndicativeProvider:
             "fields2": "f51,f52,f53,f54,f55",
             "fltt": "2",
         }
-        url = f"{ENDPOINT}?{urlencode(params)}"
         payload: Mapping[str, Any] | None = None
-        for attempt in range(self._max_attempts):
+        for attempt, endpoint in enumerate(ENDPOINTS[: self._max_attempts]):
+            url = f"{endpoint}?{urlencode(params)}"
             try:
                 payload = self._request_json(url, self._timeout_seconds)
                 break
