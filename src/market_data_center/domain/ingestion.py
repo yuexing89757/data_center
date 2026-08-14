@@ -35,6 +35,7 @@ class DatasetCode(StrEnum):
     EOD_QUOTE_SNAPSHOT = "eod_quote_snapshot"
     CALL_AUCTION_SNAPSHOT = "call_auction_snapshot"
     CALL_AUCTION_MARKET_SNAPSHOT = "call_auction_market_snapshot"
+    CALL_AUCTION_MARKET_SERIES = "call_auction_market_series"
     CALL_AUCTION_INDICATIVE_DETAIL = "call_auction_indicative_detail"
     TODAY_LIMIT_UP_SOURCE = "today_limit_up_source"
     CONVERTIBLE_BOND = "convertible_bond"
