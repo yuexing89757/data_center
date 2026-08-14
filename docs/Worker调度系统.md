@@ -111,7 +111,7 @@ BlockingScheduler
 | `run_stale_recovery_job` | **3 步**：恢复 stale ingestion run（>60min）、恢复 stale workflow run、恢复过期 auction session。每小时 + 启动时各跑一次 |
 | `run_deducted_profit_job` | tushare 扣非净利润增量同步（按披露变化发现新公告/修订） |
 | `run_stock_pool_job` | 解析基准交易日 → 构建下一交易日生效的涨跌停股票池（依赖当日日K+指标成功） |
-| `run_auction_collection_job` | pytdx_hq 集合竞价五档采集（09:15-09:25 按 5 秒节奏采样，默认启用） |
+| `run_auction_collection_job` | pytdx_hq 集合竞价五档采集（09:15-09:25 按 30 秒节奏采样，每只股票单独请求，默认启用） |
 | `run_eod_quote_snapshot_job` | 对当日 ready 涨停池采集收盘五档快照（默认启用） |
 | `run_call_auction_market_snapshot_job` | 09:26 从一个 quote-capable endpoint 采集 SSE/SZSE `stock`、`listed` 全集的开盘竞价来源快照；BSE、ETF、可转债和指数不进入本任务 |
 | `run_pytdx_pool_refresh_job` | 有界探测候选节点能力；成功时原子发布，失败时保留 last-good |

@@ -24,10 +24,10 @@ def _levels(side: str) -> tuple[OrderBookLevel, ...]:
     return tuple(OrderBookLevel(i, start + direction * (i - 1), i * 100) for i in range(1, 6))
 
 
-def test_auction_window_has_121_five_second_samples_and_exact_phase_boundaries() -> None:
+def test_auction_window_has_21_thirty_second_samples_and_exact_phase_boundaries() -> None:
     start, end = auction_window(date(2026, 8, 3))
 
-    assert int((end - start).total_seconds() // 5) + 1 == 121
+    assert int((end - start).total_seconds() // 30) + 1 == 21
     assert auction_phase(start) is AuctionPhase.CANCELLABLE
     assert auction_phase(start + timedelta(minutes=5)) is AuctionPhase.NON_CANCELLABLE
     assert auction_phase(end) is AuctionPhase.FINAL_MATCH

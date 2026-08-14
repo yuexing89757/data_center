@@ -44,6 +44,7 @@ from market_data_center.raw_store import LocalRawStore
 from market_data_center.reliability import recover_stale_runs
 from market_data_center.scheduling_catalog import (
     AUCTION_COLLECTION_JOB_ID,
+    AUCTION_COLLECTION_QUOTE_BATCH_SIZE,
     CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID,
     DAILY_RUN_JOB_ID,
     DEDUCTED_PROFIT_JOB_ID,
@@ -356,7 +357,7 @@ def run_auction_collection_job() -> None:
     definition = job_definition(AUCTION_COLLECTION_JOB_ID, scheduling)
     if definition.cadence_seconds is None:
         raise ValueError(f"job has no cadence: {AUCTION_COLLECTION_JOB_ID}")
-    quote_settings = PytdxHqSettings()
+    quote_settings = PytdxHqSettings(pytdx_hq_batch_size=AUCTION_COLLECTION_QUOTE_BATCH_SIZE)
     engine = create_engine(
         sqlalchemy_url(settings.database_url.get_secret_value()), pool_pre_ping=True
     )

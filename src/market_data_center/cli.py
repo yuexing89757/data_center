@@ -1193,7 +1193,7 @@ def _parser() -> ArgumentParser:
         help="read-only check of calendar, exact frozen pool, and expected collection size",
     )
     auction_preflight.add_argument("--trade-date", required=True, help="exact YYYY-MM-DD")
-    auction_preflight.add_argument("--cadence-seconds", type=int, default=5)
+    auction_preflight.add_argument("--cadence-seconds", type=int, default=30)
     stock_pool_check.add_argument(
         "--effective-trade-date",
         required=True,

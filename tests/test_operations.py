@@ -119,7 +119,7 @@ def test_job_catalog_owns_all_fixed_schedules() -> None:
         jobs["opening-auction-limit-up-quotes"].hour,
         jobs["opening-auction-limit-up-quotes"].minute,
     ) == (9, 15)
-    assert jobs["opening-auction-limit-up-quotes"].cadence_seconds == 5
+    assert jobs["opening-auction-limit-up-quotes"].cadence_seconds == 30
     assert (jobs["daily-run"].hour, jobs["daily-run"].minute) == (20, 0)
     assert (
         jobs["stock-daily-indicators-daily"].hour,

@@ -78,6 +78,12 @@ def test_stock_pool_commands_require_exact_dates_and_known_pool_codes() -> None:
     assert check.version == 2
 
 
+def test_auction_preflight_uses_code_owned_thirty_second_cadence() -> None:
+    args = _parser().parse_args(["auction-quotes-preflight", "--trade-date", "2026-08-17"])
+
+    assert args.cadence_seconds == 30
+
+
 @pytest.mark.parametrize(
     ("value", "expected"),
     [

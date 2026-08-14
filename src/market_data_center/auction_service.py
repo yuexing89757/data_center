@@ -50,7 +50,7 @@ class AuctionCollectionService:
         provider: RealtimeQuoteProvider,
         raw_store: LocalRawStore,
         *,
-        cadence_seconds: int = 5,
+        cadence_seconds: int = 30,
         max_retries: int = 1,
         retry_budget_seconds: float = 1.0,
         order_book_semantics_verified: bool = False,

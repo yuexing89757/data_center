@@ -217,6 +217,27 @@ def test_scheduler_registers_one_auction_session_job_only_when_enabled(tmp_path:
     assert auction.max_instances == 1
 
 
+def test_auction_collection_job_requests_one_symbol_per_pytdx_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class StopAfterQuoteSettings(Exception):
+        pass
+
+    def quote_settings(**kwargs: object) -> None:
+        captured.update(kwargs)
+        raise StopAfterQuoteSettings
+
+    monkeypatch.setattr(scheduler_module, "WorkerSettings", lambda: object())
+    monkeypatch.setattr(scheduler_module, "PytdxHqSettings", quote_settings)
+
+    with pytest.raises(StopAfterQuoteSettings):
+        scheduler_module.run_auction_collection_job()
+
+    assert captured == {"pytdx_hq_batch_size": 1}
+
+
 def test_only_call_auction_morning_job_is_registered_when_enabled(tmp_path: Path) -> None:
     scheduler = build_scheduler(
         SchedulerSettings(
