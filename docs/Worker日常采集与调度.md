@@ -64,7 +64,11 @@ pytdx 还可从通达信 `T0002/hq_cache` 读取行业和概念完整快照，�
 合法跳过；任务禁止把当前实时报价写成其他历史日期，也不会回退旧股票池。
 
 集合竞价涨停池五档默认启用，工作日 09:15 启动并按 30 秒节奏采样至 09:25，每只股票
-单独发起一次 PYTDX 请求。另有沪深全市场
+单独发起一次 PYTDX 请求。独立的沪深全市场竞价序列任务也在 09:15 启动，冻结当日 SSE/SZSE
+`stock`、`listed` 全集，从 09:15:00 到 09:25:20（含首尾）每 20 秒采一轮，共 32 轮；每批最多
+80 只，每轮最多使用两个 endpoint 做完整全集 attempt，partial 结果不跨 endpoint 拼接。错过的轮次
+显式记为 failed，最后一轮 deadline 为 09:25:40，不补采过去时槽。两个 09:15 任务只在专用
+`morning_auction` 两线程 executor 内并行，其他 Worker 任务仍使用单线程 executor。另有沪深全市场
 开盘竞价来源采集任务在工作日 09:26 运行：只采集 `SSE`、`SZSE` 的 `stock`、`listed` 证券，BSE
 暂缓，ETF、可转债和指数不进入集合。每次尝试固定一个 quote-capable endpoint，按最多 80 只分批；
 每个 endpoint 只允许形成完整全集，至多进行两次完整尝试，绝不拼接 endpoint 的 partial 结果。新
@@ -90,7 +94,35 @@ SCHEDULER_STORE_PATH=/var/lib/market-data-center/scheduler/jobs.sqlite
 AUCTION_COLLECTION_ENABLED=true
 EOD_QUOTE_SNAPSHOT_ENABLED=true
 CALL_AUCTION_SNAPSHOT_ENABLED=true
+CALL_AUCTION_MARKET_SERIES_ENABLED=true
 ```
+
+### 竞价序列诊断与保留
+
+`realtime.call_auction_market_series_session` 保存冻结全集和整体状态，`round` 保存 32 个计划时槽及
+attempt 选择，按月分区的 `snapshot` 保存来源事实。可先检查 session/round，再按 selected ingestion
+追踪 Raw、Manifest 和质量结果：
+
+```sql
+select trade_date,status,expected_rounds,succeeded_rounds,partial_rounds,failed_rounds,
+       universe_count,error_summary
+from realtime.call_auction_market_series_session
+order by started_at desc limit 5;
+
+select sample_seq,scheduled_at,status,attempt_count,successful_quotes,failed_quotes,error_summary
+from realtime.call_auction_market_series_round
+where session_id = :session_id order by sample_seq;
+
+select to_regclass('realtime.call_auction_market_series_snapshot_' ||
+                   to_char(current_date, 'YYYYMM')) as current_partition;
+```
+
+`partial` 且 `attempt_count=2` 通常表示两个节点都未完整覆盖冻结全集；`missed_sampling_round` 表示
+Worker 到达时已经越过该轮 deadline；节点池为空会在建立 Session 前失败；分区查询返回 null 时停止
+Worker 并走受保护 migration，Worker 自身不得执行 DDL。Raw 和 Manifest 长期保留。在线事实只保留最近
+12 个完整月份：常规发布通过新的 ordered migration 先创建后续月份，确认 Raw/Manifest/备份可恢复后，
+才允许在受控窗口 drop 更早分区。初始分区覆盖至 2027-09-30，必须在 2027-09 前发布后续分区 migration；
+APScheduler job、Worker 和 `.env` 均不得创建或删除分区。
 
 ## 股票每日指标定时采集
 

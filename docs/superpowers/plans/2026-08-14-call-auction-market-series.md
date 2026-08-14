@@ -83,11 +83,17 @@ def test_snapshot_rejects_wrong_slot_and_invalid_prices() -> None:
     scheduled_at = series_slots(date(2026, 8, 17))[0]
     with pytest.raises(ValueError, match="observed_at"):
         MarketSeriesSnapshotRecord(
-            symbol="SSE:600000", trade_date=date(2026, 8, 17), sample_seq=0,
-            scheduled_at=scheduled_at, observed_at=scheduled_at + timedelta(seconds=20),
-            source_code="pytdx_hq", last_price=Decimal("10.20"),
-            previous_close=Decimal("10.00"), high_price=Decimal("10.10"),
-            low_price=Decimal("10.00"), cumulative_volume=100,
+            symbol="SSE:600000",
+            trade_date=date(2026, 8, 17),
+            sample_seq=0,
+            scheduled_at=scheduled_at,
+            observed_at=scheduled_at + timedelta(seconds=20),
+            source_code="pytdx_hq",
+            last_price=Decimal("10.20"),
+            previous_close=Decimal("10.00"),
+            high_price=Decimal("10.10"),
+            low_price=Decimal("10.00"),
+            cumulative_volume=100,
             cumulative_amount=Decimal("1010.00"),
         )
 ```
@@ -203,14 +209,24 @@ git commit -m "feat: define call auction market series domain"
 在 `tests/test_postgres_integration.py` 增加 `test_call_auction_market_series_schema_is_partitioned_and_internal`，通过 `to_regclass`、`pg_partitioned_table`、`pg_inherits`、`pg_constraint`、`pg_policies` 和 `information_schema.role_table_grants` 断言：
 
 ```python
-assert connection.scalar(text(
-    "select partstrat from pg_partitioned_table where partrelid="
-    "'realtime.call_auction_market_series_snapshot'::regclass"
-)) == "r"
-assert connection.scalar(text(
-    "select count(*) from pg_inherits where inhparent="
-    "'realtime.call_auction_market_series_snapshot'::regclass"
-)) == 14
+assert (
+    connection.scalar(
+        text(
+            "select partstrat from pg_partitioned_table where partrelid="
+            "'realtime.call_auction_market_series_snapshot'::regclass"
+        )
+    )
+    == "r"
+)
+assert (
+    connection.scalar(
+        text(
+            "select count(*) from pg_inherits where inhparent="
+            "'realtime.call_auction_market_series_snapshot'::regclass"
+        )
+    )
+    == 14
+)
 ```
 
 测试还要证明：三张父表启用 RLS；匿名、authenticated、`market_data_api` 无权限；Worker 对 Snapshot 只有 SELECT/INSERT，对 Session/Round 只有 SELECT/INSERT/UPDATE；Snapshot PK 为 `(trade_date, ingestion_id, symbol)`；Session 的 `workflow_run_id` unique；Round PK 为 `(session_id, sample_seq)`；不存在 `api_v1.call_auction_market_series*` view/function。
@@ -395,8 +411,11 @@ order by symbol
 
 ```python
 def commit_attempt(
-    self, run: IngestionRun, records: Sequence[MarketSeriesSnapshotRecord],
-    manifest: RawManifest, quality_results: Sequence[QualityResult],
+    self,
+    run: IngestionRun,
+    records: Sequence[MarketSeriesSnapshotRecord],
+    manifest: RawManifest,
+    quality_results: Sequence[QualityResult],
 ) -> None:
     if run.dataset_code is not DatasetCode.CALL_AUCTION_MARKET_SERIES:
         raise ValueError("unexpected market-series dataset")
@@ -637,10 +656,16 @@ JobDefinition(
     CALL_AUCTION_MARKET_SERIES_JOB_ID,
     "沪深全市场开盘竞价序列快照",
     "09:15-09:25:20 每20秒保存一次沪深上市股票全集来源事实。",
-    "call_auction_market_series", "cron", "周一至周五 09:15",
-    SCHEDULER_TIMEZONE, settings.call_auction_market_series_enabled,
-    JOB_TIMEOUT_SECONDS, "错过轮次显式失败，不补采。",
-    day_of_week="mon-fri", hour=9, minute=15,
+    "call_auction_market_series",
+    "cron",
+    "周一至周五 09:15",
+    SCHEDULER_TIMEZONE,
+    settings.call_auction_market_series_enabled,
+    JOB_TIMEOUT_SECONDS,
+    "错过轮次显式失败，不补采。",
+    day_of_week="mon-fri",
+    hour=9,
+    minute=15,
 )
 ```
 
@@ -651,7 +676,7 @@ Workflow catalog 增加新 workflow 的唯一 step `collect_call_auction_market_
 构造 Scheduler：
 
 ```python
-executors={
+executors = {
     "default": ThreadPoolExecutor(max_workers=1),
     "morning_auction": ThreadPoolExecutor(max_workers=2),
 }
@@ -666,9 +691,14 @@ executor = (
     else "default"
 )
 scheduler.add_job(
-    functions[definition.code], _trigger(definition), id=definition.code,
-    replace_existing=True, coalesce=True, max_instances=1,
-    misfire_grace_time=definition.timeout_seconds, executor=executor,
+    functions[definition.code],
+    _trigger(definition),
+    id=definition.code,
+    replace_existing=True,
+    coalesce=True,
+    max_instances=1,
+    misfire_grace_time=definition.timeout_seconds,
+    executor=executor,
 )
 ```
 
