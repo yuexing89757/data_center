@@ -22,6 +22,9 @@ from apscheduler.triggers.interval import IntervalTrigger  # type: ignore[import
 from sqlalchemy import URL, create_engine
 
 from market_data_center.auction_service import AuctionCollectionService
+from market_data_center.call_auction_market_series_service import (
+    CallAuctionMarketSeriesService,
+)
 from market_data_center.call_auction_market_service import CallAuctionMarketSnapshotService
 from market_data_center.cli import run_daily_workflow, run_stock_daily_indicator_workflow
 from market_data_center.database_urls import sqlalchemy_url
@@ -29,6 +32,9 @@ from market_data_center.domain.operations import TriggerSource, WorkflowCode
 from market_data_center.operations_service import WorkflowExecutionService
 from market_data_center.persistence import PostgreSQLPersistence
 from market_data_center.persistence.auction_postgres import PostgreSQLAuctionPersistence
+from market_data_center.persistence.call_auction_market_series_postgres import (
+    PostgreSQLCallAuctionMarketSeriesPersistence,
+)
 from market_data_center.persistence.operations_postgres import PostgreSQLOperationsPersistence
 from market_data_center.persistence.stock_pool_postgres import PostgreSQLStockPoolPersistence
 from market_data_center.pipeline import IngestionPipeline
@@ -45,6 +51,7 @@ from market_data_center.reliability import recover_stale_runs
 from market_data_center.scheduling_catalog import (
     AUCTION_COLLECTION_JOB_ID,
     AUCTION_COLLECTION_QUOTE_BATCH_SIZE,
+    CALL_AUCTION_MARKET_SERIES_JOB_ID,
     CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID,
     DAILY_RUN_JOB_ID,
     DEDUCTED_PROFIT_JOB_ID,
@@ -270,15 +277,24 @@ def run_stale_recovery_job() -> None:
                     datetime.now(UTC)
                 ),
             )
+            series_count = execution.step(
+                "recover_call_auction_market_series_sessions",
+                4,
+                lambda: PostgreSQLCallAuctionMarketSeriesPersistence(
+                    engine
+                ).recover_expired_sessions(datetime.now(UTC)),
+            )
         except BaseException as error:
             execution.fail(error)
             raise
         execution.succeed()
         LOGGER.info(
-            "recovered stale runs ingestion_count=%d workflow_count=%d auction_count=%d",
+            "recovered stale runs ingestion_count=%d workflow_count=%d auction_count=%d "
+            "series_count=%d",
             len(ingestion_ids),
             workflow_count,
             auction_count,
+            series_count,
         )
     finally:
         engine.dispose()
@@ -451,6 +467,50 @@ def run_call_auction_market_snapshot_job() -> None:
         engine.dispose()
 
 
+def run_call_auction_market_series_job() -> None:
+    """Collect the fixed 32-round full-market opening-auction series."""
+    settings = WorkerSettings()  # type: ignore[call-arg]
+    scheduling = SchedulerSettings()
+    pool_settings = PytdxPoolSettings()
+    quote_settings = PytdxHqSettings(pytdx_hq_batch_size=80)
+    engine = create_engine(
+        sqlalchemy_url(settings.database_url.get_secret_value()), pool_pre_ping=True
+    )
+    try:
+        fire_time = _scheduled_job_fire_time(CALL_AUCTION_MARKET_SERIES_JOB_ID, scheduling)
+        execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
+            WorkflowCode.CALL_AUCTION_MARKET_SERIES,
+            fire_time,
+            TriggerSource.SCHEDULED,
+        )
+        try:
+            trade_date = fire_time.astimezone(ZoneInfo(SCHEDULER_TIMEZONE)).date()
+            pool = load_endpoint_pool(pool_settings.pytdx_pool_path)
+            quote_endpoints = endpoints_for(pool, PytdxCapability.QUOTE)
+
+            def provider_factory(endpoint: tuple[str, int]) -> PytdxHqProvider:
+                return PytdxHqProvider(quote_settings, endpoints=(endpoint,))
+
+            service = CallAuctionMarketSeriesService(
+                persistence=PostgreSQLCallAuctionMarketSeriesPersistence(engine),
+                raw_store=LocalRawStore(settings.raw_data_root),
+                quote_endpoints=quote_endpoints,
+                provider_factory=provider_factory,
+                retry_budget_seconds=quote_settings.pytdx_hq_timeout_seconds,
+            )
+            execution.step(
+                "collect_call_auction_market_series",
+                1,
+                lambda: service.collect(trade_date, execution.run.workflow_run_id),
+            )
+        except BaseException as error:
+            execution.fail(error)
+            raise
+        execution.succeed()
+    finally:
+        engine.dispose()
+
+
 def run_today_limit_up_snapshot_job() -> None:
     """Fill the exact-date immutable limit-up snapshot after dependency checks."""
     from market_data_center.today_limit_up_service import fill_today_limit_up_snapshot
@@ -527,7 +587,10 @@ def build_scheduler(settings: SchedulerSettings | None = None) -> BlockingSchedu
     job_store_engine = create_engine(URL.create("sqlite", database=str(store_path)))
     scheduler = BlockingScheduler(
         jobstores={"default": SQLAlchemyJobStore(engine=job_store_engine)},
-        executors={"default": ThreadPoolExecutor(max_workers=1)},
+        executors={
+            "default": ThreadPoolExecutor(max_workers=1),
+            "morning_auction": ThreadPoolExecutor(max_workers=2),
+        },
         timezone=SCHEDULER_TIMEZONE,
     )
     functions = {
@@ -539,12 +602,18 @@ def build_scheduler(settings: SchedulerSettings | None = None) -> BlockingSchedu
         AUCTION_COLLECTION_JOB_ID: run_auction_collection_job,
         EOD_QUOTE_SNAPSHOT_JOB_ID: run_eod_quote_snapshot_job,
         CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID: run_call_auction_market_snapshot_job,
+        CALL_AUCTION_MARKET_SERIES_JOB_ID: run_call_auction_market_series_job,
         TODAY_LIMIT_UP_SNAPSHOT_JOB_ID: run_today_limit_up_snapshot_job,
         PYTDX_POOL_REFRESH_JOB_ID: run_pytdx_pool_refresh_job,
     }
     for definition in job_definitions(settings):
         if not definition.enabled:
             continue
+        executor = (
+            "morning_auction"
+            if definition.code in {AUCTION_COLLECTION_JOB_ID, CALL_AUCTION_MARKET_SERIES_JOB_ID}
+            else "default"
+        )
         scheduler.add_job(
             functions[definition.code],
             _trigger(definition),
@@ -553,6 +622,7 @@ def build_scheduler(settings: SchedulerSettings | None = None) -> BlockingSchedu
             coalesce=True,
             max_instances=1,
             misfire_grace_time=definition.timeout_seconds,
+            executor=executor,
         )
     return scheduler
 

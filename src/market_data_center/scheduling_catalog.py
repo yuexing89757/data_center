@@ -12,6 +12,7 @@ STOCK_POOL_JOB_ID = "mainboard-price-limit-stock-pools-daily"
 AUCTION_COLLECTION_JOB_ID = "opening-auction-limit-up-quotes"
 EOD_QUOTE_SNAPSHOT_JOB_ID = "eod-quote-snapshot-daily"
 CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID = "call-auction-market-snapshot-daily"
+CALL_AUCTION_MARKET_SERIES_JOB_ID = "call-auction-market-series"
 TODAY_LIMIT_UP_SNAPSHOT_JOB_ID = "today-limit-up-snapshot-daily"
 PYTDX_POOL_REFRESH_JOB_ID = "pytdx-pool-refresh"
 SCHEDULER_TIMEZONE = "Asia/Shanghai"
@@ -64,7 +65,12 @@ WORKFLOW_DEFINITIONS = (
         "stale_run_recovery",
         "陈旧运行恢复",
         "恢复超时停留在 running 的采集和工作流记录。",
-        ("recover_ingestion_runs", "recover_workflow_runs", "recover_auction_sessions"),
+        (
+            "recover_ingestion_runs",
+            "recover_workflow_runs",
+            "recover_auction_sessions",
+            "recover_call_auction_market_series_sessions",
+        ),
     ),
     WorkflowDefinition(
         "deducted_profit",
@@ -95,6 +101,12 @@ WORKFLOW_DEFINITIONS = (
         "沪深全市场开盘竞价快照",
         "在开盘集合竞价结束后采集沪深上市股票的完整来源快照。",
         ("collect_call_auction_market_snapshot",),
+    ),
+    WorkflowDefinition(
+        "call_auction_market_series",
+        "沪深全市场开盘竞价序列快照",
+        "在开盘集合竞价期间按固定轮次采集沪深上市股票的完整来源快照。",
+        ("collect_call_auction_market_series",),
     ),
     WorkflowDefinition(
         "call_auction_snapshot",
@@ -225,6 +237,21 @@ def job_definitions(settings: SchedulerSettings) -> tuple[JobDefinition, ...]:
             day_of_week="mon-fri",
             hour=9,
             minute=26,
+        ),
+        JobDefinition(
+            CALL_AUCTION_MARKET_SERIES_JOB_ID,
+            "沪深全市场开盘竞价序列快照",
+            "09:15-09:25:20 每20秒保存一次沪深上市股票全集来源事实。",
+            "call_auction_market_series",
+            "cron",
+            "周一至周五 09:15",
+            timezone,
+            settings.call_auction_market_series_enabled,
+            timeout,
+            "错过轮次显式失败, 不补采。",
+            day_of_week="mon-fri",
+            hour=9,
+            minute=15,
         ),
         JobDefinition(
             TODAY_LIMIT_UP_SNAPSHOT_JOB_ID,

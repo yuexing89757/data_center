@@ -4,6 +4,9 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import TypeVar
 
+from market_data_center.call_auction_market_series_service import (
+    CallAuctionMarketSeriesSummary,
+)
 from market_data_center.call_auction_market_service import CallAuctionMarketCollectionSummary
 from market_data_center.daily_bar_batch import DailyBarBulkSummary
 from market_data_center.domain.auction import AuctionCollectionSummary
@@ -127,6 +130,13 @@ def _result_statistics(result: object) -> tuple[int, int, int, ExecutionStatus]:
         status = {
             "succeeded": ExecutionStatus.SUCCEEDED,
             "partial": ExecutionStatus.PARTIAL,
+        }[result.status]
+        return result.expected_rows, result.accepted_rows, result.rejected_rows, status
+    if isinstance(result, CallAuctionMarketSeriesSummary):
+        status = {
+            "succeeded": ExecutionStatus.SUCCEEDED,
+            "partial": ExecutionStatus.PARTIAL,
+            "failed": ExecutionStatus.FAILED,
         }[result.status]
         return result.expected_rows, result.accepted_rows, result.rejected_rows, status
     if isinstance(result, AuctionCollectionSummary):

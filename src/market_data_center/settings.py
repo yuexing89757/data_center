@@ -33,6 +33,7 @@ class SchedulerSettings(BaseSettings):
     auction_collection_enabled: bool = True
     eod_quote_snapshot_enabled: bool = True
     call_auction_snapshot_enabled: bool = True
+    call_auction_market_series_enabled: bool = True
     # Remains opt-in until the new migration and provider preflight are explicitly deployed.
     today_limit_up_snapshot_enabled: bool = False
 
