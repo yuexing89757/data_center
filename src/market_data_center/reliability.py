@@ -248,6 +248,10 @@ CALL_AUCTION_MARKET_REPLAY_DISABLED = (
     "Raw replay is disabled for call_auction_market_snapshot until exact "
     "frozen-universe identity can be proven"
 )
+CALL_AUCTION_MARKET_SERIES_REPLAY_DISABLED = (
+    "Raw replay is disabled for call_auction_market_series until exact "
+    "session, round, attempt, and frozen-universe lineage is implemented"
+)
 
 
 class RawReplayService:
@@ -268,6 +272,8 @@ class RawReplayService:
         source = self._persistence.replay_source(source_ingestion_id)
         if source.dataset_code is DatasetCode.CALL_AUCTION_MARKET_SNAPSHOT:
             raise ProviderError(CALL_AUCTION_MARKET_REPLAY_DISABLED)
+        if source.dataset_code is DatasetCode.CALL_AUCTION_MARKET_SERIES:
+            raise ProviderError(CALL_AUCTION_MARKET_SERIES_REPLAY_DISABLED)
         run = self._new_replay_run(source) if not dry_run else None
         if run is not None:
             self._persistence.create_ingestion_run(run)

@@ -226,10 +226,10 @@ def test_market_provider_uses_one_explicit_endpoint_and_batches_by_eighty(
     assert (client.enter_count, client.exit_count) == (1, 1)
 
 
-def test_market_provider_flattens_5200_symbols_in_65_ordered_batches() -> None:
+def test_market_provider_flattens_5208_symbols_in_66_ordered_batches() -> None:
     batches: list[tuple[tuple[int, str], ...]] = []
     client = BatchRecordedClient(batches)
-    symbols = _symbols(5_200)
+    symbols = _symbols(5_208)
     provider = PytdxHqProvider(
         PytdxHqSettings(_env_file=None),  # type: ignore[call-arg]
         endpoints=(("only.quote", 7709),),
@@ -240,7 +240,7 @@ def test_market_provider_flattens_5200_symbols_in_65_ordered_batches() -> None:
     with provider:
         result = provider.fetch_five_level_quotes(symbols)
 
-    assert len(batches) == 65
+    assert [len(batch) for batch in batches] == [80] * 65 + [8]
     assert all(len(batch) <= 80 for batch in batches)
     assert (
         tuple(
