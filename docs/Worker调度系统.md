@@ -68,7 +68,8 @@
 ```
 BlockingScheduler
 ├── jobstores: { default: SQLAlchemyJobStore(SQLite) }   ← 持久化
-├── executors: { default: ThreadPoolExecutor(max_workers=1) }  ← 单线程
+├── executors: { default: ThreadPoolExecutor(max_workers=1),
+│                morning_auction: ThreadPoolExecutor(max_workers=2) }
 ├── timezone:  Asia/Shanghai
 └── jobs:      遍历 job_definitions(settings)，enabled 的才 add_job
                add_job(..., replace_existing=True, coalesce=True,
@@ -79,7 +80,7 @@ BlockingScheduler
 - `cron` 类型 → `CronTrigger(day_of_week, hour, minute, timezone)`
 - `interval` 类型 → `IntervalTrigger(hours=N, timezone)`
 
-## 定时任务目录（9 个 job）
+## 定时任务目录（11 个 job）
 
 任务定义在 `scheduling_catalog.py`。每个 job 有：`code`（APScheduler job id）、`display_name`、`workflow_code`、`trigger_type`、计划时间、`enabled`、`timeout_seconds`、`recovery_policy`。
 
@@ -88,17 +89,18 @@ BlockingScheduler
 | # | Job ID | 名称 | Workflow | 触发 | 默认时间 | 启用 |
 |---|---|---|---|---|---|---|
 | 1 | `opening-auction-limit-up-quotes` | 集合竞价涨停池五档采集 | `auction_collection` | cron 周一至周五 | 09:15 | ✅ |
-| 2 | `call-auction-market-snapshot-daily` | 沪深全市场开盘竞价快照 | `call_auction_market_snapshot` | cron 周一至周五 | 09:26 | ✅ |
-| 3 | `eod-quote-snapshot-daily` | 收盘五档快照 | `eod_quote_snapshot` | cron 周一至周五 | 21:10 | ✅ |
+| 2 | `call-auction-market-series` | 沪深全市场开盘竞价序列快照 | `call_auction_market_series` | cron 周一至周五 | 09:15 | ✅ |
+| 3 | `call-auction-market-snapshot-daily` | 沪深全市场开盘竞价快照 | `call_auction_market_snapshot` | cron 周一至周五 | 09:26 | ✅ |
 | 4 | `daily-run` | 日 K 与基础数据更新 | `daily_market` | cron 周一至周五 | 20:00 | ✅ |
-| 5 | `stock-daily-indicators-daily` | 股票每日指标更新 | `stock_daily_indicator` | cron 周一至周五 | 20:30 | ✅ |
-| 6 | `mainboard-price-limit-stock-pools-daily` | 沪深主板昨日涨跌停股票池 | `stock_pool` | cron 周一至周五 | 21:00 | ✅ |
-| 7 | `today-limit-up-snapshot-daily` | 同日涨停不可变快照 | `today_limit_up_snapshot` | cron 周一至周五 | 22:00 | 默认关闭 |
-| 7 | `deducted-profit-daily` | 扣非净利润增量同步 | `deducted_profit` | cron 每天 | 20:00 | ✅ |
-| 8 | `recover-stale-ingestion-runs` | 陈旧运行恢复 | `stale_run_recovery` | interval | 每 1 小时 | ✅ |
-| 9 | `pytdx-pool-refresh` | PYTDX 节点池刷新 | `pytdx_pool_refresh` | interval | 每 12 小时 | ✅ |
+| 5 | `deducted-profit-daily` | 扣非净利润增量同步 | `deducted_profit` | cron 每天 | 20:00 | ✅ |
+| 6 | `stock-daily-indicators-daily` | 股票每日指标更新 | `stock_daily_indicator` | cron 周一至周五 | 20:30 | ✅ |
+| 7 | `mainboard-price-limit-stock-pools-daily` | 沪深主板昨日涨跌停股票池 | `stock_pool` | cron 周一至周五 | 21:00 | ✅ |
+| 8 | `eod-quote-snapshot-daily` | 收盘五档快照 | `eod_quote_snapshot` | cron 周一至周五 | 21:10 | ✅ |
+| 9 | `today-limit-up-snapshot-daily` | 同日涨停不可变快照 | `today_limit_up_snapshot` | cron 周一至周五 | 22:00 | 默认关闭 |
+| 10 | `recover-stale-ingestion-runs` | 陈旧运行恢复 | `stale_run_recovery` | interval | 每 1 小时 | ✅ |
+| 11 | `pytdx-pool-refresh` | PYTDX 节点池刷新 | `pytdx_pool_refresh` | interval | 每 12 小时 | ✅ |
 
-> 时间与调度策略固定在 `scheduling_catalog.py`，不能通过 `.env` 覆盖。09:26 任务在上海时间 09:25--09:30 窗口内采集；09:29:30 后不发起新请求。项目所有者已移除 `call-auction-snapshot-daily` 及其 21:30 自动最终化，且没有替代计划、环境时间、cron、timer 或 Windows Task Scheduler。`CALL_AUCTION_SNAPSHOT_ENABLED` 只启停 09:26 来源采集。旧 SQLite JobStore 中该精确 job ID 会在构建 Scheduler 时清理。
+> 时间与调度策略固定在 `scheduling_catalog.py`，不能通过 `.env` 覆盖。两个 09:15 任务使用 `morning_auction` executor 并行，涨停池任务仍每 30 秒逐只请求；全市场序列固定 09:15:00--09:25:20 每 20 秒一轮，共 32 轮、每批最多 80 只。09:26 任务继续使用 `default` executor，与序列表和会话完全隔离。其他任务仍在单线程 `default` executor 串行执行。
 
 ### 每个 job 做什么（scheduler.py 里的执行函数）
 
@@ -108,12 +110,13 @@ BlockingScheduler
 |---|---|
 | `run_daily_market_job` | 同步 security + trading_calendar + 远程 pytdx 日K（`bar_lookback_days=1, calendar_lookback_days=14`，单分片） |
 | `run_stock_daily_indicator_job` | tushare 全市场每日指标同步 + Core 保留策略（retention） |
-| `run_stale_recovery_job` | **3 步**：恢复 stale ingestion run（>60min）、恢复 stale workflow run、恢复过期 auction session。每小时 + 启动时各跑一次 |
+| `run_stale_recovery_job` | **4 步**：恢复 stale ingestion run、stale workflow run、涨停池 auction session 和过期全市场竞价序列 session。每小时 + 启动时各跑一次 |
 | `run_deducted_profit_job` | tushare 扣非净利润增量同步（按披露变化发现新公告/修订） |
 | `run_stock_pool_job` | 解析基准交易日 → 构建下一交易日生效的涨跌停股票池（依赖当日日K+指标成功） |
 | `run_auction_collection_job` | pytdx_hq 集合竞价五档采集（09:15-09:25 按 30 秒节奏采样，每只股票单独请求，默认启用） |
 | `run_eod_quote_snapshot_job` | 对当日 ready 涨停池采集收盘五档快照（默认启用） |
 | `run_call_auction_market_snapshot_job` | 09:26 从一个 quote-capable endpoint 采集 SSE/SZSE `stock`、`listed` 全集的开盘竞价来源快照；BSE、ETF、可转债和指数不进入本任务 |
+| `run_call_auction_market_series_job` | 09:15 启动 32 轮 SSE/SZSE `stock`、`listed` 全集采集；每轮最多两个 endpoint 完整 attempt，不合并 partial |
 | `run_pytdx_pool_refresh_job` | 有界探测候选节点能力；成功时原子发布，失败时保留 last-good |
 
 ## 自愈与可靠性（ADR-0016）
@@ -138,6 +141,7 @@ BlockingScheduler
 | `AUCTION_COLLECTION_ENABLED` | `true` | 集合竞价采集开关 |
 | `EOD_QUOTE_SNAPSHOT_ENABLED` | `true` | 收盘五档任务开关 |
 | `CALL_AUCTION_SNAPSHOT_ENABLED` | `true` | 只控制 09:26 沪深全市场开盘竞价来源采集 |
+| `CALL_AUCTION_MARKET_SERIES_ENABLED` | `true` | 只控制 09:15 全市场竞价序列任务 |
 | `TODAY_LIMIT_UP_SNAPSHOT_ENABLED` | `false` | 只控制 22:00 同日涨停快照；迁移和出站预检前保持关闭 |
 | `PYTDX_POOL_PATH` | `data/pytdx_pool.json` | 统一版本化能力节点池路径；生产使用持久化绝对路径 |
 

@@ -427,7 +427,9 @@ def test_linux_worker_uses_the_shared_pool_runtime_contract() -> None:
     assert "AUCTION_COLLECTION_ENABLED=true" in template
     assert "EOD_QUOTE_SNAPSHOT_ENABLED=true" in template
     assert "CALL_AUCTION_SNAPSHOT_ENABLED=true" in template
+    assert "CALL_AUCTION_MARKET_SERIES_ENABLED=true" in template
     assert "scripts/check_pytdx_pool.py" in smoke
+    assert "OnCalendar" not in unit
 
 
 def test_release_templates_expose_task_switches_but_not_task_times() -> None:
@@ -442,6 +444,7 @@ def test_release_templates_expose_task_switches_but_not_task_times() -> None:
         "AUCTION_COLLECTION_ENABLED=true",
         "EOD_QUOTE_SNAPSHOT_ENABLED=true",
         "CALL_AUCTION_SNAPSHOT_ENABLED=true",
+        "CALL_AUCTION_MARKET_SERIES_ENABLED=true",
     )
     forbidden = (
         "SCHEDULER_TIMEZONE",
@@ -461,6 +464,10 @@ def test_release_templates_expose_task_switches_but_not_task_times() -> None:
         "EOD_QUOTE_MINUTE",
         "CALL_AUCTION_HOUR",
         "CALL_AUCTION_MINUTE",
+        "CALL_AUCTION_MARKET_SERIES_HOUR",
+        "CALL_AUCTION_MARKET_SERIES_MINUTE",
+        "CALL_AUCTION_MARKET_SERIES_CADENCE_SECONDS",
+        "CALL_AUCTION_MARKET_SERIES_BATCH_SIZE",
         "PYTDX_POOL_REFRESH_HOURS",
     )
 
