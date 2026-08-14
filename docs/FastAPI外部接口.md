@@ -66,15 +66,15 @@ historical names and bounded omission counts. Ties break by symbol; explicit dat
 the stored 09:26 Asia/Shanghai snapshot has complete equal last/high/low evidence at the applicable
 versioned price limit. Partial status and incomplete omissions remain visible; later bars are unused.
 
-`GET /api/v1/call-auction-indicative-details?symbol=SSE:688796&trade_date=YYYY-MM-DD&offset=0&limit=200`
-performs one bounded live Eastmoney fetch for current-day 09:15:00-09:25:59 Asia/Shanghai virtual
-indicative/reference and matching-volume observations for one SSE/SZSE stock. It synchronously
-captures immutable Raw, queues the bounded database registration, and returns the market data with
-`persistence_status=queued`; it does not claim that database persistence has completed. The single
-writer queue has one waiting slot. Full queue or Raw failure rejects the request rather than
-returning untracked data. Identical content later reuses its version; changed content creates an
-immutable revision. It is not a trade-tick or order-by-order API; the
-source display classification is untrusted. Non-current dates and pre-09:26 requests are rejected
-without fallback. Provider failure maps to 502, provider absence/Raw failure to 503, and the
-single-process concurrency/rate/queue gate to 429. A later database failure is logged with Raw
-retained for operational recovery; it cannot retroactively change an already returned response.
+`GET /api/v1/call-auction-indicative-details?code=688796&offset=0&limit=200` requires only one
+six-digit SSE/SZSE stock code; the service derives the current Asia/Shanghai date and standardized
+symbol. It first reads the latest exact-date succeeded or partial database snapshot. A hit returns
+without provider I/O with `data_origin=database` and `persistence_status=persisted`. Only SQLSTATE
+`P0002` triggers one bounded Eastmoney fetch for current-day 09:15:00-09:25:59 virtual
+indicative/reference and matching-volume observations. Other database failures return the normal
+API error and never trigger scraping. A live result is returned after immutable Raw capture with
+`data_origin=eastmoney_live` and `persistence_status=queued`, while bounded database registration
+runs asynchronously. The single-writer queue has one waiting slot. Full queue or Raw failure rejects
+the request rather than returning untracked data. It is not a trade-tick or order-by-order API; the
+source display classification is untrusted. Provider failure maps to 502, provider absence/Raw
+failure to 503, and the single-process concurrency/rate/queue gate to 429.

@@ -51,6 +51,14 @@
             "title": "Cache Hit",
             "type": "boolean"
           },
+          "data_origin": {
+            "enum": [
+              "database",
+              "eastmoney_live"
+            ],
+            "title": "Data Origin",
+            "type": "string"
+          },
           "fetched_at": {
             "format": "date-time",
             "title": "Fetched At",
@@ -64,6 +72,21 @@
             "format": "uuid",
             "title": "Ingestion Id",
             "type": "string"
+          },
+          "ingestion_status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "succeeded",
+                  "partial"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ingestion Status"
           },
           "input_hash": {
             "pattern": "^[0-9a-f]{64}$",
@@ -98,7 +121,10 @@
             "type": "integer"
           },
           "persistence_status": {
-            "const": "queued",
+            "enum": [
+              "queued",
+              "persisted"
+            ],
             "title": "Persistence Status",
             "type": "string"
           },
@@ -139,6 +165,18 @@
             "format": "date",
             "title": "Trade Date",
             "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
           }
         },
         "required": [
@@ -147,6 +185,7 @@
           "fetched_at",
           "source",
           "live_provider_derived",
+          "data_origin",
           "cache_hit",
           "persistence_status",
           "ingestion_id",
@@ -170,12 +209,15 @@
         "properties": {
           "accepted_auction_row_count": {
             "exclusiveMaximum": 5000.0,
-            "minimum": 1.0,
+            "minimum": 0.0,
             "title": "Accepted Auction Row Count",
             "type": "integer"
           },
           "database_persistence": {
-            "const": "queued",
+            "enum": [
+              "queued",
+              "persisted"
+            ],
             "title": "Database Persistence",
             "type": "string"
           },
@@ -196,7 +238,10 @@
             "type": "integer"
           },
           "status": {
-            "const": "complete",
+            "enum": [
+              "complete",
+              "partial"
+            ],
             "title": "Status",
             "type": "string"
           }
@@ -1883,26 +1928,16 @@
   "paths": {
     "/api/v1/call-auction-indicative-details": {
       "get": {
-        "description": "Fetches 09:15:00-09:25:59 Asia/Shanghai virtual indicative/reference price and displayed matching-volume observations directly from Eastmoney for one SSE/SZSE stock. Immutable Raw is captured before response and database registration is queued through a narrowly bounded append-only function; queued status is explicit. These are not exchange trade ticks or order-by-order records. The source display classification is untrusted and is not a trade direction. Historical dates are rejected rather than silently substituted.",
+        "description": "Accepts one six-digit SSE/SZSE stock code and first reads the current Shanghai date's latest stored snapshot. Only an explicit database miss triggers a bounded Eastmoney fetch for 09:15:00-09:25:59 virtual indicative/reference price and displayed matching-volume observations. Live data is returned immediately after immutable Raw capture while database registration is queued asynchronously. These are not exchange trade ticks or order-by-order records. The source display classification is untrusted and is not a trade direction. data_origin and persistence_status distinguish stored data from a queued live result.",
         "operationId": "auction_indicative_details_api_v1_call_auction_indicative_details_get",
         "parameters": [
           {
             "in": "query",
-            "name": "symbol",
+            "name": "code",
             "required": true,
             "schema": {
-              "pattern": "^(SSE|SZSE):[0-9]{6}$",
-              "title": "Symbol",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "trade_date",
-            "required": true,
-            "schema": {
-              "format": "date",
-              "title": "Trade Date",
+              "pattern": "^[0-9]{6}$",
+              "title": "Code",
               "type": "string"
             }
           },

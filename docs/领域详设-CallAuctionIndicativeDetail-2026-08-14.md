@@ -14,3 +14,8 @@
 
 API 按 `observed_at, source_sequence` 确定排序，offset 0–5000，limit 1–500。响应固定声明
 `is_exchange_trade_tick=false`、`is_order_by_order=false`，不提供历史回退。
+
+HTTP 接口唯一必填输入是六位 `code`：`6xxxxx` 映射 SSE，`0xxxxx`/`3xxxxx` 映射 SZSE，
+其余号段拒绝。服务自动使用 Asia/Shanghai 当日，先查询最新 succeeded/partial 数据库快照；命中
+即返回，只有 RPC 明确 P0002 时才实时访问东方财富。数据库异常不得触发回源。实时结果先保存 Raw、
+直接返回并异步登记数据库；响应通过 `data_origin` 和 `persistence_status` 区分两条路径。

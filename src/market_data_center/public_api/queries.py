@@ -10,6 +10,7 @@ from sqlalchemy.exc import DBAPIError
 
 from market_data_center.domain import ClassificationType
 from market_data_center.public_api.models import (
+    AuctionIndicativeDetailResponse,
     AuctionOnePriceLimitResponse,
     CallAuctionMarketSnapshotResponse,
     ClassificationMembersResponse,
@@ -80,6 +81,15 @@ QUERY_AUCTION_ONE_PRICE_LIMITS = text("""
 select api_v1.query_auction_one_price_limits(p_trade_date => :trade_date) as payload
 """)
 
+QUERY_AUCTION_INDICATIVE_DETAILS = text("""
+select api_v1.query_call_auction_indicative_details(
+    p_symbol => :symbol,
+    p_trade_date => (now() at time zone 'Asia/Shanghai')::date,
+    p_offset => :offset,
+    p_limit => :limit
+) as payload
+""")
+
 
 class PublicQueryError(RuntimeError):
     """Safe application-level query error."""
@@ -134,6 +144,10 @@ class PublicQueryService(Protocol):
     def top_gainers_20d(self, end_date: date | None, limit: int) -> TopGainers20dResponse: ...
 
     def auction_one_price_limits(self, trade_date: date | None) -> AuctionOnePriceLimitResponse: ...
+
+    def auction_indicative_details(
+        self, symbol: str, offset: int, limit: int
+    ) -> AuctionIndicativeDetailResponse: ...
 
 
 class PostgreSQLPublicQueryService:
@@ -228,6 +242,15 @@ class PostgreSQLPublicQueryService:
     def auction_one_price_limits(self, trade_date: date | None) -> AuctionOnePriceLimitResponse:
         rows = self._execute(QUERY_AUCTION_ONE_PRICE_LIMITS, {"trade_date": trade_date})
         return AuctionOnePriceLimitResponse.model_validate(rows[0]["payload"])
+
+    def auction_indicative_details(
+        self, symbol: str, offset: int, limit: int
+    ) -> AuctionIndicativeDetailResponse:
+        rows = self._execute(
+            QUERY_AUCTION_INDICATIVE_DETAILS,
+            {"symbol": symbol, "offset": offset, "limit": limit},
+        )
+        return AuctionIndicativeDetailResponse.model_validate(rows[0]["payload"])
 
     def _execute(self, statement: Any, parameters: Mapping[str, object]) -> Sequence[RowMapping]:
         try:

@@ -1,6 +1,7 @@
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from types import SimpleNamespace
+from typing import Literal
 
 import pytest
 from fastapi.testclient import TestClient
@@ -57,6 +58,8 @@ class FakeQueryService:
         self.call_auction_market_snapshot_calls: list[tuple[date, tuple[str, ...]]] = []
         self.top_gainer_calls: list[tuple[date | None, int]] = []
         self.auction_one_price_limit_calls: list[date | None] = []
+        self.auction_indicative_database_calls: list[tuple[str, int, int]] = []
+        self.auction_indicative_database_error: Exception | None = PublicQueryNotFound("not stored")
         self.auction_indicative_calls: list[tuple[str, date, int, int]] = []
 
     def ready(self) -> None:
@@ -311,6 +314,14 @@ class FakeQueryService:
             down=[],
         )
 
+    def auction_indicative_details(
+        self, symbol: str, offset: int, limit: int
+    ) -> AuctionIndicativeDetailResponse:
+        self.auction_indicative_database_calls.append((symbol, offset, limit))
+        if self.auction_indicative_database_error is not None:
+            raise self.auction_indicative_database_error
+        return _auction_indicative_response(symbol=symbol, data_origin="database")
+
 
 class FakeLiveAuctionService:
     def __init__(self, query_service: FakeQueryService) -> None:
@@ -326,6 +337,7 @@ class FakeLiveAuctionService:
             fetched_at=datetime(2026, 8, 14, 1, 26, tzinfo=UTC),
             source="eastmoney",
             live_provider_derived=True,
+            data_origin="eastmoney_live",
             cache_hit=False,
             persistence_status="queued",
             ingestion_id="11111111-1111-1111-1111-111111111111",
@@ -356,6 +368,56 @@ class FakeLiveAuctionService:
                 )
             ],
         )
+
+    def fetch_current(
+        self, symbol: str, offset: int, limit: int
+    ) -> AuctionIndicativeDetailResponse:
+        return self.fetch(symbol, date(2026, 8, 14), offset, limit)
+
+
+def _auction_indicative_response(
+    *, symbol: str, data_origin: Literal["database", "eastmoney_live"]
+) -> AuctionIndicativeDetailResponse:
+    persisted = data_origin == "database"
+    return AuctionIndicativeDetailResponse(
+        symbol=symbol,
+        trade_date=date(2026, 8, 14),
+        fetched_at=datetime(2026, 8, 14, 1, 26, tzinfo=UTC),
+        source="eastmoney",
+        live_provider_derived=True,
+        data_origin=data_origin,
+        cache_hit=False,
+        persistence_status="persisted" if persisted else "queued",
+        version=1 if persisted else None,
+        ingestion_status="succeeded" if persisted else None,
+        ingestion_id="11111111-1111-1111-1111-111111111111",
+        raw_id="22222222-2222-2222-2222-222222222222",
+        input_hash="a" * 64,
+        semantics="auction_virtual_indicative_matching_detail",
+        is_exchange_trade_tick=False,
+        is_order_by_order=False,
+        total_count=2,
+        offset=0,
+        returned_count=1,
+        has_more=True,
+        quality=AuctionIndicativeQuality(
+            status="complete",
+            source_row_count=3,
+            accepted_auction_row_count=2,
+            source_display_classification_trusted=False,
+            raw_captured=True,
+            database_persistence="persisted" if persisted else "queued",
+        ),
+        items=[
+            AuctionIndicativeDetailItem(
+                observed_at=datetime(2026, 8, 14, 1, 15, 5, tzinfo=UTC),
+                source_sequence=0,
+                indicative_price=Decimal("133.99"),
+                displayed_volume_shares=200,
+                source_display_classification="unknown",
+            )
+        ],
+    )
 
 
 def _client(service: FakeQueryService) -> TestClient:
@@ -721,11 +783,11 @@ def test_auction_one_price_limits_returns_separate_sets() -> None:
     assert response.json()["ingestion_status"] == "partial"
 
 
-def test_auction_indicative_details_are_explicitly_not_trade_ticks() -> None:
+def test_auction_indicative_details_falls_back_to_live_only_when_database_is_empty() -> None:
     service = FakeQueryService()
     response = _client(service).get(
         "/api/v1/call-auction-indicative-details",
-        params={"symbol": "SSE:688796", "trade_date": "2026-08-14", "limit": 200},
+        params={"code": "688796"},
         headers=_headers(),
     )
     assert response.status_code == 200
@@ -738,15 +800,65 @@ def test_auction_indicative_details_are_explicitly_not_trade_ticks() -> None:
     assert payload["quality"]["raw_captured"] is True
     assert payload["quality"]["database_persistence"] == "queued"
     assert payload["live_provider_derived"] is True
+    assert payload["data_origin"] == "eastmoney_live"
+    assert service.auction_indicative_database_calls == [("SSE:688796", 0, 200)]
     assert service.auction_indicative_calls == [("SSE:688796", date(2026, 8, 14), 0, 200)]
 
 
-def test_auction_indicative_details_validate_symbol_and_bounds() -> None:
+def test_auction_indicative_details_returns_database_hit_without_live_fetch() -> None:
+    service = FakeQueryService()
+    service.auction_indicative_database_error = None
+
+    response = _client(service).get(
+        "/api/v1/call-auction-indicative-details",
+        params={"code": "000001"},
+        headers=_headers(),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data_origin"] == "database"
+    assert response.json()["persistence_status"] == "persisted"
+    assert service.auction_indicative_database_calls == [("SZSE:000001", 0, 200)]
+    assert service.auction_indicative_calls == []
+
+
+def test_auction_indicative_database_failure_does_not_trigger_live_fetch() -> None:
+    service = FakeQueryService()
+    service.auction_indicative_database_error = PublicQueryUnavailable("database unavailable")
+
+    response = _client(service).get(
+        "/api/v1/call-auction-indicative-details",
+        params={"code": "688796"},
+        headers=_headers(),
+    )
+
+    assert response.status_code == 503
+    assert service.auction_indicative_calls == []
+
+
+@pytest.mark.parametrize("code", ["68879", "68879A", "920000", "200001"])
+def test_auction_indicative_details_accepts_only_supported_six_digit_stock_codes(
+    code: str,
+) -> None:
     service = FakeQueryService()
     response = _client(service).get(
         "/api/v1/call-auction-indicative-details",
-        params={"symbol": "BSE:920000", "trade_date": "2026-08-14", "limit": 501},
+        params={"code": code},
         headers=_headers(),
     )
     assert response.status_code == 422
+    assert service.auction_indicative_calls == []
+
+
+def test_auction_indicative_details_no_longer_accepts_symbol_or_trade_date() -> None:
+    service = FakeQueryService()
+
+    response = _client(service).get(
+        "/api/v1/call-auction-indicative-details",
+        params={"symbol": "SSE:688796", "trade_date": "2026-08-14"},
+        headers=_headers(),
+    )
+
+    assert response.status_code == 422
+    assert service.auction_indicative_database_calls == []
     assert service.auction_indicative_calls == []

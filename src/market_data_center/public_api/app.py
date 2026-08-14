@@ -329,24 +329,29 @@ def create_app(
         tags=["market-data"],
         summary="Query current-day call-auction virtual indicative matching details",
         description=(
-            "Fetches 09:15:00-09:25:59 Asia/Shanghai virtual indicative/reference price and "
-            "displayed matching-volume observations directly from Eastmoney for one SSE/SZSE "
-            "stock. Immutable Raw is captured before response and database registration is "
-            "queued through a narrowly bounded append-only function; queued status is explicit. "
+            "Accepts one six-digit SSE/SZSE stock code and first reads the current Shanghai "
+            "date's latest stored snapshot. Only an explicit database miss triggers a bounded "
+            "Eastmoney fetch for 09:15:00-09:25:59 virtual indicative/reference price and "
+            "displayed matching-volume observations. Live data is returned immediately after "
+            "immutable Raw capture while database registration is queued asynchronously. "
             "These are not exchange trade ticks or order-by-order records. The source display "
-            "classification is untrusted and is not a trade direction. Historical dates are "
-            "rejected rather than silently substituted."
+            "classification is untrusted and is not a trade direction. data_origin and "
+            "persistence_status distinguish stored data from a queued live result."
         ),
     )
     def auction_indicative_details(
         _: ApiKeyDependency,
+        service: QueryServiceDependency,
         live_service: AuctionIndicativeServiceDependency,
-        symbol: Annotated[str, Query(pattern=r"^(SSE|SZSE):[0-9]{6}$")],
-        trade_date: Annotated[date, Query()],
+        code: Annotated[str, Query(pattern=r"^[0-9]{6}$")],
         offset: Annotated[int, Query(ge=0, le=5000)] = 0,
         limit: Annotated[int, Query(ge=1, le=500)] = 200,
     ) -> AuctionIndicativeDetailResponse:
-        return live_service.fetch(symbol, trade_date, offset, limit)
+        symbol = _auction_symbol_from_code(code)
+        try:
+            return service.auction_indicative_details(symbol, offset, limit)
+        except PublicQueryNotFound:
+            return live_service.fetch_current(symbol, offset, limit)
 
     return app
 
@@ -374,6 +379,14 @@ AuctionIndicativeServiceDependency = Annotated[
     LiveAuctionIndicativeService, Depends(_auction_indicative_service)
 ]
 ApiKeyDependency = Annotated[None, Depends(_require_api_key)]
+
+
+def _auction_symbol_from_code(code: str) -> str:
+    if code.startswith("6"):
+        return f"SSE:{code}"
+    if code.startswith(("0", "3")):
+        return f"SZSE:{code}"
+    raise HTTPException(status_code=422, detail="code is not a supported SSE/SZSE stock")
 
 
 def _install_exception_handlers(app: FastAPI) -> None:

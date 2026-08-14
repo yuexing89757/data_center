@@ -86,7 +86,18 @@ class LiveAuctionIndicativeService:
     def fetch(
         self, symbol: str, trade_date: date, offset: int, limit: int
     ) -> AuctionIndicativeDetailResponse:
+        return self._fetch(symbol, trade_date, offset, limit, now=self._clock())
+
+    def fetch_current(
+        self, symbol: str, offset: int, limit: int
+    ) -> AuctionIndicativeDetailResponse:
         now = self._clock()
+        trade_date = now.astimezone(SHANGHAI).date()
+        return self._fetch(symbol, trade_date, offset, limit, now=now)
+
+    def _fetch(
+        self, symbol: str, trade_date: date, offset: int, limit: int, *, now: datetime
+    ) -> AuctionIndicativeDetailResponse:
         local_now = now.astimezone(SHANGHAI)
         if trade_date != local_now.date():
             raise AuctionIndicativeLiveInvalid("only the current Shanghai date is supported")
@@ -155,8 +166,11 @@ class LiveAuctionIndicativeService:
                 fetched_at=cached.fetched_at,
                 source="eastmoney",
                 live_provider_derived=True,
+                data_origin="eastmoney_live",
                 cache_hit=cache_hit,
                 persistence_status="queued",
+                version=None,
+                ingestion_status=None,
                 ingestion_id=cached.persistence.ingestion_id,
                 raw_id=cached.persistence.raw_id,
                 input_hash=cached.persistence.input_hash,

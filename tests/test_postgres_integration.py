@@ -177,6 +177,79 @@ def test_auction_indicative_schema_and_api_permission_boundary(
         ).fetchone() == (False,)
 
 
+def test_auction_indicative_database_response_matches_read_through_contract(
+    migrated_database_url: str,
+) -> None:
+    security_ingestion_id = uuid4()
+    ingestion_id = uuid4()
+    raw_id = uuid4()
+    with psycopg.connect(migrated_database_url) as connection:
+        trade_date = connection.execute(
+            "select (now() at time zone 'Asia/Shanghai')::date"
+        ).fetchone()[0]
+        connection.execute(
+            """
+insert into ingestion.ingestion_run (
+    ingestion_id, provider_code, dataset_code, status, started_at
+) values (%s, 'baostock', 'security', 'running', now())
+""",
+            (security_ingestion_id,),
+        )
+        connection.execute(
+            """
+insert into core.security (
+    symbol, code, exchange, current_name, security_type, status,
+    source_code, ingestion_id
+) values ('SSE:688796', '688796', 'SSE', '测试股票', 'stock', 'listed',
+          'baostock', %s)
+""",
+            (security_ingestion_id,),
+        )
+        connection.execute("set local role market_data_api")
+        connection.execute(
+            """
+select api_v1.persist_call_auction_indicative_details(
+    %s, %s, 'SSE:688796', %s, now(), %s, %s, %s, 100, 1,
+    jsonb_build_array(jsonb_build_object(
+        'source_sequence', 0,
+        'observed_at', (%s::text || ' 09:15:05+08')::timestamptz,
+        'indicative_price', '133.9900',
+        'displayed_volume_shares', 200,
+        'source_display_classification', 'unknown'
+    ))
+)
+""",
+            (
+                ingestion_id,
+                raw_id,
+                trade_date,
+                "a" * 64,
+                (
+                    "eastmoney/call_auction_indicative_detail/"
+                    f"year={trade_date:%Y}/month={trade_date:%m}/day={trade_date:%d}/"
+                    f"{raw_id}.jsonl"
+                ),
+                "b" * 64,
+                trade_date,
+            ),
+        )
+        payload = connection.execute(
+            """
+select api_v1.query_call_auction_indicative_details(
+    'SSE:688796', %s, 0, 200
+)
+""",
+            (trade_date,),
+        ).fetchone()[0]
+
+    assert payload["data_origin"] == "database"
+    assert payload["persistence_status"] == "persisted"
+    assert payload["version"] == 1
+    assert payload["ingestion_status"] == "succeeded"
+    assert payload["quality"]["database_persistence"] == "persisted"
+    assert payload["quality"]["accepted_auction_row_count"] == 1
+
+
 def test_today_limit_up_schema_is_internal_and_append_only(
     database_engine: Engine,
 ) -> None:

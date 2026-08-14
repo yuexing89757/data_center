@@ -5,14 +5,16 @@
 - Related issue: #47
 - Clarifies: ADR-0033
 
-`GET /api/v1/call-auction-indicative-details` performs the Eastmoney request directly for one
-SSE/SZSE symbol only after 09:26 Asia/Shanghai on the current date. Per API process, provider
-concurrency is one, attempts are at most two with bounded timeout/backoff, and the response is
-capped below 5,000 source rows. A private cache of no more than five seconds and a minimum request
-interval prevent the endpoint becoming a general scraping proxy. It never schedules or expands a
-request to other symbols.
+`GET /api/v1/call-auction-indicative-details` accepts one six-digit SSE/SZSE stock code and derives
+the standardized symbol and current Asia/Shanghai date. It first calls the bounded database RPC;
+the latest succeeded or partial snapshot is returned without provider I/O. Only SQLSTATE `P0002`
+permits the Eastmoney request. Database invalid/timeout/unavailable failures remain API failures and
+must not be converted into live fetches. Per API process, provider concurrency is one, attempts are
+at most two with bounded timeout/backoff, and the response is capped below 5,000 source rows. A
+private cache of no more than five seconds and a minimum request interval prevent the endpoint
+becoming a general scraping proxy. It never schedules or expands a request to other symbols.
 
-Raw JSONL is written synchronously before response. The prepared registration is then accepted by
+On a database miss, Raw JSONL is written synchronously before response. The prepared registration is then accepted by
 a bounded single-writer queue with at most one waiting task, and the market data is returned with
 an explicit `persistence_status=queued`. Queue saturation or Raw failure rejects the request, so a
 response is never silently described as already persisted. The queued `SECURITY DEFINER` function
@@ -30,3 +32,6 @@ The response labels the data as live provider-derived virtual indicative/matchin
 exchange trades or order-by-order records. This technical boundary does not grant collection or
 redistribution rights. Production enablement still requires Eastmoney/exchange terms and retention
 approval.
+
+`data_origin=database`/`persistence_status=persisted` identifies a stored response;
+`data_origin=eastmoney_live`/`persistence_status=queued` identifies the live fallback.

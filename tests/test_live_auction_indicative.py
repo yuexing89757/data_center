@@ -101,8 +101,8 @@ def test_fetch_captures_raw_and_queues_database_write_before_returning() -> None
     provider, persistence = FakeProvider(), FakePersistence()
     service = _service(provider, persistence)
 
-    first = service.fetch("SSE:688796", TODAY, 0, 200)
-    second = service.fetch("SSE:688796", TODAY, 0, 200)
+    first = service.fetch_current("SSE:688796", 0, 200)
+    second = service.fetch_current("SSE:688796", 0, 200)
 
     assert first.quality.raw_captured is True
     assert first.quality.database_persistence == "queued"
