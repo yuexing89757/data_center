@@ -55,3 +55,4 @@ ADR 记录已经接受的架构决策。其优先级低于项目宪法，高于�
 - `ADR-0032-0926集合竞价一字涨跌停只读契约.md`：定义只使用 09:26 快照和版本化涨跌停价的一字板证据。
 - `ADR-0033-当日集合竞价虚拟撮合明细.md`：定义当日单证券虚拟参考/匹配明细、Raw/版本/许可门禁和只读 API；明确它不是逐笔成交或逐笔委托。
 - `ADR-0033-live-fetch-clarification.md`: accepts bounded on-request fetch with narrow append-only persistence before response.
+- `ADR-0034-沪深全市场开盘竞价序列快照.md`：接受工作日 09:15–09:25:20 每 20 秒采集沪深上市股票全集，使用独立月度分区事实表和两线程早盘执行器，不改变 09:26 契约。
