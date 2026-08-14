@@ -119,7 +119,12 @@ class LiveAuctionIndicativeService:
                 self._last_provider_request = timer_now
                 try:
                     batch = self._provider.fetch_current_day(symbol, trade_date, now=now)
-                    records = tuple(batch.records)
+                    records = tuple(
+                        sorted(
+                            batch.records,
+                            key=lambda record: (record.observed_at, record.source_sequence),
+                        )
+                    )
                 except ProviderError as error:
                     root_cause: BaseException = error
                     while root_cause.__cause__ is not None:

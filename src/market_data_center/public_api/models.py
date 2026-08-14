@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
 
 from market_data_center.domain import (
     Exchange,
@@ -13,6 +13,7 @@ from market_data_center.domain import (
     SecurityType,
     TradeStatus,
 )
+from market_data_center.domain.auction_indicative import SHANGHAI
 
 
 class ApiModel(BaseModel):
@@ -272,11 +273,18 @@ class AuctionOnePriceLimitResponse(ApiModel):
 
 
 class AuctionIndicativeDetailItem(ApiModel):
-    observed_at: datetime
+    observed_at: datetime = Field(
+        description="Asia/Shanghai wall-clock time formatted as YYYY-MM-DD HH:mm:ss",
+        examples=["2026-08-14 09:15:05"],
+    )
     source_sequence: int = Field(ge=0)
     indicative_price: Decimal
     displayed_volume_shares: int = Field(ge=0)
     source_display_classification: Literal["internal", "external", "unknown"]
+
+    @field_serializer("observed_at", when_used="json")
+    def serialize_observed_at(self, value: datetime) -> str:
+        return value.astimezone(SHANGHAI).strftime("%Y-%m-%d %H:%M:%S")
 
 
 class AuctionIndicativeQuality(ApiModel):
@@ -291,7 +299,10 @@ class AuctionIndicativeQuality(ApiModel):
 class AuctionIndicativeDetailResponse(ApiModel):
     symbol: str
     trade_date: date
-    fetched_at: datetime
+    fetched_at: datetime = Field(
+        description="Asia/Shanghai wall-clock time formatted as YYYY-MM-DD HH:mm:ss",
+        examples=["2026-08-14 11:26:46"],
+    )
     source: Literal["eastmoney"]
     live_provider_derived: Literal[True]
     data_origin: Literal["database", "eastmoney_live"]
@@ -311,3 +322,14 @@ class AuctionIndicativeDetailResponse(ApiModel):
     has_more: bool
     quality: AuctionIndicativeQuality
     items: list[AuctionIndicativeDetailItem]
+
+    @field_validator("items")
+    @classmethod
+    def sort_items(
+        cls, items: list[AuctionIndicativeDetailItem]
+    ) -> list[AuctionIndicativeDetailItem]:
+        return sorted(items, key=lambda item: (item.observed_at, item.source_sequence))
+
+    @field_serializer("fetched_at", when_used="json")
+    def serialize_fetched_at(self, value: datetime) -> str:
+        return value.astimezone(SHANGHAI).strftime("%Y-%m-%d %H:%M:%S")

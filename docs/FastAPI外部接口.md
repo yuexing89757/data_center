@@ -83,3 +83,7 @@ The live adapter uses two fixed Eastmoney hosts without endpoint discovery: `pus
 `push2` second. Each host is attempted at most once, preserving the existing two-attempt bound. A
 safe server-side warning records the standardized symbol and deepest provider exception when both
 fixed hosts fail; the public response remains the generic 502 contract.
+
+Response items are ordered ascending by `observed_at`, then by `source_sequence` for equal
+timestamps. `fetched_at` and `items[].observed_at` are rendered as Asia/Shanghai wall-clock strings
+in `YYYY-MM-DD HH:mm:ss` form; the date-only `trade_date` remains `YYYY-MM-DD`.

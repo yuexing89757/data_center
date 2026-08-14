@@ -348,8 +348,8 @@ class FakeLiveAuctionService:
             is_order_by_order=False,
             total_count=2,
             offset=offset,
-            returned_count=1,
-            has_more=True,
+            returned_count=2,
+            has_more=False,
             quality=AuctionIndicativeQuality(
                 status="complete",
                 source_row_count=3,
@@ -360,12 +360,19 @@ class FakeLiveAuctionService:
             ),
             items=[
                 AuctionIndicativeDetailItem(
+                    observed_at=datetime(2026, 8, 14, 1, 20, tzinfo=UTC),
+                    source_sequence=1,
+                    indicative_price=Decimal("134.01"),
+                    displayed_volume_shares=300,
+                    source_display_classification="external",
+                ),
+                AuctionIndicativeDetailItem(
                     observed_at=datetime(2026, 8, 14, 1, 15, 5, tzinfo=UTC),
                     source_sequence=0,
                     indicative_price=Decimal("133.99"),
                     displayed_volume_shares=200,
                     source_display_classification="unknown",
-                )
+                ),
             ],
         )
 
@@ -398,8 +405,8 @@ def _auction_indicative_response(
         is_order_by_order=False,
         total_count=2,
         offset=0,
-        returned_count=1,
-        has_more=True,
+        returned_count=2,
+        has_more=False,
         quality=AuctionIndicativeQuality(
             status="complete",
             source_row_count=3,
@@ -410,12 +417,19 @@ def _auction_indicative_response(
         ),
         items=[
             AuctionIndicativeDetailItem(
+                observed_at=datetime(2026, 8, 14, 1, 20, tzinfo=UTC),
+                source_sequence=1,
+                indicative_price=Decimal("134.01"),
+                displayed_volume_shares=300,
+                source_display_classification="external",
+            ),
+            AuctionIndicativeDetailItem(
                 observed_at=datetime(2026, 8, 14, 1, 15, 5, tzinfo=UTC),
                 source_sequence=0,
                 indicative_price=Decimal("133.99"),
                 displayed_volume_shares=200,
                 source_display_classification="unknown",
-            )
+            ),
         ],
     )
 
@@ -795,6 +809,12 @@ def test_auction_indicative_details_falls_back_to_live_only_when_database_is_emp
     assert payload["semantics"] == "auction_virtual_indicative_matching_detail"
     assert payload["is_exchange_trade_tick"] is False
     assert payload["is_order_by_order"] is False
+    assert payload["trade_date"] == "2026-08-14"
+    assert payload["fetched_at"] == "2026-08-14 09:26:00"
+    assert [item["observed_at"] for item in payload["items"]] == [
+        "2026-08-14 09:15:05",
+        "2026-08-14 09:20:00",
+    ]
     assert payload["items"][0]["displayed_volume_shares"] == 200
     assert payload["quality"]["source_display_classification_trusted"] is False
     assert payload["quality"]["raw_captured"] is True
@@ -816,8 +836,14 @@ def test_auction_indicative_details_returns_database_hit_without_live_fetch() ->
     )
 
     assert response.status_code == 200
-    assert response.json()["data_origin"] == "database"
-    assert response.json()["persistence_status"] == "persisted"
+    payload = response.json()
+    assert payload["data_origin"] == "database"
+    assert payload["persistence_status"] == "persisted"
+    assert payload["fetched_at"] == "2026-08-14 09:26:00"
+    assert [item["observed_at"] for item in payload["items"]] == [
+        "2026-08-14 09:15:05",
+        "2026-08-14 09:20:00",
+    ]
     assert service.auction_indicative_database_calls == [("SZSE:000001", 0, 200)]
     assert service.auction_indicative_calls == []
 

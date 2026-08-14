@@ -53,6 +53,33 @@ class FakeProvider:
         )
 
 
+class UnsortedFakeProvider(FakeProvider):
+    def fetch_current_day(
+        self, symbol: str, trade_date: date, *, now: datetime
+    ) -> ProviderBatch[CallAuctionIndicativeDetailRecord]:
+        records = tuple(
+            CallAuctionIndicativeDetailRecord(
+                symbol=symbol,
+                trade_date=trade_date,
+                observed_at=observed_at,
+                indicative_price=Decimal(price),
+                displayed_volume_shares=shares,
+                source_sequence=sequence,
+                source_display_classification=SourceDisplayClassification.UNKNOWN,
+            )
+            for observed_at, price, shares, sequence in (
+                (datetime(2026, 8, 14, 1, 20, tzinfo=UTC), "134.01", 300, 1),
+                (datetime(2026, 8, 14, 1, 15, 5, tzinfo=UTC), "133.99", 200, 0),
+            )
+        )
+        return ProviderBatch(
+            raw_rows=({"time": "09:20:00"}, {"time": "09:15:05"}),
+            request_params={"symbol": symbol},
+            schema_version="test.v1",
+            records=records,
+        )
+
+
 class FakePersistence:
     def __init__(self, *, error: bool = False) -> None:
         self.calls = 0
@@ -110,6 +137,14 @@ def test_fetch_captures_raw_and_queues_database_write_before_returning() -> None
     assert first.cache_hit is False
     assert second.cache_hit is True
     assert provider.calls == persistence.calls == 1
+
+
+def test_fetch_sorts_all_live_records_before_pagination() -> None:
+    response = _service(provider=UnsortedFakeProvider()).fetch("SSE:688796", TODAY, 0, 1)
+
+    assert response.total_count == 2
+    assert response.has_more is True
+    assert [item.source_sequence for item in response.items] == [0]
 
 
 def test_fetch_rejects_history_and_pre_completion_requests() -> None:

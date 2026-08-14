@@ -37,3 +37,6 @@ approval.
 
 `data_origin=database`/`persistence_status=persisted` identifies a stored response;
 `data_origin=eastmoney_live`/`persistence_status=queued` identifies the live fallback.
+Both paths order items ascending by observation time and source sequence before pagination. The
+external JSON renders `fetched_at` and item `observed_at` in Asia/Shanghai wall-clock form as
+`YYYY-MM-DD HH:mm:ss`; `trade_date` remains a date-only `YYYY-MM-DD` value.

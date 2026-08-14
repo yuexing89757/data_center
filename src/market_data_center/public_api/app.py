@@ -336,7 +336,9 @@ def create_app(
             "immutable Raw capture while database registration is queued asynchronously. "
             "These are not exchange trade ticks or order-by-order records. The source display "
             "classification is untrusted and is not a trade direction. data_origin and "
-            "persistence_status distinguish stored data from a queued live result."
+            "persistence_status distinguish stored data from a queued live result. Items are "
+            "ordered by observed_at then source_sequence. Timestamp fields are rendered in "
+            "Asia/Shanghai as YYYY-MM-DD HH:mm:ss."
         ),
     )
     def auction_indicative_details(
