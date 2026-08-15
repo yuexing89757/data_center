@@ -58,6 +58,7 @@ class FakeQueryService:
         self.call_auction_market_snapshot_calls: list[tuple[date, tuple[str, ...]]] = []
         self.call_auction_market_series_snapshot_calls: list[tuple[date, tuple[str, ...]]] = []
         self.top_gainer_calls: list[tuple[date | None, int]] = []
+        self.board_index_bias_calls = 0
         self.auction_one_price_limit_calls: list[date | None] = []
         self.auction_indicative_database_calls: list[tuple[str, int, int]] = []
         self.auction_indicative_database_error: Exception | None = PublicQueryNotFound("not stored")
@@ -323,6 +324,28 @@ class FakeQueryService:
                 )
             ],
         )
+
+    def board_index_bias_latest(self) -> object:
+        self.board_index_bias_calls += 1
+        return {
+            "board_id": "THS:883423",
+            "board_code": "883423",
+            "board_name": "沪深主板昨日涨停",
+            "trade_date": date(2026, 8, 14),
+            "close": Decimal("1234.5600"),
+            "moving_average_5": Decimal("1220.110000"),
+            "bias_5_pct": Decimal("1.184319"),
+            "previous_trade_date": date(2026, 8, 13),
+            "previous_bias_5_pct": Decimal("0.932150"),
+            "bias_direction": "up",
+            "window_trading_days": 30,
+            "bias_sample_count": 30,
+            "highest_bias_5_pct": Decimal("4.521300"),
+            "highest_bias_trade_date": date(2026, 8, 6),
+            "lowest_bias_5_pct": Decimal("-2.861700"),
+            "lowest_bias_trade_date": date(2026, 7, 22),
+            "algorithm_version": "board_index_bias_v1",
+        }
 
     def auction_one_price_limits(self, trade_date: date | None) -> AuctionOnePriceLimitResponse:
         self.auction_one_price_limit_calls.append(trade_date)
@@ -884,6 +907,51 @@ def test_top_gainers_20d_contract_and_bounds() -> None:
         .status_code
         == 422
     )
+
+
+def test_board_index_bias_returns_latest_decimal_contract_without_inputs() -> None:
+    service = FakeQueryService()
+    client = _client(service)
+
+    response = client.get(
+        "/api/v1/board-indexes/883423/bias",
+        headers=_headers(),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "board_id": "THS:883423",
+        "board_code": "883423",
+        "board_name": "沪深主板昨日涨停",
+        "trade_date": "2026-08-14",
+        "close": "1234.5600",
+        "moving_average_5": "1220.110000",
+        "bias_5_pct": "1.184319",
+        "previous_trade_date": "2026-08-13",
+        "previous_bias_5_pct": "0.932150",
+        "bias_direction": "up",
+        "window_trading_days": 30,
+        "bias_sample_count": 30,
+        "highest_bias_5_pct": "4.521300",
+        "highest_bias_trade_date": "2026-08-06",
+        "lowest_bias_5_pct": "-2.861700",
+        "lowest_bias_trade_date": "2026-07-22",
+        "algorithm_version": "board_index_bias_v1",
+    }
+    assert service.board_index_bias_calls == 1
+    operation = client.get("/openapi.json").json()["paths"]["/api/v1/board-indexes/883423/bias"][
+        "get"
+    ]
+    assert operation.get("parameters", []) == []
+
+
+def test_board_index_bias_requires_api_key() -> None:
+    service = FakeQueryService()
+
+    response = _client(service).get("/api/v1/board-indexes/883423/bias")
+
+    assert response.status_code == 401
+    assert service.board_index_bias_calls == 0
 
 
 def test_auction_one_price_limits_returns_separate_sets() -> None:

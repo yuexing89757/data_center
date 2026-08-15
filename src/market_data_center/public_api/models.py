@@ -275,6 +275,26 @@ class TopGainers20dResponse(ApiModel):
     items: list[TopGainer20dItem]
 
 
+class BoardIndexBiasResponse(ApiModel):
+    board_id: Literal["THS:883423"]
+    board_code: Literal["883423"]
+    board_name: str
+    trade_date: date
+    close: Decimal
+    moving_average_5: Decimal | None
+    bias_5_pct: Decimal | None
+    previous_trade_date: date | None
+    previous_bias_5_pct: Decimal | None
+    bias_direction: Literal["up", "down", "flat"] | None
+    window_trading_days: Literal[30]
+    bias_sample_count: int = Field(ge=0, le=30)
+    highest_bias_5_pct: Decimal | None
+    highest_bias_trade_date: date | None
+    lowest_bias_5_pct: Decimal | None
+    lowest_bias_trade_date: date | None
+    algorithm_version: Literal["board_index_bias_v1"]
+
+
 class AuctionOnePriceLimitItem(ApiModel):
     symbol: str
     code: SixDigitCode

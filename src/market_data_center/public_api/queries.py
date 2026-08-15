@@ -12,6 +12,7 @@ from market_data_center.domain import ClassificationType
 from market_data_center.public_api.models import (
     AuctionIndicativeDetailResponse,
     AuctionOnePriceLimitResponse,
+    BoardIndexBiasResponse,
     CallAuctionMarketSeriesSnapshotResponse,
     CallAuctionMarketSnapshotResponse,
     ClassificationMembersResponse,
@@ -85,6 +86,10 @@ QUERY_TOP_GAINERS_20D = text("""
 select api_v1.query_top_gainers_20d(p_end_date => :end_date, p_limit => :limit) as payload
 """)
 
+QUERY_BOARD_INDEX_BIAS_LATEST = text("""
+select api_v1.query_board_index_bias_latest() as payload
+""")
+
 QUERY_AUCTION_ONE_PRICE_LIMITS = text("""
 select api_v1.query_auction_one_price_limits(p_trade_date => :trade_date) as payload
 """)
@@ -154,6 +159,8 @@ class PublicQueryService(Protocol):
     ) -> CallAuctionMarketSeriesSnapshotResponse: ...
 
     def top_gainers_20d(self, end_date: date | None, limit: int) -> TopGainers20dResponse: ...
+
+    def board_index_bias_latest(self) -> BoardIndexBiasResponse: ...
 
     def auction_one_price_limits(self, trade_date: date | None) -> AuctionOnePriceLimitResponse: ...
 
@@ -261,6 +268,10 @@ class PostgreSQLPublicQueryService:
     def top_gainers_20d(self, end_date: date | None, limit: int) -> TopGainers20dResponse:
         rows = self._execute(QUERY_TOP_GAINERS_20D, {"end_date": end_date, "limit": limit})
         return TopGainers20dResponse.model_validate(rows[0]["payload"])
+
+    def board_index_bias_latest(self) -> BoardIndexBiasResponse:
+        rows = self._execute(QUERY_BOARD_INDEX_BIAS_LATEST, {})
+        return BoardIndexBiasResponse.model_validate(rows[0]["payload"])
 
     def auction_one_price_limits(self, trade_date: date | None) -> AuctionOnePriceLimitResponse:
         rows = self._execute(QUERY_AUCTION_ONE_PRICE_LIMITS, {"trade_date": trade_date})

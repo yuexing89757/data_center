@@ -33,6 +33,7 @@ from market_data_center.public_api.auction_indicative_write import (
 from market_data_center.public_api.models import (
     AuctionIndicativeDetailResponse,
     AuctionOnePriceLimitResponse,
+    BoardIndexBiasResponse,
     CallAuctionMarketSeriesSnapshotQuery,
     CallAuctionMarketSeriesSnapshotResponse,
     CallAuctionMarketSnapshotQuery,
@@ -337,6 +338,25 @@ def create_app(
         limit: Annotated[int, Query(ge=1, le=10)] = 10,
     ) -> TopGainers20dResponse:
         return service.top_gainers_20d(end_date, limit)
+
+    @app.get(
+        "/api/v1/board-indexes/883423/bias",
+        response_model=BoardIndexBiasResponse,
+        tags=["market-data"],
+        summary="Query the latest THS 883423 MA5 bias metrics",
+        description=(
+            "Uses only the latest stored THS:883423 daily bars. Returns the current "
+            "five-session simple moving-average bias, its direction versus the previous "
+            "available board session, and extrema from valid samples in the latest 30 "
+            "stored sessions. The endpoint does not accept a date, fetch live data, or "
+            "fall back to another board."
+        ),
+    )
+    def board_index_bias_latest(
+        _: ApiKeyDependency,
+        service: QueryServiceDependency,
+    ) -> BoardIndexBiasResponse:
+        return service.board_index_bias_latest()
 
     @app.get(
         "/api/v1/call-auction-one-price-limits",
