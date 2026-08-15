@@ -70,7 +70,9 @@ semantics as the 09:26 batch route.
 
 `GET /api/v1/top-gainers-20d?end_date=&limit=10` ranks unadjusted close-to-close returns over
 exactly 20 calendar trading sessions (19 intervals), with exact observation dates/prices, end-date
-historical names and bounded omission counts. Ties break by symbol; explicit dates never fall back.
+historical names and bounded omission counts. Exact-date positive pytdx bars with the provider-neutral
+`unknown` trade status are eligible, while explicitly suspended bars remain excluded. Ties break by
+symbol; explicit dates never fall back.
 
 `GET /api/v1/board-indexes/883423/bias` takes no parameters and first reads stored
 `THS:883423` daily bars. The database result is ready only with at least 34 rows and a latest bar

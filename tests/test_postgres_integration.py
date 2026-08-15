@@ -2659,6 +2659,104 @@ def test_board_index_bias_rpc_fails_when_no_board_bars_exist(database_engine: En
     assert captured.value.orig.sqlstate == "P0002"
 
 
+def test_top_gainers_accepts_pytdx_unknown_bars_and_excludes_suspended(
+    database_engine: Engine,
+) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    securities = [
+        _security(),
+        replace(
+            _security(),
+            symbol="SZSE:000001",
+            code="000001",
+            exchange=Exchange.SZSE,
+            name="平安银行",
+        ),
+    ]
+    security_run = _running_run(DatasetCode.SECURITY)
+    persistence.create_ingestion_run(security_run)
+    persistence.commit_security_batch(
+        _completed_run(security_run, len(securities)),
+        _manifest(security_run.ingestion_id, "top-gainers-securities", len(securities)),
+        _envelopes(security_run.ingestion_id, securities),
+    )
+
+    trading_days: list[date] = []
+    candidate_date = date(2026, 7, 20)
+    while len(trading_days) < 20:
+        if candidate_date.weekday() < 5:
+            trading_days.append(candidate_date)
+        candidate_date += timedelta(days=1)
+    calendar_run = _running_run(DatasetCode.TRADING_CALENDAR)
+    persistence.create_ingestion_run(calendar_run)
+    calendar = [
+        CalculatedTradingDay(
+            market=Market.CN_A_SHARE,
+            trade_date=trade_date,
+            is_trading_day=True,
+            previous_trading_day=trading_days[index - 1] if index else None,
+            next_trading_day=(trading_days[index + 1] if index + 1 < len(trading_days) else None),
+            source_code="baostock",
+        )
+        for index, trade_date in enumerate(trading_days)
+    ]
+    persistence.commit_trading_calendar_batch(
+        _completed_run(calendar_run, len(calendar)),
+        _manifest(calendar_run.ingestion_id, "top-gainers-calendar", len(calendar)),
+        _envelopes(calendar_run.ingestion_id, calendar),
+    )
+
+    start_date, end_date = trading_days[0], trading_days[-1]
+    unknown_bars = [
+        replace(
+            _daily_bar(start_date),
+            open=Decimal("10"),
+            high=Decimal("10"),
+            low=Decimal("10"),
+            close=Decimal("10"),
+            trade_status=TradeStatus.UNKNOWN,
+            source_code="pytdx",
+        ),
+        replace(
+            _daily_bar(end_date),
+            open=Decimal("12"),
+            high=Decimal("12"),
+            low=Decimal("12"),
+            close=Decimal("12"),
+            trade_status=TradeStatus.UNKNOWN,
+            source_code="pytdx",
+        ),
+    ]
+    suspended_bars = [
+        replace(bar, symbol="SZSE:000001", trade_status=TradeStatus.SUSPENDED)
+        for bar in unknown_bars
+    ]
+    bars = [*unknown_bars, *suspended_bars]
+    bar_run = _running_run(DatasetCode.DAILY_BAR, ProviderCode.PYTDX)
+    persistence.create_ingestion_run(bar_run)
+    persistence.commit_daily_bar_batch(
+        _completed_run(bar_run, len(bars)),
+        _manifest(
+            bar_run.ingestion_id,
+            "top-gainers-bars",
+            len(bars),
+            provider="pytdx",
+        ),
+        _envelopes(bar_run.ingestion_id, bars),
+        [],
+    )
+
+    with database_engine.connect() as connection:
+        payload = connection.scalar(
+            text("select api_v1.query_top_gainers_20d(:end_date, 10)"),
+            {"end_date": end_date},
+        )
+
+    assert payload["eligible_count"] == 1
+    assert payload["omissions"]["non_trading_bar"] == 1
+    assert [item["symbol"] for item in payload["items"]] == [SYMBOL]
+
+
 def test_live_board_index_persistence_is_atomic_idempotent_and_fastapi_only(
     database_engine: Engine,
 ) -> None:

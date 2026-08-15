@@ -247,6 +247,10 @@ def test_daily_limit_up_list_execute_is_restricted_to_fastapi_role() -> None:
     [
         ("20260814000200_add_top_gainers_20d_api.sql", "query_top_gainers_20d"),
         (
+            "20260815000300_fix_top_gainers_pytdx_unknown_status.sql",
+            "query_top_gainers_20d",
+        ),
+        (
             "20260814000300_add_auction_one_price_limits_api.sql",
             "query_auction_one_price_limits",
         ),
@@ -268,6 +272,19 @@ def test_new_ranked_market_api_rpcs_are_fastapi_only(filename: str, function_nam
     assert "to anon" not in migration
     assert "to authenticated" not in migration
     assert not re.search(r"(?im)^grant\s+(insert|update|delete|all)", migration)
+
+
+def test_top_gainers_accepts_pytdx_unknown_bars_but_not_suspended_bars() -> None:
+    migration = (
+        MIGRATION_DIR / "20260815000300_fix_top_gainers_pytdx_unknown_status.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "b.trade_status in ('trading', 'unknown')" in migration
+    assert "start_status in ('trading', 'unknown')" in migration
+    assert "end_status in ('trading', 'unknown')" in migration
+    assert "start_status not in ('trading', 'unknown')" in migration
+    assert "end_status not in ('trading', 'unknown')" in migration
+    assert "to market_data_api" in migration
 
 
 def test_auction_indicative_rpc_is_bounded_fastapi_only_and_not_a_trade_contract() -> None:
