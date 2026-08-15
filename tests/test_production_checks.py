@@ -30,6 +30,7 @@ def test_fastapi_preflight_checks_call_auction_market_snapshot_rpc() -> None:
         "api_v1.query_call_auction_indicative_details(text,date,integer,integer)"
         in PUBLISHED_FUNCTIONS
     )
+    assert "api_v1.query_board_index_bias_latest()" in PUBLISHED_FUNCTIONS
 
 
 def _migration_sql() -> str:
