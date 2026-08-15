@@ -3,14 +3,14 @@
 from collections.abc import Sequence
 from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal, localcontext
-from typing import Literal
+from typing import Final, Literal
 
 from market_data_center.domain.board_index import BoardIndexDailyBarRecord
 from market_data_center.public_api.models import BoardIndexBiasResponse
 
-_BOARD_ID = "THS:883423"
-_BOARD_CODE = "883423"
-_BOARD_NAME = "沪深主板昨日涨停"
+_BOARD_ID: Final = "THS:883423"
+_BOARD_CODE: Final = "883423"
+_BOARD_NAME: Final = "沪深主板昨日涨停"
 _SIX_DECIMALS = Decimal("0.000001")
 
 

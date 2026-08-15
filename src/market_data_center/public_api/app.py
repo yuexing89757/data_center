@@ -17,6 +17,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from market_data_center.database_urls import sqlalchemy_url
 from market_data_center.domain import ClassificationType
+from market_data_center.providers.akshare_ths import AKShareTHSProvider, HTTPAKShareTHSClient
 from market_data_center.providers.eastmoney_auction import EastmoneyAuctionIndicativeProvider
 from market_data_center.public_api.auction_indicative_live import (
     AuctionIndicativeLiveBusy,
@@ -29,6 +30,16 @@ from market_data_center.public_api.auction_indicative_live import (
 from market_data_center.public_api.auction_indicative_write import (
     AuctionIndicativeApiPersistence,
     AuctionIndicativePersistenceQueue,
+)
+from market_data_center.public_api.board_index_bias_live import (
+    BoardIndexBiasLiveBusy,
+    BoardIndexBiasLivePersistence,
+    BoardIndexBiasLiveService,
+    BoardIndexBiasLiveUpstream,
+)
+from market_data_center.public_api.board_index_bias_write import (
+    BoardIndexApiPersistence,
+    BoardIndexPersistenceQueue,
 )
 from market_data_center.public_api.models import (
     AuctionIndicativeDetailResponse,
@@ -49,6 +60,7 @@ from market_data_center.public_api.models import (
     TopGainers20dResponse,
 )
 from market_data_center.public_api.queries import (
+    BoardIndexBiasNotReady,
     PostgreSQLPublicQueryService,
     PublicQueryInvalid,
     PublicQueryNotFound,
@@ -68,11 +80,13 @@ def create_app(
     settings: ApiSettings | None = None,
     query_service: PublicQueryService | None = None,
     auction_indicative_service: LiveAuctionIndicativeService | None = None,
+    board_index_bias_live_service: BoardIndexBiasLiveService | None = None,
 ) -> FastAPI:
     configured = settings or ApiSettings()  # type: ignore[call-arg]
     owned_engine: Engine | None = None
     owned_write_engine: Engine | None = None
     owned_persistence_queue: AuctionIndicativePersistenceQueue | None = None
+    owned_board_persistence_queue: BoardIndexPersistenceQueue | None = None
     if query_service is None:
         owned_engine = create_engine(
             sqlalchemy_url(configured.resolved_database_url()),
@@ -84,9 +98,9 @@ def create_app(
         )
         query_service = PostgreSQLPublicQueryService(owned_engine)
 
-    if auction_indicative_service is None:
+    if auction_indicative_service is None or board_index_bias_live_service is None:
         if owned_engine is None:
-            raise RuntimeError("live auction service must be injected with a query-service stub")
+            raise RuntimeError("live services must be injected with a query-service stub")
         # This connection does not force a read-only transaction because it invokes one
         # narrowly granted SECURITY DEFINER persistence function.  The login role still has
         # no direct table-write privileges.
@@ -104,6 +118,8 @@ def create_app(
         yield
         if owned_persistence_queue is not None:
             owned_persistence_queue.shutdown()
+        if owned_board_persistence_queue is not None:
+            owned_board_persistence_queue.shutdown()
         if owned_engine is not None:
             owned_engine.dispose()
         if owned_write_engine is not None:
@@ -133,6 +149,17 @@ def create_app(
             minimum_interval_seconds=configured.fastapi_auction_live_minimum_interval_seconds,
         )
     app.state.auction_indicative_service = auction_indicative_service
+    if board_index_bias_live_service is None:
+        assert owned_write_engine is not None
+        raw_root = configured.fastapi_auction_raw_root
+        owned_board_persistence_queue = BoardIndexPersistenceQueue(
+            BoardIndexApiPersistence(owned_write_engine, LocalRawStore(raw_root), raw_root)
+        )
+        board_index_bias_live_service = BoardIndexBiasLiveService(
+            AKShareTHSProvider(HTTPAKShareTHSClient(timeout_seconds=5)),
+            owned_board_persistence_queue,
+        )
+    app.state.board_index_bias_live_service = board_index_bias_live_service
 
     _install_exception_handlers(app)
 
@@ -345,18 +372,29 @@ def create_app(
         tags=["market-data"],
         summary="Query the latest THS 883423 MA5 bias metrics",
         description=(
-            "Uses only the latest stored THS:883423 daily bars. Returns the current "
+            "Uses fresh stored THS:883423 daily bars first. Missing, insufficient, or stale "
+            "history triggers one bounded live THS fetch after which immutable Raw is captured "
+            "and database persistence is queued. Returns the current "
             "five-session simple moving-average bias, its direction versus the previous "
             "available board session, and extrema from valid samples in the latest 30 "
-            "stored sessions. The endpoint does not accept a date, fetch live data, or "
-            "fall back to another board."
+            "sessions. The endpoint accepts no input and never falls back to another board."
         ),
+        responses={
+            401: {"model": ErrorResponse},
+            429: {"model": ErrorResponse},
+            502: {"model": ErrorResponse},
+            503: {"model": ErrorResponse},
+        },
     )
     def board_index_bias_latest(
         _: ApiKeyDependency,
         service: QueryServiceDependency,
+        live_service: BoardIndexBiasLiveServiceDependency,
     ) -> BoardIndexBiasResponse:
-        return service.board_index_bias_latest()
+        try:
+            return service.board_index_bias_latest()
+        except BoardIndexBiasNotReady:
+            return live_service.fetch_current()
 
     @app.get(
         "/api/v1/call-auction-one-price-limits",
@@ -414,6 +452,10 @@ def _auction_indicative_service(request: Request) -> LiveAuctionIndicativeServic
     return cast(LiveAuctionIndicativeService, request.app.state.auction_indicative_service)
 
 
+def _board_index_bias_live_service(request: Request) -> BoardIndexBiasLiveService:
+    return cast(BoardIndexBiasLiveService, request.app.state.board_index_bias_live_service)
+
+
 def _require_api_key(
     request: Request,
     provided: Annotated[str | None, Security(API_KEY_HEADER)],
@@ -428,6 +470,9 @@ QueryServiceDependency = Annotated[PublicQueryService, Depends(_query_service)]
 AuctionIndicativeServiceDependency = Annotated[
     LiveAuctionIndicativeService, Depends(_auction_indicative_service)
 ]
+BoardIndexBiasLiveServiceDependency = Annotated[
+    BoardIndexBiasLiveService, Depends(_board_index_bias_live_service)
+]
 ApiKeyDependency = Annotated[None, Depends(_require_api_key)]
 
 
@@ -440,6 +485,20 @@ def _auction_symbol_from_code(code: str) -> str:
 
 
 def _install_exception_handlers(app: FastAPI) -> None:
+    @app.exception_handler(BoardIndexBiasLiveBusy)
+    async def board_live_busy(_: Request, __: BoardIndexBiasLiveBusy) -> JSONResponse:
+        return _error_response(429, "rate_limited", "live board-index provider access is busy")
+
+    @app.exception_handler(BoardIndexBiasLiveUpstream)
+    async def board_live_upstream(_: Request, __: BoardIndexBiasLiveUpstream) -> JSONResponse:
+        return _error_response(502, "upstream_error", "external board-index provider failed")
+
+    @app.exception_handler(BoardIndexBiasLivePersistence)
+    async def board_live_persistence(_: Request, __: BoardIndexBiasLivePersistence) -> JSONResponse:
+        return _error_response(
+            503, "persistence_unavailable", "board-index source could not be saved"
+        )
+
     @app.exception_handler(AuctionIndicativeLiveInvalid)
     async def live_invalid(_: Request, __: AuctionIndicativeLiveInvalid) -> JSONResponse:
         return _error_response(422, "validation_error", "live auction request is invalid")

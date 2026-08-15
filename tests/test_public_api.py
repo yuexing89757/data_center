@@ -16,12 +16,18 @@ from market_data_center.domain import (
     TradeStatus,
 )
 from market_data_center.public_api import create_app
+from market_data_center.public_api.board_index_bias_live import (
+    BoardIndexBiasLiveBusy,
+    BoardIndexBiasLivePersistence,
+    BoardIndexBiasLiveUpstream,
+)
 from market_data_center.public_api.models import (
     AuctionIndicativeDetailItem,
     AuctionIndicativeDetailResponse,
     AuctionIndicativeQuality,
     AuctionOnePriceLimitItem,
     AuctionOnePriceLimitResponse,
+    BoardIndexBiasResponse,
     CallAuctionMarketSnapshotItem,
     CallAuctionMarketSnapshotResponse,
     ClassificationMembersResponse,
@@ -38,6 +44,7 @@ from market_data_center.public_api.models import (
     TopGainers20dResponse,
 )
 from market_data_center.public_api.queries import (
+    BoardIndexBiasNotReady,
     PublicQueryNotFound,
     PublicQueryUnavailable,
     _raise_safe_query_error,
@@ -59,6 +66,9 @@ class FakeQueryService:
         self.call_auction_market_series_snapshot_calls: list[tuple[date, tuple[str, ...]]] = []
         self.top_gainer_calls: list[tuple[date | None, int]] = []
         self.board_index_bias_calls = 0
+        self.board_index_bias_error: Exception | None = None
+        self.board_index_bias_live_calls = 0
+        self.board_index_bias_live_error: Exception | None = None
         self.auction_one_price_limit_calls: list[date | None] = []
         self.auction_indicative_database_calls: list[tuple[str, int, int]] = []
         self.auction_indicative_database_error: Exception | None = PublicQueryNotFound("not stored")
@@ -327,6 +337,8 @@ class FakeQueryService:
 
     def board_index_bias_latest(self) -> object:
         self.board_index_bias_calls += 1
+        if self.board_index_bias_error is not None:
+            raise self.board_index_bias_error
         return {
             "board_id": "THS:883423",
             "board_code": "883423",
@@ -447,6 +459,38 @@ class FakeLiveAuctionService:
         return self.fetch(symbol, date(2026, 8, 14), offset, limit)
 
 
+class FakeBoardIndexBiasLiveService:
+    def __init__(self, query_service: FakeQueryService) -> None:
+        self._query_service = query_service
+
+    def fetch_current(self) -> BoardIndexBiasResponse:
+        self._query_service.board_index_bias_live_calls += 1
+        if self._query_service.board_index_bias_live_error is not None:
+            raise self._query_service.board_index_bias_live_error
+        return BoardIndexBiasResponse(
+            board_id="THS:883423",
+            board_code="883423",
+            board_name="沪深主板昨日涨停",
+            trade_date=date(2026, 8, 14),
+            close=Decimal("1234.5600"),
+            moving_average_5=Decimal("1220.110000"),
+            bias_5_pct=Decimal("1.184319"),
+            previous_trade_date=date(2026, 8, 13),
+            previous_bias_5_pct=Decimal("0.932150"),
+            bias_direction="up",
+            window_trading_days=30,
+            bias_sample_count=30,
+            highest_bias_5_pct=Decimal("4.521300"),
+            highest_bias_trade_date=date(2026, 8, 6),
+            lowest_bias_5_pct=Decimal("-2.861700"),
+            lowest_bias_trade_date=date(2026, 7, 22),
+            algorithm_version="board_index_bias_v1",
+            data_origin="ths_live",
+            persistence_status="queued",
+            fetched_at=datetime(2026, 8, 15, 3, 26, 46, tzinfo=UTC),
+        )
+
+
 def _auction_indicative_response(
     *, symbol: str, data_origin: Literal["database", "eastmoney_live"]
 ) -> AuctionIndicativeDetailResponse:
@@ -509,6 +553,7 @@ def _client(service: FakeQueryService) -> TestClient:
             settings=settings,
             query_service=service,
             auction_indicative_service=FakeLiveAuctionService(service),  # type: ignore[arg-type]
+            board_index_bias_live_service=FakeBoardIndexBiasLiveService(service),  # type: ignore[arg-type]
         )
     )
 
@@ -958,6 +1003,57 @@ def test_board_index_bias_requires_api_key() -> None:
 
     assert response.status_code == 401
     assert service.board_index_bias_calls == 0
+
+
+def test_board_index_bias_falls_back_only_for_explicit_not_ready_error() -> None:
+    service = FakeQueryService()
+    service.board_index_bias_error = BoardIndexBiasNotReady("not ready")
+
+    response = _client(service).get(
+        "/api/v1/board-indexes/883423/bias",
+        headers=_headers(),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data_origin"] == "ths_live"
+    assert response.json()["persistence_status"] == "queued"
+    assert service.board_index_bias_calls == 1
+    assert service.board_index_bias_live_calls == 1
+
+
+def test_board_index_bias_does_not_fallback_for_database_failure() -> None:
+    service = FakeQueryService()
+    service.board_index_bias_error = PublicQueryUnavailable("database unavailable")
+
+    response = _client(service).get(
+        "/api/v1/board-indexes/883423/bias",
+        headers=_headers(),
+    )
+
+    assert response.status_code == 503
+    assert service.board_index_bias_live_calls == 0
+
+
+@pytest.mark.parametrize(
+    ("error", "expected_status"),
+    [
+        (BoardIndexBiasLiveBusy("busy"), 429),
+        (BoardIndexBiasLiveUpstream("upstream"), 502),
+        (BoardIndexBiasLivePersistence("persistence"), 503),
+    ],
+)
+def test_board_index_bias_maps_live_fallback_errors(error: Exception, expected_status: int) -> None:
+    service = FakeQueryService()
+    service.board_index_bias_error = BoardIndexBiasNotReady("not ready")
+    service.board_index_bias_live_error = error
+
+    response = _client(service).get(
+        "/api/v1/board-indexes/883423/bias",
+        headers=_headers(),
+    )
+
+    assert response.status_code == expected_status
+    assert service.board_index_bias_live_calls == 1
 
 
 def test_auction_one_price_limits_returns_separate_sets() -> None:
