@@ -120,8 +120,8 @@
         "summary": "Read the latest THS 883423 MA5 bias metrics",
         "security": [{"bearerAuth": []}],
         "responses": {
-          "200": {"description": "Latest stored board close, MA5 bias, direction, and 30-session extrema"},
-          "404": {"description": "No THS 883423 board daily bars are stored"}
+          "200": {"description": "Latest fresh stored board close, MA5 bias, direction, and 30-session extrema"},
+          "404": {"description": "THS 883423 history is missing, shorter than 34 sessions, or stale"}
         }
       }
     }

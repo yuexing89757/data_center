@@ -489,6 +489,19 @@
             "title": "Close",
             "type": "string"
           },
+          "data_origin": {
+            "enum": [
+              "database",
+              "ths_live"
+            ],
+            "title": "Data Origin",
+            "type": "string"
+          },
+          "fetched_at": {
+            "format": "date-time",
+            "title": "Fetched At",
+            "type": "string"
+          },
           "highest_bias_5_pct": {
             "anyOf": [
               {
@@ -549,6 +562,14 @@
             ],
             "title": "Moving Average 5"
           },
+          "persistence_status": {
+            "enum": [
+              "persisted",
+              "queued"
+            ],
+            "title": "Persistence Status",
+            "type": "string"
+          },
           "previous_bias_5_pct": {
             "anyOf": [
               {
@@ -601,7 +622,10 @@
           "highest_bias_trade_date",
           "lowest_bias_5_pct",
           "lowest_bias_trade_date",
-          "algorithm_version"
+          "algorithm_version",
+          "data_origin",
+          "persistence_status",
+          "fetched_at"
         ],
         "title": "BoardIndexBiasResponse",
         "type": "object"
@@ -2380,7 +2404,7 @@
   "paths": {
     "/api/v1/board-indexes/883423/bias": {
       "get": {
-        "description": "Uses only the latest stored THS:883423 daily bars. Returns the current five-session simple moving-average bias, its direction versus the previous available board session, and extrema from valid samples in the latest 30 stored sessions. The endpoint does not accept a date, fetch live data, or fall back to another board.",
+        "description": "Uses fresh stored THS:883423 daily bars first. Missing, insufficient, or stale history triggers one bounded live THS fetch after which immutable Raw is captured and database persistence is queued. Returns the current five-session simple moving-average bias, its direction versus the previous available board session, and extrema from valid samples in the latest 30 sessions. The endpoint accepts no input and never falls back to another board.",
         "operationId": "board_index_bias_latest_api_v1_board_indexes_883423_bias_get",
         "responses": {
           "200": {
@@ -2392,6 +2416,46 @@
               }
             },
             "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
           }
         },
         "security": [

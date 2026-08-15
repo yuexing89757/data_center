@@ -1,17 +1,41 @@
 """Pure calculation for the fixed THS:883423 MA5 bias contract."""
 
 from collections.abc import Sequence
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal, localcontext
 from typing import Final, Literal
 
 from market_data_center.domain.board_index import BoardIndexDailyBarRecord
-from market_data_center.public_api.models import BoardIndexBiasResponse
 
 _BOARD_ID: Final = "THS:883423"
 _BOARD_CODE: Final = "883423"
 _BOARD_NAME: Final = "沪深主板昨日涨停"
 _SIX_DECIMALS = Decimal("0.000001")
+
+
+@dataclass(frozen=True, slots=True)
+class BoardIndexBiasCalculation:
+    board_id: Literal["THS:883423"]
+    board_code: Literal["883423"]
+    board_name: str
+    trade_date: date
+    close: Decimal
+    moving_average_5: Decimal | None
+    bias_5_pct: Decimal | None
+    previous_trade_date: date | None
+    previous_bias_5_pct: Decimal | None
+    bias_direction: Literal["up", "down", "flat"] | None
+    window_trading_days: Literal[30]
+    bias_sample_count: int
+    highest_bias_5_pct: Decimal | None
+    highest_bias_trade_date: date | None
+    lowest_bias_5_pct: Decimal | None
+    lowest_bias_trade_date: date | None
+    algorithm_version: Literal["board_index_bias_v1"]
+    data_origin: Literal["database", "ths_live"]
+    persistence_status: Literal["persisted", "queued"]
+    fetched_at: datetime
 
 
 def calculate_board_index_bias(
@@ -20,7 +44,7 @@ def calculate_board_index_bias(
     fetched_at: datetime,
     data_origin: Literal["database", "ths_live"],
     persistence_status: Literal["persisted", "queued"],
-) -> BoardIndexBiasResponse:
+) -> BoardIndexBiasCalculation:
     """Calculate ADR-0035 metrics without I/O or mutable state."""
     if not records:
         raise ValueError("board-index history must not be empty")
@@ -65,7 +89,7 @@ def calculate_board_index_bias(
         else:
             direction = "flat"
 
-    return BoardIndexBiasResponse(
+    return BoardIndexBiasCalculation(
         board_id=_BOARD_ID,
         board_code=_BOARD_CODE,
         board_name=_BOARD_NAME,

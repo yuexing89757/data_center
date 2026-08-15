@@ -1,6 +1,7 @@
 """Strictly bounded live fallback for the fixed THS:883423 bias endpoint."""
 
 from collections.abc import Callable
+from dataclasses import asdict
 from datetime import UTC, datetime
 from logging import getLogger
 from threading import Lock
@@ -61,7 +62,7 @@ class BoardIndexBiasLiveService:
                     as_of_date=as_of_date,
                     minimum_records=34,
                 )
-                response = calculate_board_index_bias(
+                calculation = calculate_board_index_bias(
                     batch.records,
                     fetched_at=batch.fetched_at,
                     data_origin="ths_live",
@@ -89,6 +90,6 @@ class BoardIndexBiasLiveService:
                 raise BoardIndexBiasLivePersistence(
                     "live board-index source could not be queued"
                 ) from error
-            return response
+            return BoardIndexBiasResponse.model_validate(asdict(calculation))
         finally:
             self._lock.release()

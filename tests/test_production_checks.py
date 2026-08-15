@@ -31,6 +31,10 @@ def test_fastapi_preflight_checks_call_auction_market_snapshot_rpc() -> None:
         in PUBLISHED_FUNCTIONS
     )
     assert "api_v1.query_board_index_bias_latest()" in PUBLISHED_FUNCTIONS
+    assert (
+        "api_v1.persist_board_index_daily_bars_live("
+        "uuid,uuid,timestamptz,text,text,text,bigint,integer,jsonb,jsonb)" in PUBLISHED_FUNCTIONS
+    )
 
 
 def _migration_sql() -> str:
