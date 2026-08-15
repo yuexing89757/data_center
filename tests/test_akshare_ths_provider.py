@@ -1,5 +1,5 @@
 from collections.abc import Mapping, Sequence
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -13,6 +13,7 @@ from market_data_center.domain.ingestion import DatasetCode
 from market_data_center.providers.akshare_ths import (
     THS_BOARD_ID,
     AKShareTHSProvider,
+    HTTPAKShareTHSClient,
     _parse_constituent_rows,
     _parse_daily_payload,
     _parse_page_count,
@@ -46,6 +47,29 @@ class FakeClient:
             {"序号": 1, "代码": "600000", "名称": "浦发银行"},
             {"序号": 2, "代码": "000001", "名称": "平安银行"},
         )
+
+    def board_index_daily_payload(self, board_code: str, year: int) -> bytes:
+        raise AssertionError("ordinary provider tests must not use the live payload method")
+
+
+def _payload(start: date, count: int) -> bytes:
+    rows = []
+    for offset in range(count):
+        day = start + timedelta(days=offset)
+        value = 100 + offset
+        rows.append(f"{day:%Y%m%d},{value},{value},{value},{value},100,10000")
+    wrapper = f'quotebridge_v4_line_bk_883423_01_{start.year}({{"data":"{";".join(rows)}"}})'
+    return wrapper.encode()
+
+
+class LiveFakeClient(FakeClient):
+    def __init__(self, payloads: Mapping[int, bytes]) -> None:
+        self.payloads = payloads
+        self.calls: list[tuple[str, int]] = []
+
+    def board_index_daily_payload(self, board_code: str, year: int) -> bytes:
+        self.calls.append((board_code, year))
+        return self.payloads[year]
 
 
 def test_explicit_board_directory_and_daily_bar_preserve_decimal_precision() -> None:
@@ -109,3 +133,84 @@ def test_ths_payload_parsers_reject_no_data_and_parse_full_pages() -> None:
 
     with pytest.raises(ProviderError, match="payload wrapper changed"):
         _parse_daily_payload("not-json", TODAY, TODAY)
+
+
+def test_live_history_preserves_exact_bytes_and_skips_previous_year_at_34_rows() -> None:
+    payload = _payload(date(2026, 1, 1), 34)
+    client = LiveFakeClient({2026: payload})
+    fetched_at = datetime(2026, 8, 15, 1, 2, 3, tzinfo=UTC)
+    provider = AKShareTHSProvider(client, now=lambda: fetched_at)
+
+    batch = provider.fetch_live_board_index_daily_bars(
+        THS_BOARD_ID,
+        as_of_date=date(2026, 8, 15),
+    )
+
+    assert client.calls == [("883423", 2026)]
+    assert batch.payloads[0].content == payload
+    assert batch.payloads[0].url.endswith("/bk_883423/01/2026.js")
+    assert batch.payloads[0].fetched_at == fetched_at
+    assert len(batch.records) == 34
+    assert batch.records[-1].trade_date == date(2026, 2, 3)
+    assert batch.fetched_at == fetched_at
+
+
+def test_live_history_reads_previous_year_and_deduplicates_dates() -> None:
+    current = _payload(date(2026, 1, 1), 2)
+    previous = _payload(date(2025, 11, 28), 34)
+    client = LiveFakeClient({2025: previous, 2026: current})
+    provider = AKShareTHSProvider(
+        client,
+        now=lambda: datetime(2026, 1, 2, tzinfo=UTC),
+    )
+
+    batch = provider.fetch_live_board_index_daily_bars(
+        THS_BOARD_ID,
+        as_of_date=date(2026, 1, 2),
+    )
+
+    assert client.calls == [("883423", 2026), ("883423", 2025)]
+    assert [payload.year for payload in batch.payloads] == [2026, 2025]
+    assert len(batch.records) == 36
+    assert batch.records[0].trade_date == date(2025, 11, 28)
+
+
+def test_live_history_rejects_insufficient_two_year_history() -> None:
+    client = LiveFakeClient(
+        {
+            2025: _payload(date(2025, 12, 30), 2),
+            2026: _payload(date(2026, 1, 1), 2),
+        }
+    )
+    provider = AKShareTHSProvider(client)
+
+    with pytest.raises(ProviderError, match="fewer than 34"):
+        provider.fetch_live_board_index_daily_bars(
+            THS_BOARD_ID,
+            as_of_date=date(2026, 1, 2),
+        )
+
+
+def test_http_client_uses_configured_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    observed: dict[str, float] = {}
+
+    class Response:
+        def __enter__(self) -> "Response":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return _payload(date(2026, 1, 1), 1)
+
+    def fake_urlopen(request: object, timeout: float) -> Response:
+        observed["timeout"] = timeout
+        return Response()
+
+    monkeypatch.setattr("market_data_center.providers.akshare_ths.urlopen", fake_urlopen)
+
+    content = HTTPAKShareTHSClient(timeout_seconds=5).board_index_daily_payload("883423", 2026)
+
+    assert content.startswith(b"quotebridge")
+    assert observed == {"timeout": 5}

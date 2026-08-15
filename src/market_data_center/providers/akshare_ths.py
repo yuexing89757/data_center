@@ -2,6 +2,7 @@
 
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
+from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from html.parser import HTMLParser
@@ -55,6 +56,23 @@ class AKShareTHSClient(Protocol):
 
     def board_index_constituents(self, board_code: str) -> Sequence[Mapping[str, object]]: ...
 
+    def board_index_daily_payload(self, board_code: str, year: int) -> bytes: ...
+
+
+@dataclass(frozen=True, slots=True)
+class THSAnnualDailyPayload:
+    year: int
+    url: str
+    content: bytes
+    fetched_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class THSBoardDailyBarLiveBatch:
+    payloads: tuple[THSAnnualDailyPayload, ...]
+    records: tuple[BoardIndexDailyBarRecord, ...]
+    fetched_at: datetime
+
 
 class HTTPAKShareTHSClient:
     """THS protocol access isolated behind the AKShare-specific adapter boundary."""
@@ -65,20 +83,26 @@ class HTTPAKShareTHSClient:
         "Chrome/89.0.4389.90 Safari/537.36"
     )
 
+    def __init__(self, *, timeout_seconds: float = 20) -> None:
+        if timeout_seconds <= 0:
+            raise ValueError("THS timeout_seconds must be positive")
+        self._timeout_seconds = timeout_seconds
+
+    def board_index_daily_payload(self, board_code: str, year: int) -> bytes:
+        return self._request_bytes(
+            _daily_bar_url(board_code, year),
+            headers={
+                "User-Agent": self._user_agent,
+                "Referer": "https://q.10jqka.com.cn/",
+            },
+        )
+
     def board_index_daily_bars(
         self, board_code: str, start_date: date, end_date: date
     ) -> Sequence[Mapping[str, object]]:
         rows: list[Mapping[str, object]] = []
         for year in range(start_date.year, end_date.year + 1):
-            url = f"https://d.10jqka.com.cn/v4/line/bk_{board_code}/01/{year}.js"
-            payload = self._request(
-                url,
-                headers={
-                    "User-Agent": self._user_agent,
-                    "Referer": "https://q.10jqka.com.cn/",
-                },
-                encoding="utf-8",
-            )
+            payload = self._decode(self.board_index_daily_payload(board_code, year), "utf-8")
             rows.extend(_parse_daily_payload(payload, start_date, end_date))
         return rows
 
@@ -110,15 +134,22 @@ class HTTPAKShareTHSClient:
             rows.extend(page_rows)
         return rows
 
-    @staticmethod
-    def _request(url: str, *, headers: Mapping[str, str], encoding: str) -> str:
+    def _request_bytes(self, url: str, *, headers: Mapping[str, str]) -> bytes:
         try:
-            with urlopen(Request(url, headers=dict(headers)), timeout=20) as response:
-                payload = cast(bytes, response.read())
+            with urlopen(
+                Request(url, headers=dict(headers)), timeout=self._timeout_seconds
+            ) as response:
+                return cast(bytes, response.read())
         except HTTPError as error:
             raise ProviderError(f"THS request failed with HTTP {error.code}") from error
         except (TimeoutError, URLError) as error:
             raise ProviderError("THS request failed") from error
+
+    def _request(self, url: str, *, headers: Mapping[str, str], encoding: str) -> str:
+        return self._decode(self._request_bytes(url, headers=headers), encoding)
+
+    @staticmethod
+    def _decode(payload: bytes, encoding: str) -> str:
         try:
             return payload.decode(encoding)
         except UnicodeDecodeError as error:
@@ -133,9 +164,11 @@ class AKShareTHSProvider(AbstractContextManager["AKShareTHSProvider"]):
         client: AKShareTHSClient,
         *,
         today: Callable[[], date] = lambda: datetime.now(SHANGHAI_TIME_ZONE).date(),
+        now: Callable[[], datetime] = lambda: datetime.now(SHANGHAI_TIME_ZONE),
     ) -> None:
         self._client = client
         self._today = today
+        self._now = now
 
     @classmethod
     def default(cls) -> Self:
@@ -190,6 +223,55 @@ class AKShareTHSProvider(AbstractContextManager["AKShareTHSProvider"]):
             },
             schema_version="akshare_ths.board_index_daily_bar.v1",
             record_factory=lambda: [_map_daily_bar(row) for row in rows],
+        )
+
+    def fetch_live_board_index_daily_bars(
+        self,
+        board_id: str,
+        *,
+        as_of_date: date,
+        minimum_records: int = 34,
+    ) -> THSBoardDailyBarLiveBatch:
+        board_code = _board_code(board_id)
+        if minimum_records <= 0:
+            raise ValueError("minimum_records must be positive")
+
+        payloads: list[THSAnnualDailyPayload] = []
+        records_by_date: dict[date, BoardIndexDailyBarRecord] = {}
+        for year in (as_of_date.year, as_of_date.year - 1):
+            content = self._client.board_index_daily_payload(board_code, year)
+            fetched_at = self._now()
+            annual = THSAnnualDailyPayload(
+                year=year,
+                url=_daily_bar_url(board_code, year),
+                content=content,
+                fetched_at=fetched_at,
+            )
+            payloads.append(annual)
+            try:
+                decoded = content.decode("utf-8")
+            except UnicodeDecodeError as error:
+                raise ProviderError("THS response encoding changed") from error
+            end_date = as_of_date if year == as_of_date.year else date(year, 12, 31)
+            rows = _parse_daily_payload(decoded, date(year, 1, 1), end_date)
+            for row in rows:
+                record = _map_daily_bar(row)
+                existing = records_by_date.get(record.trade_date)
+                if existing is not None and existing != record:
+                    raise ProviderError("THS live history contains conflicting dates")
+                records_by_date[record.trade_date] = record
+            if len(records_by_date) >= minimum_records:
+                break
+
+        if len(records_by_date) < minimum_records:
+            raise ProviderError(
+                f"THS live history has fewer than {minimum_records} unique daily bars"
+            )
+        records = tuple(records_by_date[key] for key in sorted(records_by_date))
+        return THSBoardDailyBarLiveBatch(
+            payloads=tuple(payloads),
+            records=records,
+            fetched_at=payloads[-1].fetched_at,
         )
 
     def fetch_board_index_constituents(
@@ -263,6 +345,14 @@ def _map_board_index(row: Mapping[str, str]) -> BoardIndexRecord:
         status=BoardIndexStatus.ACTIVE,
         source_code=SOURCE_CODE,
     )
+
+
+def _daily_bar_url(board_code: str, year: int) -> str:
+    if board_code != THS_BOARD_CODE:
+        raise ProviderError("AKShare THS adapter supports only board 883423")
+    if year < 2000 or year > 9999:
+        raise ProviderError("THS daily-bar year is outside the supported range")
+    return f"https://d.10jqka.com.cn/v4/line/bk_{board_code}/01/{year}.js"
 
 
 def _map_daily_bar(row: Mapping[str, str]) -> BoardIndexDailyBarRecord:
