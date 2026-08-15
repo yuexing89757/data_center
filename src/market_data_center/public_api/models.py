@@ -293,6 +293,9 @@ class BoardIndexBiasResponse(ApiModel):
     lowest_bias_5_pct: Decimal | None
     lowest_bias_trade_date: date | None
     algorithm_version: Literal["board_index_bias_v1"]
+    data_origin: Literal["database", "ths_live"]
+    persistence_status: Literal["persisted", "queued"]
+    fetched_at: datetime
 
 
 class AuctionOnePriceLimitItem(ApiModel):

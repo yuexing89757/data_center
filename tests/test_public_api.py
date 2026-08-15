@@ -345,6 +345,9 @@ class FakeQueryService:
             "lowest_bias_5_pct": Decimal("-2.861700"),
             "lowest_bias_trade_date": date(2026, 7, 22),
             "algorithm_version": "board_index_bias_v1",
+            "data_origin": "database",
+            "persistence_status": "persisted",
+            "fetched_at": datetime(2026, 8, 15, 3, 26, 46, tzinfo=UTC),
         }
 
     def auction_one_price_limits(self, trade_date: date | None) -> AuctionOnePriceLimitResponse:
@@ -937,6 +940,9 @@ def test_board_index_bias_returns_latest_decimal_contract_without_inputs() -> No
         "lowest_bias_5_pct": "-2.861700",
         "lowest_bias_trade_date": "2026-07-22",
         "algorithm_version": "board_index_bias_v1",
+        "data_origin": "database",
+        "persistence_status": "persisted",
+        "fetched_at": "2026-08-15T03:26:46Z",
     }
     assert service.board_index_bias_calls == 1
     operation = client.get("/openapi.json").json()["paths"]["/api/v1/board-indexes/883423/bias"][
