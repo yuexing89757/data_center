@@ -96,9 +96,7 @@ Expected: failure because the response model, service method, and route are abse
 Add `BoardIndexBiasResponse` with `Literal["THS:883423"]`, `Literal["883423"]`, `Literal[30]`, `Literal["board_index_bias_v1"]`, Decimal/date nullable fields, and `Literal["up", "down", "flat"] | None`. Add:
 
 ```python
-QUERY_BOARD_INDEX_BIAS_LATEST = text(
-    "select api_v1.query_board_index_bias_latest() as payload"
-)
+QUERY_BOARD_INDEX_BIAS_LATEST = text("select api_v1.query_board_index_bias_latest() as payload")
 ```
 
 Validate the first payload row into the model, using the existing database error mapper for `P0002`. Register the fixed authenticated GET route with no handler parameters other than dependencies.
