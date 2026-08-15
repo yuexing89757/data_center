@@ -2563,6 +2563,85 @@ def test_board_index_facts_are_idempotent_and_queryable(
     assert result[3] == Decimal("223.6000")
 
 
+def test_board_index_bias_rpc_uses_latest_30_sessions_and_decimal_math(
+    database_engine: Engine,
+) -> None:
+    start_date = date(2026, 6, 1)
+    closes = [Decimal(index) for index in range(1, 36)]
+    _commit_board_bias_bars(database_engine, start_date, closes)
+
+    with database_engine.connect() as connection:
+        payload = connection.execute(
+            text("select api_v1.query_board_index_bias_latest() as payload")
+        ).scalar_one()
+        privileges = connection.execute(
+            text(
+                "select "
+                "has_function_privilege('market_data_api', "
+                "'api_v1.query_board_index_bias_latest()', 'EXECUTE'), "
+                "has_function_privilege('anon', "
+                "'api_v1.query_board_index_bias_latest()', 'EXECUTE'), "
+                "has_function_privilege('authenticated', "
+                "'api_v1.query_board_index_bias_latest()', 'EXECUTE')"
+            )
+        ).one()
+
+    assert payload == {
+        "board_id": "THS:883423",
+        "board_code": "883423",
+        "board_name": "沪深主板昨日涨停",
+        "trade_date": "2026-07-05",
+        "close": "35.0000",
+        "moving_average_5": "33.000000",
+        "bias_5_pct": "6.060606",
+        "previous_trade_date": "2026-07-04",
+        "previous_bias_5_pct": "6.250000",
+        "bias_direction": "down",
+        "window_trading_days": 30,
+        "bias_sample_count": 30,
+        "highest_bias_5_pct": "50.000000",
+        "highest_bias_trade_date": "2026-06-06",
+        "lowest_bias_5_pct": "6.060606",
+        "lowest_bias_trade_date": "2026-07-05",
+        "algorithm_version": "board_index_bias_v1",
+    }
+    assert tuple(privileges) == (True, False, False)
+
+
+def test_board_index_bias_rpc_returns_null_calculations_with_less_than_five_bars(
+    database_engine: Engine,
+) -> None:
+    _commit_board_bias_bars(
+        database_engine,
+        date(2026, 8, 1),
+        [Decimal("10"), Decimal("11"), Decimal("12"), Decimal("13")],
+    )
+
+    with database_engine.connect() as connection:
+        payload = connection.execute(
+            text("select api_v1.query_board_index_bias_latest() as payload")
+        ).scalar_one()
+
+    assert payload["trade_date"] == "2026-08-04"
+    assert payload["close"] == "13.0000"
+    assert payload["moving_average_5"] is None
+    assert payload["bias_5_pct"] is None
+    assert payload["previous_bias_5_pct"] is None
+    assert payload["bias_direction"] is None
+    assert payload["bias_sample_count"] == 0
+    assert payload["highest_bias_5_pct"] is None
+    assert payload["highest_bias_trade_date"] is None
+    assert payload["lowest_bias_5_pct"] is None
+    assert payload["lowest_bias_trade_date"] is None
+
+
+def test_board_index_bias_rpc_fails_when_no_board_bars_exist(database_engine: Engine) -> None:
+    with pytest.raises(DBAPIError) as captured, database_engine.connect() as connection:
+        connection.execute(text("select api_v1.query_board_index_bias_latest()"))
+
+    assert captured.value.orig.sqlstate == "P0002"
+
+
 def test_derived_calculation_is_versioned_idempotent_and_revision_aware(
     database_engine: Engine,
 ) -> None:
@@ -4040,6 +4119,89 @@ def _daily_bar(trade_date: date = TRADE_DATE) -> DailyBarRecord:
         trade_status=TradeStatus.TRADING,
         is_st=False,
         source_code="baostock",
+    )
+
+
+def _commit_board_bias_bars(
+    database_engine: Engine,
+    start_date: date,
+    closes: list[Decimal],
+) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    trading_days = [start_date + timedelta(days=index) for index in range(len(closes))]
+
+    calendar_run = _running_run(DatasetCode.TRADING_CALENDAR)
+    persistence.create_ingestion_run(calendar_run)
+    persistence.commit_trading_calendar_batch(
+        _completed_run(calendar_run, row_count=len(trading_days)),
+        _manifest(
+            calendar_run.ingestion_id,
+            "board-bias-calendar",
+            row_count=len(trading_days),
+        ),
+        _envelopes(
+            calendar_run.ingestion_id,
+            [
+                CalculatedTradingDay(
+                    market=Market.CN_A_SHARE,
+                    trade_date=trade_date,
+                    is_trading_day=True,
+                    previous_trading_day=(trading_days[index - 1] if index > 0 else None),
+                    next_trading_day=(
+                        trading_days[index + 1] if index + 1 < len(trading_days) else None
+                    ),
+                    source_code="baostock",
+                )
+                for index, trade_date in enumerate(trading_days)
+            ],
+        ),
+    )
+
+    board = BoardIndexRecord(
+        board_id="THS:883423",
+        board_code="883423",
+        namespace="THS",
+        name="沪深主板昨日涨停",
+        board_type=BoardIndexType.DYNAMIC_THEME,
+        market=Market.CN_A_SHARE,
+        status=BoardIndexStatus.ACTIVE,
+        source_code="akshare_ths",
+    )
+    board_run = _running_run(DatasetCode.BOARD_INDEX, ProviderCode.AKSHARE_THS)
+    persistence.create_ingestion_run(board_run)
+    persistence.commit_board_index_batch(
+        _completed_run(board_run),
+        _manifest(board_run.ingestion_id, "board-bias-index", provider="akshare_ths"),
+        _envelopes(board_run.ingestion_id, [board]),
+    )
+
+    bars = [
+        BoardIndexDailyBarRecord(
+            board_id=board.board_id,
+            trade_date=trade_date,
+            market=Market.CN_A_SHARE,
+            open=close,
+            high=close,
+            low=close,
+            close=close,
+            volume=0,
+            amount=Decimal("0"),
+            source_code="akshare_ths",
+        )
+        for trade_date, close in zip(trading_days, closes, strict=True)
+    ]
+    bar_run = _running_run(DatasetCode.BOARD_INDEX_DAILY_BAR, ProviderCode.AKSHARE_THS)
+    persistence.create_ingestion_run(bar_run)
+    persistence.commit_board_index_daily_bar_batch(
+        _completed_run(bar_run, row_count=len(bars)),
+        _manifest(
+            bar_run.ingestion_id,
+            "board-bias-bars",
+            row_count=len(bars),
+            provider="akshare_ths",
+        ),
+        _envelopes(bar_run.ingestion_id, bars),
+        [],
     )
 
 

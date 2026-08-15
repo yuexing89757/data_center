@@ -245,6 +245,10 @@ def test_daily_limit_up_list_execute_is_restricted_to_fastapi_role() -> None:
             "20260814000300_add_auction_one_price_limits_api.sql",
             "query_auction_one_price_limits",
         ),
+        (
+            "20260815000100_add_board_index_bias_api.sql",
+            "query_board_index_bias_latest",
+        ),
     ],
 )
 def test_new_ranked_market_api_rpcs_are_fastapi_only(filename: str, function_name: str) -> None:
