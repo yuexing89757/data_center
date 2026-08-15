@@ -250,6 +250,10 @@ def test_daily_limit_up_list_execute_is_restricted_to_fastapi_role() -> None:
             "20260815000100_add_board_index_bias_api.sql",
             "query_board_index_bias_latest",
         ),
+        (
+            "20260815000200_board_index_bias_live_fallback.sql",
+            "persist_board_index_daily_bars_live",
+        ),
     ],
 )
 def test_new_ranked_market_api_rpcs_are_fastapi_only(filename: str, function_name: str) -> None:
@@ -290,6 +294,23 @@ def test_live_auction_persistence_is_narrow_idempotent_and_not_direct_table_dml(
     assert "pg_advisory_xact_lock" in migration
     assert "call_auction_indicative_input_unique unique (symbol,trade_date,input_hash)" in migration
     assert "revoke all on function api_v1.persist_call_auction_indicative_details" in migration
+    assert "from public,anon,authenticated" in migration
+    assert "to market_data_api" in migration
+    assert not re.search(r"(?im)^grant\s+(insert|update|delete|all)", migration)
+
+
+def test_live_board_index_persistence_is_narrow_and_fastapi_only() -> None:
+    migration = (
+        (MIGRATION_DIR / "20260815000200_board_index_bias_live_fallback.sql")
+        .read_text(encoding="utf-8")
+        .lower()
+    )
+
+    assert "security definer" in migration
+    assert "pg_advisory_xact_lock" in migration
+    assert "p_input_hash !~ '^[0-9a-f]{64}$'" in migration
+    assert "p_byte_size > 5000000" in migration
+    assert "jsonb_array_length(p_records) > 600" in migration
     assert "from public,anon,authenticated" in migration
     assert "to market_data_api" in migration
     assert not re.search(r"(?im)^grant\s+(insert|update|delete|all)", migration)
