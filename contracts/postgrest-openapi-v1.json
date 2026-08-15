@@ -113,6 +113,17 @@
           "404": {"description": "No eligible session exists for the exact date"}
         }
       }
+    },
+    "/rpc/query_board_index_bias_latest": {
+      "post": {
+        "operationId": "queryBoardIndexBiasLatest",
+        "summary": "Read the latest THS 883423 MA5 bias metrics",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": {"description": "Latest stored board close, MA5 bias, direction, and 30-session extrema"},
+          "404": {"description": "No THS 883423 board daily bars are stored"}
+        }
+      }
     }
   },
   "components": {

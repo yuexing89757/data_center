@@ -20,6 +20,7 @@ EXPECTED_ENDPOINTS = {
     "query_auction_quotes",
     "query_call_auction_market_snapshots",
     "query_call_auction_market_series_snapshots",
+    "query_board_index_bias_latest",
 }
 
 
@@ -104,3 +105,30 @@ def test_fastapi_openapi_contract_matches_the_application() -> None:
             auction_indicative_service=cast(object, object()),  # type: ignore[arg-type]
         ).openapi()
     )
+
+
+def test_board_index_bias_contract_is_fixed_bounded_and_no_input() -> None:
+    postgrest = _load("postgrest-openapi-v1.json")
+    agent = _load("agent-tools-v1.json")
+    fastapi = _load("fastapi-openapi-v1.json")
+
+    postgrest_operation = postgrest["paths"]["/rpc/query_board_index_bias_latest"]["post"]
+    assert "requestBody" not in postgrest_operation
+    assert postgrest_operation["responses"]["404"]["description"]
+
+    agent_tool = next(
+        tool for tool in agent["tools"] if tool["endpoint"] == "query_board_index_bias_latest"
+    )
+    assert agent_tool["read_only"] is True
+    assert agent_tool["input_schema"] == {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {},
+    }
+
+    operation = fastapi["paths"]["/api/v1/board-indexes/883423/bias"]["get"]
+    assert operation.get("parameters", []) == []
+    response_schema = fastapi["components"]["schemas"]["BoardIndexBiasResponse"]
+    assert response_schema["properties"]["algorithm_version"]["const"] == ("board_index_bias_v1")
+    assert response_schema["properties"]["window_trading_days"]["const"] == 30
+    assert response_schema["properties"]["close"]["type"] == "string"

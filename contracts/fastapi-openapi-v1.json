@@ -428,6 +428,184 @@
         "title": "AuctionOnePriceLimitResponse",
         "type": "object"
       },
+      "BoardIndexBiasResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "algorithm_version": {
+            "const": "board_index_bias_v1",
+            "title": "Algorithm Version",
+            "type": "string"
+          },
+          "bias_5_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bias 5 Pct"
+          },
+          "bias_direction": {
+            "anyOf": [
+              {
+                "enum": [
+                  "up",
+                  "down",
+                  "flat"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bias Direction"
+          },
+          "bias_sample_count": {
+            "maximum": 30.0,
+            "minimum": 0.0,
+            "title": "Bias Sample Count",
+            "type": "integer"
+          },
+          "board_code": {
+            "const": "883423",
+            "title": "Board Code",
+            "type": "string"
+          },
+          "board_id": {
+            "const": "THS:883423",
+            "title": "Board Id",
+            "type": "string"
+          },
+          "board_name": {
+            "title": "Board Name",
+            "type": "string"
+          },
+          "close": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Close",
+            "type": "string"
+          },
+          "highest_bias_5_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Highest Bias 5 Pct"
+          },
+          "highest_bias_trade_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Highest Bias Trade Date"
+          },
+          "lowest_bias_5_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lowest Bias 5 Pct"
+          },
+          "lowest_bias_trade_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lowest Bias Trade Date"
+          },
+          "moving_average_5": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Moving Average 5"
+          },
+          "previous_bias_5_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Bias 5 Pct"
+          },
+          "previous_trade_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Trade Date"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "window_trading_days": {
+            "const": 30,
+            "title": "Window Trading Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "board_id",
+          "board_code",
+          "board_name",
+          "trade_date",
+          "close",
+          "moving_average_5",
+          "bias_5_pct",
+          "previous_trade_date",
+          "previous_bias_5_pct",
+          "bias_direction",
+          "window_trading_days",
+          "bias_sample_count",
+          "highest_bias_5_pct",
+          "highest_bias_trade_date",
+          "lowest_bias_5_pct",
+          "lowest_bias_trade_date",
+          "algorithm_version"
+        ],
+        "title": "BoardIndexBiasResponse",
+        "type": "object"
+      },
       "CallAuctionMarketSeriesRound": {
         "additionalProperties": false,
         "properties": {
@@ -2200,6 +2378,33 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/board-indexes/883423/bias": {
+      "get": {
+        "description": "Uses only the latest stored THS:883423 daily bars. Returns the current five-session simple moving-average bias, its direction versus the previous available board session, and extrema from valid samples in the latest 30 stored sessions. The endpoint does not accept a date, fetch live data, or fall back to another board.",
+        "operationId": "board_index_bias_latest_api_v1_board_indexes_883423_bias_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoardIndexBiasResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Query the latest THS 883423 MA5 bias metrics",
+        "tags": [
+          "market-data"
+        ]
+      }
+    },
     "/api/v1/call-auction-indicative-details": {
       "get": {
         "description": "Accepts one six-digit SSE/SZSE stock code and first reads the current Shanghai date's latest stored snapshot. Only an explicit database miss triggers a bounded Eastmoney fetch for 09:15:00-09:25:59 virtual indicative/reference price and displayed matching-volume observations. Live data is returned immediately after immutable Raw capture while database registration is queued asynchronously. These are not exchange trade ticks or order-by-order records. The source display classification is untrusted and is not a trade direction. data_origin and persistence_status distinguish stored data from a queued live result. Items are ordered by observed_at then source_sequence. Timestamp fields are rendered in Asia/Shanghai as YYYY-MM-DD HH:mm:ss.",

@@ -194,6 +194,17 @@
           }
         }
       }
+    },
+    {
+      "name": "market_board_index_bias_latest",
+      "description": "Read the latest stored THS 883423 close, MA5 bias, prior-session direction, and latest-30-session extrema.",
+      "endpoint": "query_board_index_bias_latest",
+      "read_only": true,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      }
     }
   ]
 }

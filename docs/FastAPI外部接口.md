@@ -72,6 +72,16 @@ semantics as the 09:26 batch route.
 exactly 20 calendar trading sessions (19 intervals), with exact observation dates/prices, end-date
 historical names and bounded omission counts. Ties break by symbol; explicit dates never fall back.
 
+`GET /api/v1/board-indexes/883423/bias` takes no parameters and uses the latest stored
+`THS:883423` daily bar. `moving_average_5` is the simple mean of the current close and four
+preceding available positive closes; `bias_5_pct=(close-moving_average_5)/moving_average_5*100`.
+The response compares the current value with the previous available board session as
+`up`/`down`/`flat`, and reports the highest and lowest valid BIAS5 values across the latest 30
+stored board sessions. It returns the actual valid sample count when history is shorter, uses the
+latest date for tied extrema, and returns nullable calculations when fewer than five valid closes
+exist. The RPC reads at most 34 rows and returns Decimal strings. It does not accept a date, fall
+back, fill gaps, call a provider, or persist a calculation.
+
 `GET /api/v1/call-auction-one-price-limits?trade_date=` returns separate up/down lists only when
 the stored 09:26 Asia/Shanghai snapshot has complete equal last/high/low evidence at the applicable
 versioned price limit. Partial status and incomplete omissions remain visible; later bars are unused.
