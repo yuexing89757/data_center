@@ -122,6 +122,11 @@ facts, and provider-neutral lineage. It never substitutes an older date or missi
 members are deterministically ordered by symbol. The generic `/api/v1/limit-up-pool` contract is
 unchanged.
 
+`POST /api/v1/call-auction-market-snapshots/query` batch-reads the exact-date 09:26 Shanghai and
+Shenzhen market source facts for 1–500 six-digit codes. It selects one coherent succeeded batch,
+falling back to one partial batch only when no succeeded batch exists, and reports missing codes
+without substituting another date or combining ingestions.
+
 Daily Bar bulk ingestion keeps one provider/Raw/ingestion lineage unit per security while writing
 validated facts in bounded PostgreSQL transactions. Configure `DAILY_BAR_WRITE_BATCH_SIZE`
 (default 100, range 1..500); see `docs/DailyBar批量写入与性能基线-2026-08-11.md`.
@@ -178,5 +183,10 @@ Compose service, run the integration marker, and remove the temporary volume aft
 Verified Raw replay, stale-run recovery, and read-only cross-provider Daily Bar comparison are documented in [docs/Raw重放与运行恢复.md](docs/Raw重放与运行恢复.md).
 
 Production migration and smoke verification can be started manually through the protected `Production migration and smoke check` GitHub Actions workflow.
+
+The operator-controlled `call-auction-indicative-detail` command captures one SSE/SZSE symbol for
+the current Shanghai trading date only. It remains disabled unless
+`--confirm-current-day-single-symbol` is supplied, is never scheduled, and stores virtual auction
+indicative/matching observations—not exchange trade ticks or order-by-order data.
 
 The CLI uses deterministic provider routing by default: BaoStock then AKShare for security/calendar, and pytdx only for Daily Bars. At startup and every 12 hours, the Worker probes a bounded candidate set and atomically publishes one versioned pool with quote, SSE, SZSE and BSE capability flags. Consumers filter that pool by capability, use bounded connection failover, and keep one endpoint for a successful batch. Missing or unavailable bars remain explicit gaps and are not filled from other providers. Public TDX nodes have no availability or rate-limit guarantee. Use `--provider baostock|akshare|pytdx` to bypass routing for reproducible diagnostics.

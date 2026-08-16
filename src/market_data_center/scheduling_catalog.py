@@ -12,11 +12,14 @@ STOCK_POOL_JOB_ID = "mainboard-price-limit-stock-pools-daily"
 AUCTION_COLLECTION_JOB_ID = "opening-auction-limit-up-quotes"
 EOD_QUOTE_SNAPSHOT_JOB_ID = "eod-quote-snapshot-daily"
 CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID = "call-auction-market-snapshot-daily"
+CALL_AUCTION_MARKET_SERIES_JOB_ID = "call-auction-market-series"
 TODAY_LIMIT_UP_SNAPSHOT_JOB_ID = "today-limit-up-snapshot-daily"
 PYTDX_POOL_REFRESH_JOB_ID = "pytdx-pool-refresh"
+CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID = "close-price-new-highs-120d-daily"
 SCHEDULER_TIMEZONE = "Asia/Shanghai"
 JOB_TIMEOUT_SECONDS = 21_600
-AUCTION_COLLECTION_CADENCE_SECONDS = 5
+AUCTION_COLLECTION_CADENCE_SECONDS = 30
+AUCTION_COLLECTION_QUOTE_BATCH_SIZE = 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,7 +66,12 @@ WORKFLOW_DEFINITIONS = (
         "stale_run_recovery",
         "陈旧运行恢复",
         "恢复超时停留在 running 的采集和工作流记录。",
-        ("recover_ingestion_runs", "recover_workflow_runs", "recover_auction_sessions"),
+        (
+            "recover_ingestion_runs",
+            "recover_workflow_runs",
+            "recover_auction_sessions",
+            "recover_call_auction_market_series_sessions",
+        ),
     ),
     WorkflowDefinition(
         "deducted_profit",
@@ -96,6 +104,12 @@ WORKFLOW_DEFINITIONS = (
         ("collect_call_auction_market_snapshot",),
     ),
     WorkflowDefinition(
+        "call_auction_market_series",
+        "沪深全市场开盘竞价序列快照",
+        "在开盘集合竞价期间按固定轮次采集沪深上市股票的完整来源快照。",
+        ("collect_call_auction_market_series",),
+    ),
+    WorkflowDefinition(
         "call_auction_snapshot",
         "今日竞价量",
         "保留数据库最终化的历史 operations 定义, Worker 不再自动调度。",
@@ -112,6 +126,12 @@ WORKFLOW_DEFINITIONS = (
         "PYTDX 节点池刷新",
         "探测候选节点能力并原子发布最后有效节点池。",
         ("refresh_pytdx_pool",),
+    ),
+    WorkflowDefinition(
+        "close_price_new_highs_120d",
+        "沪深120交易日收盘新高快照",
+        "在日 K 完成后构建版本化沪深120交易日收盘新高快照。",
+        ("build_close_price_new_highs_120d_snapshot",),
     ),
 )
 
@@ -226,6 +246,21 @@ def job_definitions(settings: SchedulerSettings) -> tuple[JobDefinition, ...]:
             minute=26,
         ),
         JobDefinition(
+            CALL_AUCTION_MARKET_SERIES_JOB_ID,
+            "沪深全市场开盘竞价序列快照",
+            "09:15-09:25:20 每20秒保存一次沪深上市股票全集来源事实。",
+            "call_auction_market_series",
+            "cron",
+            "周一至周五 09:15",
+            timezone,
+            settings.call_auction_market_series_enabled,
+            timeout,
+            "错过轮次显式失败, 不补采。",
+            day_of_week="mon-fri",
+            hour=9,
+            minute=15,
+        ),
+        JobDefinition(
             TODAY_LIMIT_UP_SNAPSHOT_JOB_ID,
             "Same-day limit-up snapshot fill",
             "Freeze a versioned snapshot after exact-date bar, share and pool checks.",
@@ -239,6 +274,21 @@ def job_definitions(settings: SchedulerSettings) -> tuple[JobDefinition, ...]:
             day_of_week="mon-fri",
             hour=22,
             minute=0,
+        ),
+        JobDefinition(
+            CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID,
+            "沪深120交易日收盘新高快照",
+            "物化最近交易日严格突破此前119日最高收盘的沪深股票。",
+            "close_price_new_highs_120d",
+            "cron",
+            "周一至周五 21:30",
+            timezone,
+            settings.close_price_new_highs_120d_enabled,
+            timeout,
+            "同日 daily_market 未终态时失败; 下一次调度或显式日期手工命令重试",
+            day_of_week="mon-fri",
+            hour=21,
+            minute=30,
         ),
         JobDefinition(
             STALE_RUN_RECOVERY_JOB_ID,

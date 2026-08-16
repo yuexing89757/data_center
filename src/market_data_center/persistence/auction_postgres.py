@@ -1,7 +1,7 @@
 """PostgreSQL repository for opening-auction collection sessions."""
 
 from collections.abc import Mapping, Sequence
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from json import dumps
 from typing import cast
 from uuid import UUID
@@ -16,6 +16,7 @@ from market_data_center.domain.auction import (
     AuctionQuoteSample,
     AuctionRoundSummary,
     AuctionSessionStatus,
+    auction_phase,
 )
 from market_data_center.domain.ingestion import IngestionRun, QualityResult, RawManifest
 from market_data_center.domain.stock_pool import MAINBOARD_LIMIT_UP_POOL
@@ -403,15 +404,15 @@ def _session(row: Mapping[str, object]) -> AuctionCollectionSession:
         pool_snapshot_version=cast(int, row["pool_snapshot_version"]),
         basis_trade_date=row["basis_trade_date"],  # type: ignore[arg-type]
         effective_trade_date=row["effective_trade_date"],  # type: ignore[arg-type]
-        window_start=row["window_start"],  # type: ignore[arg-type]
-        window_end=row["window_end"],  # type: ignore[arg-type]
+        window_start=_utc_datetime(row["window_start"]),
+        window_end=_utc_datetime(row["window_end"]),
         cadence_seconds=cast(int, row["cadence_seconds"]),
         expected_rounds=cast(int, row["expected_rounds"]),
         expected_quotes=cast(int, row["expected_quotes"]),
         provider_code=str(row["provider_code"]),
         status=AuctionSessionStatus(str(row["status"])),
-        started_at=row["started_at"],  # type: ignore[arg-type]
-        finished_at=row["finished_at"],  # type: ignore[arg-type]
+        started_at=_utc_datetime(row["started_at"]),
+        finished_at=(_utc_datetime(row["finished_at"]) if row["finished_at"] is not None else None),
         successful_rounds=cast(int, row["successful_rounds"]),
         partial_rounds=cast(int, row["partial_rounds"]),
         failed_rounds=cast(int, row["failed_rounds"]),
@@ -419,6 +420,12 @@ def _session(row: Mapping[str, object]) -> AuctionCollectionSession:
         failed_quotes=cast(int, row["failed_quotes"]),
         error_summary=row["error_summary"] if isinstance(row["error_summary"], str) else None,
     )
+
+
+def _utc_datetime(value: object) -> datetime:
+    if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("auction session timestamp must be timezone-aware")
+    return value.astimezone(UTC)
 
 
 def _run_parameters(run: IngestionRun) -> dict[str, object]:
@@ -502,4 +509,4 @@ def _round_parameters(value: AuctionRoundSummary) -> dict[str, object]:
         name: (item.value if hasattr(item, "value") else item)
         for name in value.__slots__
         for item in (getattr(value, name),)
-    }
+    } | {"phase": auction_phase(value.scheduled_at).value}

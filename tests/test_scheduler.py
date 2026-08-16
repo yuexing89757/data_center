@@ -1,7 +1,9 @@
 from datetime import UTC, date, datetime
 from pathlib import Path
 from sqlite3 import connect
+from types import SimpleNamespace
 from typing import cast
+from uuid import uuid4
 
 import pytest
 
@@ -20,7 +22,9 @@ from market_data_center.scheduler import (
 )
 from market_data_center.scheduling_catalog import (
     AUCTION_COLLECTION_JOB_ID,
+    CALL_AUCTION_MARKET_SERIES_JOB_ID,
     CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID,
+    CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID,
     DAILY_RUN_JOB_ID,
     DEDUCTED_PROFIT_JOB_ID,
     EOD_QUOTE_SNAPSHOT_JOB_ID,
@@ -62,6 +66,9 @@ def test_scheduler_registers_persistent_single_instance_market_job(tmp_path: Pat
     stock_pool = scheduler.get_job(STOCK_POOL_JOB_ID)
     assert stock_pool is not None
     assert str(stock_pool.trigger) == "cron[day_of_week='mon-fri', hour='21', minute='0']"
+    closing_highs = scheduler.get_job(CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID)
+    assert closing_highs is not None
+    assert str(closing_highs.trigger) == ("cron[day_of_week='mon-fri', hour='21', minute='30']")
     assert store_path.parent.is_dir()
     assert scheduler.get_job(AUCTION_COLLECTION_JOB_ID) is None
 
@@ -85,6 +92,9 @@ def test_legacy_time_environment_cannot_change_registered_jobs(monkeypatch, tmp_
     monkeypatch.setenv("CALL_AUCTION_MINUTE", "2")
     monkeypatch.setenv("EOD_QUOTE_HOUR", "3")
     monkeypatch.setenv("PYTDX_POOL_REFRESH_HOURS", "4")
+    monkeypatch.setenv("CALL_AUCTION_MARKET_SERIES_HOUR", "5")
+    monkeypatch.setenv("CALL_AUCTION_MARKET_SERIES_MINUTE", "6")
+    monkeypatch.setenv("CALL_AUCTION_MARKET_SERIES_CADENCE_SECONDS", "7")
     scheduler = build_scheduler(
         SchedulerSettings(
             scheduler_store_path=tmp_path / "fixed.sqlite",
@@ -102,6 +112,9 @@ def test_legacy_time_environment_cannot_change_registered_jobs(monkeypatch, tmp_
         "cron[day_of_week='mon-fri', hour='21', minute='10']"
     )
     assert str(scheduler.get_job(PYTDX_POOL_REFRESH_JOB_ID).trigger) == "interval[12:00:00]"
+    assert str(scheduler.get_job(CALL_AUCTION_MARKET_SERIES_JOB_ID).trigger) == (
+        "cron[day_of_week='mon-fri', hour='9', minute='15']"
+    )
 
 
 def test_scheduled_job_fire_time_uses_catalog_definition(monkeypatch) -> None:
@@ -217,6 +230,240 @@ def test_scheduler_registers_one_auction_session_job_only_when_enabled(tmp_path:
     assert auction.max_instances == 1
 
 
+def test_morning_auction_jobs_have_a_dedicated_two_thread_executor(tmp_path: Path) -> None:
+    scheduler = build_scheduler(
+        SchedulerSettings(scheduler_store_path=tmp_path / "executors.sqlite", _env_file=None)
+    )
+
+    series = scheduler.get_job(CALL_AUCTION_MARKET_SERIES_JOB_ID)
+    limit_up = scheduler.get_job(AUCTION_COLLECTION_JOB_ID)
+    snapshot_0926 = scheduler.get_job(CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID)
+    assert series is not None and limit_up is not None and snapshot_0926 is not None
+    assert series.executor == limit_up.executor == "morning_auction"
+    assert snapshot_0926.executor == "default"
+    assert series.max_instances == limit_up.max_instances == 1
+    assert scheduler._executors["default"]._pool._max_workers == 1
+    assert scheduler._executors["morning_auction"]._pool._max_workers == 2
+
+
+def test_disabling_series_does_not_disable_other_morning_jobs(tmp_path: Path) -> None:
+    scheduler = build_scheduler(
+        SchedulerSettings(
+            scheduler_store_path=tmp_path / "no_series.sqlite",
+            call_auction_market_series_enabled=False,
+            auction_collection_enabled=True,
+            call_auction_snapshot_enabled=True,
+            _env_file=None,
+        )
+    )
+
+    assert scheduler.get_job(CALL_AUCTION_MARKET_SERIES_JOB_ID) is None
+    assert scheduler.get_job(AUCTION_COLLECTION_JOB_ID) is not None
+    assert scheduler.get_job(CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID) is not None
+
+
+def test_closing_high_snapshot_can_only_be_enabled_or_disabled(tmp_path: Path) -> None:
+    scheduler = build_scheduler(
+        SchedulerSettings(
+            scheduler_store_path=tmp_path / "no_closing_highs.sqlite",
+            close_price_new_highs_120d_enabled=False,
+            _env_file=None,
+        )
+    )
+
+    assert scheduler.get_job(CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID) is None
+    assert scheduler.get_job(DAILY_RUN_JOB_ID) is not None
+
+
+def test_auction_collection_job_requests_one_symbol_per_pytdx_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class StopAfterQuoteSettings(Exception):
+        pass
+
+    def quote_settings(**kwargs: object) -> None:
+        captured.update(kwargs)
+        raise StopAfterQuoteSettings
+
+    monkeypatch.setattr(scheduler_module, "WorkerSettings", lambda: object())
+    monkeypatch.setattr(scheduler_module, "PytdxHqSettings", quote_settings)
+
+    with pytest.raises(StopAfterQuoteSettings):
+        scheduler_module.run_auction_collection_job()
+
+    assert captured == {"pytdx_hq_batch_size": 1}
+
+
+def test_call_auction_market_series_runner_wires_isolated_dependencies(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    workflow_run_id = uuid4()
+    fire_time = datetime(2026, 8, 14, 1, 15, tzinfo=UTC)
+    engine = SimpleNamespace(disposed=False)
+    engine.dispose = lambda: setattr(engine, "disposed", True)
+    captured: dict[str, object] = {}
+
+    class FakeExecution:
+        run = SimpleNamespace(workflow_run_id=workflow_run_id)
+
+        def step(self, code, sequence, operation):
+            captured["step"] = (code, sequence)
+            return operation()
+
+        def succeed(self):
+            captured["succeeded"] = True
+
+        def fail(self, error):
+            captured["failed"] = type(error).__name__
+
+    class FakeExecutionService:
+        def __init__(self, operations):
+            captured["operations"] = operations
+
+        def start(self, workflow_code, scheduled_for, trigger_source):
+            captured["workflow"] = (workflow_code, scheduled_for, trigger_source)
+            return FakeExecution()
+
+    class FakeService:
+        def __init__(self, **kwargs):
+            captured["service"] = kwargs
+
+        def collect(self, trade_date, actual_workflow_run_id):
+            captured["collect"] = (trade_date, actual_workflow_run_id)
+            captured["provider"] = captured["service"]["provider_factory"](
+                captured["service"]["quote_endpoints"][0]
+            )
+            return None
+
+    quote_settings = SimpleNamespace(pytdx_hq_timeout_seconds=2.0)
+
+    def fake_quote_settings(**kwargs):
+        captured["quote_kwargs"] = kwargs
+        return quote_settings
+
+    monkeypatch.setattr(
+        scheduler_module,
+        "WorkerSettings",
+        lambda: SimpleNamespace(
+            database_url=SimpleNamespace(get_secret_value=lambda: "unused"),
+            raw_data_root=tmp_path / "raw",
+        ),
+    )
+    monkeypatch.setattr(
+        scheduler_module, "SchedulerSettings", lambda: SchedulerSettings(_env_file=None)
+    )
+    monkeypatch.setattr(
+        scheduler_module,
+        "PytdxPoolSettings",
+        lambda: SimpleNamespace(pytdx_pool_path=tmp_path / "pool.json"),
+    )
+    monkeypatch.setattr(
+        scheduler_module,
+        "PytdxHqSettings",
+        fake_quote_settings,
+    )
+    monkeypatch.setattr(scheduler_module, "sqlalchemy_url", lambda value: value)
+    monkeypatch.setattr(scheduler_module, "create_engine", lambda *args, **kwargs: engine)
+    monkeypatch.setattr(
+        scheduler_module, "PostgreSQLOperationsPersistence", lambda value: ("ops", value)
+    )
+    monkeypatch.setattr(scheduler_module, "WorkflowExecutionService", FakeExecutionService)
+    monkeypatch.setattr(scheduler_module, "_scheduled_job_fire_time", lambda *args: fire_time)
+    monkeypatch.setattr(scheduler_module, "load_endpoint_pool", lambda path: ("pool", path))
+    monkeypatch.setattr(
+        scheduler_module,
+        "endpoints_for",
+        lambda pool, capability: (
+            captured.setdefault("pool", (pool, capability))
+            and (("quote-a", 7709), ("quote-b", 7709))
+        ),
+    )
+    monkeypatch.setattr(
+        scheduler_module,
+        "PostgreSQLCallAuctionMarketSeriesPersistence",
+        lambda value: ("series", value),
+    )
+    monkeypatch.setattr(scheduler_module, "LocalRawStore", lambda root: ("raw", root))
+    monkeypatch.setattr(
+        scheduler_module,
+        "PytdxHqProvider",
+        lambda settings, endpoints: ("provider", settings, endpoints),
+    )
+    monkeypatch.setattr(scheduler_module, "CallAuctionMarketSeriesService", FakeService)
+
+    scheduler_module.run_call_auction_market_series_job()
+
+    assert captured["quote_kwargs"] == {"pytdx_hq_batch_size": 80}
+    assert captured["collect"] == (date(2026, 8, 14), workflow_run_id)
+    assert captured["step"] == ("collect_call_auction_market_series", 1)
+    assert captured["provider"] == ("provider", quote_settings, (("quote-a", 7709),))
+    assert captured["succeeded"] is True
+    assert engine.disposed is True
+
+
+def test_stale_recovery_includes_call_auction_market_series_sessions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = SimpleNamespace(disposed=False)
+    engine.dispose = lambda: setattr(engine, "disposed", True)
+    steps: list[str] = []
+
+    class FakeOperations:
+        def recover_stale(self, stale_before):
+            return 2
+
+    class FakeExecution:
+        def step(self, code, sequence, operation):
+            steps.append(code)
+            return operation()
+
+        def succeed(self):
+            return None
+
+        def fail(self, error):
+            raise AssertionError(error)
+
+    monkeypatch.setattr(
+        scheduler_module,
+        "WorkerSettings",
+        lambda: SimpleNamespace(database_url=SimpleNamespace(get_secret_value=lambda: "unused")),
+    )
+    monkeypatch.setattr(scheduler_module, "sqlalchemy_url", lambda value: value)
+    monkeypatch.setattr(scheduler_module, "create_engine", lambda *args, **kwargs: engine)
+    monkeypatch.setattr(
+        scheduler_module, "PostgreSQLOperationsPersistence", lambda value: FakeOperations()
+    )
+    monkeypatch.setattr(
+        scheduler_module,
+        "WorkflowExecutionService",
+        lambda operations: SimpleNamespace(start=lambda *args: FakeExecution()),
+    )
+    monkeypatch.setattr(scheduler_module, "PostgreSQLPersistence", lambda value: object())
+    monkeypatch.setattr(scheduler_module, "recover_stale_runs", lambda *args, **kwargs: ())
+    monkeypatch.setattr(
+        scheduler_module,
+        "PostgreSQLAuctionPersistence",
+        lambda value: SimpleNamespace(recover_expired_sessions=lambda now: 3),
+    )
+    monkeypatch.setattr(
+        scheduler_module,
+        "PostgreSQLCallAuctionMarketSeriesPersistence",
+        lambda value: SimpleNamespace(recover_expired_sessions=lambda now: 4),
+    )
+
+    scheduler_module.run_stale_recovery_job()
+
+    assert steps == [
+        "recover_ingestion_runs",
+        "recover_workflow_runs",
+        "recover_auction_sessions",
+        "recover_call_auction_market_series_sessions",
+    ]
+    assert engine.disposed is True
+
+
 def test_only_call_auction_morning_job_is_registered_when_enabled(tmp_path: Path) -> None:
     scheduler = build_scheduler(
         SchedulerSettings(
@@ -316,6 +563,7 @@ def test_scheduler_health_requires_jobs_fresh_snapshot_and_no_stale_runs(tmp_pat
             STALE_RUN_RECOVERY_JOB_ID,
             STOCK_DAILY_INDICATOR_JOB_ID,
             STOCK_POOL_JOB_ID,
+            CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID,
         ),
     )
     settings = SchedulerSettings(
@@ -323,6 +571,7 @@ def test_scheduler_health_requires_jobs_fresh_snapshot_and_no_stale_runs(tmp_pat
         auction_collection_enabled=False,
         eod_quote_snapshot_enabled=False,
         call_auction_snapshot_enabled=False,
+        call_auction_market_series_enabled=False,
         _env_file=None,
     )
 

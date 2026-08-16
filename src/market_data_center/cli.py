@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import create_engine
 
 from market_data_center.auction_service import AuctionCollectionService
+from market_data_center.close_price_new_highs_service import ClosePriceNewHighsService
 from market_data_center.daily_bar_batch import DailyBarBulkSummary, PreparedDailyBarBatch
 from market_data_center.database_urls import sqlalchemy_url
 from market_data_center.derivation import (
@@ -37,6 +38,9 @@ from market_data_center.persistence import (
     PostgreSQLStockPoolPersistence,
 )
 from market_data_center.persistence.auction_postgres import PostgreSQLAuctionPersistence
+from market_data_center.persistence.close_price_new_highs_postgres import (
+    PostgreSQLClosePriceNewHighsPersistence,
+)
 from market_data_center.pipeline import BoardIndexIngestionPipeline, IngestionPipeline
 from market_data_center.providers import (
     ManagedMarketDataProvider,
@@ -92,6 +96,32 @@ def main() -> None:
     )
     persistence = PostgreSQLPersistence(engine)
     raw_store = LocalRawStore(settings.raw_data_root)
+
+    if args.dataset == "call-auction-indicative-detail":
+        if not args.confirm_current_day_single_symbol:
+            raise SystemExit(
+                "operator confirmation is required; this command is disabled by default"
+            )
+        from market_data_center.auction_indicative_service import (
+            collect_current_day_auction_indicative,
+        )
+        from market_data_center.persistence.auction_indicative_postgres import (
+            PostgreSQLAuctionIndicativePersistence,
+        )
+
+        requested_date = date.fromisoformat(args.trade_date)
+        indicative_run, version = collect_current_day_auction_indicative(
+            PostgreSQLAuctionIndicativePersistence(engine),
+            raw_store,
+            args.symbol,
+            requested_date,
+            now=datetime.now(SHANGHAI_TIME_ZONE),
+        )
+        print(
+            f"call_auction_indicative_detail {indicative_run.status.value} "
+            f"ingestion_id={indicative_run.ingestion_id} version={version}"
+        )
+        return
 
     if args.dataset == "auction-quotes-preflight":
         trade_date = date.fromisoformat(args.trade_date)
@@ -216,6 +246,28 @@ def main() -> None:
             raise
         execution.succeed()
         print(dumps(asdict(limit_up_summary), default=str, sort_keys=True))
+        return
+
+    if args.dataset == "close-price-new-highs-120d-build":
+        trade_date = date.fromisoformat(args.trade_date)
+        execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
+            WorkflowCode.CLOSE_PRICE_NEW_HIGHS_120D,
+            datetime.now(UTC).replace(second=0, microsecond=0),
+            TriggerSource.MANUAL,
+        )
+        try:
+            closing_high_summary = execution.step(
+                "build_close_price_new_highs_120d_snapshot",
+                1,
+                lambda: ClosePriceNewHighsService(
+                    PostgreSQLClosePriceNewHighsPersistence(engine)
+                ).build(trade_date),
+            )
+        except BaseException as error:
+            execution.fail(error)
+            raise
+        execution.succeed()
+        print(dumps(asdict(closing_high_summary), default=str, sort_keys=True))
         return
 
     if args.dataset in {"raw-replay", "recover-stale-runs", "compare-daily-bars"}:
@@ -997,6 +1049,18 @@ def _parser() -> ArgumentParser:
     )
     auction_parser.add_argument("--trade-date", help="YYYY-MM-DD; defaults to today")
 
+    indicative = subparsers.add_parser(
+        "call-auction-indicative-detail",
+        help="operator-controlled current-day single-stock virtual indicative detail collection",
+    )
+    indicative.add_argument("--symbol", required=True, help="SSE:600000 or SZSE:000001")
+    indicative.add_argument("--trade-date", required=True, help="current Asia/Shanghai date")
+    indicative.add_argument(
+        "--confirm-current-day-single-symbol",
+        action="store_true",
+        help="explicitly allow one bounded provider request; no schedule is registered",
+    )
+
     catalog = subparsers.add_parser(
         "classification-catalog", help="capture a complete industry or concept catalog snapshot"
     )
@@ -1134,6 +1198,12 @@ def _parser() -> ArgumentParser:
         help="exact price-limit event trading date YYYY-MM-DD",
     )
 
+    closing_highs = subparsers.add_parser(
+        "close-price-new-highs-120d-build",
+        help="idempotently build one exact-date immutable 120-session closing-high snapshot",
+    )
+    closing_highs.add_argument("--trade-date", required=True, help="exact YYYY-MM-DD")
+
     today_limit_up = subparsers.add_parser(
         "today-limit-up-snapshot",
         help="idempotently fill one exact-date immutable same-day limit-up snapshot",
@@ -1155,7 +1225,7 @@ def _parser() -> ArgumentParser:
         help="read-only check of calendar, exact frozen pool, and expected collection size",
     )
     auction_preflight.add_argument("--trade-date", required=True, help="exact YYYY-MM-DD")
-    auction_preflight.add_argument("--cadence-seconds", type=int, default=5)
+    auction_preflight.add_argument("--cadence-seconds", type=int, default=30)
     stock_pool_check.add_argument(
         "--effective-trade-date",
         required=True,

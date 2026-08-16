@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta
 from types import TracebackType
 from typing import Protocol, Self
 
+from market_data_center.domain.auction_indicative import CallAuctionIndicativeDetailRecord
 from market_data_center.domain.board_index import BoardIndexProviderRecord
 from market_data_center.domain.classification import ClassificationRecord
 from market_data_center.domain.convertible_bond import ConvertibleBondRecord
@@ -21,7 +22,8 @@ from market_data_center.domain.stock_daily_indicator import StockDailyIndicatorS
 from market_data_center.domain.today_limit_up import LimitUpSourceRecord
 
 type ProviderRecord = (
-    SecurityRecord
+    CallAuctionIndicativeDetailRecord
+    | SecurityRecord
     | TradingDayRecord
     | DailyBarRecord
     | CapitalRecord

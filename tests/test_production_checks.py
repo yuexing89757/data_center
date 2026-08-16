@@ -7,17 +7,35 @@ from pathlib import Path
 from runpy import run_path
 from typing import Any, cast
 
+import pytest
+
 from market_data_center.migrations import MIGRATION_DIR
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 MIGRATION_CHECKS = run_path(str(PROJECT_ROOT / "scripts" / "apply_migrations.py"))
 SMOKE_CHECKS = run_path(str(PROJECT_ROOT / "scripts" / "smoke_check.py"))
+FASTAPI_CHECKS = run_path(str(PROJECT_ROOT / "scripts" / "check_fastapi_release.py"))
 EXPECTED_TABLES = cast(set[tuple[str, str]], MIGRATION_CHECKS["EXPECTED_TABLES"])
 EXPECTED_VIEWS = cast(set[tuple[str, str]], MIGRATION_CHECKS["EXPECTED_VIEWS"])
 API_VIEWS = cast(tuple[str, ...], SMOKE_CHECKS["API_VIEWS"])
 BASE_REQUIRED_METRICS = cast(set[str], SMOKE_CHECKS["BASE_REQUIRED_METRICS"])
 BOARD_REQUIRED_METRICS = cast(set[str], SMOKE_CHECKS["BOARD_REQUIRED_METRICS"])
 VIEW_COUNT = cast(Any, SMOKE_CHECKS["_view_count"])
+PUBLISHED_FUNCTIONS = cast(tuple[str, ...], FASTAPI_CHECKS["PUBLISHED_FUNCTIONS"])
+
+
+def test_fastapi_preflight_checks_call_auction_market_snapshot_rpc() -> None:
+    assert "api_v1.query_call_auction_market_snapshots(date,text[])" in PUBLISHED_FUNCTIONS
+    assert (
+        "api_v1.query_call_auction_indicative_details(text,date,integer,integer)"
+        in PUBLISHED_FUNCTIONS
+    )
+    assert "api_v1.query_board_index_bias_latest()" in PUBLISHED_FUNCTIONS
+    assert "api_v1.query_close_price_new_highs_120d()" in PUBLISHED_FUNCTIONS
+    assert (
+        "api_v1.persist_board_index_daily_bars_live("
+        "uuid,uuid,timestamptz,text,text,text,bigint,integer,jsonb,jsonb)" in PUBLISHED_FUNCTIONS
+    )
 
 
 def _migration_sql() -> str:
@@ -45,12 +63,35 @@ def test_production_schema_inventory_includes_call_auction_market_snapshot() -> 
     assert ("realtime", "call_auction_market_snapshot") in EXPECTED_TABLES
 
 
+def test_production_schema_inventory_includes_partitioned_call_auction_series() -> None:
+    assert {
+        ("realtime", "call_auction_market_series_session"),
+        ("realtime", "call_auction_market_series_round"),
+        ("realtime", "call_auction_market_series_snapshot"),
+        *(
+            ("realtime", f"call_auction_market_series_snapshot_{month}")
+            for month in range(202608, 202613)
+        ),
+        *(
+            ("realtime", f"call_auction_market_series_snapshot_{month}")
+            for month in range(202701, 202710)
+        ),
+    } <= EXPECTED_TABLES
+
+
 def test_production_schema_inventory_includes_today_limit_up_domain() -> None:
     assert {
         ("today_limit_up", "source_observation"),
         ("today_limit_up", "snapshot"),
         ("today_limit_up", "member"),
         ("today_limit_up", "calculation_quality"),
+    } <= EXPECTED_TABLES
+
+
+def test_production_schema_inventory_includes_close_price_new_high_snapshots() -> None:
+    assert {
+        ("derived", "close_price_new_high_120d_snapshot"),
+        ("derived", "close_price_new_high_120d_member"),
     } <= EXPECTED_TABLES
 
 
@@ -196,6 +237,133 @@ def test_daily_limit_up_list_switches_to_bounded_today_limit_up_contract() -> No
     assert not re.search(r"(?im)^grant\s+(insert|update|delete|all)", migration)
 
 
+def test_daily_limit_up_list_execute_is_restricted_to_fastapi_role() -> None:
+    migration = (
+        MIGRATION_DIR / "20260814000100_restrict_daily_limit_up_list_execute.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "from public" in migration
+    assert "from anon" in migration
+    assert "from authenticated" in migration
+    assert "to market_data_api" in migration
+    assert not re.search(r"(?im)^grant\s+execute.*\bto\s+(anon|authenticated)\b", migration)
+    assert not re.search(r"(?im)^grant\s+(insert|update|delete|all)", migration)
+
+
+@pytest.mark.parametrize(
+    "filename,function_name",
+    [
+        ("20260814000200_add_top_gainers_20d_api.sql", "query_top_gainers_20d"),
+        (
+            "20260815000300_fix_top_gainers_pytdx_unknown_status.sql",
+            "query_top_gainers_20d",
+        ),
+        (
+            "20260814000300_add_auction_one_price_limits_api.sql",
+            "query_auction_one_price_limits",
+        ),
+        (
+            "20260815000100_add_board_index_bias_api.sql",
+            "query_board_index_bias_latest",
+        ),
+        (
+            "20260815000200_board_index_bias_live_fallback.sql",
+            "persist_board_index_daily_bars_live",
+        ),
+    ],
+)
+def test_new_ranked_market_api_rpcs_are_fastapi_only(filename: str, function_name: str) -> None:
+    migration = (MIGRATION_DIR / filename).read_text(encoding="utf-8")
+    assert function_name in migration
+    assert "from public" in migration
+    assert "to market_data_api" in migration
+    assert "to anon" not in migration
+    assert "to authenticated" not in migration
+    assert not re.search(r"(?im)^grant\s+(insert|update|delete|all)", migration)
+
+
+def test_top_gainers_accepts_pytdx_unknown_bars_but_not_suspended_bars() -> None:
+    migration = (
+        MIGRATION_DIR / "20260815000300_fix_top_gainers_pytdx_unknown_status.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "b.trade_status in ('trading', 'unknown')" in migration
+    assert "start_status in ('trading', 'unknown')" in migration
+    assert "end_status in ('trading', 'unknown')" in migration
+    assert "start_status not in ('trading', 'unknown')" in migration
+    assert "end_status not in ('trading', 'unknown')" in migration
+    assert "to market_data_api" in migration
+
+
+def test_close_price_new_highs_rpc_is_strict_hushen_only_and_bounded() -> None:
+    migration = (
+        MIGRATION_DIR / "20260816000200_materialize_close_price_new_highs_120d.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "query_close_price_new_highs_120d" in migration
+    assert "close_price_new_high_120d_snapshot" in migration
+    assert "close_price_new_high_120d_member" in migration
+    assert "from public, anon, authenticated" in migration
+    assert "to market_data_api" in migration
+    assert "set statement_timeout = '10s'" in migration
+    function_sql = migration.split(
+        "create or replace function api_v1.query_close_price_new_highs_120d()", maxsplit=1
+    )[1]
+    assert "from derived.close_price_new_high_120d_snapshot" in function_sql
+    assert "from derived.close_price_new_high_120d_member" in function_sql
+    assert "core.daily_bar" not in function_sql
+
+
+def test_auction_indicative_rpc_is_bounded_fastapi_only_and_not_a_trade_contract() -> None:
+    migration = (
+        MIGRATION_DIR / "20260814000400_create_call_auction_indicative_detail.sql"
+    ).read_text(encoding="utf-8")
+    assert "p_trade_date <> (now() at time zone 'Asia/Shanghai')::date" in migration
+    assert "p_limit > 500" in migration
+    assert "'is_exchange_trade_tick', false" in migration
+    assert "'is_order_by_order', false" in migration
+    assert "from public, anon, authenticated" in migration
+    assert "to market_data_api" in migration
+    assert not re.search(r"(?im)^grant\s+(insert|update|delete|all)", migration)
+
+
+def test_live_auction_persistence_is_narrow_idempotent_and_not_direct_table_dml() -> None:
+    migration = (
+        (MIGRATION_DIR / "20260814000500_persist_live_auction_indicative.sql")
+        .read_text(encoding="utf-8")
+        .lower()
+    )
+
+    assert "security definer" in migration
+    assert "p_trade_date <> (now() at time zone 'asia/shanghai')::date" in migration
+    assert "p_symbol !~ '^(sse|szse):[0-9]{6}$'" in migration
+    assert "p_byte_size > 2000000" in migration
+    assert "p_source_row_count >= 5000" in migration
+    assert "pg_advisory_xact_lock" in migration
+    assert "call_auction_indicative_input_unique unique (symbol,trade_date,input_hash)" in migration
+    assert "revoke all on function api_v1.persist_call_auction_indicative_details" in migration
+    assert "from public,anon,authenticated" in migration
+    assert "to market_data_api" in migration
+    assert not re.search(r"(?im)^grant\s+(insert|update|delete|all)", migration)
+
+
+def test_live_board_index_persistence_is_narrow_and_fastapi_only() -> None:
+    migration = (
+        (MIGRATION_DIR / "20260815000200_board_index_bias_live_fallback.sql")
+        .read_text(encoding="utf-8")
+        .lower()
+    )
+
+    assert "security definer" in migration
+    assert "pg_advisory_xact_lock" in migration
+    assert "p_input_hash !~ '^[0-9a-f]{64}$'" in migration
+    assert "p_byte_size > 5000000" in migration
+    assert "jsonb_array_length(p_records) > 600" in migration
+    assert "from public,anon,authenticated" in migration
+    assert "to market_data_api" in migration
+    assert not re.search(r"(?im)^grant\s+(insert|update|delete|all)", migration)
+
+
 def test_daily_limit_up_list_quality_fix_uses_calculation_quality_table() -> None:
     """Regression guard: the quality CTE must read today_limit_up.calculation_quality,
     not the non-existent today_limit_up.member_quality that caused HTTP 503."""
@@ -333,7 +501,9 @@ def test_linux_worker_uses_the_shared_pool_runtime_contract() -> None:
     assert "AUCTION_COLLECTION_ENABLED=true" in template
     assert "EOD_QUOTE_SNAPSHOT_ENABLED=true" in template
     assert "CALL_AUCTION_SNAPSHOT_ENABLED=true" in template
+    assert "CALL_AUCTION_MARKET_SERIES_ENABLED=true" in template
     assert "scripts/check_pytdx_pool.py" in smoke
+    assert "OnCalendar" not in unit
 
 
 def test_release_templates_expose_task_switches_but_not_task_times() -> None:
@@ -348,6 +518,7 @@ def test_release_templates_expose_task_switches_but_not_task_times() -> None:
         "AUCTION_COLLECTION_ENABLED=true",
         "EOD_QUOTE_SNAPSHOT_ENABLED=true",
         "CALL_AUCTION_SNAPSHOT_ENABLED=true",
+        "CALL_AUCTION_MARKET_SERIES_ENABLED=true",
     )
     forbidden = (
         "SCHEDULER_TIMEZONE",
@@ -367,6 +538,10 @@ def test_release_templates_expose_task_switches_but_not_task_times() -> None:
         "EOD_QUOTE_MINUTE",
         "CALL_AUCTION_HOUR",
         "CALL_AUCTION_MINUTE",
+        "CALL_AUCTION_MARKET_SERIES_HOUR",
+        "CALL_AUCTION_MARKET_SERIES_MINUTE",
+        "CALL_AUCTION_MARKET_SERIES_CADENCE_SECONDS",
+        "CALL_AUCTION_MARKET_SERIES_BATCH_SIZE",
         "PYTDX_POOL_REFRESH_HOURS",
     )
 

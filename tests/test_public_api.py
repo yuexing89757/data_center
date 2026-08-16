@@ -1,6 +1,7 @@
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from types import SimpleNamespace
+from typing import Literal
 
 import pytest
 from fastapi.testclient import TestClient
@@ -15,7 +16,20 @@ from market_data_center.domain import (
     TradeStatus,
 )
 from market_data_center.public_api import create_app
+from market_data_center.public_api.board_index_bias_live import (
+    BoardIndexBiasLiveBusy,
+    BoardIndexBiasLivePersistence,
+    BoardIndexBiasLiveUpstream,
+)
 from market_data_center.public_api.models import (
+    AuctionIndicativeDetailItem,
+    AuctionIndicativeDetailResponse,
+    AuctionIndicativeQuality,
+    AuctionOnePriceLimitItem,
+    AuctionOnePriceLimitResponse,
+    BoardIndexBiasResponse,
+    CallAuctionMarketSnapshotItem,
+    CallAuctionMarketSnapshotResponse,
     ClassificationMembersResponse,
     DailyBarItem,
     DailyLimitUpListItem,
@@ -25,8 +39,13 @@ from market_data_center.public_api.models import (
     LimitUpPoolOmissionReasons,
     LimitUpPoolResponse,
     SecurityItem,
+    TopGainer20dItem,
+    TopGainer20dOmissions,
+    TopGainers20dResponse,
 )
 from market_data_center.public_api.queries import (
+    BoardIndexBiasNotReady,
+    PostgreSQLPublicQueryService,
     PublicQueryNotFound,
     PublicQueryUnavailable,
     _raise_safe_query_error,
@@ -44,6 +63,18 @@ class FakeQueryService:
         self.daily_bar_calls: list[tuple[str, date, date, int]] = []
         self.limit_up_calls: list[tuple[date, int | None, int]] = []
         self.daily_limit_up_calls: list[tuple[date, int | None, int, int]] = []
+        self.call_auction_market_snapshot_calls: list[tuple[date, tuple[str, ...]]] = []
+        self.call_auction_market_series_snapshot_calls: list[tuple[date, tuple[str, ...]]] = []
+        self.top_gainer_calls: list[tuple[date | None, int]] = []
+        self.close_price_new_highs_120d_calls = 0
+        self.board_index_bias_calls = 0
+        self.board_index_bias_error: Exception | None = None
+        self.board_index_bias_live_calls = 0
+        self.board_index_bias_live_error: Exception | None = None
+        self.auction_one_price_limit_calls: list[date | None] = []
+        self.auction_indicative_database_calls: list[tuple[str, int, int]] = []
+        self.auction_indicative_database_error: Exception | None = PublicQueryNotFound("not stored")
+        self.auction_indicative_calls: list[tuple[str, date, int, int]] = []
 
     def ready(self) -> None:
         if self.ready_error is not None:
@@ -210,13 +241,351 @@ class FakeQueryService:
             ],
         )
 
+    def call_auction_market_snapshots(
+        self, trade_date: date, codes: tuple[str, ...]
+    ) -> CallAuctionMarketSnapshotResponse:
+        self.call_auction_market_snapshot_calls.append((trade_date, codes))
+        return CallAuctionMarketSnapshotResponse(
+            trade_date=trade_date,
+            ingestion_id="dddddddd-dddd-dddd-dddd-dddddddddddd",
+            ingestion_status="partial",
+            requested_count=2,
+            returned_count=1,
+            missing_codes=["000001"],
+            items=[
+                CallAuctionMarketSnapshotItem(
+                    symbol="SSE:600000",
+                    code="600000",
+                    observed_at=datetime(2026, 8, 13, 1, 26, tzinfo=UTC),
+                    last_price=Decimal("10.1200"),
+                    previous_close=Decimal("10.0000"),
+                    high_price=Decimal("10.1500"),
+                    low_price=Decimal("9.9800"),
+                    cumulative_volume=123400,
+                    cumulative_amount=Decimal("1248808.0000"),
+                )
+            ],
+        )
+
+    def call_auction_market_series_snapshots(
+        self, trade_date: date, codes: tuple[str, ...]
+    ) -> object:
+        self.call_auction_market_series_snapshot_calls.append((trade_date, codes))
+        return {
+            "trade_date": trade_date,
+            "session_id": "11111111-1111-1111-1111-111111111111",
+            "session_status": "partial",
+            "expected_rounds": 32,
+            "returned_rounds": 1,
+            "requested_count": 2,
+            "rounds": [
+                {
+                    "sample_seq": 0,
+                    "scheduled_at": "2026-08-14T01:15:00Z",
+                    "collected_at": "2026-08-14T01:15:02Z",
+                    "round_status": "partial",
+                    "selected_ingestion_id": "22222222-2222-2222-2222-222222222222",
+                    "requested_count": 2,
+                    "returned_count": 1,
+                    "missing_codes": ["000001"],
+                    "items": [
+                        {
+                            "symbol": "SSE:600000",
+                            "code": "600000",
+                            "observed_at": "2026-08-14T01:15:01Z",
+                            "last_price": "10.1200",
+                            "previous_close": "10.0000",
+                            "high_price": "10.1500",
+                            "low_price": "9.9800",
+                            "cumulative_volume": 123400,
+                            "cumulative_amount": "1248808.0000",
+                        }
+                    ],
+                }
+            ],
+        }
+
+    def top_gainers_20d(self, end_date: date | None, limit: int) -> TopGainers20dResponse:
+        self.top_gainer_calls.append((end_date, limit))
+        return TopGainers20dResponse(
+            start_trade_date=date(2026, 7, 16),
+            end_trade_date=end_date or date(2026, 8, 13),
+            trading_session_count=20,
+            return_interval_count=19,
+            total_candidate_count=2,
+            eligible_count=1,
+            omitted_count=1,
+            returned_count=1,
+            omissions=TopGainer20dOmissions(
+                missing_start_bar=1,
+                missing_end_bar=0,
+                non_trading_bar=0,
+                nonpositive_price=0,
+                missing_name=0,
+            ),
+            items=[
+                TopGainer20dItem(
+                    symbol="SSE:600000",
+                    code="600000",
+                    name="浦发银行",
+                    start_trade_date=date(2026, 7, 16),
+                    end_trade_date=end_date or date(2026, 8, 13),
+                    start_close=Decimal("10"),
+                    end_close=Decimal("12"),
+                    return_pct=Decimal("20"),
+                )
+            ],
+        )
+
+    def close_price_new_highs_120d(self) -> object:
+        self.close_price_new_highs_120d_calls += 1
+        return {
+            "trade_date": date(2026, 8, 14),
+            "window_trading_session_count": 120,
+            "comparison_session_count": 119,
+            "total_candidate_count": 2,
+            "eligible_history_count": 1,
+            "omitted_count": 1,
+            "returned_count": 1,
+            "omissions": {
+                "incomplete_history": 1,
+                "non_trading_bar": 0,
+                "nonpositive_price": 0,
+                "missing_name": 0,
+            },
+            "items": [
+                {
+                    "symbol": "SSE:600000",
+                    "code": "600000",
+                    "name": "浦发银行",
+                    "close": Decimal("12.50"),
+                    "previous_119d_high": Decimal("12.00"),
+                    "breakout_pct": Decimal("4.1666666667"),
+                }
+            ],
+        }
+
+    def board_index_bias_latest(self) -> object:
+        self.board_index_bias_calls += 1
+        if self.board_index_bias_error is not None:
+            raise self.board_index_bias_error
+        return {
+            "board_id": "THS:883423",
+            "board_code": "883423",
+            "board_name": "沪深主板昨日涨停",
+            "trade_date": date(2026, 8, 14),
+            "close": Decimal("1234.5600"),
+            "moving_average_5": Decimal("1220.110000"),
+            "bias_5_pct": Decimal("1.184319"),
+            "previous_trade_date": date(2026, 8, 13),
+            "previous_bias_5_pct": Decimal("0.932150"),
+            "bias_direction": "up",
+            "window_trading_days": 30,
+            "bias_sample_count": 30,
+            "highest_bias_5_pct": Decimal("4.521300"),
+            "highest_bias_trade_date": date(2026, 8, 6),
+            "lowest_bias_5_pct": Decimal("-2.861700"),
+            "lowest_bias_trade_date": date(2026, 7, 22),
+            "algorithm_version": "board_index_bias_v1",
+            "data_origin": "database",
+            "persistence_status": "persisted",
+            "fetched_at": datetime(2026, 8, 15, 3, 26, 46, tzinfo=UTC),
+        }
+
+    def auction_one_price_limits(self, trade_date: date | None) -> AuctionOnePriceLimitResponse:
+        self.auction_one_price_limit_calls.append(trade_date)
+        day = trade_date or date(2026, 8, 13)
+        item = AuctionOnePriceLimitItem(
+            symbol="SSE:600000",
+            code="600000",
+            name="浦发银行",
+            direction="up",
+            observed_at=datetime(2026, 8, 13, 1, 26, tzinfo=UTC),
+            indicated_price=Decimal("11"),
+            limit_price=Decimal("11"),
+            previous_close=Decimal("10"),
+            cumulative_volume=100,
+            cumulative_amount=Decimal("1100"),
+        )
+        return AuctionOnePriceLimitResponse(
+            trade_date=day,
+            ingestion_id="dddddddd-dddd-dddd-dddd-dddddddddddd",
+            ingestion_status="partial",
+            price_limit_calculation_id="eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+            snapshot_window="09:26:00-09:26:59 Asia/Shanghai",
+            candidate_count=2,
+            omitted_incomplete_count=1,
+            up_count=1,
+            down_count=0,
+            up=[item],
+            down=[],
+        )
+
+    def auction_indicative_details(
+        self, symbol: str, offset: int, limit: int
+    ) -> AuctionIndicativeDetailResponse:
+        self.auction_indicative_database_calls.append((symbol, offset, limit))
+        if self.auction_indicative_database_error is not None:
+            raise self.auction_indicative_database_error
+        return _auction_indicative_response(symbol=symbol, data_origin="database")
+
+
+class FakeLiveAuctionService:
+    def __init__(self, query_service: FakeQueryService) -> None:
+        self._query_service = query_service
+
+    def fetch(
+        self, symbol: str, trade_date: date, offset: int, limit: int
+    ) -> AuctionIndicativeDetailResponse:
+        self._query_service.auction_indicative_calls.append((symbol, trade_date, offset, limit))
+        return AuctionIndicativeDetailResponse(
+            symbol=symbol,
+            trade_date=trade_date,
+            fetched_at=datetime(2026, 8, 14, 1, 26, tzinfo=UTC),
+            source="eastmoney",
+            live_provider_derived=True,
+            data_origin="eastmoney_live",
+            cache_hit=False,
+            persistence_status="queued",
+            ingestion_id="11111111-1111-1111-1111-111111111111",
+            raw_id="22222222-2222-2222-2222-222222222222",
+            input_hash="a" * 64,
+            semantics="auction_virtual_indicative_matching_detail",
+            is_exchange_trade_tick=False,
+            is_order_by_order=False,
+            total_count=2,
+            offset=offset,
+            returned_count=2,
+            has_more=False,
+            quality=AuctionIndicativeQuality(
+                status="complete",
+                source_row_count=3,
+                accepted_auction_row_count=2,
+                source_display_classification_trusted=False,
+                raw_captured=True,
+                database_persistence="queued",
+            ),
+            items=[
+                AuctionIndicativeDetailItem(
+                    observed_at=datetime(2026, 8, 14, 1, 20, tzinfo=UTC),
+                    source_sequence=1,
+                    indicative_price=Decimal("134.01"),
+                    displayed_volume_shares=300,
+                    source_display_classification="external",
+                ),
+                AuctionIndicativeDetailItem(
+                    observed_at=datetime(2026, 8, 14, 1, 15, 5, tzinfo=UTC),
+                    source_sequence=0,
+                    indicative_price=Decimal("133.99"),
+                    displayed_volume_shares=200,
+                    source_display_classification="unknown",
+                ),
+            ],
+        )
+
+    def fetch_current(
+        self, symbol: str, offset: int, limit: int
+    ) -> AuctionIndicativeDetailResponse:
+        return self.fetch(symbol, date(2026, 8, 14), offset, limit)
+
+
+class FakeBoardIndexBiasLiveService:
+    def __init__(self, query_service: FakeQueryService) -> None:
+        self._query_service = query_service
+
+    def fetch_current(self) -> BoardIndexBiasResponse:
+        self._query_service.board_index_bias_live_calls += 1
+        if self._query_service.board_index_bias_live_error is not None:
+            raise self._query_service.board_index_bias_live_error
+        return BoardIndexBiasResponse(
+            board_id="THS:883423",
+            board_code="883423",
+            board_name="沪深主板昨日涨停",
+            trade_date=date(2026, 8, 14),
+            close=Decimal("1234.5600"),
+            moving_average_5=Decimal("1220.110000"),
+            bias_5_pct=Decimal("1.184319"),
+            previous_trade_date=date(2026, 8, 13),
+            previous_bias_5_pct=Decimal("0.932150"),
+            bias_direction="up",
+            window_trading_days=30,
+            bias_sample_count=30,
+            highest_bias_5_pct=Decimal("4.521300"),
+            highest_bias_trade_date=date(2026, 8, 6),
+            lowest_bias_5_pct=Decimal("-2.861700"),
+            lowest_bias_trade_date=date(2026, 7, 22),
+            algorithm_version="board_index_bias_v1",
+            data_origin="ths_live",
+            persistence_status="queued",
+            fetched_at=datetime(2026, 8, 15, 3, 26, 46, tzinfo=UTC),
+        )
+
+
+def _auction_indicative_response(
+    *, symbol: str, data_origin: Literal["database", "eastmoney_live"]
+) -> AuctionIndicativeDetailResponse:
+    persisted = data_origin == "database"
+    return AuctionIndicativeDetailResponse(
+        symbol=symbol,
+        trade_date=date(2026, 8, 14),
+        fetched_at=datetime(2026, 8, 14, 1, 26, tzinfo=UTC),
+        source="eastmoney",
+        live_provider_derived=True,
+        data_origin=data_origin,
+        cache_hit=False,
+        persistence_status="persisted" if persisted else "queued",
+        version=1 if persisted else None,
+        ingestion_status="succeeded" if persisted else None,
+        ingestion_id="11111111-1111-1111-1111-111111111111",
+        raw_id="22222222-2222-2222-2222-222222222222",
+        input_hash="a" * 64,
+        semantics="auction_virtual_indicative_matching_detail",
+        is_exchange_trade_tick=False,
+        is_order_by_order=False,
+        total_count=2,
+        offset=0,
+        returned_count=2,
+        has_more=False,
+        quality=AuctionIndicativeQuality(
+            status="complete",
+            source_row_count=3,
+            accepted_auction_row_count=2,
+            source_display_classification_trusted=False,
+            raw_captured=True,
+            database_persistence="persisted" if persisted else "queued",
+        ),
+        items=[
+            AuctionIndicativeDetailItem(
+                observed_at=datetime(2026, 8, 14, 1, 20, tzinfo=UTC),
+                source_sequence=1,
+                indicative_price=Decimal("134.01"),
+                displayed_volume_shares=300,
+                source_display_classification="external",
+            ),
+            AuctionIndicativeDetailItem(
+                observed_at=datetime(2026, 8, 14, 1, 15, 5, tzinfo=UTC),
+                source_sequence=0,
+                indicative_price=Decimal("133.99"),
+                displayed_volume_shares=200,
+                source_display_classification="unknown",
+            ),
+        ],
+    )
+
 
 def _client(service: FakeQueryService) -> TestClient:
     settings = ApiSettings(
         fastapi_database_url=SecretStr("unused"),
         fastapi_api_key=SecretStr(API_KEY),
     )
-    return TestClient(create_app(settings=settings, query_service=service))
+    return TestClient(
+        create_app(
+            settings=settings,
+            query_service=service,
+            auction_indicative_service=FakeLiveAuctionService(service),  # type: ignore[arg-type]
+            board_index_bias_live_service=FakeBoardIndexBiasLiveService(service),  # type: ignore[arg-type]
+        )
+    )
 
 
 def _headers() -> dict[str, str]:
@@ -415,6 +784,8 @@ def test_openapi_only_contains_the_active_non_derived_routes() -> None:
     assert "/api/v1/daily-bars/{symbol}" in schema["paths"]
     assert "/api/v1/limit-up-pool" in schema["paths"]
     assert "/api/v1/daily-limit-up-list" in schema["paths"]
+    assert "/api/v1/call-auction-market-snapshots/query" in schema["paths"]
+    assert "/api/v1/call-auction-market-series-snapshots/query" in schema["paths"]
     assert not any("adjusted" in path or "metric" in path for path in schema["paths"])
 
 
@@ -482,3 +853,429 @@ def test_daily_limit_up_list_version_and_pagination_are_bounded() -> None:
         == 422
     )
     assert service.daily_limit_up_calls == []
+
+
+def test_call_auction_market_snapshots_deduplicate_codes_and_keep_decimals() -> None:
+    service = FakeQueryService()
+
+    response = _client(service).post(
+        "/api/v1/call-auction-market-snapshots/query",
+        json={"trade_date": "2026-08-13", "codes": ["600000", "000001", "600000"]},
+        headers=_headers(),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "trade_date": "2026-08-13",
+        "ingestion_id": "dddddddd-dddd-dddd-dddd-dddddddddddd",
+        "ingestion_status": "partial",
+        "requested_count": 2,
+        "returned_count": 1,
+        "missing_codes": ["000001"],
+        "items": [
+            {
+                "symbol": "SSE:600000",
+                "code": "600000",
+                "observed_at": "2026-08-13T01:26:00Z",
+                "last_price": "10.1200",
+                "previous_close": "10.0000",
+                "high_price": "10.1500",
+                "low_price": "9.9800",
+                "cumulative_volume": 123400,
+                "cumulative_amount": "1248808.0000",
+            }
+        ],
+    }
+    assert service.call_auction_market_snapshot_calls == [(date(2026, 8, 13), ("600000", "000001"))]
+
+
+@pytest.mark.parametrize(
+    "codes",
+    [[], ["60000"], ["60000A"], [f"{value:06d}" for value in range(501)]],
+)
+def test_call_auction_market_snapshot_request_is_bounded(codes: list[str]) -> None:
+    service = FakeQueryService()
+
+    response = _client(service).post(
+        "/api/v1/call-auction-market-snapshots/query",
+        json={"trade_date": "2026-08-13", "codes": codes},
+        headers=_headers(),
+    )
+
+    assert response.status_code == 422
+    assert service.call_auction_market_snapshot_calls == []
+
+
+def test_call_auction_market_series_snapshots_return_rounds_in_one_session() -> None:
+    service = FakeQueryService()
+
+    response = _client(service).post(
+        "/api/v1/call-auction-market-series-snapshots/query",
+        json={"trade_date": "2026-08-14", "codes": ["600000", "000001", "600000"]},
+        headers=_headers(),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "trade_date": "2026-08-14",
+        "session_id": "11111111-1111-1111-1111-111111111111",
+        "session_status": "partial",
+        "expected_rounds": 32,
+        "returned_rounds": 1,
+        "requested_count": 2,
+        "rounds": [
+            {
+                "sample_seq": 0,
+                "scheduled_at": "2026-08-14T01:15:00Z",
+                "collected_at": "2026-08-14T01:15:02Z",
+                "round_status": "partial",
+                "selected_ingestion_id": "22222222-2222-2222-2222-222222222222",
+                "requested_count": 2,
+                "returned_count": 1,
+                "missing_codes": ["000001"],
+                "items": [
+                    {
+                        "symbol": "SSE:600000",
+                        "code": "600000",
+                        "observed_at": "2026-08-14T01:15:01Z",
+                        "last_price": "10.1200",
+                        "previous_close": "10.0000",
+                        "high_price": "10.1500",
+                        "low_price": "9.9800",
+                        "cumulative_volume": 123400,
+                        "cumulative_amount": "1248808.0000",
+                    }
+                ],
+            }
+        ],
+    }
+    assert service.call_auction_market_series_snapshot_calls == [
+        (date(2026, 8, 14), ("600000", "000001"))
+    ]
+
+
+@pytest.mark.parametrize("codes", [[], ["60000"], ["60000A"], ["000001"] * 501])
+def test_call_auction_market_series_snapshot_request_is_bounded(codes: list[str]) -> None:
+    service = FakeQueryService()
+
+    response = _client(service).post(
+        "/api/v1/call-auction-market-series-snapshots/query",
+        json={"trade_date": "2026-08-14", "codes": codes},
+        headers=_headers(),
+    )
+
+    assert response.status_code == 422
+    assert service.call_auction_market_series_snapshot_calls == []
+
+
+def test_top_gainers_20d_contract_and_bounds() -> None:
+    service = FakeQueryService()
+    response = _client(service).get(
+        "/api/v1/top-gainers-20d",
+        params={"end_date": "2026-08-13", "limit": 10},
+        headers=_headers(),
+    )
+    assert response.status_code == 200
+    assert response.json()["return_interval_count"] == 19
+    assert response.json()["items"][0]["return_pct"] == "20"
+    assert service.top_gainer_calls == [(date(2026, 8, 13), 10)]
+    assert (
+        _client(service)
+        .get("/api/v1/top-gainers-20d", params={"limit": 11}, headers=_headers())
+        .status_code
+        == 422
+    )
+
+
+def test_close_price_new_highs_120d_returns_latest_strict_breakouts_without_inputs() -> None:
+    service = FakeQueryService()
+    response = _client(service).get(
+        "/api/v1/close-price-new-highs-120d",
+        headers=_headers(),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "trade_date": "2026-08-14",
+        "window_trading_session_count": 120,
+        "comparison_session_count": 119,
+        "total_candidate_count": 2,
+        "eligible_history_count": 1,
+        "omitted_count": 1,
+        "returned_count": 1,
+        "omissions": {
+            "incomplete_history": 1,
+            "non_trading_bar": 0,
+            "nonpositive_price": 0,
+            "missing_name": 0,
+        },
+        "items": [
+            {
+                "symbol": "SSE:600000",
+                "code": "600000",
+                "name": "浦发银行",
+                "close": "12.50",
+                "previous_119d_high": "12.00",
+                "breakout_pct": "4.1666666667",
+            }
+        ],
+    }
+    assert service.close_price_new_highs_120d_calls == 1
+
+
+def test_close_price_new_highs_120d_sets_ten_second_timeout_before_rpc() -> None:
+    calls: list[tuple[str, object]] = []
+    payload = {
+        "trade_date": date(2026, 8, 14),
+        "window_trading_session_count": 120,
+        "comparison_session_count": 119,
+        "total_candidate_count": 0,
+        "eligible_history_count": 0,
+        "omitted_count": 0,
+        "returned_count": 0,
+        "omissions": {
+            "incomplete_history": 0,
+            "non_trading_bar": 0,
+            "nonpositive_price": 0,
+            "missing_name": 0,
+        },
+        "items": [],
+    }
+
+    class StubResult:
+        def __init__(self, rows: list[dict[str, object]]) -> None:
+            self._rows = rows
+
+        def mappings(self) -> "StubResult":
+            return self
+
+        def all(self) -> list[dict[str, object]]:
+            return self._rows
+
+    class StubConnection:
+        def __enter__(self) -> "StubConnection":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def execute(self, statement: object, parameters: object) -> "StubResult":
+            calls.append((str(statement), parameters))
+            return StubResult([{"payload": payload}])
+
+    class StubEngine:
+        def connect(self) -> StubConnection:
+            return StubConnection()
+
+    service = PostgreSQLPublicQueryService(StubEngine())  # type: ignore[arg-type]
+    response = service.close_price_new_highs_120d()
+
+    assert response.returned_count == 0
+    assert "set_config('statement_timeout'" in calls[0][0]
+    assert calls[0][1] == {"statement_timeout": "10000ms"}
+    assert "query_close_price_new_highs_120d" in calls[1][0]
+
+
+def test_board_index_bias_returns_latest_decimal_contract_without_inputs() -> None:
+    service = FakeQueryService()
+    client = _client(service)
+
+    response = client.get(
+        "/api/v1/board-indexes/883423/bias",
+        headers=_headers(),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "board_id": "THS:883423",
+        "board_code": "883423",
+        "board_name": "沪深主板昨日涨停",
+        "trade_date": "2026-08-14",
+        "close": "1234.5600",
+        "moving_average_5": "1220.110000",
+        "bias_5_pct": "1.184319",
+        "previous_trade_date": "2026-08-13",
+        "previous_bias_5_pct": "0.932150",
+        "bias_direction": "up",
+        "window_trading_days": 30,
+        "bias_sample_count": 30,
+        "highest_bias_5_pct": "4.521300",
+        "highest_bias_trade_date": "2026-08-06",
+        "lowest_bias_5_pct": "-2.861700",
+        "lowest_bias_trade_date": "2026-07-22",
+        "algorithm_version": "board_index_bias_v1",
+        "data_origin": "database",
+        "persistence_status": "persisted",
+        "fetched_at": "2026-08-15T03:26:46Z",
+    }
+    assert service.board_index_bias_calls == 1
+    operation = client.get("/openapi.json").json()["paths"]["/api/v1/board-indexes/883423/bias"][
+        "get"
+    ]
+    assert operation.get("parameters", []) == []
+
+
+def test_board_index_bias_requires_api_key() -> None:
+    service = FakeQueryService()
+
+    response = _client(service).get("/api/v1/board-indexes/883423/bias")
+
+    assert response.status_code == 401
+    assert service.board_index_bias_calls == 0
+
+
+def test_board_index_bias_falls_back_only_for_explicit_not_ready_error() -> None:
+    service = FakeQueryService()
+    service.board_index_bias_error = BoardIndexBiasNotReady("not ready")
+
+    response = _client(service).get(
+        "/api/v1/board-indexes/883423/bias",
+        headers=_headers(),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data_origin"] == "ths_live"
+    assert response.json()["persistence_status"] == "queued"
+    assert service.board_index_bias_calls == 1
+    assert service.board_index_bias_live_calls == 1
+
+
+def test_board_index_bias_does_not_fallback_for_database_failure() -> None:
+    service = FakeQueryService()
+    service.board_index_bias_error = PublicQueryUnavailable("database unavailable")
+
+    response = _client(service).get(
+        "/api/v1/board-indexes/883423/bias",
+        headers=_headers(),
+    )
+
+    assert response.status_code == 503
+    assert service.board_index_bias_live_calls == 0
+
+
+@pytest.mark.parametrize(
+    ("error", "expected_status"),
+    [
+        (BoardIndexBiasLiveBusy("busy"), 429),
+        (BoardIndexBiasLiveUpstream("upstream"), 502),
+        (BoardIndexBiasLivePersistence("persistence"), 503),
+    ],
+)
+def test_board_index_bias_maps_live_fallback_errors(error: Exception, expected_status: int) -> None:
+    service = FakeQueryService()
+    service.board_index_bias_error = BoardIndexBiasNotReady("not ready")
+    service.board_index_bias_live_error = error
+
+    response = _client(service).get(
+        "/api/v1/board-indexes/883423/bias",
+        headers=_headers(),
+    )
+
+    assert response.status_code == expected_status
+    assert service.board_index_bias_live_calls == 1
+
+
+def test_auction_one_price_limits_returns_separate_sets() -> None:
+    service = FakeQueryService()
+    response = _client(service).get(
+        "/api/v1/call-auction-one-price-limits",
+        params={"trade_date": "2026-08-13"},
+        headers=_headers(),
+    )
+    assert response.status_code == 200
+    assert response.json()["up"][0]["direction"] == "up"
+    assert response.json()["down"] == []
+    assert response.json()["ingestion_status"] == "partial"
+
+
+def test_auction_indicative_details_falls_back_to_live_only_when_database_is_empty() -> None:
+    service = FakeQueryService()
+    response = _client(service).get(
+        "/api/v1/call-auction-indicative-details",
+        params={"code": "688796"},
+        headers=_headers(),
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["semantics"] == "auction_virtual_indicative_matching_detail"
+    assert payload["is_exchange_trade_tick"] is False
+    assert payload["is_order_by_order"] is False
+    assert payload["trade_date"] == "2026-08-14"
+    assert payload["fetched_at"] == "2026-08-14 09:26:00"
+    assert [item["observed_at"] for item in payload["items"]] == [
+        "2026-08-14 09:15:05",
+        "2026-08-14 09:20:00",
+    ]
+    assert payload["items"][0]["displayed_volume_shares"] == 200
+    assert payload["quality"]["source_display_classification_trusted"] is False
+    assert payload["quality"]["raw_captured"] is True
+    assert payload["quality"]["database_persistence"] == "queued"
+    assert payload["live_provider_derived"] is True
+    assert payload["data_origin"] == "eastmoney_live"
+    assert service.auction_indicative_database_calls == [("SSE:688796", 0, 200)]
+    assert service.auction_indicative_calls == [("SSE:688796", date(2026, 8, 14), 0, 200)]
+
+
+def test_auction_indicative_details_returns_database_hit_without_live_fetch() -> None:
+    service = FakeQueryService()
+    service.auction_indicative_database_error = None
+
+    response = _client(service).get(
+        "/api/v1/call-auction-indicative-details",
+        params={"code": "000001"},
+        headers=_headers(),
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["data_origin"] == "database"
+    assert payload["persistence_status"] == "persisted"
+    assert payload["fetched_at"] == "2026-08-14 09:26:00"
+    assert [item["observed_at"] for item in payload["items"]] == [
+        "2026-08-14 09:15:05",
+        "2026-08-14 09:20:00",
+    ]
+    assert service.auction_indicative_database_calls == [("SZSE:000001", 0, 200)]
+    assert service.auction_indicative_calls == []
+
+
+def test_auction_indicative_database_failure_does_not_trigger_live_fetch() -> None:
+    service = FakeQueryService()
+    service.auction_indicative_database_error = PublicQueryUnavailable("database unavailable")
+
+    response = _client(service).get(
+        "/api/v1/call-auction-indicative-details",
+        params={"code": "688796"},
+        headers=_headers(),
+    )
+
+    assert response.status_code == 503
+    assert service.auction_indicative_calls == []
+
+
+@pytest.mark.parametrize("code", ["68879", "68879A", "920000", "200001"])
+def test_auction_indicative_details_accepts_only_supported_six_digit_stock_codes(
+    code: str,
+) -> None:
+    service = FakeQueryService()
+    response = _client(service).get(
+        "/api/v1/call-auction-indicative-details",
+        params={"code": code},
+        headers=_headers(),
+    )
+    assert response.status_code == 422
+    assert service.auction_indicative_calls == []
+
+
+def test_auction_indicative_details_no_longer_accepts_symbol_or_trade_date() -> None:
+    service = FakeQueryService()
+
+    response = _client(service).get(
+        "/api/v1/call-auction-indicative-details",
+        params={"symbol": "SSE:688796", "trade_date": "2026-08-14"},
+        headers=_headers(),
+    )
+
+    assert response.status_code == 422
+    assert service.auction_indicative_database_calls == []
+    assert service.auction_indicative_calls == []

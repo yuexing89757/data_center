@@ -1,7 +1,8 @@
+import json
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import replace
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from os import environ
 from pathlib import Path
@@ -17,6 +18,7 @@ from psycopg.errors import CheckViolation, InsufficientPrivilege
 from sqlalchemy import Connection, Engine, create_engine, text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
+from market_data_center.close_price_new_highs_service import ClosePriceNewHighsService
 from market_data_center.daily_bar_batch import PreparedDailyBarBatch
 from market_data_center.derivation import DerivationService
 from market_data_center.domain import (
@@ -57,9 +59,23 @@ from market_data_center.domain import (
     TradeStatus,
     deducted_profit_revision_key,
 )
+from market_data_center.domain.call_auction_market_series import (
+    MarketSeriesRound,
+    MarketSeriesSession,
+    MarketSeriesSnapshotRecord,
+    MarketSeriesStatus,
+    series_slots,
+    universe_hash,
+)
 from market_data_center.domain.operations import ExecutionStatus, TriggerSource, WorkflowCode
 from market_data_center.migrations import MIGRATION_DIR, apply_migrations
 from market_data_center.persistence import PostgreSQLDerivedPersistence, PostgreSQLPersistence
+from market_data_center.persistence.call_auction_market_series_postgres import (
+    PostgreSQLCallAuctionMarketSeriesPersistence,
+)
+from market_data_center.persistence.close_price_new_highs_postgres import (
+    PostgreSQLClosePriceNewHighsPersistence,
+)
 from market_data_center.persistence.operations_postgres import PostgreSQLOperationsPersistence
 from market_data_center.quality_audit import audit_daily_bars
 from market_data_center.recovery import (
@@ -117,7 +133,6 @@ def test_migrations_apply_to_empty_database_and_are_idempotent(
         ]
         first_snapshot = _schema_snapshot(connection)
         connection.commit()
-
         apply_migrations(connection, MIGRATIONS)
         second_output = capsys.readouterr().out
         second_snapshot = _schema_snapshot(connection)
@@ -155,6 +170,540 @@ def test_migrations_apply_to_empty_database_and_are_idempotent(
         "query_limit_up_pool",
         "query_auction_quotes",
     }.issubset({row[1] for row in first_snapshot["routines"]})
+
+
+def test_call_auction_market_series_schema_is_partitioned_and_internal(
+    database_engine: Engine,
+) -> None:
+    table_names = (
+        "call_auction_market_series_session",
+        "call_auction_market_series_round",
+        "call_auction_market_series_snapshot",
+    )
+    with database_engine.connect() as connection:
+        assert {
+            name: connection.scalar(
+                text("select to_regclass('realtime.' || :name)"), {"name": name}
+            )
+            for name in table_names
+        } == {name: f"realtime.{name}" for name in table_names}
+        assert (
+            connection.scalar(
+                text("""
+                select partstrat from pg_partitioned_table
+                where partrelid='realtime.call_auction_market_series_snapshot'::regclass
+            """)
+            )
+            == "r"
+        )
+        assert (
+            connection.scalar(
+                text("""
+                select count(*) from pg_inherits
+                where inhparent='realtime.call_auction_market_series_snapshot'::regclass
+            """)
+            )
+            == 14
+        )
+        rls_tables = set(
+            connection.execute(
+                text("""
+                    select tablename from pg_tables
+                    where schemaname='realtime' and rowsecurity
+                      and tablename like 'call_auction_market_series%'
+                """)
+            ).scalars()
+        )
+        assert rls_tables == {
+            *table_names,
+            *(f"call_auction_market_series_snapshot_{month}" for month in range(202608, 202613)),
+            *(f"call_auction_market_series_snapshot_{month}" for month in range(202701, 202710)),
+        }
+        constraints = {
+            row.name: row.definition
+            for row in connection.execute(
+                text("""
+                    select conname name, pg_get_constraintdef(oid) definition
+                    from pg_constraint
+                    where conrelid in (
+                      'realtime.call_auction_market_series_session'::regclass,
+                      'realtime.call_auction_market_series_round'::regclass,
+                      'realtime.call_auction_market_series_snapshot'::regclass
+                    )
+                """)
+            )
+        }
+        assert constraints["call_auction_market_series_session_workflow_run_id_key"] == (
+            "UNIQUE (workflow_run_id)"
+        )
+        assert constraints["call_auction_market_series_round_pkey"] == (
+            "PRIMARY KEY (session_id, sample_seq)"
+        )
+        assert constraints["call_auction_market_series_snapshot_pkey"] == (
+            "PRIMARY KEY (trade_date, ingestion_id, symbol)"
+        )
+        grants = {
+            (row.table_name, row.privilege_type)
+            for row in connection.execute(
+                text("""
+                    select table_name, privilege_type
+                    from information_schema.role_table_grants
+                    where table_schema='realtime' and grantee='market_data_worker'
+                      and table_name = any(:table_names)
+                """),
+                {"table_names": list(table_names)},
+            )
+        }
+        assert grants == {
+            ("call_auction_market_series_session", "SELECT"),
+            ("call_auction_market_series_session", "INSERT"),
+            ("call_auction_market_series_session", "UPDATE"),
+            ("call_auction_market_series_round", "SELECT"),
+            ("call_auction_market_series_round", "INSERT"),
+            ("call_auction_market_series_round", "UPDATE"),
+            ("call_auction_market_series_snapshot", "SELECT"),
+            ("call_auction_market_series_snapshot", "INSERT"),
+        }
+        assert (
+            connection.scalar(
+                text("""
+                select count(*) from information_schema.role_table_grants
+                where table_schema='realtime'
+                  and grantee in ('anon','authenticated','market_data_api')
+                  and table_name = any(:table_names)
+            """),
+                {"table_names": list(table_names)},
+            )
+            == 0
+        )
+        assert (
+            connection.scalar(
+                text("""
+                select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+                where n.nspname='api_v1' and p.proname like 'call_auction_market_series%'
+            """)
+            )
+            == 0
+        )
+
+        connection.execute(
+            text("""
+                insert into ingestion.ingestion_run (
+                  ingestion_id,provider_code,dataset_code,status,requested_at
+                ) values (
+                  :ingestion_id,'pytdx_hq','call_auction_market_series','running',now()
+                )
+            """),
+            {"ingestion_id": uuid4()},
+        )
+        connection.execute(
+            text("""
+                insert into operations.workflow_run (
+                  workflow_run_id,workflow_code,scheduled_for,trigger_source,
+                  attempt,status,started_at
+                ) values (
+                  :workflow_run_id,'call_auction_market_series',now(),'scheduled',1,'running',now()
+                )
+            """),
+            {"workflow_run_id": uuid4()},
+        )
+
+    inventory = dict(
+        capture_database_snapshot(
+            database_engine.url.render_as_string(hide_password=False)
+        ).row_counts
+    )
+    assert inventory["call_auction_market_series_session"] == 0
+    assert inventory["call_auction_market_series_round"] == 0
+    assert inventory["call_auction_market_series_snapshot"] == 0
+
+
+def test_market_series_persistence_commits_attempt_and_finishes_partial_session(
+    database_engine: Engine,
+) -> None:
+    trade_date = date(2026, 8, 17)
+    slots = series_slots(trade_date)
+    persistence = PostgreSQLCallAuctionMarketSeriesPersistence(database_engine)
+    operations = PostgreSQLOperationsPersistence(database_engine)
+    with database_engine.begin() as connection:
+        _insert_call_auction_security_universe(connection)
+        _insert_trading_calendar_day(connection, trade_date, is_trading_day=True)
+
+    workflow = operations.start_workflow(
+        WorkflowCode.CALL_AUCTION_MARKET_SERIES,
+        slots[0],
+        TriggerSource.SCHEDULED,
+    )
+    symbols = ("SSE:600000", "SZSE:000001")
+    session = MarketSeriesSession(
+        session_id=uuid4(),
+        workflow_run_id=workflow.workflow_run_id,
+        trade_date=trade_date,
+        window_start=slots[0],
+        window_end=slots[-1] + timedelta(seconds=20),
+        cadence_seconds=20,
+        expected_rounds=32,
+        universe_symbols=symbols,
+        universe_count=2,
+        universe_hash=universe_hash(symbols),
+        status=MarketSeriesStatus.RUNNING,
+        started_at=slots[0],
+    )
+
+    assert persistence.is_trading_day(trade_date)
+    assert persistence.listed_sse_szse_stock_symbols() == list(symbols)
+    assert persistence.load_recovery_universe(trade_date) is None
+    persistence.create_session(session)
+    assert persistence.load_recovery_universe(trade_date) == symbols
+
+    running_round = MarketSeriesRound(
+        session_id=session.session_id,
+        sample_seq=0,
+        scheduled_at=slots[0],
+        collected_at=None,
+        status=MarketSeriesStatus.RUNNING,
+        attempt_count=0,
+        expected_quotes=2,
+        successful_quotes=0,
+        failed_quotes=0,
+        selected_ingestion_id=None,
+    )
+    persistence.start_round(running_round)
+    ingestion_id = uuid4()
+    running_run = IngestionRun(
+        ingestion_id=ingestion_id,
+        provider_code=ProviderCode.PYTDX_HQ,
+        dataset_code=DatasetCode.CALL_AUCTION_MARKET_SERIES,
+        status=IngestionStatus.RUNNING,
+        requested_at=slots[0],
+        started_at=slots[0],
+        request_params={
+            "trade_date": trade_date.isoformat(),
+            "session_id": str(session.session_id),
+            "sample_seq": 0,
+            "scheduled_at": slots[0].isoformat(),
+            "endpoint": "first.quote:7709",
+            "expected_rows": 2,
+        },
+    )
+    persistence.create_ingestion_run(running_run)
+    completed_run = replace(
+        running_run,
+        status=IngestionStatus.PARTIAL,
+        finished_at=slots[0] + timedelta(seconds=2),
+        fetched_rows=1,
+        accepted_rows=1,
+    )
+    records = (
+        MarketSeriesSnapshotRecord(
+            symbol="SSE:600000",
+            trade_date=trade_date,
+            session_id=session.session_id,
+            sample_seq=0,
+            scheduled_at=slots[0],
+            observed_at=slots[0] + timedelta(seconds=1),
+            source_code="pytdx_hq",
+            last_price=Decimal("10.10"),
+            previous_close=Decimal("10.00"),
+            high_price=Decimal("10.10"),
+            low_price=Decimal("10.00"),
+            cumulative_volume=100,
+            cumulative_amount=Decimal("1010.00"),
+        ),
+    )
+    persistence.commit_attempt(
+        completed_run,
+        records,
+        _manifest(ingestion_id, "market-series-partial", row_count=1, provider="pytdx_hq"),
+        (),
+    )
+    persistence.finish_round(
+        replace(
+            running_round,
+            collected_at=slots[0] + timedelta(seconds=2),
+            status=MarketSeriesStatus.PARTIAL,
+            attempt_count=1,
+            successful_quotes=1,
+            failed_quotes=1,
+            selected_ingestion_id=ingestion_id,
+        )
+    )
+    finished = persistence.finish_session(session.session_id, slots[-1] + timedelta(seconds=20))
+
+    assert finished.status is MarketSeriesStatus.PARTIAL
+    assert (finished.successful_rounds, finished.partial_rounds, finished.failed_rounds) == (
+        0,
+        1,
+        31,
+    )
+    assert (finished.successful_quotes, finished.failed_quotes) == (1, 63)
+    with database_engine.connect() as connection:
+        assert (
+            connection.scalar(
+                text("select count(*) from realtime.call_auction_market_series_snapshot")
+            )
+            == 1
+        )
+        assert (
+            connection.scalar(
+                text("select status from ingestion.ingestion_run where ingestion_id=:id"),
+                {"id": ingestion_id},
+            )
+            == "partial"
+        )
+
+
+def test_market_series_attempt_rolls_back_manifest_quality_and_facts(
+    database_engine: Engine,
+) -> None:
+    trade_date = date(2026, 8, 17)
+    slots = series_slots(trade_date)
+    persistence = PostgreSQLCallAuctionMarketSeriesPersistence(database_engine)
+    operations = PostgreSQLOperationsPersistence(database_engine)
+    with database_engine.begin() as connection:
+        _insert_call_auction_security_universe(connection)
+    workflow = operations.start_workflow(
+        WorkflowCode.CALL_AUCTION_MARKET_SERIES, slots[0], TriggerSource.SCHEDULED
+    )
+    symbols = ("SSE:600000", "SZSE:000001")
+    session = MarketSeriesSession(
+        uuid4(),
+        workflow.workflow_run_id,
+        trade_date,
+        slots[0],
+        slots[-1] + timedelta(seconds=20),
+        20,
+        32,
+        symbols,
+        2,
+        universe_hash(symbols),
+        MarketSeriesStatus.RUNNING,
+        slots[0],
+    )
+    persistence.create_session(session)
+    running_round = MarketSeriesRound(
+        session.session_id,
+        0,
+        slots[0],
+        None,
+        MarketSeriesStatus.RUNNING,
+        0,
+        2,
+        0,
+        0,
+        None,
+    )
+    persistence.start_round(running_round)
+    running_run = IngestionRun(
+        uuid4(),
+        ProviderCode.PYTDX_HQ,
+        DatasetCode.CALL_AUCTION_MARKET_SERIES,
+        IngestionStatus.RUNNING,
+        slots[0],
+        slots[0],
+        request_params={"session_id": str(session.session_id), "sample_seq": 0},
+    )
+    persistence.create_ingestion_run(running_run)
+    record = MarketSeriesSnapshotRecord(
+        "SSE:600000",
+        trade_date,
+        session.session_id,
+        0,
+        slots[0],
+        slots[0] + timedelta(seconds=1),
+        "pytdx_hq",
+        Decimal("10.00"),
+        Decimal("9.90"),
+        Decimal("10.00"),
+        Decimal("10.00"),
+        100,
+        Decimal("1000.00"),
+    )
+    completed = replace(
+        running_run,
+        status=IngestionStatus.SUCCEEDED,
+        finished_at=slots[0] + timedelta(seconds=2),
+        fetched_rows=2,
+        accepted_rows=2,
+    )
+    quality = QualityResult(
+        uuid4(),
+        running_run.ingestion_id,
+        DatasetCode.CALL_AUCTION_MARKET_SERIES,
+        "call_auction_market_series.complete",
+        QualitySeverity.INFO,
+        QualityStatus.PASSED,
+        "complete",
+    )
+
+    with pytest.raises(IntegrityError):
+        persistence.commit_attempt(
+            completed,
+            (record, record),
+            _manifest(
+                running_run.ingestion_id,
+                "market-series-rollback",
+                row_count=2,
+                provider="pytdx_hq",
+            ),
+            (quality,),
+        )
+
+    with database_engine.connect() as connection:
+        counts = connection.execute(
+            text("""
+                select
+                  (select count(*) from ingestion.raw_manifest where ingestion_id=:id),
+                  (select count(*) from audit.quality_result where ingestion_id=:id),
+                  (select count(*) from realtime.call_auction_market_series_snapshot
+                   where ingestion_id=:id),
+                  (select status from ingestion.ingestion_run where ingestion_id=:id)
+            """),
+            {"id": running_run.ingestion_id},
+        ).one()
+    assert tuple(counts) == (0, 0, 0, "running")
+
+    mismatched_ingestion_id = uuid4()
+    with database_engine.begin() as connection:
+        connection.execute(
+            text("""
+                insert into ingestion.ingestion_run (
+                  ingestion_id,provider_code,dataset_code,status,requested_at,started_at,
+                  finished_at,request_params
+                ) values (
+                  :ingestion_id,'pytdx_hq','call_auction_market_series','partial',
+                  :started_at,:started_at,:finished_at,
+                  jsonb_build_object(
+                    'session_id',cast(:wrong_session_id as text),'sample_seq',0
+                  )
+                )
+            """),
+            {
+                "ingestion_id": mismatched_ingestion_id,
+                "started_at": slots[0],
+                "finished_at": slots[0] + timedelta(seconds=1),
+                "wrong_session_id": str(uuid4()),
+            },
+        )
+    with pytest.raises(ValueError, match="does not match"):
+        persistence.finish_round(
+            replace(
+                running_round,
+                collected_at=slots[0] + timedelta(seconds=2),
+                status=MarketSeriesStatus.PARTIAL,
+                attempt_count=1,
+                failed_quotes=2,
+                selected_ingestion_id=mismatched_ingestion_id,
+            )
+        )
+
+    recovered = persistence.recover_expired_sessions(slots[-1] + timedelta(seconds=21))
+    assert recovered == 1
+    with database_engine.connect() as connection:
+        terminal = connection.execute(
+            text("""
+                select session.status,round.status,round.failed_quotes
+                from realtime.call_auction_market_series_session session
+                join realtime.call_auction_market_series_round round using (session_id)
+                where session.session_id=:session_id
+            """),
+            {"session_id": session.session_id},
+        ).one()
+    assert tuple(terminal) == ("failed", "failed", 2)
+
+
+def test_auction_indicative_schema_and_api_permission_boundary(
+    migrated_database_url: str,
+) -> None:
+    with psycopg.connect(migrated_database_url) as connection:
+        assert connection.execute(
+            "select to_regclass('realtime.call_auction_indicative_snapshot')"
+        ).fetchone() == ("realtime.call_auction_indicative_snapshot",)
+        assert connection.execute(
+            "select to_regclass('realtime.call_auction_indicative_detail')"
+        ).fetchone() == ("realtime.call_auction_indicative_detail",)
+        assert connection.execute(
+            "select has_function_privilege('market_data_api', "
+            "'api_v1.query_call_auction_indicative_details(text,date,integer,integer)', "
+            "'execute')"
+        ).fetchone() == (True,)
+        assert connection.execute(
+            "select has_table_privilege('market_data_api', "
+            "'realtime.call_auction_indicative_detail', 'select')"
+        ).fetchone() == (False,)
+
+
+def test_auction_indicative_database_response_matches_read_through_contract(
+    migrated_database_url: str,
+) -> None:
+    security_ingestion_id = uuid4()
+    ingestion_id = uuid4()
+    raw_id = uuid4()
+    with psycopg.connect(migrated_database_url) as connection:
+        trade_date = connection.execute(
+            "select (now() at time zone 'Asia/Shanghai')::date"
+        ).fetchone()[0]
+        connection.execute(
+            """
+insert into ingestion.ingestion_run (
+    ingestion_id, provider_code, dataset_code, status, started_at
+) values (%s, 'baostock', 'security', 'running', now())
+""",
+            (security_ingestion_id,),
+        )
+        connection.execute(
+            """
+insert into core.security (
+    symbol, code, exchange, current_name, security_type, status,
+    source_code, ingestion_id
+) values ('SSE:688796', '688796', 'SSE', '测试股票', 'stock', 'listed',
+          'baostock', %s)
+""",
+            (security_ingestion_id,),
+        )
+        connection.execute("set local role market_data_api")
+        connection.execute(
+            """
+select api_v1.persist_call_auction_indicative_details(
+    %s, %s, 'SSE:688796', %s, now(), %s, %s, %s, 100, 1,
+    jsonb_build_array(jsonb_build_object(
+        'source_sequence', 0,
+        'observed_at', (%s::text || ' 09:15:05+08')::timestamptz,
+        'indicative_price', '133.9900',
+        'displayed_volume_shares', 200,
+        'source_display_classification', 'unknown'
+    ))
+)
+""",
+            (
+                ingestion_id,
+                raw_id,
+                trade_date,
+                "a" * 64,
+                (
+                    "eastmoney/call_auction_indicative_detail/"
+                    f"year={trade_date:%Y}/month={trade_date:%m}/day={trade_date:%d}/"
+                    f"{raw_id}.jsonl"
+                ),
+                "b" * 64,
+                trade_date,
+            ),
+        )
+        payload = connection.execute(
+            """
+select api_v1.query_call_auction_indicative_details(
+    'SSE:688796', %s, 0, 200
+)
+""",
+            (trade_date,),
+        ).fetchone()[0]
+
+    assert payload["data_origin"] == "database"
+    assert payload["persistence_status"] == "persisted"
+    assert payload["version"] == 1
+    assert payload["ingestion_status"] == "succeeded"
+    assert payload["quality"]["database_persistence"] == "persisted"
+    assert payload["quality"]["accepted_auction_row_count"] == 1
 
 
 def test_today_limit_up_schema_is_internal_and_append_only(
@@ -259,6 +808,334 @@ select api_v1.query_daily_limit_up_list(
         "by_rule": {"missing_daily_market": 1},
     }
     assert payload["items"] == []
+
+
+def test_call_auction_market_snapshot_rpc_selects_one_preferred_batch(
+    database_engine: Engine,
+) -> None:
+    security_ingestion_id = uuid4()
+    succeeded_ingestion_id = uuid4()
+    partial_ingestion_id = uuid4()
+    trade_date = date(2026, 8, 13)
+    observed_at = datetime(2026, 8, 13, 1, 26, tzinfo=UTC)
+    with database_engine.begin() as connection:
+        connection.execute(
+            text("""
+insert into ingestion.ingestion_run (
+    ingestion_id, provider_code, dataset_code, status,
+    requested_at, started_at, finished_at, fetched_rows, accepted_rows
+) values
+    (:security_id, 'baostock', 'security', 'running',
+     :security_at, :security_at, null, 0, 0),
+    (:succeeded_id, 'pytdx_hq', 'call_auction_market_snapshot', 'succeeded',
+     :succeeded_at, :succeeded_at, :succeeded_finished_at, 2, 2),
+    (:partial_id, 'pytdx_hq', 'call_auction_market_snapshot', 'partial',
+     :partial_at, :partial_at, :partial_finished_at, 1, 1)
+"""),
+            {
+                "security_id": security_ingestion_id,
+                "security_at": observed_at - timedelta(days=1),
+                "succeeded_id": succeeded_ingestion_id,
+                "succeeded_at": observed_at - timedelta(minutes=2),
+                "succeeded_finished_at": observed_at - timedelta(minutes=1),
+                "partial_id": partial_ingestion_id,
+                "partial_at": observed_at,
+                "partial_finished_at": observed_at + timedelta(minutes=1),
+            },
+        )
+        connection.execute(
+            text("""
+insert into core.security (
+    symbol, code, exchange, current_name, security_type, status,
+    source_code, ingestion_id
+) values
+    ('SSE:600000', '600000', 'SSE', '上海样本', 'stock', 'listed',
+     'baostock', :security_id),
+    ('SZSE:600000', '600000', 'SZSE', '深圳样本', 'stock', 'listed',
+     'baostock', :security_id)
+"""),
+            {"security_id": security_ingestion_id},
+        )
+        connection.execute(
+            text("""
+insert into realtime.call_auction_market_snapshot (
+    ingestion_id, symbol, trade_date, observed_at, last_price,
+    previous_close, high_price, low_price, cumulative_volume,
+    cumulative_amount, source_code
+) values
+    (:succeeded_id, 'SSE:600000', :trade_date, :observed_at,
+     10.1200, 10.0000, 10.1500, 9.9800, 123400, 1248808.0000, 'pytdx_hq'),
+    (:succeeded_id, 'SZSE:600000', :trade_date, :observed_at,
+     20.1200, 20.0000, 20.1500, 19.9800, 223400, 4494808.0000, 'pytdx_hq'),
+    (:partial_id, 'SSE:600000', :trade_date, :observed_at,
+     99.0000, 98.0000, 99.0000, 98.0000, 1, 99.0000, 'pytdx_hq')
+"""),
+            {
+                "succeeded_id": succeeded_ingestion_id,
+                "partial_id": partial_ingestion_id,
+                "trade_date": trade_date,
+                "observed_at": observed_at,
+            },
+        )
+        assert connection.scalar(
+            text("""
+select has_function_privilege(
+    'market_data_api',
+    'api_v1.query_call_auction_market_snapshots(date,text[])',
+    'execute'
+)
+""")
+        )
+        assert not connection.scalar(
+            text("""
+select has_table_privilege(
+    'market_data_api', 'realtime.call_auction_market_snapshot', 'select'
+)
+""")
+        )
+        connection.execute(text("set local role market_data_api"))
+        payload = connection.scalar(
+            text("""
+select api_v1.query_call_auction_market_snapshots(
+    :trade_date, array['600000', '300001', '600000']::text[]
+)
+"""),
+            {"trade_date": trade_date},
+        )
+        connection.execute(text("reset role"))
+        connection.execute(
+            text("""
+update ingestion.ingestion_run
+set status = 'failed'
+where ingestion_id = :succeeded_id
+"""),
+            {"succeeded_id": succeeded_ingestion_id},
+        )
+        connection.execute(text("set local role market_data_api"))
+        partial_payload = connection.scalar(
+            text("""
+select api_v1.query_call_auction_market_snapshots(
+    :trade_date, array['600000']::text[]
+)
+"""),
+            {"trade_date": trade_date},
+        )
+
+    assert payload["ingestion_id"] == str(succeeded_ingestion_id)
+    assert payload["ingestion_status"] == "succeeded"
+    assert payload["requested_count"] == 2
+    assert payload["returned_count"] == 2
+    assert payload["missing_codes"] == ["300001"]
+    assert [(item["code"], item["symbol"]) for item in payload["items"]] == [
+        ("600000", "SSE:600000"),
+        ("600000", "SZSE:600000"),
+    ]
+    assert payload["items"][0]["last_price"] == 10.1200
+    assert partial_payload["ingestion_id"] == str(partial_ingestion_id)
+    assert partial_payload["ingestion_status"] == "partial"
+    assert partial_payload["returned_count"] == 1
+    assert partial_payload["items"][0]["last_price"] == 99.0000
+
+
+def test_call_auction_market_series_rpc_selects_one_session_and_orders_rounds(
+    database_engine: Engine,
+) -> None:
+    trade_date = date(2026, 8, 14)
+    slots = series_slots(trade_date)
+    succeeded_session_id = uuid4()
+    partial_session_id = uuid4()
+    succeeded_workflow_id = uuid4()
+    partial_workflow_id = uuid4()
+    round_zero_ingestion_id = uuid4()
+    round_one_ingestion_id = uuid4()
+    partial_ingestion_id = uuid4()
+
+    with database_engine.begin() as connection:
+        _insert_call_auction_security_universe(connection)
+        connection.execute(
+            text("""
+insert into operations.workflow_run (
+    workflow_run_id, workflow_code, scheduled_for, trigger_source,
+    attempt, status, started_at, finished_at
+) values
+    (:succeeded_workflow_id, 'call_auction_market_series', :started_at,
+     'scheduled', 1, 'succeeded', :started_at, :succeeded_finished_at),
+    (:partial_workflow_id, 'call_auction_market_series', :started_at,
+     'scheduled', 2, 'succeeded', :started_at, :partial_finished_at)
+"""),
+            {
+                "succeeded_workflow_id": succeeded_workflow_id,
+                "partial_workflow_id": partial_workflow_id,
+                "started_at": slots[0],
+                "succeeded_finished_at": slots[2],
+                "partial_finished_at": slots[3],
+            },
+        )
+        connection.execute(
+            text("""
+insert into realtime.call_auction_market_series_session (
+    session_id, workflow_run_id, trade_date, window_start, window_end,
+    cadence_seconds, expected_rounds, universe_symbols, universe_count,
+    universe_hash, status, started_at, finished_at, successful_rounds,
+    partial_rounds, failed_rounds, successful_quotes, failed_quotes
+) values
+    (:succeeded_session_id, :succeeded_workflow_id, :trade_date, :window_start,
+     :window_end, 20, 32, array['SSE:600000','SZSE:000001'], 2, :universe_hash,
+     'succeeded', :window_start, :succeeded_finished_at, 2, 0, 0, 4, 0),
+    (:partial_session_id, :partial_workflow_id, :trade_date, :window_start,
+     :window_end, 20, 32, array['SSE:600000','SZSE:000001'], 2, :universe_hash,
+     'partial', :window_start, :partial_finished_at, 0, 1, 0, 1, 1)
+"""),
+            {
+                "succeeded_session_id": succeeded_session_id,
+                "partial_session_id": partial_session_id,
+                "succeeded_workflow_id": succeeded_workflow_id,
+                "partial_workflow_id": partial_workflow_id,
+                "trade_date": trade_date,
+                "window_start": slots[0],
+                "window_end": slots[-1] + timedelta(seconds=20),
+                "universe_hash": universe_hash(("SSE:600000", "SZSE:000001")),
+                "succeeded_finished_at": slots[2],
+                "partial_finished_at": slots[3],
+            },
+        )
+        connection.execute(
+            text("""
+insert into ingestion.ingestion_run (
+    ingestion_id, provider_code, dataset_code, status, requested_at,
+    started_at, finished_at, fetched_rows, accepted_rows
+) values
+    (:round_zero_id, 'pytdx_hq', 'call_auction_market_series', 'succeeded',
+     :slot_zero, :slot_zero, :round_zero_finished, 2, 2),
+    (:round_one_id, 'pytdx_hq', 'call_auction_market_series', 'succeeded',
+     :slot_one, :slot_one, :round_one_finished, 2, 2),
+    (:partial_id, 'pytdx_hq', 'call_auction_market_series', 'partial',
+     :slot_zero, :slot_zero, :partial_finished, 1, 1)
+"""),
+            {
+                "round_zero_id": round_zero_ingestion_id,
+                "round_one_id": round_one_ingestion_id,
+                "partial_id": partial_ingestion_id,
+                "slot_zero": slots[0],
+                "slot_one": slots[1],
+                "round_zero_finished": slots[0] + timedelta(seconds=2),
+                "round_one_finished": slots[1] + timedelta(seconds=2),
+                "partial_finished": slots[0] + timedelta(seconds=3),
+            },
+        )
+        connection.execute(
+            text("""
+insert into realtime.call_auction_market_series_round (
+    session_id, sample_seq, scheduled_at, collected_at, status, attempt_count,
+    expected_quotes, successful_quotes, failed_quotes, selected_ingestion_id
+) values
+    (:succeeded_session_id, 1, :slot_one, :round_one_finished, 'succeeded',
+     1, 2, 2, 0, :round_one_id),
+    (:succeeded_session_id, 0, :slot_zero, :round_zero_finished, 'succeeded',
+     1, 2, 2, 0, :round_zero_id),
+    (:partial_session_id, 0, :slot_zero, :partial_finished, 'partial',
+     1, 2, 1, 1, :partial_id)
+"""),
+            {
+                "succeeded_session_id": succeeded_session_id,
+                "partial_session_id": partial_session_id,
+                "slot_zero": slots[0],
+                "slot_one": slots[1],
+                "round_zero_finished": slots[0] + timedelta(seconds=2),
+                "round_one_finished": slots[1] + timedelta(seconds=2),
+                "partial_finished": slots[0] + timedelta(seconds=3),
+                "round_zero_id": round_zero_ingestion_id,
+                "round_one_id": round_one_ingestion_id,
+                "partial_id": partial_ingestion_id,
+            },
+        )
+        connection.execute(
+            text("""
+insert into realtime.call_auction_market_series_snapshot (
+    trade_date, ingestion_id, session_id, sample_seq, scheduled_at, symbol,
+    observed_at, last_price, previous_close, high_price, low_price,
+    cumulative_volume, cumulative_amount, source_code
+) values
+    (:trade_date, :round_zero_id, :succeeded_session_id, 0, :slot_zero,
+     'SSE:600000', :round_zero_observed, 10.1000, 10.0000, 10.1000, 10.0000,
+     100, 1010.0000, 'pytdx_hq'),
+    (:trade_date, :round_one_id, :succeeded_session_id, 1, :slot_one,
+     'SSE:600000', :round_one_observed, 10.2000, 10.0000, 10.2000, 10.0000,
+     200, 2040.0000, 'pytdx_hq'),
+    (:trade_date, :partial_id, :partial_session_id, 0, :slot_zero,
+     'SSE:600000', :partial_observed, 99.0000, 98.0000, 99.0000, 98.0000,
+     1, 99.0000, 'pytdx_hq')
+"""),
+            {
+                "trade_date": trade_date,
+                "round_zero_id": round_zero_ingestion_id,
+                "round_one_id": round_one_ingestion_id,
+                "partial_id": partial_ingestion_id,
+                "succeeded_session_id": succeeded_session_id,
+                "partial_session_id": partial_session_id,
+                "slot_zero": slots[0],
+                "slot_one": slots[1],
+                "round_zero_observed": slots[0] + timedelta(seconds=1),
+                "round_one_observed": slots[1] + timedelta(seconds=1),
+                "partial_observed": slots[0] + timedelta(seconds=1),
+            },
+        )
+
+        assert connection.scalar(
+            text("""
+select has_function_privilege(
+    'market_data_api',
+    'api_v1.query_call_auction_market_series_snapshots(date,text[])',
+    'execute'
+)
+""")
+        )
+        assert not connection.scalar(
+            text("""
+select has_table_privilege(
+    'market_data_api', 'realtime.call_auction_market_series_snapshot', 'select'
+)
+""")
+        )
+        connection.execute(text("set local role market_data_api"))
+        payload = connection.scalar(
+            text("""
+select api_v1.query_call_auction_market_series_snapshots(
+    :trade_date, array['600000','000001','600000']::text[]
+)
+"""),
+            {"trade_date": trade_date},
+        )
+        connection.execute(text("reset role"))
+        connection.execute(
+            text("""
+update realtime.call_auction_market_series_session
+set status='failed'
+where session_id=:session_id
+"""),
+            {"session_id": succeeded_session_id},
+        )
+        connection.execute(text("set local role market_data_api"))
+        partial_payload = connection.scalar(
+            text("""
+select api_v1.query_call_auction_market_series_snapshots(
+    :trade_date, array['600000']::text[]
+)
+"""),
+            {"trade_date": trade_date},
+        )
+
+    assert payload["session_id"] == str(succeeded_session_id)
+    assert payload["session_status"] == "succeeded"
+    assert payload["requested_count"] == 2
+    assert payload["returned_rounds"] == 2
+    assert [item["sample_seq"] for item in payload["rounds"]] == [0, 1]
+    assert payload["rounds"][0]["missing_codes"] == ["000001"]
+    assert payload["rounds"][0]["items"][0]["last_price"] == 10.1000
+    assert payload["rounds"][1]["items"][0]["last_price"] == 10.2000
+    assert partial_payload["session_id"] == str(partial_session_id)
+    assert partial_payload["session_status"] == "partial"
+    assert partial_payload["rounds"][0]["items"][0]["last_price"] == 99.0000
 
 
 def test_operations_repository_records_attempts_steps_and_stale_recovery(
@@ -1689,6 +2566,471 @@ def test_board_index_facts_are_idempotent_and_queryable(
 
     assert tuple(result[:3]) == (1, 1, 1)
     assert result[3] == Decimal("223.6000")
+
+
+def test_board_index_bias_rpc_uses_latest_30_sessions_and_decimal_math(
+    database_engine: Engine,
+) -> None:
+    start_date = date(2026, 6, 1)
+    closes = [Decimal(index) for index in range(1, 36)]
+    _commit_board_bias_bars(database_engine, start_date, closes)
+
+    with database_engine.connect() as connection:
+        payload = connection.execute(
+            text("select api_v1.query_board_index_bias_latest() as payload")
+        ).scalar_one()
+        privileges = connection.execute(
+            text(
+                "select "
+                "has_function_privilege('market_data_api', "
+                "'api_v1.query_board_index_bias_latest()', 'EXECUTE'), "
+                "has_function_privilege('anon', "
+                "'api_v1.query_board_index_bias_latest()', 'EXECUTE'), "
+                "has_function_privilege('authenticated', "
+                "'api_v1.query_board_index_bias_latest()', 'EXECUTE')"
+            )
+        ).one()
+
+    fetched_at = payload.pop("fetched_at")
+    assert datetime.fromisoformat(fetched_at).tzinfo is not None
+    assert payload == {
+        "board_id": "THS:883423",
+        "board_code": "883423",
+        "board_name": "沪深主板昨日涨停",
+        "trade_date": "2026-07-05",
+        "close": "35.0000",
+        "moving_average_5": "33.000000",
+        "bias_5_pct": "6.060606",
+        "previous_trade_date": "2026-07-04",
+        "previous_bias_5_pct": "6.250000",
+        "bias_direction": "down",
+        "window_trading_days": 30,
+        "bias_sample_count": 30,
+        "highest_bias_5_pct": "50.000000",
+        "highest_bias_trade_date": "2026-06-06",
+        "lowest_bias_5_pct": "6.060606",
+        "lowest_bias_trade_date": "2026-07-05",
+        "algorithm_version": "board_index_bias_v1",
+        "data_origin": "database",
+        "persistence_status": "persisted",
+    }
+    assert tuple(privileges) == (True, False, False)
+
+
+def test_board_index_bias_rpc_requests_fallback_with_fewer_than_34_bars(
+    database_engine: Engine,
+) -> None:
+    _commit_board_bias_bars(
+        database_engine,
+        date(2026, 8, 1),
+        [Decimal("10"), Decimal("11"), Decimal("12"), Decimal("13")],
+    )
+
+    with pytest.raises(DBAPIError) as captured, database_engine.connect() as connection:
+        connection.execute(text("select api_v1.query_board_index_bias_latest()"))
+
+    assert captured.value.orig.sqlstate == "P0002"
+
+
+def test_board_index_bias_rpc_requests_fallback_when_latest_bar_is_stale(
+    database_engine: Engine,
+) -> None:
+    start_date = date(2026, 6, 1)
+    _commit_board_bias_bars(
+        database_engine,
+        start_date,
+        [Decimal(index) for index in range(1, 36)],
+    )
+    with database_engine.begin() as connection:
+        connection.execute(
+            text(
+                "delete from core.board_index_daily_bar "
+                "where board_id='THS:883423' and trade_date=:trade_date"
+            ),
+            {"trade_date": start_date + timedelta(days=34)},
+        )
+
+    with pytest.raises(DBAPIError) as captured, database_engine.connect() as connection:
+        connection.execute(text("select api_v1.query_board_index_bias_latest()"))
+
+    assert captured.value.orig.sqlstate == "P0002"
+
+
+def test_board_index_bias_rpc_fails_when_no_board_bars_exist(database_engine: Engine) -> None:
+    with pytest.raises(DBAPIError) as captured, database_engine.connect() as connection:
+        connection.execute(text("select api_v1.query_board_index_bias_latest()"))
+
+    assert captured.value.orig.sqlstate == "P0002"
+
+
+def test_top_gainers_accepts_pytdx_unknown_bars_and_excludes_suspended(
+    database_engine: Engine,
+) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    securities = [
+        _security(),
+        replace(
+            _security(),
+            symbol="SZSE:000001",
+            code="000001",
+            exchange=Exchange.SZSE,
+            name="平安银行",
+        ),
+    ]
+    security_run = _running_run(DatasetCode.SECURITY)
+    persistence.create_ingestion_run(security_run)
+    persistence.commit_security_batch(
+        _completed_run(security_run, len(securities)),
+        _manifest(security_run.ingestion_id, "top-gainers-securities", len(securities)),
+        _envelopes(security_run.ingestion_id, securities),
+    )
+
+    trading_days: list[date] = []
+    candidate_date = date(2026, 7, 20)
+    while len(trading_days) < 20:
+        if candidate_date.weekday() < 5:
+            trading_days.append(candidate_date)
+        candidate_date += timedelta(days=1)
+    calendar_run = _running_run(DatasetCode.TRADING_CALENDAR)
+    persistence.create_ingestion_run(calendar_run)
+    calendar = [
+        CalculatedTradingDay(
+            market=Market.CN_A_SHARE,
+            trade_date=trade_date,
+            is_trading_day=True,
+            previous_trading_day=trading_days[index - 1] if index else None,
+            next_trading_day=(trading_days[index + 1] if index + 1 < len(trading_days) else None),
+            source_code="baostock",
+        )
+        for index, trade_date in enumerate(trading_days)
+    ]
+    persistence.commit_trading_calendar_batch(
+        _completed_run(calendar_run, len(calendar)),
+        _manifest(calendar_run.ingestion_id, "top-gainers-calendar", len(calendar)),
+        _envelopes(calendar_run.ingestion_id, calendar),
+    )
+
+    start_date, end_date = trading_days[0], trading_days[-1]
+    unknown_bars = [
+        replace(
+            _daily_bar(start_date),
+            open=Decimal("10"),
+            high=Decimal("10"),
+            low=Decimal("10"),
+            close=Decimal("10"),
+            trade_status=TradeStatus.UNKNOWN,
+            source_code="pytdx",
+        ),
+        replace(
+            _daily_bar(end_date),
+            open=Decimal("12"),
+            high=Decimal("12"),
+            low=Decimal("12"),
+            close=Decimal("12"),
+            trade_status=TradeStatus.UNKNOWN,
+            source_code="pytdx",
+        ),
+    ]
+    suspended_bars = [
+        replace(bar, symbol="SZSE:000001", trade_status=TradeStatus.SUSPENDED)
+        for bar in unknown_bars
+    ]
+    bars = [*unknown_bars, *suspended_bars]
+    bar_run = _running_run(DatasetCode.DAILY_BAR, ProviderCode.PYTDX)
+    persistence.create_ingestion_run(bar_run)
+    persistence.commit_daily_bar_batch(
+        _completed_run(bar_run, len(bars)),
+        _manifest(
+            bar_run.ingestion_id,
+            "top-gainers-bars",
+            len(bars),
+            provider="pytdx",
+        ),
+        _envelopes(bar_run.ingestion_id, bars),
+        [],
+    )
+
+    with database_engine.connect() as connection:
+        payload = connection.scalar(
+            text("select api_v1.query_top_gainers_20d(:end_date, 10)"),
+            {"end_date": end_date},
+        )
+
+    assert payload["eligible_count"] == 1
+    assert payload["omissions"]["non_trading_bar"] == 1
+    assert [item["symbol"] for item in payload["items"]] == [SYMBOL]
+
+
+def test_close_price_new_highs_rpc_requires_complete_history_and_strict_breakout(
+    database_engine: Engine,
+) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    securities = [
+        _security(),
+        replace(
+            _security(),
+            symbol="SZSE:000001",
+            code="000001",
+            exchange=Exchange.SZSE,
+            name="平安银行",
+        ),
+        replace(
+            _security(),
+            symbol="SSE:600001",
+            code="600001",
+            name="邯郸钢铁",
+        ),
+    ]
+    security_run = _running_run(DatasetCode.SECURITY)
+    persistence.create_ingestion_run(security_run)
+    persistence.commit_security_batch(
+        _completed_run(security_run, len(securities)),
+        _manifest(security_run.ingestion_id, "new-high-securities", len(securities)),
+        _envelopes(security_run.ingestion_id, securities),
+    )
+
+    trading_days: list[date] = []
+    candidate_date = date(2026, 1, 1)
+    while len(trading_days) < 120:
+        if candidate_date.weekday() < 5:
+            trading_days.append(candidate_date)
+        candidate_date += timedelta(days=1)
+    calendar_run = _running_run(DatasetCode.TRADING_CALENDAR)
+    persistence.create_ingestion_run(calendar_run)
+    calendar = [
+        CalculatedTradingDay(
+            market=Market.CN_A_SHARE,
+            trade_date=trade_date,
+            is_trading_day=True,
+            previous_trading_day=trading_days[index - 1] if index else None,
+            next_trading_day=(trading_days[index + 1] if index + 1 < len(trading_days) else None),
+            source_code="baostock",
+        )
+        for index, trade_date in enumerate(trading_days)
+    ]
+    persistence.commit_trading_calendar_batch(
+        _completed_run(calendar_run, len(calendar)),
+        _manifest(calendar_run.ingestion_id, "new-high-calendar", len(calendar)),
+        _envelopes(calendar_run.ingestion_id, calendar),
+    )
+
+    bars: list[DailyBarRecord] = []
+    for index, trade_date in enumerate(trading_days):
+        breakout_close = Decimal("11") if index == 119 else Decimal("10")
+        equal_high_close = Decimal("11") if index >= 118 else Decimal("10")
+        for symbol, close, status in (
+            (SYMBOL, breakout_close, TradeStatus.UNKNOWN),
+            ("SZSE:000001", equal_high_close, TradeStatus.UNKNOWN),
+            (
+                "SSE:600001",
+                Decimal("12") if index == 119 else Decimal("10"),
+                TradeStatus.SUSPENDED if index == 50 else TradeStatus.UNKNOWN,
+            ),
+        ):
+            bars.append(
+                replace(
+                    _daily_bar(trade_date),
+                    symbol=symbol,
+                    open=close,
+                    high=close,
+                    low=close,
+                    close=close,
+                    trade_status=status,
+                    source_code="pytdx",
+                )
+            )
+
+    bar_run = _running_run(DatasetCode.DAILY_BAR, ProviderCode.PYTDX)
+    persistence.create_ingestion_run(bar_run)
+    persistence.commit_daily_bar_batch(
+        _completed_run(bar_run, len(bars)),
+        _manifest(
+            bar_run.ingestion_id,
+            "new-high-bars",
+            len(bars),
+            provider="pytdx",
+        ),
+        _envelopes(bar_run.ingestion_id, bars),
+        [],
+    )
+
+    operations = PostgreSQLOperationsPersistence(database_engine)
+    scheduled_for = datetime.combine(trading_days[-1], time(12), tzinfo=UTC)
+    workflow = operations.start_workflow(
+        WorkflowCode.DAILY_MARKET, scheduled_for, TriggerSource.SCHEDULED
+    )
+    operations.finish_workflow(
+        workflow.finish(ExecutionStatus.SUCCEEDED, scheduled_for + timedelta(minutes=1))
+    )
+    first = ClosePriceNewHighsService(
+        PostgreSQLClosePriceNewHighsPersistence(database_engine)
+    ).build(trading_days[-1])
+    unchanged = ClosePriceNewHighsService(
+        PostgreSQLClosePriceNewHighsPersistence(database_engine)
+    ).build(trading_days[-1])
+
+    with database_engine.connect() as connection:
+        payload = connection.scalar(text("select api_v1.query_close_price_new_highs_120d()"))
+
+    assert first.status == "succeeded"
+    assert unchanged.status == "unchanged"
+    assert unchanged.snapshot_id == first.snapshot_id
+    assert payload["trade_date"] == trading_days[-1].isoformat()
+    assert payload["total_candidate_count"] == 3
+    assert payload["eligible_history_count"] == 2
+    assert payload["omitted_count"] == 1
+    assert payload["returned_count"] == 1
+    assert payload["omissions"]["incomplete_history"] == 1
+    assert payload["omissions"]["non_trading_bar"] == 1
+    assert payload["items"] == [
+        {
+            "symbol": SYMBOL,
+            "code": "600000",
+            "name": "浦发银行",
+            "close": 11.0,
+            "previous_119d_high": 10.0,
+            "breakout_pct": 10.0,
+        }
+    ]
+
+    revised_close = Decimal("12")
+    revised_bar = replace(
+        _daily_bar(trading_days[-1]),
+        symbol=SYMBOL,
+        open=revised_close,
+        high=revised_close,
+        low=revised_close,
+        close=revised_close,
+        trade_status=TradeStatus.UNKNOWN,
+        source_code="pytdx",
+    )
+    revision_run = _running_run(DatasetCode.DAILY_BAR, ProviderCode.PYTDX)
+    persistence.create_ingestion_run(revision_run)
+    persistence.commit_daily_bar_batch(
+        _completed_run(revision_run, 1),
+        _manifest(
+            revision_run.ingestion_id,
+            "new-high-bars-revision",
+            1,
+            provider="pytdx",
+        ),
+        _envelopes(revision_run.ingestion_id, [revised_bar]),
+        [],
+    )
+    revised = ClosePriceNewHighsService(
+        PostgreSQLClosePriceNewHighsPersistence(database_engine)
+    ).build(trading_days[-1])
+    with database_engine.connect() as connection:
+        revised_payload = connection.scalar(
+            text("select api_v1.query_close_price_new_highs_120d()")
+        )
+        selected_version = connection.scalar(
+            text("""
+select version
+from derived.close_price_new_high_120d_snapshot
+where snapshot_id=:snapshot_id
+"""),
+            {"snapshot_id": revised.snapshot_id},
+        )
+
+    assert revised.status == "succeeded"
+    assert revised.snapshot_id != first.snapshot_id
+    assert selected_version == 2
+    assert revised_payload["items"][0]["close"] == 12.0
+    assert revised_payload["items"][0]["breakout_pct"] == 20.0
+
+
+def test_live_board_index_persistence_is_atomic_idempotent_and_fastapi_only(
+    database_engine: Engine,
+) -> None:
+    start_date = date(2026, 6, 1)
+    closes = [Decimal(index) for index in range(1, 36)]
+    _commit_board_bias_bars(database_engine, start_date, closes)
+    records = [
+        {
+            "board_id": "THS:883423",
+            "trade_date": (start_date + timedelta(days=index)).isoformat(),
+            "market": "CN_A_SHARE",
+            "open": str(close),
+            "high": str(close),
+            "low": str(close),
+            "close": str(close),
+            "volume": index,
+            "amount": str(close * index),
+            "source_code": "akshare_ths",
+        }
+        for index, close in enumerate(closes)
+    ]
+    first_ingestion_id = uuid4()
+    first_raw_id = uuid4()
+    second_ingestion_id = uuid4()
+    second_raw_id = uuid4()
+    call = text("""
+        select api_v1.persist_board_index_daily_bars_live(
+            :ingestion_id, :raw_id, :fetched_at, :input_hash, :object_path,
+            :content_sha256, :byte_size, :source_row_count,
+            cast(:source_years as jsonb), cast(:records as jsonb)
+        ) as payload
+    """)
+    common = {
+        "fetched_at": datetime(2026, 8, 15, 1, 2, 3, tzinfo=UTC),
+        "input_hash": "b" * 64,
+        "content_sha256": "a" * 64,
+        "byte_size": 1234,
+        "source_row_count": 1,
+        "source_years": json.dumps([2026]),
+        "records": json.dumps(records),
+    }
+    with database_engine.begin() as connection:
+        first = connection.execute(
+            call,
+            {
+                **common,
+                "ingestion_id": first_ingestion_id,
+                "raw_id": first_raw_id,
+                "object_path": (
+                    "akshare_ths/board_index_daily_bar/year=2026/month=08/day=15/"
+                    f"{first_raw_id}.jsonl"
+                ),
+            },
+        ).scalar_one()
+        second = connection.execute(
+            call,
+            {
+                **common,
+                "ingestion_id": second_ingestion_id,
+                "raw_id": second_raw_id,
+                "object_path": (
+                    "akshare_ths/board_index_daily_bar/year=2026/month=08/day=15/"
+                    f"{second_raw_id}.jsonl"
+                ),
+            },
+        ).scalar_one()
+        signature = (
+            "api_v1.persist_board_index_daily_bars_live("
+            "uuid,uuid,timestamptz,text,text,text,bigint,integer,jsonb,jsonb)"
+        )
+        privileges = connection.execute(
+            text(
+                "select has_function_privilege('market_data_api', :signature, 'EXECUTE'), "
+                "has_function_privilege('anon', :signature, 'EXECUTE')"
+            ),
+            {"signature": signature},
+        ).one()
+        persisted = connection.execute(
+            text(
+                "select count(*) from ingestion.ingestion_run "
+                "where request_params->>'input_hash'=:input_hash"
+            ),
+            {"input_hash": common["input_hash"]},
+        ).scalar_one()
+
+    assert first["outcome"] == "created"
+    assert second["outcome"] == "reused"
+    assert second["ingestion_id"] == str(first_ingestion_id)
+    assert second["raw_id"] == str(first_raw_id)
+    assert persisted == 1
+    assert tuple(privileges) == (True, False)
 
 
 def test_derived_calculation_is_versioned_idempotent_and_revision_aware(
@@ -3168,6 +4510,89 @@ def _daily_bar(trade_date: date = TRADE_DATE) -> DailyBarRecord:
         trade_status=TradeStatus.TRADING,
         is_st=False,
         source_code="baostock",
+    )
+
+
+def _commit_board_bias_bars(
+    database_engine: Engine,
+    start_date: date,
+    closes: list[Decimal],
+) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    trading_days = [start_date + timedelta(days=index) for index in range(len(closes))]
+
+    calendar_run = _running_run(DatasetCode.TRADING_CALENDAR)
+    persistence.create_ingestion_run(calendar_run)
+    persistence.commit_trading_calendar_batch(
+        _completed_run(calendar_run, row_count=len(trading_days)),
+        _manifest(
+            calendar_run.ingestion_id,
+            "board-bias-calendar",
+            row_count=len(trading_days),
+        ),
+        _envelopes(
+            calendar_run.ingestion_id,
+            [
+                CalculatedTradingDay(
+                    market=Market.CN_A_SHARE,
+                    trade_date=trade_date,
+                    is_trading_day=True,
+                    previous_trading_day=(trading_days[index - 1] if index > 0 else None),
+                    next_trading_day=(
+                        trading_days[index + 1] if index + 1 < len(trading_days) else None
+                    ),
+                    source_code="baostock",
+                )
+                for index, trade_date in enumerate(trading_days)
+            ],
+        ),
+    )
+
+    board = BoardIndexRecord(
+        board_id="THS:883423",
+        board_code="883423",
+        namespace="THS",
+        name="沪深主板昨日涨停",
+        board_type=BoardIndexType.DYNAMIC_THEME,
+        market=Market.CN_A_SHARE,
+        status=BoardIndexStatus.ACTIVE,
+        source_code="akshare_ths",
+    )
+    board_run = _running_run(DatasetCode.BOARD_INDEX, ProviderCode.AKSHARE_THS)
+    persistence.create_ingestion_run(board_run)
+    persistence.commit_board_index_batch(
+        _completed_run(board_run),
+        _manifest(board_run.ingestion_id, "board-bias-index", provider="akshare_ths"),
+        _envelopes(board_run.ingestion_id, [board]),
+    )
+
+    bars = [
+        BoardIndexDailyBarRecord(
+            board_id=board.board_id,
+            trade_date=trade_date,
+            market=Market.CN_A_SHARE,
+            open=close,
+            high=close,
+            low=close,
+            close=close,
+            volume=0,
+            amount=Decimal("0"),
+            source_code="akshare_ths",
+        )
+        for trade_date, close in zip(trading_days, closes, strict=True)
+    ]
+    bar_run = _running_run(DatasetCode.BOARD_INDEX_DAILY_BAR, ProviderCode.AKSHARE_THS)
+    persistence.create_ingestion_run(bar_run)
+    persistence.commit_board_index_daily_bar_batch(
+        _completed_run(bar_run, row_count=len(bars)),
+        _manifest(
+            bar_run.ingestion_id,
+            "board-bias-bars",
+            row_count=len(bars),
+            provider="akshare_ths",
+        ),
+        _envelopes(bar_run.ingestion_id, bars),
+        [],
     )
 
 

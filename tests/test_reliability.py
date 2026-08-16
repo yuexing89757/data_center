@@ -32,6 +32,7 @@ from market_data_center.providers.contracts import ProviderError
 from market_data_center.raw_store import LocalRawStore, RawIntegrityError
 from market_data_center.reliability import (
     CALL_AUCTION_MARKET_REPLAY_DISABLED,
+    CALL_AUCTION_MARKET_SERIES_REPLAY_DISABLED,
     RawReplayService,
     compare_daily_bar_sources,
     recover_stale_runs,
@@ -267,10 +268,18 @@ def test_raw_replay_reuses_verified_raw_lineage_without_new_manifest(tmp_path: P
     assert envelopes[0].record.symbol == "SSE:600000"
 
 
+@pytest.mark.parametrize(
+    "dataset",
+    [
+        DatasetCode.CALL_AUCTION_MARKET_SNAPSHOT,
+        DatasetCode.CALL_AUCTION_MARKET_SERIES,
+    ],
+)
 @pytest.mark.parametrize("dry_run", [False, True])
 def test_raw_replay_disables_call_auction_market_before_raw_read_or_write(
     tmp_path: Path,
     dry_run: bool,
+    dataset: DatasetCode,
 ) -> None:
     class TrackingRawStore(LocalRawStore):
         read_count = 0
@@ -283,7 +292,7 @@ def test_raw_replay_disables_call_auction_market_before_raw_read_or_write(
     source = _source(
         store,
         provider=ProviderCode.PYTDX_HQ,
-        dataset=DatasetCode.CALL_AUCTION_MARKET_SNAPSHOT,
+        dataset=dataset,
         schema_version="market_data_center.call_auction_market_snapshot.raw.v1",
         rows=[{"retained_provider_raw": "future replay input"}],
         request_params={"trade_date": "2026-08-12", "expected_rows": 1},
@@ -302,7 +311,12 @@ def test_raw_replay_disables_call_auction_market_before_raw_read_or_write(
             dry_run=dry_run,
         )
 
-    assert str(error.value) == CALL_AUCTION_MARKET_REPLAY_DISABLED
+    expected_error = (
+        CALL_AUCTION_MARKET_REPLAY_DISABLED
+        if dataset is DatasetCode.CALL_AUCTION_MARKET_SNAPSHOT
+        else CALL_AUCTION_MARKET_SERIES_REPLAY_DISABLED
+    )
+    assert str(error.value) == expected_error
     assert store.read_count == 0
     assert persistence.created == []
     assert persistence.security_commits == []

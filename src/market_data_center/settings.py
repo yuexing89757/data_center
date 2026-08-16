@@ -33,8 +33,10 @@ class SchedulerSettings(BaseSettings):
     auction_collection_enabled: bool = True
     eod_quote_snapshot_enabled: bool = True
     call_auction_snapshot_enabled: bool = True
+    call_auction_market_series_enabled: bool = True
     # Remains opt-in until the new migration and provider preflight are explicitly deployed.
     today_limit_up_snapshot_enabled: bool = False
+    close_price_new_highs_120d_enabled: bool = True
 
 
 class PytdxPoolSettings(BaseSettings):
@@ -85,6 +87,11 @@ class ApiSettings(BaseSettings):
     fastapi_api_key: SecretStr = Field(min_length=32)
     fastapi_host: str = "127.0.0.1"
     fastapi_port: int = Field(default=8000, ge=1, le=65535)
+    fastapi_auction_live_timeout_seconds: float = Field(default=5.0, ge=1, le=8)
+    fastapi_auction_live_max_attempts: int = Field(default=2, ge=1, le=2)
+    fastapi_auction_live_cache_seconds: float = Field(default=3.0, ge=0, le=5)
+    fastapi_auction_live_minimum_interval_seconds: float = Field(default=1.0, ge=0.5, le=10)
+    fastapi_auction_raw_root: Path = Path("./data/api-raw")
 
     @model_validator(mode="after")
     def require_database_url(self) -> Self:

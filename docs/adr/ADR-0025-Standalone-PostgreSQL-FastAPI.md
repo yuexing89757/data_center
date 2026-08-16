@@ -19,7 +19,9 @@ connects to PostgreSQL directly: the PostgREST gateway is not an API runtime dep
    Database hosting does not change this boundary. It never falls back to the Worker's
    `DATABASE_URL` and accepts no platform-specific URL or key.
 3. SQL is restricted to the accepted, bounded `api_v1` query functions. The API does not query
-   internal schemas or expose lineage, provider payload fields, Raw objects, or credentials.
+   internal schemas or expose provider payload fields, Raw objects, or credentials. A bounded
+   contract may return a provider-neutral immutable batch identifier when it is required to prove
+   that one response was not assembled from multiple ingestions.
 4. A `market_data_api` NOLOGIN group role receives only schema usage and EXECUTE on the explicitly
    published v1
    functions published by this service. A separately managed LOGIN role inherits that group role.

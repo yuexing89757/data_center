@@ -10,11 +10,18 @@ from sqlalchemy.exc import DBAPIError
 
 from market_data_center.domain import ClassificationType
 from market_data_center.public_api.models import (
+    AuctionIndicativeDetailResponse,
+    AuctionOnePriceLimitResponse,
+    BoardIndexBiasResponse,
+    CallAuctionMarketSeriesSnapshotResponse,
+    CallAuctionMarketSnapshotResponse,
     ClassificationMembersResponse,
+    ClosePriceNewHighs120dResponse,
     DailyBarItem,
     DailyLimitUpListResponse,
     LimitUpPoolResponse,
     SecurityItem,
+    TopGainers20dResponse,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -62,6 +69,45 @@ select api_v1.query_daily_limit_up_list(
 ) as payload
 """)
 
+QUERY_CALL_AUCTION_MARKET_SNAPSHOTS = text("""
+select api_v1.query_call_auction_market_snapshots(
+    p_trade_date => :trade_date,
+    p_codes => :codes
+) as payload
+""")
+
+QUERY_CALL_AUCTION_MARKET_SERIES_SNAPSHOTS = text("""
+select api_v1.query_call_auction_market_series_snapshots(
+    p_trade_date => :trade_date,
+    p_codes => :codes
+) as payload
+""")
+
+QUERY_TOP_GAINERS_20D = text("""
+select api_v1.query_top_gainers_20d(p_end_date => :end_date, p_limit => :limit) as payload
+""")
+
+
+QUERY_CLOSE_PRICE_NEW_HIGHS_120D = text("""
+select api_v1.query_close_price_new_highs_120d() as payload
+""")
+QUERY_BOARD_INDEX_BIAS_LATEST = text("""
+select api_v1.query_board_index_bias_latest() as payload
+""")
+
+QUERY_AUCTION_ONE_PRICE_LIMITS = text("""
+select api_v1.query_auction_one_price_limits(p_trade_date => :trade_date) as payload
+""")
+
+QUERY_AUCTION_INDICATIVE_DETAILS = text("""
+select api_v1.query_call_auction_indicative_details(
+    p_symbol => :symbol,
+    p_trade_date => (now() at time zone 'Asia/Shanghai')::date,
+    p_offset => :offset,
+    p_limit => :limit
+) as payload
+""")
+
 
 class PublicQueryError(RuntimeError):
     """Safe application-level query error."""
@@ -73,6 +119,10 @@ class PublicQueryInvalid(PublicQueryError):
 
 class PublicQueryNotFound(PublicQueryError):
     pass
+
+
+class BoardIndexBiasNotReady(PublicQueryNotFound):
+    """The fixed board cache explicitly requested live fallback via SQLSTATE P0002."""
 
 
 class PublicQueryTimeout(PublicQueryError):
@@ -108,6 +158,26 @@ class PublicQueryService(Protocol):
     def daily_limit_up_list(
         self, trade_date: date, version: int | None, offset: int, limit: int
     ) -> DailyLimitUpListResponse: ...
+
+    def call_auction_market_snapshots(
+        self, trade_date: date, codes: tuple[str, ...]
+    ) -> CallAuctionMarketSnapshotResponse: ...
+
+    def call_auction_market_series_snapshots(
+        self, trade_date: date, codes: tuple[str, ...]
+    ) -> CallAuctionMarketSeriesSnapshotResponse: ...
+
+    def top_gainers_20d(self, end_date: date | None, limit: int) -> TopGainers20dResponse: ...
+
+    def close_price_new_highs_120d(self) -> ClosePriceNewHighs120dResponse: ...
+
+    def board_index_bias_latest(self) -> BoardIndexBiasResponse: ...
+
+    def auction_one_price_limits(self, trade_date: date | None) -> AuctionOnePriceLimitResponse: ...
+
+    def auction_indicative_details(
+        self, symbol: str, offset: int, limit: int
+    ) -> AuctionIndicativeDetailResponse: ...
 
 
 class PostgreSQLPublicQueryService:
@@ -184,9 +254,70 @@ class PostgreSQLPublicQueryService:
             raise PublicQueryNotFound("daily limit-up list was not found")
         return DailyLimitUpListResponse.model_validate(rows[0]["payload"])
 
-    def _execute(self, statement: Any, parameters: Mapping[str, object]) -> Sequence[RowMapping]:
+    def call_auction_market_snapshots(
+        self, trade_date: date, codes: tuple[str, ...]
+    ) -> CallAuctionMarketSnapshotResponse:
+        rows = self._execute(
+            QUERY_CALL_AUCTION_MARKET_SNAPSHOTS,
+            {"trade_date": trade_date, "codes": list(codes)},
+        )
+        if not rows:
+            raise PublicQueryNotFound("call-auction market snapshot was not found")
+        return CallAuctionMarketSnapshotResponse.model_validate(rows[0]["payload"])
+
+    def call_auction_market_series_snapshots(
+        self, trade_date: date, codes: tuple[str, ...]
+    ) -> CallAuctionMarketSeriesSnapshotResponse:
+        rows = self._execute(
+            QUERY_CALL_AUCTION_MARKET_SERIES_SNAPSHOTS,
+            {"trade_date": trade_date, "codes": list(codes)},
+        )
+        if not rows:
+            raise PublicQueryNotFound("call-auction market series snapshot was not found")
+        return CallAuctionMarketSeriesSnapshotResponse.model_validate(rows[0]["payload"])
+
+    def top_gainers_20d(self, end_date: date | None, limit: int) -> TopGainers20dResponse:
+        rows = self._execute(QUERY_TOP_GAINERS_20D, {"end_date": end_date, "limit": limit})
+        return TopGainers20dResponse.model_validate(rows[0]["payload"])
+
+    def close_price_new_highs_120d(self) -> ClosePriceNewHighs120dResponse:
+        rows = self._execute(QUERY_CLOSE_PRICE_NEW_HIGHS_120D, {}, statement_timeout_ms=10_000)
+        return ClosePriceNewHighs120dResponse.model_validate(rows[0]["payload"])
+
+    def board_index_bias_latest(self) -> BoardIndexBiasResponse:
+        try:
+            rows = self._execute(QUERY_BOARD_INDEX_BIAS_LATEST, {})
+        except PublicQueryNotFound as error:
+            raise BoardIndexBiasNotReady("board-index history requires live fallback") from error
+        return BoardIndexBiasResponse.model_validate(rows[0]["payload"])
+
+    def auction_one_price_limits(self, trade_date: date | None) -> AuctionOnePriceLimitResponse:
+        rows = self._execute(QUERY_AUCTION_ONE_PRICE_LIMITS, {"trade_date": trade_date})
+        return AuctionOnePriceLimitResponse.model_validate(rows[0]["payload"])
+
+    def auction_indicative_details(
+        self, symbol: str, offset: int, limit: int
+    ) -> AuctionIndicativeDetailResponse:
+        rows = self._execute(
+            QUERY_AUCTION_INDICATIVE_DETAILS,
+            {"symbol": symbol, "offset": offset, "limit": limit},
+        )
+        return AuctionIndicativeDetailResponse.model_validate(rows[0]["payload"])
+
+    def _execute(
+        self,
+        statement: Any,
+        parameters: Mapping[str, object],
+        *,
+        statement_timeout_ms: int | None = None,
+    ) -> Sequence[RowMapping]:
         try:
             with self._engine.connect() as connection:
+                if statement_timeout_ms is not None:
+                    connection.execute(
+                        text("select set_config('statement_timeout', :statement_timeout, true)"),
+                        {"statement_timeout": f"{statement_timeout_ms}ms"},
+                    )
                 return connection.execute(statement, parameters).mappings().all()
         except DBAPIError as error:
             _raise_safe_query_error(error)

@@ -1,6 +1,1092 @@
 {
   "components": {
     "schemas": {
+      "AuctionIndicativeDetailItem": {
+        "additionalProperties": false,
+        "properties": {
+          "displayed_volume_shares": {
+            "minimum": 0.0,
+            "title": "Displayed Volume Shares",
+            "type": "integer"
+          },
+          "indicative_price": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Indicative Price",
+            "type": "string"
+          },
+          "observed_at": {
+            "description": "Asia/Shanghai wall-clock time formatted as YYYY-MM-DD HH:mm:ss",
+            "examples": [
+              "2026-08-14 09:15:05"
+            ],
+            "title": "Observed At",
+            "type": "string"
+          },
+          "source_display_classification": {
+            "enum": [
+              "internal",
+              "external",
+              "unknown"
+            ],
+            "title": "Source Display Classification",
+            "type": "string"
+          },
+          "source_sequence": {
+            "minimum": 0.0,
+            "title": "Source Sequence",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "observed_at",
+          "source_sequence",
+          "indicative_price",
+          "displayed_volume_shares",
+          "source_display_classification"
+        ],
+        "title": "AuctionIndicativeDetailItem",
+        "type": "object"
+      },
+      "AuctionIndicativeDetailResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "cache_hit": {
+            "title": "Cache Hit",
+            "type": "boolean"
+          },
+          "data_origin": {
+            "enum": [
+              "database",
+              "eastmoney_live"
+            ],
+            "title": "Data Origin",
+            "type": "string"
+          },
+          "fetched_at": {
+            "description": "Asia/Shanghai wall-clock time formatted as YYYY-MM-DD HH:mm:ss",
+            "examples": [
+              "2026-08-14 11:26:46"
+            ],
+            "title": "Fetched At",
+            "type": "string"
+          },
+          "has_more": {
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "ingestion_id": {
+            "format": "uuid",
+            "title": "Ingestion Id",
+            "type": "string"
+          },
+          "ingestion_status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "succeeded",
+                  "partial"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ingestion Status"
+          },
+          "input_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Input Hash",
+            "type": "string"
+          },
+          "is_exchange_trade_tick": {
+            "const": false,
+            "title": "Is Exchange Trade Tick",
+            "type": "boolean"
+          },
+          "is_order_by_order": {
+            "const": false,
+            "title": "Is Order By Order",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AuctionIndicativeDetailItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "live_provider_derived": {
+            "const": true,
+            "title": "Live Provider Derived",
+            "type": "boolean"
+          },
+          "offset": {
+            "minimum": 0.0,
+            "title": "Offset",
+            "type": "integer"
+          },
+          "persistence_status": {
+            "enum": [
+              "queued",
+              "persisted"
+            ],
+            "title": "Persistence Status",
+            "type": "string"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/AuctionIndicativeQuality"
+          },
+          "raw_id": {
+            "format": "uuid",
+            "title": "Raw Id",
+            "type": "string"
+          },
+          "returned_count": {
+            "maximum": 500.0,
+            "minimum": 0.0,
+            "title": "Returned Count",
+            "type": "integer"
+          },
+          "semantics": {
+            "const": "auction_virtual_indicative_matching_detail",
+            "title": "Semantics",
+            "type": "string"
+          },
+          "source": {
+            "const": "eastmoney",
+            "title": "Source",
+            "type": "string"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "total_count": {
+            "minimum": 0.0,
+            "title": "Total Count",
+            "type": "integer"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "symbol",
+          "trade_date",
+          "fetched_at",
+          "source",
+          "live_provider_derived",
+          "data_origin",
+          "cache_hit",
+          "persistence_status",
+          "ingestion_id",
+          "raw_id",
+          "input_hash",
+          "semantics",
+          "is_exchange_trade_tick",
+          "is_order_by_order",
+          "total_count",
+          "offset",
+          "returned_count",
+          "has_more",
+          "quality",
+          "items"
+        ],
+        "title": "AuctionIndicativeDetailResponse",
+        "type": "object"
+      },
+      "AuctionIndicativeQuality": {
+        "additionalProperties": false,
+        "properties": {
+          "accepted_auction_row_count": {
+            "exclusiveMaximum": 5000.0,
+            "minimum": 0.0,
+            "title": "Accepted Auction Row Count",
+            "type": "integer"
+          },
+          "database_persistence": {
+            "enum": [
+              "queued",
+              "persisted"
+            ],
+            "title": "Database Persistence",
+            "type": "string"
+          },
+          "raw_captured": {
+            "const": true,
+            "title": "Raw Captured",
+            "type": "boolean"
+          },
+          "source_display_classification_trusted": {
+            "const": false,
+            "title": "Source Display Classification Trusted",
+            "type": "boolean"
+          },
+          "source_row_count": {
+            "maximum": 5000.0,
+            "minimum": 0.0,
+            "title": "Source Row Count",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "complete",
+              "partial"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "source_row_count",
+          "accepted_auction_row_count",
+          "source_display_classification_trusted",
+          "raw_captured",
+          "database_persistence"
+        ],
+        "title": "AuctionIndicativeQuality",
+        "type": "object"
+      },
+      "AuctionOnePriceLimitItem": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "cumulative_amount": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cumulative Amount"
+          },
+          "cumulative_volume": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cumulative Volume"
+          },
+          "direction": {
+            "enum": [
+              "up",
+              "down"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
+          "indicated_price": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Indicated Price",
+            "type": "string"
+          },
+          "limit_price": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Limit Price",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "previous_close": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Previous Close",
+            "type": "string"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "code",
+          "name",
+          "direction",
+          "observed_at",
+          "indicated_price",
+          "limit_price",
+          "previous_close",
+          "cumulative_amount"
+        ],
+        "title": "AuctionOnePriceLimitItem",
+        "type": "object"
+      },
+      "AuctionOnePriceLimitResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "candidate_count": {
+            "minimum": 0.0,
+            "title": "Candidate Count",
+            "type": "integer"
+          },
+          "down": {
+            "items": {
+              "$ref": "#/components/schemas/AuctionOnePriceLimitItem"
+            },
+            "title": "Down",
+            "type": "array"
+          },
+          "down_count": {
+            "minimum": 0.0,
+            "title": "Down Count",
+            "type": "integer"
+          },
+          "ingestion_id": {
+            "format": "uuid",
+            "title": "Ingestion Id",
+            "type": "string"
+          },
+          "ingestion_status": {
+            "enum": [
+              "succeeded",
+              "partial"
+            ],
+            "title": "Ingestion Status",
+            "type": "string"
+          },
+          "omitted_incomplete_count": {
+            "minimum": 0.0,
+            "title": "Omitted Incomplete Count",
+            "type": "integer"
+          },
+          "price_limit_calculation_id": {
+            "format": "uuid",
+            "title": "Price Limit Calculation Id",
+            "type": "string"
+          },
+          "snapshot_window": {
+            "const": "09:26:00-09:26:59 Asia/Shanghai",
+            "title": "Snapshot Window",
+            "type": "string"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "up": {
+            "items": {
+              "$ref": "#/components/schemas/AuctionOnePriceLimitItem"
+            },
+            "title": "Up",
+            "type": "array"
+          },
+          "up_count": {
+            "minimum": 0.0,
+            "title": "Up Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "trade_date",
+          "ingestion_id",
+          "ingestion_status",
+          "price_limit_calculation_id",
+          "snapshot_window",
+          "candidate_count",
+          "omitted_incomplete_count",
+          "up_count",
+          "down_count",
+          "up",
+          "down"
+        ],
+        "title": "AuctionOnePriceLimitResponse",
+        "type": "object"
+      },
+      "BoardIndexBiasResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "algorithm_version": {
+            "const": "board_index_bias_v1",
+            "title": "Algorithm Version",
+            "type": "string"
+          },
+          "bias_5_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bias 5 Pct"
+          },
+          "bias_direction": {
+            "anyOf": [
+              {
+                "enum": [
+                  "up",
+                  "down",
+                  "flat"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bias Direction"
+          },
+          "bias_sample_count": {
+            "maximum": 30.0,
+            "minimum": 0.0,
+            "title": "Bias Sample Count",
+            "type": "integer"
+          },
+          "board_code": {
+            "const": "883423",
+            "title": "Board Code",
+            "type": "string"
+          },
+          "board_id": {
+            "const": "THS:883423",
+            "title": "Board Id",
+            "type": "string"
+          },
+          "board_name": {
+            "title": "Board Name",
+            "type": "string"
+          },
+          "close": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Close",
+            "type": "string"
+          },
+          "data_origin": {
+            "enum": [
+              "database",
+              "ths_live"
+            ],
+            "title": "Data Origin",
+            "type": "string"
+          },
+          "fetched_at": {
+            "format": "date-time",
+            "title": "Fetched At",
+            "type": "string"
+          },
+          "highest_bias_5_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Highest Bias 5 Pct"
+          },
+          "highest_bias_trade_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Highest Bias Trade Date"
+          },
+          "lowest_bias_5_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lowest Bias 5 Pct"
+          },
+          "lowest_bias_trade_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lowest Bias Trade Date"
+          },
+          "moving_average_5": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Moving Average 5"
+          },
+          "persistence_status": {
+            "enum": [
+              "persisted",
+              "queued"
+            ],
+            "title": "Persistence Status",
+            "type": "string"
+          },
+          "previous_bias_5_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Bias 5 Pct"
+          },
+          "previous_trade_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Trade Date"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "window_trading_days": {
+            "const": 30,
+            "title": "Window Trading Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "board_id",
+          "board_code",
+          "board_name",
+          "trade_date",
+          "close",
+          "moving_average_5",
+          "bias_5_pct",
+          "previous_trade_date",
+          "previous_bias_5_pct",
+          "bias_direction",
+          "window_trading_days",
+          "bias_sample_count",
+          "highest_bias_5_pct",
+          "highest_bias_trade_date",
+          "lowest_bias_5_pct",
+          "lowest_bias_trade_date",
+          "algorithm_version",
+          "data_origin",
+          "persistence_status",
+          "fetched_at"
+        ],
+        "title": "BoardIndexBiasResponse",
+        "type": "object"
+      },
+      "CallAuctionMarketSeriesRound": {
+        "additionalProperties": false,
+        "properties": {
+          "collected_at": {
+            "format": "date-time",
+            "title": "Collected At",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CallAuctionMarketSeriesSnapshotItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "missing_codes": {
+            "items": {
+              "pattern": "^[0-9]{6}$",
+              "type": "string"
+            },
+            "title": "Missing Codes",
+            "type": "array"
+          },
+          "requested_count": {
+            "maximum": 500.0,
+            "minimum": 1.0,
+            "title": "Requested Count",
+            "type": "integer"
+          },
+          "returned_count": {
+            "minimum": 0.0,
+            "title": "Returned Count",
+            "type": "integer"
+          },
+          "round_status": {
+            "enum": [
+              "succeeded",
+              "partial",
+              "failed"
+            ],
+            "title": "Round Status",
+            "type": "string"
+          },
+          "sample_seq": {
+            "maximum": 31.0,
+            "minimum": 0.0,
+            "title": "Sample Seq",
+            "type": "integer"
+          },
+          "scheduled_at": {
+            "format": "date-time",
+            "title": "Scheduled At",
+            "type": "string"
+          },
+          "selected_ingestion_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Ingestion Id"
+          }
+        },
+        "required": [
+          "sample_seq",
+          "scheduled_at",
+          "collected_at",
+          "round_status",
+          "selected_ingestion_id",
+          "requested_count",
+          "returned_count",
+          "missing_codes",
+          "items"
+        ],
+        "title": "CallAuctionMarketSeriesRound",
+        "type": "object"
+      },
+      "CallAuctionMarketSeriesSnapshotItem": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "cumulative_amount": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cumulative Amount"
+          },
+          "cumulative_volume": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cumulative Volume"
+          },
+          "high_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "High Price"
+          },
+          "last_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Price"
+          },
+          "low_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Low Price"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "previous_close": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Close"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "code",
+          "observed_at",
+          "last_price",
+          "previous_close",
+          "high_price",
+          "low_price",
+          "cumulative_amount"
+        ],
+        "title": "CallAuctionMarketSeriesSnapshotItem",
+        "type": "object"
+      },
+      "CallAuctionMarketSeriesSnapshotQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "codes": {
+            "items": {
+              "pattern": "^[0-9]{6}$",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Codes",
+            "type": "array"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "trade_date",
+          "codes"
+        ],
+        "title": "CallAuctionMarketSeriesSnapshotQuery",
+        "type": "object"
+      },
+      "CallAuctionMarketSeriesSnapshotResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_rounds": {
+            "const": 32,
+            "title": "Expected Rounds",
+            "type": "integer"
+          },
+          "requested_count": {
+            "maximum": 500.0,
+            "minimum": 1.0,
+            "title": "Requested Count",
+            "type": "integer"
+          },
+          "returned_rounds": {
+            "maximum": 32.0,
+            "minimum": 0.0,
+            "title": "Returned Rounds",
+            "type": "integer"
+          },
+          "rounds": {
+            "items": {
+              "$ref": "#/components/schemas/CallAuctionMarketSeriesRound"
+            },
+            "title": "Rounds",
+            "type": "array"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "session_status": {
+            "enum": [
+              "succeeded",
+              "partial"
+            ],
+            "title": "Session Status",
+            "type": "string"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "trade_date",
+          "session_id",
+          "session_status",
+          "expected_rounds",
+          "returned_rounds",
+          "requested_count",
+          "rounds"
+        ],
+        "title": "CallAuctionMarketSeriesSnapshotResponse",
+        "type": "object"
+      },
+      "CallAuctionMarketSnapshotItem": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "cumulative_amount": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cumulative Amount"
+          },
+          "cumulative_volume": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cumulative Volume"
+          },
+          "high_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "High Price"
+          },
+          "last_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Price"
+          },
+          "low_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Low Price"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "previous_close": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Close"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "code",
+          "observed_at",
+          "last_price",
+          "previous_close",
+          "high_price",
+          "low_price",
+          "cumulative_amount"
+        ],
+        "title": "CallAuctionMarketSnapshotItem",
+        "type": "object"
+      },
+      "CallAuctionMarketSnapshotQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "codes": {
+            "items": {
+              "pattern": "^[0-9]{6}$",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Codes",
+            "type": "array"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "trade_date",
+          "codes"
+        ],
+        "title": "CallAuctionMarketSnapshotQuery",
+        "type": "object"
+      },
+      "CallAuctionMarketSnapshotResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "ingestion_id": {
+            "format": "uuid",
+            "title": "Ingestion Id",
+            "type": "string"
+          },
+          "ingestion_status": {
+            "enum": [
+              "succeeded",
+              "partial"
+            ],
+            "title": "Ingestion Status",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CallAuctionMarketSnapshotItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "missing_codes": {
+            "items": {
+              "pattern": "^[0-9]{6}$",
+              "type": "string"
+            },
+            "title": "Missing Codes",
+            "type": "array"
+          },
+          "requested_count": {
+            "maximum": 500.0,
+            "minimum": 1.0,
+            "title": "Requested Count",
+            "type": "integer"
+          },
+          "returned_count": {
+            "minimum": 0.0,
+            "title": "Returned Count",
+            "type": "integer"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "trade_date",
+          "ingestion_id",
+          "ingestion_status",
+          "requested_count",
+          "returned_count",
+          "missing_codes",
+          "items"
+        ],
+        "title": "CallAuctionMarketSnapshotResponse",
+        "type": "object"
+      },
       "ClassificationMembersResponse": {
         "additionalProperties": false,
         "properties": {
@@ -44,6 +1130,149 @@
         ],
         "title": "ClassificationType",
         "type": "string"
+      },
+      "ClosePriceNewHigh120dItem": {
+        "additionalProperties": false,
+        "properties": {
+          "breakout_pct": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Breakout Pct",
+            "type": "string"
+          },
+          "close": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Close",
+            "type": "string"
+          },
+          "code": {
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "previous_119d_high": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Previous 119D High",
+            "type": "string"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "code",
+          "name",
+          "close",
+          "previous_119d_high",
+          "breakout_pct"
+        ],
+        "title": "ClosePriceNewHigh120dItem",
+        "type": "object"
+      },
+      "ClosePriceNewHigh120dOmissions": {
+        "additionalProperties": false,
+        "properties": {
+          "incomplete_history": {
+            "minimum": 0.0,
+            "title": "Incomplete History",
+            "type": "integer"
+          },
+          "missing_name": {
+            "minimum": 0.0,
+            "title": "Missing Name",
+            "type": "integer"
+          },
+          "non_trading_bar": {
+            "minimum": 0.0,
+            "title": "Non Trading Bar",
+            "type": "integer"
+          },
+          "nonpositive_price": {
+            "minimum": 0.0,
+            "title": "Nonpositive Price",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "incomplete_history",
+          "non_trading_bar",
+          "nonpositive_price",
+          "missing_name"
+        ],
+        "title": "ClosePriceNewHigh120dOmissions",
+        "type": "object"
+      },
+      "ClosePriceNewHighs120dResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "comparison_session_count": {
+            "const": 119,
+            "title": "Comparison Session Count",
+            "type": "integer"
+          },
+          "eligible_history_count": {
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Eligible History Count",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ClosePriceNewHigh120dItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "omissions": {
+            "$ref": "#/components/schemas/ClosePriceNewHigh120dOmissions"
+          },
+          "omitted_count": {
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Omitted Count",
+            "type": "integer"
+          },
+          "returned_count": {
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Returned Count",
+            "type": "integer"
+          },
+          "total_candidate_count": {
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Total Candidate Count",
+            "type": "integer"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "window_trading_session_count": {
+            "const": 120,
+            "title": "Window Trading Session Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "trade_date",
+          "window_trading_session_count",
+          "comparison_session_count",
+          "total_candidate_count",
+          "eligible_history_count",
+          "omitted_count",
+          "returned_count",
+          "omissions",
+          "items"
+        ],
+        "title": "ClosePriceNewHighs120dResponse",
+        "type": "object"
       },
       "DailyBarItem": {
         "additionalProperties": false,
@@ -1087,6 +2316,170 @@
         "title": "SecurityType",
         "type": "string"
       },
+      "TopGainer20dItem": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "end_close": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "End Close",
+            "type": "string"
+          },
+          "end_trade_date": {
+            "format": "date",
+            "title": "End Trade Date",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "return_pct": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Return Pct",
+            "type": "string"
+          },
+          "start_close": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Start Close",
+            "type": "string"
+          },
+          "start_trade_date": {
+            "format": "date",
+            "title": "Start Trade Date",
+            "type": "string"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "code",
+          "name",
+          "start_trade_date",
+          "end_trade_date",
+          "start_close",
+          "end_close",
+          "return_pct"
+        ],
+        "title": "TopGainer20dItem",
+        "type": "object"
+      },
+      "TopGainer20dOmissions": {
+        "additionalProperties": false,
+        "properties": {
+          "missing_end_bar": {
+            "minimum": 0.0,
+            "title": "Missing End Bar",
+            "type": "integer"
+          },
+          "missing_name": {
+            "minimum": 0.0,
+            "title": "Missing Name",
+            "type": "integer"
+          },
+          "missing_start_bar": {
+            "minimum": 0.0,
+            "title": "Missing Start Bar",
+            "type": "integer"
+          },
+          "non_trading_bar": {
+            "minimum": 0.0,
+            "title": "Non Trading Bar",
+            "type": "integer"
+          },
+          "nonpositive_price": {
+            "minimum": 0.0,
+            "title": "Nonpositive Price",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "missing_start_bar",
+          "missing_end_bar",
+          "non_trading_bar",
+          "nonpositive_price",
+          "missing_name"
+        ],
+        "title": "TopGainer20dOmissions",
+        "type": "object"
+      },
+      "TopGainers20dResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "eligible_count": {
+            "minimum": 0.0,
+            "title": "Eligible Count",
+            "type": "integer"
+          },
+          "end_trade_date": {
+            "format": "date",
+            "title": "End Trade Date",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TopGainer20dItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "omissions": {
+            "$ref": "#/components/schemas/TopGainer20dOmissions"
+          },
+          "omitted_count": {
+            "minimum": 0.0,
+            "title": "Omitted Count",
+            "type": "integer"
+          },
+          "return_interval_count": {
+            "const": 19,
+            "title": "Return Interval Count",
+            "type": "integer"
+          },
+          "returned_count": {
+            "maximum": 10.0,
+            "minimum": 0.0,
+            "title": "Returned Count",
+            "type": "integer"
+          },
+          "start_trade_date": {
+            "format": "date",
+            "title": "Start Trade Date",
+            "type": "string"
+          },
+          "total_candidate_count": {
+            "minimum": 0.0,
+            "title": "Total Candidate Count",
+            "type": "integer"
+          },
+          "trading_session_count": {
+            "const": 20,
+            "title": "Trading Session Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "start_trade_date",
+          "end_trade_date",
+          "trading_session_count",
+          "return_interval_count",
+          "total_candidate_count",
+          "eligible_count",
+          "omitted_count",
+          "returned_count",
+          "omissions",
+          "items"
+        ],
+        "title": "TopGainers20dResponse",
+        "type": "object"
+      },
       "TradeStatus": {
         "enum": [
           "trading",
@@ -1152,6 +2545,355 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/board-indexes/883423/bias": {
+      "get": {
+        "description": "Uses fresh stored THS:883423 daily bars first. Missing, insufficient, or stale history triggers one bounded live THS fetch after which immutable Raw is captured and database persistence is queued. Returns the current five-session simple moving-average bias, its direction versus the previous available board session, and extrema from valid samples in the latest 30 sessions. The endpoint accepts no input and never falls back to another board.",
+        "operationId": "board_index_bias_latest_api_v1_board_indexes_883423_bias_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoardIndexBiasResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Query the latest THS 883423 MA5 bias metrics",
+        "tags": [
+          "market-data"
+        ]
+      }
+    },
+    "/api/v1/call-auction-indicative-details": {
+      "get": {
+        "description": "Accepts one six-digit SSE/SZSE stock code and first reads the current Shanghai date's latest stored snapshot. Only an explicit database miss triggers a bounded Eastmoney fetch for 09:15:00-09:25:59 virtual indicative/reference price and displayed matching-volume observations. Live data is returned immediately after immutable Raw capture while database registration is queued asynchronously. These are not exchange trade ticks or order-by-order records. The source display classification is untrusted and is not a trade direction. data_origin and persistence_status distinguish stored data from a queued live result. Items are ordered by observed_at then source_sequence. Timestamp fields are rendered in Asia/Shanghai as YYYY-MM-DD HH:mm:ss.",
+        "operationId": "auction_indicative_details_api_v1_call_auction_indicative_details_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9]{6}$",
+              "title": "Code",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 5000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuctionIndicativeDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Query current-day call-auction virtual indicative matching details",
+        "tags": [
+          "market-data"
+        ]
+      }
+    },
+    "/api/v1/call-auction-market-series-snapshots/query": {
+      "post": {
+        "description": "Returns all recorded rounds from the latest succeeded session for the exact trade date, or the latest partial session only when no succeeded session exists. Rounds are ordered by scheduled time and report missing six-digit codes independently. Sessions and dates are never merged or substituted.",
+        "operationId": "call_auction_market_series_snapshots_api_v1_call_auction_market_series_snapshots_query_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CallAuctionMarketSeriesSnapshotQuery"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallAuctionMarketSeriesSnapshotResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Batch query one opening-auction market series session",
+        "tags": [
+          "market-data"
+        ]
+      }
+    },
+    "/api/v1/call-auction-market-snapshots/query": {
+      "post": {
+        "description": "Returns facts from the latest succeeded ingestion for the exact trade date, or the latest partial ingestion only when no succeeded ingestion exists. A six-digit code can return both SSE and SZSE symbols. Missing codes are reported explicitly; no date or batch fallback is used.",
+        "operationId": "call_auction_market_snapshots_api_v1_call_auction_market_snapshots_query_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CallAuctionMarketSnapshotQuery"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallAuctionMarketSnapshotResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Batch query one opening-auction market snapshot",
+        "tags": [
+          "market-data"
+        ]
+      }
+    },
+    "/api/v1/call-auction-one-price-limits": {
+      "get": {
+        "operationId": "auction_one_price_limits_api_v1_call_auction_one_price_limits_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "trade_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Trade Date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuctionOnePriceLimitResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Query evidence-complete 09:26 one-price limit stocks",
+        "tags": [
+          "market-data"
+        ]
+      }
+    },
     "/api/v1/classifications/{namespace}/{classification_type}/{classification_code}/members": {
       "get": {
         "operationId": "classification_members_api_v1_classifications__namespace___classification_type___classification_code__members_get",
@@ -1267,6 +3009,32 @@
           }
         ],
         "summary": "Classification Members",
+        "tags": [
+          "market-data"
+        ]
+      }
+    },
+    "/api/v1/close-price-new-highs-120d": {
+      "get": {
+        "operationId": "close_price_new_highs_120d_api_v1_close_price_new_highs_120d_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClosePriceNewHighs120dResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Query SSE and SZSE stocks making strict 120-session closing highs",
         "tags": [
           "market-data"
         ]
@@ -1676,6 +3444,73 @@
           }
         ],
         "summary": "Search Securities",
+        "tags": [
+          "market-data"
+        ]
+      }
+    },
+    "/api/v1/top-gainers-20d": {
+      "get": {
+        "operationId": "top_gainers_20d_api_v1_top_gainers_20d_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "end_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "End Date"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "maximum": 10,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TopGainers20dResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Rank the top gainers over an exact 20-session window",
         "tags": [
           "market-data"
         ]

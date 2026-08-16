@@ -11,18 +11,24 @@ def test_optional_scheduled_tasks_default_enabled() -> None:
     assert settings.auction_collection_enabled is True
     assert settings.eod_quote_snapshot_enabled is True
     assert settings.call_auction_snapshot_enabled is True
+    assert settings.call_auction_market_series_enabled is True
+    assert settings.close_price_new_highs_120d_enabled is True
 
 
 def test_optional_scheduled_tasks_can_be_disabled_by_environment(monkeypatch) -> None:
     monkeypatch.setenv("AUCTION_COLLECTION_ENABLED", "false")
     monkeypatch.setenv("EOD_QUOTE_SNAPSHOT_ENABLED", "false")
     monkeypatch.setenv("CALL_AUCTION_SNAPSHOT_ENABLED", "false")
+    monkeypatch.setenv("CALL_AUCTION_MARKET_SERIES_ENABLED", "false")
+    monkeypatch.setenv("CLOSE_PRICE_NEW_HIGHS_120D_ENABLED", "false")
 
     settings = SchedulerSettings(_env_file=None)
 
     assert settings.auction_collection_enabled is False
     assert settings.eod_quote_snapshot_enabled is False
     assert settings.call_auction_snapshot_enabled is False
+    assert settings.call_auction_market_series_enabled is False
+    assert settings.close_price_new_highs_120d_enabled is False
 
 
 def test_task_timing_is_not_part_of_environment_settings() -> None:
@@ -47,6 +53,12 @@ def test_task_timing_is_not_part_of_environment_settings() -> None:
         "eod_quote_minute",
         "call_auction_hour",
         "call_auction_minute",
+        "call_auction_market_series_hour",
+        "call_auction_market_series_minute",
+        "call_auction_market_series_cadence_seconds",
+        "call_auction_market_series_batch_size",
+        "close_price_new_highs_120d_hour",
+        "close_price_new_highs_120d_minute",
     )
     assert all(not hasattr(scheduler, field) for field in removed_fields)
     assert not hasattr(pool, "pytdx_pool_refresh_hours")

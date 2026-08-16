@@ -1,8 +1,9 @@
 # FastAPI external read-only API
 
 The FastAPI process is an independent protocol boundary that connects directly to PostgreSQL. It
-does not call or require PostgREST, providers, the Worker scheduler, Raw storage, or persistence
-services. Its SQL is limited to the explicitly granted bounded `api_v1` functions.
+does not require PostgREST or the Worker scheduler. Provider access and Raw capture exist only for
+the explicitly documented bounded single-symbol live-auction endpoint and the fixed THS:883423
+bias fallback. Its SQL is limited to explicitly granted bounded `api_v1` functions.
 
 ```dotenv
 FASTAPI_DATABASE_URL='postgresql+psycopg://<api-login>:<password>@<host>:5432/<database>'
@@ -16,8 +17,10 @@ FASTAPI_PORT=8000
 force read-only transactions and a five-second statement timeout.
 
 Stable v1 routes are security search (100 rows), unadjusted daily bars (5,000 rows and 3,661 days),
-classification members (5,000 rows), the exact-date generic limit-up pool (5,000 rows), and the
-versioned same-day limit-up snapshot (500 rows per page). Business routes require `X-API-Key`. `/healthz` is
+classification members (5,000 rows), the exact-date generic limit-up pool (5,000 rows), the
+versioned same-day limit-up snapshot (500 rows per page), and exact-date call-auction market
+snapshots and market-series sessions (500 requested six-digit codes). Business routes require
+`X-API-Key`. `/healthz` is
 process-local and `/readyz` verifies a bounded database query. Prices and amounts remain decimal
 strings. Errors never return SQL, internal schema names, database addresses, or credentials.
 
@@ -46,3 +49,85 @@ closing bid levels and computed bid-1 sealing amount, plus provider-neutral line
 Missing enrichment remains `null`; a non-ready snapshot is never presented as complete. Members
 are ordered by `symbol`; `offset` is bounded to 50,000 and `limit` to 500. This route intentionally
 replaces its former rich-list response under ADR-0030. `/api/v1/limit-up-pool` is unchanged.
+
+`POST /api/v1/call-auction-market-snapshots/query` accepts one exact `trade_date` and 1–500
+six-digit `codes`. Duplicate codes are removed. It returns the latest successful ingestion for that
+date; only when no successful ingestion has facts does it select the latest partial ingestion. It
+never combines ingestions or falls back to another date. A code shared by SSE and SZSE can return
+both standardized symbols. `missing_codes` reports requested codes absent from the selected batch.
+The envelope includes the selected provider-neutral ingestion ID and status so consumers can prove
+batch coherence. Items expose observation time, latest/previous-close/high/low prices, cumulative
+volume and amount; source codes, Raw fields and internal timestamps remain private.
+
+`POST /api/v1/call-auction-market-series-snapshots/query` accepts the same exact `trade_date` and
+1–500 six-digit `codes`. It selects the latest succeeded session for that date, or the latest
+partial session only when no succeeded session exists; sessions and dates are never merged or
+substituted. The response contains session status and all persisted rounds ordered by
+`sample_seq`. Every round reports its scheduled/collected times, status, selected provider-neutral
+ingestion ID, returned facts and its own `missing_codes`, so partial coverage remains explicit.
+Snapshot fields use the same provider-neutral price, cumulative volume/amount and observation-time
+semantics as the 09:26 batch route.
+
+`GET /api/v1/top-gainers-20d?end_date=&limit=10` ranks unadjusted close-to-close returns over
+exactly 20 calendar trading sessions (19 intervals), with exact observation dates/prices, end-date
+historical names and bounded omission counts. Exact-date positive pytdx bars with the provider-neutral
+`unknown` trade status are eligible, while explicitly suspended bars remain excluded. Ties break by
+symbol; explicit dates never fall back.
+
+`GET /api/v1/close-price-new-highs-120d` takes no parameters and returns every SSE/SZSE stock
+from the latest ready daily snapshot whose positive unadjusted close strictly exceeds the highest close from the previous 119
+`CN_A_SHARE` trading sessions. The stock must have valid bars in all 120 exact market sessions;
+`pytdx` `unknown` status is accepted, explicit suspension, missing/nonpositive bars, missing names,
+equal highs, and BSE securities are excluded. The response reports the selected date, prior high,
+breakout percentage and bounded omission counts. It has no pagination; the universe is hard-limited
+to 10,000 candidates and this RPC uses a ten-second statement timeout. The Worker materializes the
+snapshot Monday-Friday at 21:30 Asia/Shanghai after the exact-date `daily_market` workflow. Before
+that run, on weekends, or after an upstream failure, the endpoint continues to return the most recent
+ready immutable snapshot and exposes its `trade_date`; it never recalculates from `core.daily_bar` on
+the request path. If no ready snapshot has ever been published, the endpoint returns not found.
+
+`GET /api/v1/board-indexes/883423/bias` takes no parameters and first reads stored
+`THS:883423` daily bars. The database result is ready only with at least 34 rows and a latest bar
+matching the most recent expected `CN_A_SHARE` trading date. A ready hit returns
+`data_origin=database` and `persistence_status=persisted`. Only SQLSTATE `P0002` for missing,
+insufficient, or stale history triggers the fixed THS annual URL; other database failures never
+trigger provider access. The live request uses a five-second timeout, reads the current year, and
+reads the previous year only when fewer than 34 unique bars were obtained.
+
+`moving_average_5` is the simple mean of the current close and four
+preceding available positive closes; `bias_5_pct=(close-moving_average_5)/moving_average_5*100`.
+The response compares the current value with the previous available board session as
+`up`/`down`/`flat`, and reports the highest and lowest valid BIAS5 values across the latest 30
+board sessions, uses the latest date for tied extrema, and returns Decimal strings. Before a live
+response is returned, exact source bytes are captured losslessly in immutable JSONL Raw. The
+response is marked `data_origin=ths_live`, `persistence_status=queued`, and the standard bars are
+registered asynchronously through a narrowly granted idempotent RPC. The queue has one running
+and one waiting slot. Provider failure is 502, Raw/persistence failure is 503, and a busy fetch or
+full queue is 429. The endpoint never accepts a board/date input, fills gaps, changes the formula,
+or adds a Worker/OS schedule.
+
+`GET /api/v1/call-auction-one-price-limits?trade_date=` returns separate up/down lists only when
+the stored 09:26 Asia/Shanghai snapshot has complete equal last/high/low evidence at the applicable
+versioned price limit. Partial status and incomplete omissions remain visible; later bars are unused.
+
+`GET /api/v1/call-auction-indicative-details?code=688796&offset=0&limit=200` requires only one
+six-digit SSE/SZSE stock code; the service derives the current Asia/Shanghai date and standardized
+symbol. It first reads the latest exact-date succeeded or partial database snapshot. A hit returns
+without provider I/O with `data_origin=database` and `persistence_status=persisted`. Only SQLSTATE
+`P0002` triggers one bounded Eastmoney fetch for current-day 09:15:00-09:25:59 virtual
+indicative/reference and matching-volume observations. Other database failures return the normal
+API error and never trigger scraping. A live result is returned after immutable Raw capture with
+`data_origin=eastmoney_live` and `persistence_status=queued`, while bounded database registration
+runs asynchronously. The single-writer queue has one waiting slot. Full queue or Raw failure rejects
+the request rather than returning untracked data. It is not a trade-tick or order-by-order API; the
+source display classification is untrusted. Provider failure maps to 502, provider absence/Raw
+failure to 503, and the single-process concurrency/rate/queue gate to 429.
+
+The live adapter uses two fixed Eastmoney hosts without endpoint discovery: `push2delay` first and
+`push2` second. Each host is attempted at most once, preserving the existing two-attempt bound. A
+safe server-side warning records the standardized symbol and deepest provider exception when both
+fixed hosts fail; the public response remains the generic 502 contract.
+
+Response items are ordered ascending by `observed_at`, then by `source_sequence` for equal
+timestamps. `fetched_at` and `items[].observed_at` are rendered as Asia/Shanghai wall-clock strings
+in `YYYY-MM-DD HH:mm:ss` form; the date-only `trade_date` remains `YYYY-MM-DD`.

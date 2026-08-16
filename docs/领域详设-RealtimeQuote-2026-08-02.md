@@ -56,8 +56,15 @@ CallAuctionMarketSnapshotRecord
 `request_params` JSON 猜测交易日。
 
 现有数据库最终化实现仍可写 `realtime.call_auction_snapshot`，保留晨间 ingestion lineage 和
-`observed_at`，但它是非调度内部能力。公共 `query_daily_limit_up_list` 继续只连接最终表，不暴露
-全市场来源表。
+`observed_at`，但它是非调度内部能力。公共 `query_daily_limit_up_list` 继续只连接最终表。
+
+外部只读服务可调用受限的
+`api_v1.query_call_auction_market_snapshots(p_trade_date date,p_codes text[])` 查询全市场来源事实：
+代码数量为 1～500，格式固定为六位数字；重复代码去重；同一代码若同时属于 SSE/SZSE，返回两条
+标准 symbol。精确日期优先选择最新 `succeeded` ingestion；没有成功批次时才选择最新 `partial`
+ingestion；不得拼接批次或回退日期。响应显式返回 provider-neutral ingestion ID/status、缺失代码和
+最高价/最低价等事实，不公开 `source_code`、Raw、节点或内部创建时间。内部表仍不直接授权 API
+角色，RPC 使用五秒 statement timeout。
 
 ### 时间和调度
 
@@ -69,7 +76,7 @@ CallAuctionMarketSnapshotRecord
 
 ### 保留和容量
 
-每天约 5,200 行、每年约 130 万行。来源事实和 Raw 长期保留，首版不增加清理任务；只有原冻结全集
+以 50 只涨停池估算每天约 1,050 行、每年约 26 万行。来源事实和 Raw 长期保留，首版不增加清理任务；只有原冻结全集
 的确定性身份被持久化并验证后，才可重新启用 Raw replay。每日单次
 快照不构成逐秒持续采集，也不改变 ADR-0012 对分钟、tick、逐笔和 Level-2 的禁止边界。
 
@@ -79,8 +86,8 @@ CallAuctionMarketSnapshotRecord
 
 - `AuctionCollectionSession` 冻结当日精确 ready 的
   `CN_A_PREVIOUS_DAY_MAINBOARD_LIMIT_UP` snapshot ID/version；不回退旧日期，也不采跌停池。
-- 上海时间 09:15:00 至 09:25:00（含端点）每 5 秒一轮，共 121 轮；APScheduler
-  只注册一个 09:15 会话任务，轮询在会话内部完成。
+- 上海时间 09:15:00 至 09:25:00（含端点）每 30 秒一轮，共 21 轮；每只股票单独
+  发起一次 PYTDX 请求；APScheduler 只注册一个 09:15 会话任务，轮询在会话内部完成。
 - 阶段明确记录为 09:15–09:20 可撤单、09:20–09:25 不可撤单、09:25 最终撮合附近。
 - `scheduled_at`、Worker 的 `collected_at` 与可选 provider `source_timestamp` 分开保存；
   pytdx 不能提供可靠完整日期时不得拼造 source 时间。
@@ -88,7 +95,7 @@ CallAuctionMarketSnapshotRecord
   证明其为标准连续五档前，spread/depth/imbalance/seal amount 均保持 NULL。
 - 进程恢复只续采当前及未来轮次；过去轮次计入失败/缺失，禁止生成补采快照。
 
-> 状态：有效，尚未实现
+> 状态：有效，已实现
 > 日期：2026-08-02
 > 上级决策：`adr/ADR-0012-股票实时五档行情.md`（Accepted）
 

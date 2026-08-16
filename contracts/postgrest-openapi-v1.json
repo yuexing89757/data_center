@@ -89,6 +89,52 @@
         "requestBody": {"$ref": "#/components/requestBodies/AuctionQuotes"},
         "responses": {"200": {"description": "Authenticated quote samples and safe metrics"}}
       }
+    },
+    "/rpc/query_call_auction_market_snapshots": {
+      "post": {
+        "operationId": "queryCallAuctionMarketSnapshots",
+        "summary": "Read one exact-date opening-auction market batch",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {"$ref": "#/components/requestBodies/CallAuctionMarketSnapshots"},
+        "responses": {
+          "200": {"description": "One succeeded or partial batch with explicit missing codes"},
+          "404": {"description": "No eligible batch exists for the exact date"}
+        }
+      }
+    },
+    "/rpc/query_call_auction_market_series_snapshots": {
+      "post": {
+        "operationId": "queryCallAuctionMarketSeriesSnapshots",
+        "summary": "Read one exact-date opening-auction market series session",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {"$ref": "#/components/requestBodies/CallAuctionMarketSnapshots"},
+        "responses": {
+          "200": {"description": "One succeeded or partial session with time-ordered rounds"},
+          "404": {"description": "No eligible session exists for the exact date"}
+        }
+      }
+    },
+    "/rpc/query_close_price_new_highs_120d": {
+      "post": {
+        "operationId": "queryClosePriceNewHighs120d",
+          "summary": "Read the latest ready materialized SSE and SZSE strict 120-session closing-price breakout snapshot",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+            "200": {"description": "All qualifying strict breakouts from the latest ready daily snapshot"},
+            "404": {"description": "No ready materialized 120-session closing-high snapshot exists"}
+        }
+      }
+    },
+    "/rpc/query_board_index_bias_latest": {
+      "post": {
+        "operationId": "queryBoardIndexBiasLatest",
+        "summary": "Read the latest THS 883423 MA5 bias metrics",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": {"description": "Latest fresh stored board close, MA5 bias, direction, and 30-session extrema"},
+          "404": {"description": "THS 883423 history is missing, shorter than 34 sessions, or stale"}
+        }
+      }
     }
   },
   "components": {
@@ -230,6 +276,23 @@
             "p_limit": {"type": "integer", "minimum": 1, "maximum": 5000, "default": 1000}
           },
           "anyOf": [{"required": ["p_trade_date"]}, {"required": ["p_session_id"]}]
+        }}}
+      },
+      "CallAuctionMarketSnapshots": {
+        "required": true,
+        "content": {"application/json": {"schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["p_trade_date", "p_codes"],
+          "properties": {
+            "p_trade_date": {"$ref": "#/components/schemas/Date"},
+            "p_codes": {
+              "type": "array",
+              "items": {"type": "string", "pattern": "^[0-9]{6}$"},
+              "minItems": 1,
+              "maxItems": 500
+            }
+          }
         }}}
       }
     }

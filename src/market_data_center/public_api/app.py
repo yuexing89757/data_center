@@ -17,8 +17,40 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from market_data_center.database_urls import sqlalchemy_url
 from market_data_center.domain import ClassificationType
+from market_data_center.providers.akshare_ths import AKShareTHSProvider, HTTPAKShareTHSClient
+from market_data_center.providers.eastmoney_auction import EastmoneyAuctionIndicativeProvider
+from market_data_center.public_api.auction_indicative_live import (
+    AuctionIndicativeLiveBusy,
+    AuctionIndicativeLiveInvalid,
+    AuctionIndicativeLivePersistence,
+    AuctionIndicativeLiveUnavailable,
+    AuctionIndicativeLiveUpstream,
+    LiveAuctionIndicativeService,
+)
+from market_data_center.public_api.auction_indicative_write import (
+    AuctionIndicativeApiPersistence,
+    AuctionIndicativePersistenceQueue,
+)
+from market_data_center.public_api.board_index_bias_live import (
+    BoardIndexBiasLiveBusy,
+    BoardIndexBiasLivePersistence,
+    BoardIndexBiasLiveService,
+    BoardIndexBiasLiveUpstream,
+)
+from market_data_center.public_api.board_index_bias_write import (
+    BoardIndexApiPersistence,
+    BoardIndexPersistenceQueue,
+)
 from market_data_center.public_api.models import (
+    AuctionIndicativeDetailResponse,
+    AuctionOnePriceLimitResponse,
+    BoardIndexBiasResponse,
+    CallAuctionMarketSeriesSnapshotQuery,
+    CallAuctionMarketSeriesSnapshotResponse,
+    CallAuctionMarketSnapshotQuery,
+    CallAuctionMarketSnapshotResponse,
     ClassificationMembersResponse,
+    ClosePriceNewHighs120dResponse,
     DailyBarResponse,
     DailyLimitUpListResponse,
     ErrorDetail,
@@ -26,8 +58,10 @@ from market_data_center.public_api.models import (
     HealthResponse,
     LimitUpPoolResponse,
     SecuritySearchResponse,
+    TopGainers20dResponse,
 )
 from market_data_center.public_api.queries import (
+    BoardIndexBiasNotReady,
     PostgreSQLPublicQueryService,
     PublicQueryInvalid,
     PublicQueryNotFound,
@@ -35,6 +69,7 @@ from market_data_center.public_api.queries import (
     PublicQueryTimeout,
     PublicQueryUnavailable,
 )
+from market_data_center.raw_store import LocalRawStore
 from market_data_center.settings import ApiSettings
 
 API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
@@ -45,9 +80,14 @@ def create_app(
     *,
     settings: ApiSettings | None = None,
     query_service: PublicQueryService | None = None,
+    auction_indicative_service: LiveAuctionIndicativeService | None = None,
+    board_index_bias_live_service: BoardIndexBiasLiveService | None = None,
 ) -> FastAPI:
     configured = settings or ApiSettings()  # type: ignore[call-arg]
     owned_engine: Engine | None = None
+    owned_write_engine: Engine | None = None
+    owned_persistence_queue: AuctionIndicativePersistenceQueue | None = None
+    owned_board_persistence_queue: BoardIndexPersistenceQueue | None = None
     if query_service is None:
         owned_engine = create_engine(
             sqlalchemy_url(configured.resolved_database_url()),
@@ -59,11 +99,32 @@ def create_app(
         )
         query_service = PostgreSQLPublicQueryService(owned_engine)
 
+    if auction_indicative_service is None or board_index_bias_live_service is None:
+        if owned_engine is None:
+            raise RuntimeError("live services must be injected with a query-service stub")
+        # This connection does not force a read-only transaction because it invokes one
+        # narrowly granted SECURITY DEFINER persistence function.  The login role still has
+        # no direct table-write privileges.
+        owned_write_engine = create_engine(
+            sqlalchemy_url(configured.resolved_database_url()),
+            pool_pre_ping=True,
+            pool_recycle=1800,
+            connect_args={
+                "options": "-c default_transaction_read_only=off -c statement_timeout=5000"
+            },
+        )
+
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         yield
+        if owned_persistence_queue is not None:
+            owned_persistence_queue.shutdown()
+        if owned_board_persistence_queue is not None:
+            owned_board_persistence_queue.shutdown()
         if owned_engine is not None:
             owned_engine.dispose()
+        if owned_write_engine is not None:
+            owned_write_engine.dispose()
 
     app = FastAPI(
         title="Market Data Center API",
@@ -73,6 +134,33 @@ def create_app(
     )
     app.state.api_settings = configured
     app.state.query_service = query_service
+    if auction_indicative_service is None:
+        assert owned_write_engine is not None
+        raw_root = configured.fastapi_auction_raw_root
+        owned_persistence_queue = AuctionIndicativePersistenceQueue(
+            AuctionIndicativeApiPersistence(owned_write_engine, LocalRawStore(raw_root), raw_root)
+        )
+        auction_indicative_service = LiveAuctionIndicativeService(
+            EastmoneyAuctionIndicativeProvider(
+                timeout_seconds=configured.fastapi_auction_live_timeout_seconds,
+                max_attempts=configured.fastapi_auction_live_max_attempts,
+            ),
+            owned_persistence_queue,
+            cache_seconds=configured.fastapi_auction_live_cache_seconds,
+            minimum_interval_seconds=configured.fastapi_auction_live_minimum_interval_seconds,
+        )
+    app.state.auction_indicative_service = auction_indicative_service
+    if board_index_bias_live_service is None:
+        assert owned_write_engine is not None
+        raw_root = configured.fastapi_auction_raw_root
+        owned_board_persistence_queue = BoardIndexPersistenceQueue(
+            BoardIndexApiPersistence(owned_write_engine, LocalRawStore(raw_root), raw_root)
+        )
+        board_index_bias_live_service = BoardIndexBiasLiveService(
+            AKShareTHSProvider(HTTPAKShareTHSClient(timeout_seconds=5)),
+            owned_board_persistence_queue,
+        )
+    app.state.board_index_bias_live_service = board_index_bias_live_service
 
     _install_exception_handlers(app)
 
@@ -215,11 +303,170 @@ def create_app(
     ) -> DailyLimitUpListResponse:
         return service.daily_limit_up_list(trade_date, version, offset, limit)
 
+    @app.post(
+        "/api/v1/call-auction-market-snapshots/query",
+        response_model=CallAuctionMarketSnapshotResponse,
+        responses={
+            401: {"model": ErrorResponse},
+            404: {"model": ErrorResponse},
+            503: {"model": ErrorResponse},
+        },
+        tags=["market-data"],
+        summary="Batch query one opening-auction market snapshot",
+        description=(
+            "Returns facts from the latest succeeded ingestion for the exact trade date, "
+            "or the latest partial ingestion only when no succeeded ingestion exists. "
+            "A six-digit code can return both SSE and SZSE symbols. Missing codes are "
+            "reported explicitly; no date or batch fallback is used."
+        ),
+    )
+    def call_auction_market_snapshots(
+        _: ApiKeyDependency,
+        service: QueryServiceDependency,
+        request: CallAuctionMarketSnapshotQuery,
+    ) -> CallAuctionMarketSnapshotResponse:
+        return service.call_auction_market_snapshots(request.trade_date, tuple(request.codes))
+
+    @app.post(
+        "/api/v1/call-auction-market-series-snapshots/query",
+        response_model=CallAuctionMarketSeriesSnapshotResponse,
+        responses={
+            401: {"model": ErrorResponse},
+            404: {"model": ErrorResponse},
+            503: {"model": ErrorResponse},
+        },
+        tags=["market-data"],
+        summary="Batch query one opening-auction market series session",
+        description=(
+            "Returns all recorded rounds from the latest succeeded session for the exact "
+            "trade date, or the latest partial session only when no succeeded session exists. "
+            "Rounds are ordered by scheduled time and report missing six-digit codes "
+            "independently. Sessions and dates are never merged or substituted."
+        ),
+    )
+    def call_auction_market_series_snapshots(
+        _: ApiKeyDependency,
+        service: QueryServiceDependency,
+        request: CallAuctionMarketSeriesSnapshotQuery,
+    ) -> CallAuctionMarketSeriesSnapshotResponse:
+        return service.call_auction_market_series_snapshots(
+            request.trade_date, tuple(request.codes)
+        )
+
+    @app.get(
+        "/api/v1/top-gainers-20d",
+        response_model=TopGainers20dResponse,
+        tags=["market-data"],
+        summary="Rank the top gainers over an exact 20-session window",
+    )
+    def top_gainers_20d(
+        _: ApiKeyDependency,
+        service: QueryServiceDependency,
+        end_date: Annotated[date | None, Query()] = None,
+        limit: Annotated[int, Query(ge=1, le=10)] = 10,
+    ) -> TopGainers20dResponse:
+        return service.top_gainers_20d(end_date, limit)
+
+    @app.get(
+        "/api/v1/close-price-new-highs-120d",
+        response_model=ClosePriceNewHighs120dResponse,
+        tags=["market-data"],
+        summary="Query SSE and SZSE stocks making strict 120-session closing highs",
+    )
+    def close_price_new_highs_120d(
+        _: ApiKeyDependency,
+        service: QueryServiceDependency,
+    ) -> ClosePriceNewHighs120dResponse:
+        return service.close_price_new_highs_120d()
+
+    @app.get(
+        "/api/v1/board-indexes/883423/bias",
+        response_model=BoardIndexBiasResponse,
+        tags=["market-data"],
+        summary="Query the latest THS 883423 MA5 bias metrics",
+        description=(
+            "Uses fresh stored THS:883423 daily bars first. Missing, insufficient, or stale "
+            "history triggers one bounded live THS fetch after which immutable Raw is captured "
+            "and database persistence is queued. Returns the current "
+            "five-session simple moving-average bias, its direction versus the previous "
+            "available board session, and extrema from valid samples in the latest 30 "
+            "sessions. The endpoint accepts no input and never falls back to another board."
+        ),
+        responses={
+            401: {"model": ErrorResponse},
+            429: {"model": ErrorResponse},
+            502: {"model": ErrorResponse},
+            503: {"model": ErrorResponse},
+        },
+    )
+    def board_index_bias_latest(
+        _: ApiKeyDependency,
+        service: QueryServiceDependency,
+        live_service: BoardIndexBiasLiveServiceDependency,
+    ) -> BoardIndexBiasResponse:
+        try:
+            return service.board_index_bias_latest()
+        except BoardIndexBiasNotReady:
+            return live_service.fetch_current()
+
+    @app.get(
+        "/api/v1/call-auction-one-price-limits",
+        response_model=AuctionOnePriceLimitResponse,
+        tags=["market-data"],
+        summary="Query evidence-complete 09:26 one-price limit stocks",
+    )
+    def auction_one_price_limits(
+        _: ApiKeyDependency,
+        service: QueryServiceDependency,
+        trade_date: Annotated[date | None, Query()] = None,
+    ) -> AuctionOnePriceLimitResponse:
+        return service.auction_one_price_limits(trade_date)
+
+    @app.get(
+        "/api/v1/call-auction-indicative-details",
+        response_model=AuctionIndicativeDetailResponse,
+        tags=["market-data"],
+        summary="Query current-day call-auction virtual indicative matching details",
+        description=(
+            "Accepts one six-digit SSE/SZSE stock code and first reads the current Shanghai "
+            "date's latest stored snapshot. Only an explicit database miss triggers a bounded "
+            "Eastmoney fetch for 09:15:00-09:25:59 virtual indicative/reference price and "
+            "displayed matching-volume observations. Live data is returned immediately after "
+            "immutable Raw capture while database registration is queued asynchronously. "
+            "These are not exchange trade ticks or order-by-order records. The source display "
+            "classification is untrusted and is not a trade direction. data_origin and "
+            "persistence_status distinguish stored data from a queued live result. Items are "
+            "ordered by observed_at then source_sequence. Timestamp fields are rendered in "
+            "Asia/Shanghai as YYYY-MM-DD HH:mm:ss."
+        ),
+    )
+    def auction_indicative_details(
+        _: ApiKeyDependency,
+        service: QueryServiceDependency,
+        live_service: AuctionIndicativeServiceDependency,
+        code: Annotated[str, Query(pattern=r"^[0-9]{6}$")],
+        offset: Annotated[int, Query(ge=0, le=5000)] = 0,
+        limit: Annotated[int, Query(ge=1, le=500)] = 200,
+    ) -> AuctionIndicativeDetailResponse:
+        symbol = _auction_symbol_from_code(code)
+        try:
+            return service.auction_indicative_details(symbol, offset, limit)
+        except PublicQueryNotFound:
+            return live_service.fetch_current(symbol, offset, limit)
+
     return app
 
 
 def _query_service(request: Request) -> PublicQueryService:
     return cast(PublicQueryService, request.app.state.query_service)
+
+
+def _auction_indicative_service(request: Request) -> LiveAuctionIndicativeService:
+    return cast(LiveAuctionIndicativeService, request.app.state.auction_indicative_service)
+
+
+def _board_index_bias_live_service(request: Request) -> BoardIndexBiasLiveService:
+    return cast(BoardIndexBiasLiveService, request.app.state.board_index_bias_live_service)
 
 
 def _require_api_key(
@@ -233,10 +480,60 @@ def _require_api_key(
 
 
 QueryServiceDependency = Annotated[PublicQueryService, Depends(_query_service)]
+AuctionIndicativeServiceDependency = Annotated[
+    LiveAuctionIndicativeService, Depends(_auction_indicative_service)
+]
+BoardIndexBiasLiveServiceDependency = Annotated[
+    BoardIndexBiasLiveService, Depends(_board_index_bias_live_service)
+]
 ApiKeyDependency = Annotated[None, Depends(_require_api_key)]
 
 
+def _auction_symbol_from_code(code: str) -> str:
+    if code.startswith("6"):
+        return f"SSE:{code}"
+    if code.startswith(("0", "3")):
+        return f"SZSE:{code}"
+    raise HTTPException(status_code=422, detail="code is not a supported SSE/SZSE stock")
+
+
 def _install_exception_handlers(app: FastAPI) -> None:
+    @app.exception_handler(BoardIndexBiasLiveBusy)
+    async def board_live_busy(_: Request, __: BoardIndexBiasLiveBusy) -> JSONResponse:
+        return _error_response(429, "rate_limited", "live board-index provider access is busy")
+
+    @app.exception_handler(BoardIndexBiasLiveUpstream)
+    async def board_live_upstream(_: Request, __: BoardIndexBiasLiveUpstream) -> JSONResponse:
+        return _error_response(502, "upstream_error", "external board-index provider failed")
+
+    @app.exception_handler(BoardIndexBiasLivePersistence)
+    async def board_live_persistence(_: Request, __: BoardIndexBiasLivePersistence) -> JSONResponse:
+        return _error_response(
+            503, "persistence_unavailable", "board-index source could not be saved"
+        )
+
+    @app.exception_handler(AuctionIndicativeLiveInvalid)
+    async def live_invalid(_: Request, __: AuctionIndicativeLiveInvalid) -> JSONResponse:
+        return _error_response(422, "validation_error", "live auction request is invalid")
+
+    @app.exception_handler(AuctionIndicativeLiveBusy)
+    async def live_busy(_: Request, __: AuctionIndicativeLiveBusy) -> JSONResponse:
+        return _error_response(429, "rate_limited", "live auction provider access is busy")
+
+    @app.exception_handler(AuctionIndicativeLiveUpstream)
+    async def live_upstream(_: Request, __: AuctionIndicativeLiveUpstream) -> JSONResponse:
+        return _error_response(502, "upstream_error", "external auction provider request failed")
+
+    @app.exception_handler(AuctionIndicativeLiveUnavailable)
+    async def live_unavailable(_: Request, __: AuctionIndicativeLiveUnavailable) -> JSONResponse:
+        return _error_response(503, "upstream_unavailable", "auction observations are unavailable")
+
+    @app.exception_handler(AuctionIndicativeLivePersistence)
+    async def live_persistence(_: Request, __: AuctionIndicativeLivePersistence) -> JSONResponse:
+        return _error_response(
+            503, "persistence_unavailable", "auction observations were not saved"
+        )
+
     @app.exception_handler(PublicQueryInvalid)
     async def invalid_query(_: Request, __: PublicQueryInvalid) -> JSONResponse:
         return _error_response(400, "invalid_query", "query parameters were rejected")
