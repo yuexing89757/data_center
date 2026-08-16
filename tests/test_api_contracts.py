@@ -21,6 +21,7 @@ EXPECTED_ENDPOINTS = {
     "query_call_auction_market_snapshots",
     "query_call_auction_market_series_snapshots",
     "query_board_index_bias_latest",
+    "query_close_price_new_highs_120d",
 }
 
 
@@ -106,6 +107,34 @@ def test_fastapi_openapi_contract_matches_the_application() -> None:
             board_index_bias_live_service=cast(object, object()),  # type: ignore[arg-type]
         ).openapi()
     )
+
+
+def test_close_price_new_highs_contract_is_no_input_strict_and_bounded() -> None:
+    postgrest = _load("postgrest-openapi-v1.json")
+    agent = _load("agent-tools-v1.json")
+    fastapi = _load("fastapi-openapi-v1.json")
+
+    postgrest_operation = postgrest["paths"]["/rpc/query_close_price_new_highs_120d"]["post"]
+    assert "requestBody" not in postgrest_operation
+
+    agent_tool = next(
+        tool for tool in agent["tools"] if tool["endpoint"] == "query_close_price_new_highs_120d"
+    )
+    assert agent_tool["read_only"] is True
+    assert agent_tool["input_schema"] == {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {},
+    }
+
+    operation = fastapi["paths"]["/api/v1/close-price-new-highs-120d"]["get"]
+    assert operation.get("parameters", []) == []
+    response_schema = fastapi["components"]["schemas"]["ClosePriceNewHighs120dResponse"]
+    assert response_schema["properties"]["window_trading_session_count"]["const"] == 120
+    assert response_schema["properties"]["comparison_session_count"]["const"] == 119
+    assert response_schema["properties"]["returned_count"]["maximum"] == 10000
+    item_schema = fastapi["components"]["schemas"]["ClosePriceNewHigh120dItem"]
+    assert item_schema["properties"]["code"]["pattern"] == "^[0-9]{6}$"
 
 
 def test_board_index_bias_contract_is_fixed_bounded_and_no_input() -> None:

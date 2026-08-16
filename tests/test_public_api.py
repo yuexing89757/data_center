@@ -45,6 +45,7 @@ from market_data_center.public_api.models import (
 )
 from market_data_center.public_api.queries import (
     BoardIndexBiasNotReady,
+    PostgreSQLPublicQueryService,
     PublicQueryNotFound,
     PublicQueryUnavailable,
     _raise_safe_query_error,
@@ -65,6 +66,7 @@ class FakeQueryService:
         self.call_auction_market_snapshot_calls: list[tuple[date, tuple[str, ...]]] = []
         self.call_auction_market_series_snapshot_calls: list[tuple[date, tuple[str, ...]]] = []
         self.top_gainer_calls: list[tuple[date | None, int]] = []
+        self.close_price_new_highs_120d_calls = 0
         self.board_index_bias_calls = 0
         self.board_index_bias_error: Exception | None = None
         self.board_index_bias_live_calls = 0
@@ -334,6 +336,34 @@ class FakeQueryService:
                 )
             ],
         )
+
+    def close_price_new_highs_120d(self) -> object:
+        self.close_price_new_highs_120d_calls += 1
+        return {
+            "trade_date": date(2026, 8, 14),
+            "window_trading_session_count": 120,
+            "comparison_session_count": 119,
+            "total_candidate_count": 2,
+            "eligible_history_count": 1,
+            "omitted_count": 1,
+            "returned_count": 1,
+            "omissions": {
+                "incomplete_history": 1,
+                "non_trading_bar": 0,
+                "nonpositive_price": 0,
+                "missing_name": 0,
+            },
+            "items": [
+                {
+                    "symbol": "SSE:600000",
+                    "code": "600000",
+                    "name": "浦发银行",
+                    "close": Decimal("12.50"),
+                    "previous_119d_high": Decimal("12.00"),
+                    "breakout_pct": Decimal("4.1666666667"),
+                }
+            ],
+        }
 
     def board_index_bias_latest(self) -> object:
         self.board_index_bias_calls += 1
@@ -955,6 +985,95 @@ def test_top_gainers_20d_contract_and_bounds() -> None:
         .status_code
         == 422
     )
+
+
+def test_close_price_new_highs_120d_returns_latest_strict_breakouts_without_inputs() -> None:
+    service = FakeQueryService()
+    response = _client(service).get(
+        "/api/v1/close-price-new-highs-120d",
+        headers=_headers(),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "trade_date": "2026-08-14",
+        "window_trading_session_count": 120,
+        "comparison_session_count": 119,
+        "total_candidate_count": 2,
+        "eligible_history_count": 1,
+        "omitted_count": 1,
+        "returned_count": 1,
+        "omissions": {
+            "incomplete_history": 1,
+            "non_trading_bar": 0,
+            "nonpositive_price": 0,
+            "missing_name": 0,
+        },
+        "items": [
+            {
+                "symbol": "SSE:600000",
+                "code": "600000",
+                "name": "浦发银行",
+                "close": "12.50",
+                "previous_119d_high": "12.00",
+                "breakout_pct": "4.1666666667",
+            }
+        ],
+    }
+    assert service.close_price_new_highs_120d_calls == 1
+
+
+def test_close_price_new_highs_120d_sets_ten_second_timeout_before_rpc() -> None:
+    calls: list[tuple[str, object]] = []
+    payload = {
+        "trade_date": date(2026, 8, 14),
+        "window_trading_session_count": 120,
+        "comparison_session_count": 119,
+        "total_candidate_count": 0,
+        "eligible_history_count": 0,
+        "omitted_count": 0,
+        "returned_count": 0,
+        "omissions": {
+            "incomplete_history": 0,
+            "non_trading_bar": 0,
+            "nonpositive_price": 0,
+            "missing_name": 0,
+        },
+        "items": [],
+    }
+
+    class StubResult:
+        def __init__(self, rows: list[dict[str, object]]) -> None:
+            self._rows = rows
+
+        def mappings(self) -> "StubResult":
+            return self
+
+        def all(self) -> list[dict[str, object]]:
+            return self._rows
+
+    class StubConnection:
+        def __enter__(self) -> "StubConnection":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def execute(self, statement: object, parameters: object) -> "StubResult":
+            calls.append((str(statement), parameters))
+            return StubResult([{"payload": payload}])
+
+    class StubEngine:
+        def connect(self) -> StubConnection:
+            return StubConnection()
+
+    service = PostgreSQLPublicQueryService(StubEngine())  # type: ignore[arg-type]
+    response = service.close_price_new_highs_120d()
+
+    assert response.returned_count == 0
+    assert "set_config('statement_timeout'" in calls[0][0]
+    assert calls[0][1] == {"statement_timeout": "10000ms"}
+    assert "query_close_price_new_highs_120d" in calls[1][0]
 
 
 def test_board_index_bias_returns_latest_decimal_contract_without_inputs() -> None:

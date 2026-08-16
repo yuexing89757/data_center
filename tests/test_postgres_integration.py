@@ -2757,6 +2757,121 @@ def test_top_gainers_accepts_pytdx_unknown_bars_and_excludes_suspended(
     assert [item["symbol"] for item in payload["items"]] == [SYMBOL]
 
 
+def test_close_price_new_highs_rpc_requires_complete_history_and_strict_breakout(
+    database_engine: Engine,
+) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    securities = [
+        _security(),
+        replace(
+            _security(),
+            symbol="SZSE:000001",
+            code="000001",
+            exchange=Exchange.SZSE,
+            name="平安银行",
+        ),
+        replace(
+            _security(),
+            symbol="SSE:600001",
+            code="600001",
+            name="邯郸钢铁",
+        ),
+    ]
+    security_run = _running_run(DatasetCode.SECURITY)
+    persistence.create_ingestion_run(security_run)
+    persistence.commit_security_batch(
+        _completed_run(security_run, len(securities)),
+        _manifest(security_run.ingestion_id, "new-high-securities", len(securities)),
+        _envelopes(security_run.ingestion_id, securities),
+    )
+
+    trading_days: list[date] = []
+    candidate_date = date(2026, 1, 1)
+    while len(trading_days) < 120:
+        if candidate_date.weekday() < 5:
+            trading_days.append(candidate_date)
+        candidate_date += timedelta(days=1)
+    calendar_run = _running_run(DatasetCode.TRADING_CALENDAR)
+    persistence.create_ingestion_run(calendar_run)
+    calendar = [
+        CalculatedTradingDay(
+            market=Market.CN_A_SHARE,
+            trade_date=trade_date,
+            is_trading_day=True,
+            previous_trading_day=trading_days[index - 1] if index else None,
+            next_trading_day=(trading_days[index + 1] if index + 1 < len(trading_days) else None),
+            source_code="baostock",
+        )
+        for index, trade_date in enumerate(trading_days)
+    ]
+    persistence.commit_trading_calendar_batch(
+        _completed_run(calendar_run, len(calendar)),
+        _manifest(calendar_run.ingestion_id, "new-high-calendar", len(calendar)),
+        _envelopes(calendar_run.ingestion_id, calendar),
+    )
+
+    bars: list[DailyBarRecord] = []
+    for index, trade_date in enumerate(trading_days):
+        breakout_close = Decimal("11") if index == 119 else Decimal("10")
+        equal_high_close = Decimal("11") if index >= 118 else Decimal("10")
+        for symbol, close, status in (
+            (SYMBOL, breakout_close, TradeStatus.UNKNOWN),
+            ("SZSE:000001", equal_high_close, TradeStatus.UNKNOWN),
+            (
+                "SSE:600001",
+                Decimal("12") if index == 119 else Decimal("10"),
+                TradeStatus.SUSPENDED if index == 50 else TradeStatus.UNKNOWN,
+            ),
+        ):
+            bars.append(
+                replace(
+                    _daily_bar(trade_date),
+                    symbol=symbol,
+                    open=close,
+                    high=close,
+                    low=close,
+                    close=close,
+                    trade_status=status,
+                    source_code="pytdx",
+                )
+            )
+
+    bar_run = _running_run(DatasetCode.DAILY_BAR, ProviderCode.PYTDX)
+    persistence.create_ingestion_run(bar_run)
+    persistence.commit_daily_bar_batch(
+        _completed_run(bar_run, len(bars)),
+        _manifest(
+            bar_run.ingestion_id,
+            "new-high-bars",
+            len(bars),
+            provider="pytdx",
+        ),
+        _envelopes(bar_run.ingestion_id, bars),
+        [],
+    )
+
+    with database_engine.connect() as connection:
+        payload = connection.scalar(text("select api_v1.query_close_price_new_highs_120d()"))
+
+    assert payload["trade_date"] == trading_days[-1].isoformat()
+    assert payload["total_candidate_count"] == 3
+    assert payload["eligible_history_count"] == 2
+    assert payload["omitted_count"] == 1
+    assert payload["returned_count"] == 1
+    assert payload["omissions"]["incomplete_history"] == 1
+    assert payload["omissions"]["non_trading_bar"] == 1
+    assert payload["items"] == [
+        {
+            "symbol": SYMBOL,
+            "code": "600000",
+            "name": "浦发银行",
+            "close": 11.0,
+            "previous_119d_high": 10.0,
+            "breakout_pct": 10.0,
+        }
+    ]
+
+
 def test_live_board_index_persistence_is_atomic_idempotent_and_fastapi_only(
     database_engine: Engine,
 ) -> None:

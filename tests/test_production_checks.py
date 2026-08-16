@@ -31,6 +31,7 @@ def test_fastapi_preflight_checks_call_auction_market_snapshot_rpc() -> None:
         in PUBLISHED_FUNCTIONS
     )
     assert "api_v1.query_board_index_bias_latest()" in PUBLISHED_FUNCTIONS
+    assert "api_v1.query_close_price_new_highs_120d()" in PUBLISHED_FUNCTIONS
     assert (
         "api_v1.persist_board_index_daily_bars_live("
         "uuid,uuid,timestamptz,text,text,text,bigint,integer,jsonb,jsonb)" in PUBLISHED_FUNCTIONS
@@ -285,6 +286,25 @@ def test_top_gainers_accepts_pytdx_unknown_bars_but_not_suspended_bars() -> None
     assert "start_status not in ('trading', 'unknown')" in migration
     assert "end_status not in ('trading', 'unknown')" in migration
     assert "to market_data_api" in migration
+
+
+def test_close_price_new_highs_rpc_is_strict_hushen_only_and_bounded() -> None:
+    migration = (MIGRATION_DIR / "20260816000100_add_close_price_new_highs_120d_api.sql").read_text(
+        encoding="utf-8"
+    )
+
+    assert "query_close_price_new_highs_120d" in migration
+    assert "s.exchange in ('SSE', 'SZSE')" in migration
+    assert "candidate_count > 10000" in migration
+    assert "valid_bar_count = 120" in migration
+    assert "close > previous_119d_high" in migration
+    assert "trade_status in ('trading', 'unknown')" in migration
+    assert "from public, anon, authenticated" in migration
+    assert "to market_data_api" in migration
+    assert "set statement_timeout = '10s'" in migration
+    assert "bars_in_window as" in migration
+    assert "join window_days wd" in migration
+    assert "cross join window_days" not in migration
 
 
 def test_auction_indicative_rpc_is_bounded_fastapi_only_and_not_a_trade_contract() -> None:

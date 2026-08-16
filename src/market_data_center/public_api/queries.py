@@ -16,6 +16,7 @@ from market_data_center.public_api.models import (
     CallAuctionMarketSeriesSnapshotResponse,
     CallAuctionMarketSnapshotResponse,
     ClassificationMembersResponse,
+    ClosePriceNewHighs120dResponse,
     DailyBarItem,
     DailyLimitUpListResponse,
     LimitUpPoolResponse,
@@ -86,6 +87,10 @@ QUERY_TOP_GAINERS_20D = text("""
 select api_v1.query_top_gainers_20d(p_end_date => :end_date, p_limit => :limit) as payload
 """)
 
+
+QUERY_CLOSE_PRICE_NEW_HIGHS_120D = text("""
+select api_v1.query_close_price_new_highs_120d() as payload
+""")
 QUERY_BOARD_INDEX_BIAS_LATEST = text("""
 select api_v1.query_board_index_bias_latest() as payload
 """)
@@ -163,6 +168,8 @@ class PublicQueryService(Protocol):
     ) -> CallAuctionMarketSeriesSnapshotResponse: ...
 
     def top_gainers_20d(self, end_date: date | None, limit: int) -> TopGainers20dResponse: ...
+
+    def close_price_new_highs_120d(self) -> ClosePriceNewHighs120dResponse: ...
 
     def board_index_bias_latest(self) -> BoardIndexBiasResponse: ...
 
@@ -273,6 +280,10 @@ class PostgreSQLPublicQueryService:
         rows = self._execute(QUERY_TOP_GAINERS_20D, {"end_date": end_date, "limit": limit})
         return TopGainers20dResponse.model_validate(rows[0]["payload"])
 
+    def close_price_new_highs_120d(self) -> ClosePriceNewHighs120dResponse:
+        rows = self._execute(QUERY_CLOSE_PRICE_NEW_HIGHS_120D, {}, statement_timeout_ms=10_000)
+        return ClosePriceNewHighs120dResponse.model_validate(rows[0]["payload"])
+
     def board_index_bias_latest(self) -> BoardIndexBiasResponse:
         try:
             rows = self._execute(QUERY_BOARD_INDEX_BIAS_LATEST, {})
@@ -293,9 +304,20 @@ class PostgreSQLPublicQueryService:
         )
         return AuctionIndicativeDetailResponse.model_validate(rows[0]["payload"])
 
-    def _execute(self, statement: Any, parameters: Mapping[str, object]) -> Sequence[RowMapping]:
+    def _execute(
+        self,
+        statement: Any,
+        parameters: Mapping[str, object],
+        *,
+        statement_timeout_ms: int | None = None,
+    ) -> Sequence[RowMapping]:
         try:
             with self._engine.connect() as connection:
+                if statement_timeout_ms is not None:
+                    connection.execute(
+                        text("select set_config('statement_timeout', :statement_timeout, true)"),
+                        {"statement_timeout": f"{statement_timeout_ms}ms"},
+                    )
                 return connection.execute(statement, parameters).mappings().all()
         except DBAPIError as error:
             _raise_safe_query_error(error)

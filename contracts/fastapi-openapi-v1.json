@@ -1131,6 +1131,149 @@
         "title": "ClassificationType",
         "type": "string"
       },
+      "ClosePriceNewHigh120dItem": {
+        "additionalProperties": false,
+        "properties": {
+          "breakout_pct": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Breakout Pct",
+            "type": "string"
+          },
+          "close": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Close",
+            "type": "string"
+          },
+          "code": {
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "previous_119d_high": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Previous 119D High",
+            "type": "string"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "code",
+          "name",
+          "close",
+          "previous_119d_high",
+          "breakout_pct"
+        ],
+        "title": "ClosePriceNewHigh120dItem",
+        "type": "object"
+      },
+      "ClosePriceNewHigh120dOmissions": {
+        "additionalProperties": false,
+        "properties": {
+          "incomplete_history": {
+            "minimum": 0.0,
+            "title": "Incomplete History",
+            "type": "integer"
+          },
+          "missing_name": {
+            "minimum": 0.0,
+            "title": "Missing Name",
+            "type": "integer"
+          },
+          "non_trading_bar": {
+            "minimum": 0.0,
+            "title": "Non Trading Bar",
+            "type": "integer"
+          },
+          "nonpositive_price": {
+            "minimum": 0.0,
+            "title": "Nonpositive Price",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "incomplete_history",
+          "non_trading_bar",
+          "nonpositive_price",
+          "missing_name"
+        ],
+        "title": "ClosePriceNewHigh120dOmissions",
+        "type": "object"
+      },
+      "ClosePriceNewHighs120dResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "comparison_session_count": {
+            "const": 119,
+            "title": "Comparison Session Count",
+            "type": "integer"
+          },
+          "eligible_history_count": {
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Eligible History Count",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ClosePriceNewHigh120dItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "omissions": {
+            "$ref": "#/components/schemas/ClosePriceNewHigh120dOmissions"
+          },
+          "omitted_count": {
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Omitted Count",
+            "type": "integer"
+          },
+          "returned_count": {
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Returned Count",
+            "type": "integer"
+          },
+          "total_candidate_count": {
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Total Candidate Count",
+            "type": "integer"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "window_trading_session_count": {
+            "const": 120,
+            "title": "Window Trading Session Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "trade_date",
+          "window_trading_session_count",
+          "comparison_session_count",
+          "total_candidate_count",
+          "eligible_history_count",
+          "omitted_count",
+          "returned_count",
+          "omissions",
+          "items"
+        ],
+        "title": "ClosePriceNewHighs120dResponse",
+        "type": "object"
+      },
       "DailyBarItem": {
         "additionalProperties": false,
         "properties": {
@@ -2866,6 +3009,32 @@
           }
         ],
         "summary": "Classification Members",
+        "tags": [
+          "market-data"
+        ]
+      }
+    },
+    "/api/v1/close-price-new-highs-120d": {
+      "get": {
+        "operationId": "close_price_new_highs_120d_api_v1_close_price_new_highs_120d_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClosePriceNewHighs120dResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Query SSE and SZSE stocks making strict 120-session closing highs",
         "tags": [
           "market-data"
         ]

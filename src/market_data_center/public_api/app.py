@@ -50,6 +50,7 @@ from market_data_center.public_api.models import (
     CallAuctionMarketSnapshotQuery,
     CallAuctionMarketSnapshotResponse,
     ClassificationMembersResponse,
+    ClosePriceNewHighs120dResponse,
     DailyBarResponse,
     DailyLimitUpListResponse,
     ErrorDetail,
@@ -365,6 +366,18 @@ def create_app(
         limit: Annotated[int, Query(ge=1, le=10)] = 10,
     ) -> TopGainers20dResponse:
         return service.top_gainers_20d(end_date, limit)
+
+    @app.get(
+        "/api/v1/close-price-new-highs-120d",
+        response_model=ClosePriceNewHighs120dResponse,
+        tags=["market-data"],
+        summary="Query SSE and SZSE stocks making strict 120-session closing highs",
+    )
+    def close_price_new_highs_120d(
+        _: ApiKeyDependency,
+        service: QueryServiceDependency,
+    ) -> ClosePriceNewHighs120dResponse:
+        return service.close_price_new_highs_120d()
 
     @app.get(
         "/api/v1/board-indexes/883423/bias",

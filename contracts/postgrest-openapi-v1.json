@@ -114,6 +114,17 @@
         }
       }
     },
+    "/rpc/query_close_price_new_highs_120d": {
+      "post": {
+        "operationId": "queryClosePriceNewHighs120d",
+        "summary": "Read latest SSE and SZSE strict 120-session closing-price breakouts",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": {"description": "All qualifying strict breakouts from one complete 120-session window"},
+          "404": {"description": "No eligible latest date or complete 120-session calendar exists"}
+        }
+      }
+    },
     "/rpc/query_board_index_bias_latest": {
       "post": {
         "operationId": "queryBoardIndexBiasLatest",

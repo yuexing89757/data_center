@@ -275,6 +275,34 @@ class TopGainers20dResponse(ApiModel):
     items: list[TopGainer20dItem]
 
 
+class ClosePriceNewHigh120dItem(ApiModel):
+    symbol: str
+    code: SixDigitCode
+    name: str
+    close: Decimal
+    previous_119d_high: Decimal
+    breakout_pct: Decimal
+
+
+class ClosePriceNewHigh120dOmissions(ApiModel):
+    incomplete_history: int = Field(ge=0)
+    non_trading_bar: int = Field(ge=0)
+    nonpositive_price: int = Field(ge=0)
+    missing_name: int = Field(ge=0)
+
+
+class ClosePriceNewHighs120dResponse(ApiModel):
+    trade_date: date
+    window_trading_session_count: Literal[120]
+    comparison_session_count: Literal[119]
+    total_candidate_count: int = Field(ge=0, le=10_000)
+    eligible_history_count: int = Field(ge=0, le=10_000)
+    omitted_count: int = Field(ge=0, le=10_000)
+    returned_count: int = Field(ge=0, le=10_000)
+    omissions: ClosePriceNewHigh120dOmissions
+    items: list[ClosePriceNewHigh120dItem]
+
+
 class BoardIndexBiasResponse(ApiModel):
     board_id: Literal["THS:883423"]
     board_code: Literal["883423"]
