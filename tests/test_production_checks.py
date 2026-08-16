@@ -88,6 +88,13 @@ def test_production_schema_inventory_includes_today_limit_up_domain() -> None:
     } <= EXPECTED_TABLES
 
 
+def test_production_schema_inventory_includes_close_price_new_high_snapshots() -> None:
+    assert {
+        ("derived", "close_price_new_high_120d_snapshot"),
+        ("derived", "close_price_new_high_120d_member"),
+    } <= EXPECTED_TABLES
+
+
 def test_smoke_required_metrics_cover_phase_one_and_board_index() -> None:
     assert {
         "security",
@@ -289,22 +296,24 @@ def test_top_gainers_accepts_pytdx_unknown_bars_but_not_suspended_bars() -> None
 
 
 def test_close_price_new_highs_rpc_is_strict_hushen_only_and_bounded() -> None:
-    migration = (MIGRATION_DIR / "20260816000100_add_close_price_new_highs_120d_api.sql").read_text(
+    migration = (
+        MIGRATION_DIR / "20260816000200_materialize_close_price_new_highs_120d.sql"
+    ).read_text(
         encoding="utf-8"
     )
 
     assert "query_close_price_new_highs_120d" in migration
-    assert "s.exchange in ('SSE', 'SZSE')" in migration
-    assert "candidate_count > 10000" in migration
-    assert "valid_bar_count = 120" in migration
-    assert "close > previous_119d_high" in migration
-    assert "trade_status in ('trading', 'unknown')" in migration
+    assert "close_price_new_high_120d_snapshot" in migration
+    assert "close_price_new_high_120d_member" in migration
     assert "from public, anon, authenticated" in migration
     assert "to market_data_api" in migration
     assert "set statement_timeout = '10s'" in migration
-    assert "bars_in_window as" in migration
-    assert "join window_days wd" in migration
-    assert "cross join window_days" not in migration
+    function_sql = migration.split(
+        "create or replace function api_v1.query_close_price_new_highs_120d()", maxsplit=1
+    )[1]
+    assert "from derived.close_price_new_high_120d_snapshot" in function_sql
+    assert "from derived.close_price_new_high_120d_member" in function_sql
+    assert "core.daily_bar" not in function_sql
 
 
 def test_auction_indicative_rpc_is_bounded_fastapi_only_and_not_a_trade_contract() -> None:

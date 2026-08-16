@@ -2,7 +2,7 @@ import json
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import replace
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from os import environ
 from pathlib import Path
@@ -18,6 +18,7 @@ from psycopg.errors import CheckViolation, InsufficientPrivilege
 from sqlalchemy import Connection, Engine, create_engine, text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
+from market_data_center.close_price_new_highs_service import ClosePriceNewHighsService
 from market_data_center.daily_bar_batch import PreparedDailyBarBatch
 from market_data_center.derivation import DerivationService
 from market_data_center.domain import (
@@ -71,6 +72,9 @@ from market_data_center.migrations import MIGRATION_DIR, apply_migrations
 from market_data_center.persistence import PostgreSQLDerivedPersistence, PostgreSQLPersistence
 from market_data_center.persistence.call_auction_market_series_postgres import (
     PostgreSQLCallAuctionMarketSeriesPersistence,
+)
+from market_data_center.persistence.close_price_new_highs_postgres import (
+    PostgreSQLClosePriceNewHighsPersistence,
 )
 from market_data_center.persistence.operations_postgres import PostgreSQLOperationsPersistence
 from market_data_center.quality_audit import audit_daily_bars
@@ -2850,9 +2854,27 @@ def test_close_price_new_highs_rpc_requires_complete_history_and_strict_breakout
         [],
     )
 
+    operations = PostgreSQLOperationsPersistence(database_engine)
+    scheduled_for = datetime.combine(trading_days[-1], time(12), tzinfo=UTC)
+    workflow = operations.start_workflow(
+        WorkflowCode.DAILY_MARKET, scheduled_for, TriggerSource.SCHEDULED
+    )
+    operations.finish_workflow(
+        workflow.finish(ExecutionStatus.SUCCEEDED, scheduled_for + timedelta(minutes=1))
+    )
+    first = ClosePriceNewHighsService(
+        PostgreSQLClosePriceNewHighsPersistence(database_engine)
+    ).build(trading_days[-1])
+    unchanged = ClosePriceNewHighsService(
+        PostgreSQLClosePriceNewHighsPersistence(database_engine)
+    ).build(trading_days[-1])
+
     with database_engine.connect() as connection:
         payload = connection.scalar(text("select api_v1.query_close_price_new_highs_120d()"))
 
+    assert first.status == "succeeded"
+    assert unchanged.status == "unchanged"
+    assert unchanged.snapshot_id == first.snapshot_id
     assert payload["trade_date"] == trading_days[-1].isoformat()
     assert payload["total_candidate_count"] == 3
     assert payload["eligible_history_count"] == 2

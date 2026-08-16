@@ -44,6 +44,8 @@ EXPECTED_TABLES = {
     ("core", "trading_calendar"),
     ("derived", "adjusted_daily_bar"),
     ("derived", "calculation_run"),
+    ("derived", "close_price_new_high_120d_member"),
+    ("derived", "close_price_new_high_120d_snapshot"),
     ("derived", "daily_metric"),
     ("derived", "market_capitalization"),
     ("derived", "daily_price_limit"),
