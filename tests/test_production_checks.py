@@ -298,9 +298,7 @@ def test_top_gainers_accepts_pytdx_unknown_bars_but_not_suspended_bars() -> None
 def test_close_price_new_highs_rpc_is_strict_hushen_only_and_bounded() -> None:
     migration = (
         MIGRATION_DIR / "20260816000200_materialize_close_price_new_highs_120d.sql"
-    ).read_text(
-        encoding="utf-8"
-    )
+    ).read_text(encoding="utf-8")
 
     assert "query_close_price_new_highs_120d" in migration
     assert "close_price_new_high_120d_snapshot" in migration

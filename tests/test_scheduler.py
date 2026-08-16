@@ -24,6 +24,7 @@ from market_data_center.scheduling_catalog import (
     AUCTION_COLLECTION_JOB_ID,
     CALL_AUCTION_MARKET_SERIES_JOB_ID,
     CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID,
+    CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID,
     DAILY_RUN_JOB_ID,
     DEDUCTED_PROFIT_JOB_ID,
     EOD_QUOTE_SNAPSHOT_JOB_ID,
@@ -65,6 +66,9 @@ def test_scheduler_registers_persistent_single_instance_market_job(tmp_path: Pat
     stock_pool = scheduler.get_job(STOCK_POOL_JOB_ID)
     assert stock_pool is not None
     assert str(stock_pool.trigger) == "cron[day_of_week='mon-fri', hour='21', minute='0']"
+    closing_highs = scheduler.get_job(CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID)
+    assert closing_highs is not None
+    assert str(closing_highs.trigger) == ("cron[day_of_week='mon-fri', hour='21', minute='30']")
     assert store_path.parent.is_dir()
     assert scheduler.get_job(AUCTION_COLLECTION_JOB_ID) is None
 
@@ -256,6 +260,19 @@ def test_disabling_series_does_not_disable_other_morning_jobs(tmp_path: Path) ->
     assert scheduler.get_job(CALL_AUCTION_MARKET_SERIES_JOB_ID) is None
     assert scheduler.get_job(AUCTION_COLLECTION_JOB_ID) is not None
     assert scheduler.get_job(CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID) is not None
+
+
+def test_closing_high_snapshot_can_only_be_enabled_or_disabled(tmp_path: Path) -> None:
+    scheduler = build_scheduler(
+        SchedulerSettings(
+            scheduler_store_path=tmp_path / "no_closing_highs.sqlite",
+            close_price_new_highs_120d_enabled=False,
+            _env_file=None,
+        )
+    )
+
+    assert scheduler.get_job(CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID) is None
+    assert scheduler.get_job(DAILY_RUN_JOB_ID) is not None
 
 
 def test_auction_collection_job_requests_one_symbol_per_pytdx_call(
@@ -546,6 +563,7 @@ def test_scheduler_health_requires_jobs_fresh_snapshot_and_no_stale_runs(tmp_pat
             STALE_RUN_RECOVERY_JOB_ID,
             STOCK_DAILY_INDICATOR_JOB_ID,
             STOCK_POOL_JOB_ID,
+            CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID,
         ),
     )
     settings = SchedulerSettings(

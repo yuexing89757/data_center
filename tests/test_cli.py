@@ -78,6 +78,12 @@ def test_stock_pool_commands_require_exact_dates_and_known_pool_codes() -> None:
     assert check.version == 2
 
 
+def test_close_price_new_high_build_requires_an_explicit_trade_date() -> None:
+    args = _parser().parse_args(["close-price-new-highs-120d-build", "--trade-date", "2026-08-14"])
+
+    assert args.trade_date == "2026-08-14"
+
+
 def test_auction_preflight_uses_code_owned_thirty_second_cadence() -> None:
     args = _parser().parse_args(["auction-quotes-preflight", "--trade-date", "2026-08-17"])
 

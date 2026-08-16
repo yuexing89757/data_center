@@ -102,10 +102,9 @@ class ClosePriceNewHighSnapshot:
 @dataclass(frozen=True, slots=True)
 class ClosePriceNewHighBuildSummary:
     status: str
-    calculation_id: UUID
-    snapshot_id: UUID
+    calculation_id: UUID | None
+    snapshot_id: UUID | None
     trade_date: date
     candidate_count: int
     member_count: int
     omitted_count: int
-

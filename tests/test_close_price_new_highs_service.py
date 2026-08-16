@@ -45,15 +45,21 @@ def _input(close: str = "12.50") -> ClosePriceNewHighInput:
 class MemoryPersistence:
     def __init__(self, source: ClosePriceNewHighInput) -> None:
         self.source = source
+        self.trading_day = True
         self.snapshots: list[ClosePriceNewHighSnapshot] = []
         self.runs: list[CalculationRun] = []
         self.failed_runs: list[CalculationRun] = []
         self.raise_on_publish = False
+        self.raise_on_version = False
 
     @contextmanager
     def build_lock(self, trade_date):  # type: ignore[no-untyped-def]
         assert trade_date == TRADE_DATE
         yield
+
+    def is_trading_day(self, trade_date):  # type: ignore[no-untyped-def]
+        assert trade_date == TRADE_DATE
+        return self.trading_day
 
     def load_input(self, trade_date):  # type: ignore[no-untyped-def]
         assert trade_date == TRADE_DATE
@@ -69,6 +75,8 @@ class MemoryPersistence:
         self.runs.append(run)
 
     def next_snapshot_version(self, trade_date):  # type: ignore[no-untyped-def]
+        if self.raise_on_version:
+            raise RuntimeError("version allocation failed")
         return 1 + max(
             (snapshot.version for snapshot in self.snapshots if snapshot.trade_date == trade_date),
             default=0,
@@ -148,3 +156,26 @@ def test_publish_failure_marks_calculation_failed() -> None:
         _service(persistence).build(TRADE_DATE)
 
     assert persistence.failed_runs[0].status.value == "failed"
+
+
+def test_version_allocation_failure_marks_calculation_failed() -> None:
+    persistence = MemoryPersistence(_input())
+    persistence.raise_on_version = True
+
+    with pytest.raises(RuntimeError, match="version allocation failed"):
+        _service(persistence).build(TRADE_DATE)
+
+    assert persistence.failed_runs[0].status.value == "failed"
+
+
+def test_non_trading_day_is_a_successful_skip_without_snapshot() -> None:
+    persistence = MemoryPersistence(_input())
+    persistence.trading_day = False
+
+    result = _service(persistence).build(TRADE_DATE)
+
+    assert result.status == "skipped"
+    assert result.calculation_id is None
+    assert result.snapshot_id is None
+    assert persistence.runs == []
+    assert persistence.snapshots == []

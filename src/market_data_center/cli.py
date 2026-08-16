@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import create_engine
 
 from market_data_center.auction_service import AuctionCollectionService
+from market_data_center.close_price_new_highs_service import ClosePriceNewHighsService
 from market_data_center.daily_bar_batch import DailyBarBulkSummary, PreparedDailyBarBatch
 from market_data_center.database_urls import sqlalchemy_url
 from market_data_center.derivation import (
@@ -37,6 +38,9 @@ from market_data_center.persistence import (
     PostgreSQLStockPoolPersistence,
 )
 from market_data_center.persistence.auction_postgres import PostgreSQLAuctionPersistence
+from market_data_center.persistence.close_price_new_highs_postgres import (
+    PostgreSQLClosePriceNewHighsPersistence,
+)
 from market_data_center.pipeline import BoardIndexIngestionPipeline, IngestionPipeline
 from market_data_center.providers import (
     ManagedMarketDataProvider,
@@ -242,6 +246,28 @@ def main() -> None:
             raise
         execution.succeed()
         print(dumps(asdict(limit_up_summary), default=str, sort_keys=True))
+        return
+
+    if args.dataset == "close-price-new-highs-120d-build":
+        trade_date = date.fromisoformat(args.trade_date)
+        execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
+            WorkflowCode.CLOSE_PRICE_NEW_HIGHS_120D,
+            datetime.now(UTC).replace(second=0, microsecond=0),
+            TriggerSource.MANUAL,
+        )
+        try:
+            closing_high_summary = execution.step(
+                "build_close_price_new_highs_120d_snapshot",
+                1,
+                lambda: ClosePriceNewHighsService(
+                    PostgreSQLClosePriceNewHighsPersistence(engine)
+                ).build(trade_date),
+            )
+        except BaseException as error:
+            execution.fail(error)
+            raise
+        execution.succeed()
+        print(dumps(asdict(closing_high_summary), default=str, sort_keys=True))
         return
 
     if args.dataset in {"raw-replay", "recover-stale-runs", "compare-daily-bars"}:
@@ -1171,6 +1197,12 @@ def _parser() -> ArgumentParser:
         required=True,
         help="exact price-limit event trading date YYYY-MM-DD",
     )
+
+    closing_highs = subparsers.add_parser(
+        "close-price-new-highs-120d-build",
+        help="idempotently build one exact-date immutable 120-session closing-high snapshot",
+    )
+    closing_highs.add_argument("--trade-date", required=True, help="exact YYYY-MM-DD")
 
     today_limit_up = subparsers.add_parser(
         "today-limit-up-snapshot",

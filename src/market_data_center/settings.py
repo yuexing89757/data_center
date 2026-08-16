@@ -36,6 +36,7 @@ class SchedulerSettings(BaseSettings):
     call_auction_market_series_enabled: bool = True
     # Remains opt-in until the new migration and provider preflight are explicitly deployed.
     today_limit_up_snapshot_enabled: bool = False
+    close_price_new_highs_120d_enabled: bool = True
 
 
 class PytdxPoolSettings(BaseSettings):

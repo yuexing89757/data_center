@@ -32,6 +32,16 @@ class ClosePriceNewHighsService:
         self._uuid_factory = uuid_factory
 
     def build(self, trade_date: date) -> ClosePriceNewHighBuildSummary:
+        if self._persistence.is_trading_day(trade_date) is False:
+            return ClosePriceNewHighBuildSummary(
+                status="skipped",
+                calculation_id=None,
+                snapshot_id=None,
+                trade_date=trade_date,
+                candidate_count=0,
+                member_count=0,
+                omitted_count=0,
+            )
         with self._persistence.build_lock(trade_date):
             source, watermark = self._persistence.load_input(trade_date)
             calculation = calculate_close_price_new_highs_120d(source)
@@ -61,25 +71,25 @@ class ClosePriceNewHighsService:
                 requested_at=now,
             )
             self._persistence.create_calculation_run(run)
-            snapshot = ClosePriceNewHighSnapshot(
-                snapshot_id=self._uuid_factory(),
-                calculation_id=run.calculation_id,
-                trade_date=trade_date,
-                version=self._persistence.next_snapshot_version(trade_date),
-                candidate_count=calculation.candidate_count,
-                eligible_history_count=calculation.eligible_history_count,
-                omitted_count=calculation.omitted_count,
-                member_count=calculation.member_count,
-                incomplete_history_count=calculation.incomplete_history_count,
-                non_trading_bar_count=calculation.non_trading_bar_count,
-                nonpositive_price_count=calculation.nonpositive_price_count,
-                missing_name_count=calculation.missing_name_count,
-                input_hash=calculation.input_hash,
-                content_hash=calculation.content_hash,
-                algorithm_version=CLOSE_PRICE_NEW_HIGHS_ALGORITHM_VERSION,
-                generated_at=now,
-            )
             try:
+                snapshot = ClosePriceNewHighSnapshot(
+                    snapshot_id=self._uuid_factory(),
+                    calculation_id=run.calculation_id,
+                    trade_date=trade_date,
+                    version=self._persistence.next_snapshot_version(trade_date),
+                    candidate_count=calculation.candidate_count,
+                    eligible_history_count=calculation.eligible_history_count,
+                    omitted_count=calculation.omitted_count,
+                    member_count=calculation.member_count,
+                    incomplete_history_count=calculation.incomplete_history_count,
+                    non_trading_bar_count=calculation.non_trading_bar_count,
+                    nonpositive_price_count=calculation.nonpositive_price_count,
+                    missing_name_count=calculation.missing_name_count,
+                    input_hash=calculation.input_hash,
+                    content_hash=calculation.content_hash,
+                    algorithm_version=CLOSE_PRICE_NEW_HIGHS_ALGORITHM_VERSION,
+                    generated_at=now,
+                )
                 completed = run.succeeded(
                     finished_at=self._clock(), output_rows=1 + calculation.member_count
                 )

@@ -2893,6 +2893,52 @@ def test_close_price_new_highs_rpc_requires_complete_history_and_strict_breakout
         }
     ]
 
+    revised_close = Decimal("12")
+    revised_bar = replace(
+        _daily_bar(trading_days[-1]),
+        symbol=SYMBOL,
+        open=revised_close,
+        high=revised_close,
+        low=revised_close,
+        close=revised_close,
+        trade_status=TradeStatus.UNKNOWN,
+        source_code="pytdx",
+    )
+    revision_run = _running_run(DatasetCode.DAILY_BAR, ProviderCode.PYTDX)
+    persistence.create_ingestion_run(revision_run)
+    persistence.commit_daily_bar_batch(
+        _completed_run(revision_run, 1),
+        _manifest(
+            revision_run.ingestion_id,
+            "new-high-bars-revision",
+            1,
+            provider="pytdx",
+        ),
+        _envelopes(revision_run.ingestion_id, [revised_bar]),
+        [],
+    )
+    revised = ClosePriceNewHighsService(
+        PostgreSQLClosePriceNewHighsPersistence(database_engine)
+    ).build(trading_days[-1])
+    with database_engine.connect() as connection:
+        revised_payload = connection.scalar(
+            text("select api_v1.query_close_price_new_highs_120d()")
+        )
+        selected_version = connection.scalar(
+            text("""
+select version
+from derived.close_price_new_high_120d_snapshot
+where snapshot_id=:snapshot_id
+"""),
+            {"snapshot_id": revised.snapshot_id},
+        )
+
+    assert revised.status == "succeeded"
+    assert revised.snapshot_id != first.snapshot_id
+    assert selected_version == 2
+    assert revised_payload["items"][0]["close"] == 12.0
+    assert revised_payload["items"][0]["breakout_pct"] == 20.0
+
 
 def test_live_board_index_persistence_is_atomic_idempotent_and_fastapi_only(
     database_engine: Engine,

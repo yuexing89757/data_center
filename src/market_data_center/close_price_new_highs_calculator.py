@@ -40,8 +40,7 @@ def calculate_close_price_new_highs_120d(
                 close=candidate.close,
                 previous_119d_high=candidate.previous_119d_high,
                 breakout_pct=(
-                    (candidate.close / candidate.previous_119d_high - Decimal(1))
-                    * Decimal(100)
+                    (candidate.close / candidate.previous_119d_high - Decimal(1)) * Decimal(100)
                 ).quantize(_PERCENT_QUANTUM, rounding=ROUND_HALF_UP),
             )
         )
@@ -98,9 +97,7 @@ def _input_payload(
                     item.current_status.value if item.current_status is not None else None
                 ),
                 "previous_119d_high": (
-                    str(item.previous_119d_high)
-                    if item.previous_119d_high is not None
-                    else None
+                    str(item.previous_119d_high) if item.previous_119d_high is not None else None
                 ),
                 "has_non_trading_bar": item.has_non_trading_bar,
                 "has_nonpositive_price": item.has_nonpositive_price,

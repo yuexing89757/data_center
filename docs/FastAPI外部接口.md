@@ -75,12 +75,16 @@ historical names and bounded omission counts. Exact-date positive pytdx bars wit
 symbol; explicit dates never fall back.
 
 `GET /api/v1/close-price-new-highs-120d` takes no parameters and returns every SSE/SZSE stock
-whose latest positive unadjusted close strictly exceeds the highest close from the previous 119
+from the latest ready daily snapshot whose positive unadjusted close strictly exceeds the highest close from the previous 119
 `CN_A_SHARE` trading sessions. The stock must have valid bars in all 120 exact market sessions;
 `pytdx` `unknown` status is accepted, explicit suspension, missing/nonpositive bars, missing names,
 equal highs, and BSE securities are excluded. The response reports the selected date, prior high,
 breakout percentage and bounded omission counts. It has no pagination; the universe is hard-limited
-to 10,000 candidates and this RPC uses a ten-second statement timeout.
+to 10,000 candidates and this RPC uses a ten-second statement timeout. The Worker materializes the
+snapshot Monday-Friday at 21:30 Asia/Shanghai after the exact-date `daily_market` workflow. Before
+that run, on weekends, or after an upstream failure, the endpoint continues to return the most recent
+ready immutable snapshot and exposes its `trade_date`; it never recalculates from `core.daily_bar` on
+the request path. If no ready snapshot has ever been published, the endpoint returns not found.
 
 `GET /api/v1/board-indexes/883423/bias` takes no parameters and first reads stored
 `THS:883423` daily bars. The database result is ready only with at least 34 rows and a latest bar

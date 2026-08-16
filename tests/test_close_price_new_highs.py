@@ -69,9 +69,7 @@ def test_calculator_classifies_overlapping_omissions_without_fabricating_values(
     )
     missing_name = replace(_candidate("SZSE:000002"), display_name=None)
 
-    result = calculate_close_price_new_highs_120d(
-        _source(incomplete, nonpositive, missing_name)
-    )
+    result = calculate_close_price_new_highs_120d(_source(incomplete, nonpositive, missing_name))
 
     assert result.members == ()
     assert result.omitted_count == 3

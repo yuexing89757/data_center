@@ -197,7 +197,7 @@
     },
     {
       "name": "market_close_price_new_highs_120d",
-      "description": "Read all SSE and SZSE stocks whose latest close strictly exceeds every close in the previous 119 market sessions.",
+      "description": "Read all SSE and SZSE stocks from the latest ready daily snapshot whose close strictly exceeds every close in the previous 119 market sessions.",
       "endpoint": "query_close_price_new_highs_120d",
       "read_only": true,
       "input_schema": {

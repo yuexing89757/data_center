@@ -15,6 +15,7 @@ CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID = "call-auction-market-snapshot-daily"
 CALL_AUCTION_MARKET_SERIES_JOB_ID = "call-auction-market-series"
 TODAY_LIMIT_UP_SNAPSHOT_JOB_ID = "today-limit-up-snapshot-daily"
 PYTDX_POOL_REFRESH_JOB_ID = "pytdx-pool-refresh"
+CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID = "close-price-new-highs-120d-daily"
 SCHEDULER_TIMEZONE = "Asia/Shanghai"
 JOB_TIMEOUT_SECONDS = 21_600
 AUCTION_COLLECTION_CADENCE_SECONDS = 30
@@ -125,6 +126,12 @@ WORKFLOW_DEFINITIONS = (
         "PYTDX 节点池刷新",
         "探测候选节点能力并原子发布最后有效节点池。",
         ("refresh_pytdx_pool",),
+    ),
+    WorkflowDefinition(
+        "close_price_new_highs_120d",
+        "沪深120交易日收盘新高快照",
+        "在日 K 完成后构建版本化沪深120交易日收盘新高快照。",
+        ("build_close_price_new_highs_120d_snapshot",),
     ),
 )
 
@@ -267,6 +274,21 @@ def job_definitions(settings: SchedulerSettings) -> tuple[JobDefinition, ...]:
             day_of_week="mon-fri",
             hour=22,
             minute=0,
+        ),
+        JobDefinition(
+            CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID,
+            "沪深120交易日收盘新高快照",
+            "物化最近交易日严格突破此前119日最高收盘的沪深股票。",
+            "close_price_new_highs_120d",
+            "cron",
+            "周一至周五 21:30",
+            timezone,
+            settings.close_price_new_highs_120d_enabled,
+            timeout,
+            "同日 daily_market 未终态时失败; 下一次调度或显式日期手工命令重试",
+            day_of_week="mon-fri",
+            hour=21,
+            minute=30,
         ),
         JobDefinition(
             STALE_RUN_RECOVERY_JOB_ID,

@@ -28,6 +28,18 @@ class PostgreSQLClosePriceNewHighsPersistence:
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
 
+    def is_trading_day(self, trade_date: date) -> bool | None:
+        with self._engine.connect() as connection:
+            value = connection.execute(
+                text("""
+select is_trading_day
+from core.trading_calendar
+where market='CN_A_SHARE' and trade_date=:trade_date
+"""),
+                {"trade_date": trade_date},
+            ).scalar_one_or_none()
+        return value if isinstance(value, bool) else None
+
     @contextmanager
     def build_lock(self, trade_date: date) -> Iterator[None]:
         key = f"close-price-new-highs-120d:{trade_date.isoformat()}"
@@ -44,9 +56,7 @@ class PostgreSQLClosePriceNewHighsPersistence:
                     text("select pg_advisory_unlock(hashtextextended(:key, 0))"), {"key": key}
                 )
 
-    def load_input(
-        self, trade_date: date
-    ) -> tuple[ClosePriceNewHighInput, dict[str, str | None]]:
+    def load_input(self, trade_date: date) -> tuple[ClosePriceNewHighInput, dict[str, str | None]]:
         with (
             self._engine.connect().execution_options(
                 isolation_level="REPEATABLE READ"
@@ -93,9 +103,7 @@ limit 1
             if not candidates:
                 raise ClosePriceNewHighsDependencyNotReady("SSE/SZSE stock universe is empty")
             if len(candidates) > 10_000:
-                raise ClosePriceNewHighsDependencyNotReady(
-                    "SSE/SZSE stock universe exceeds 10,000"
-                )
+                raise ClosePriceNewHighsDependencyNotReady("SSE/SZSE stock universe exceeds 10,000")
             watermark = {
                 "trade_date": trade_date.isoformat(),
                 "first_trade_date": days[-1].isoformat(),
@@ -273,6 +281,10 @@ with candidates as (
 ), bars_in_window as materialized (
     select b.symbol, b.trade_date, b.close, b.trade_status
     from core.daily_bar b
+    join core.trading_calendar calendar
+      on calendar.market=b.market
+     and calendar.trade_date=b.trade_date
+     and calendar.is_trading_day
     where b.market='CN_A_SHARE'
       and b.trade_date between :first_trade_date and :trade_date
 ), stats as (

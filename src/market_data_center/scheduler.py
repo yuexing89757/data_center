@@ -27,6 +27,7 @@ from market_data_center.call_auction_market_series_service import (
 )
 from market_data_center.call_auction_market_service import CallAuctionMarketSnapshotService
 from market_data_center.cli import run_daily_workflow, run_stock_daily_indicator_workflow
+from market_data_center.close_price_new_highs_service import ClosePriceNewHighsService
 from market_data_center.database_urls import sqlalchemy_url
 from market_data_center.domain.operations import TriggerSource, WorkflowCode
 from market_data_center.operations_service import WorkflowExecutionService
@@ -34,6 +35,9 @@ from market_data_center.persistence import PostgreSQLPersistence
 from market_data_center.persistence.auction_postgres import PostgreSQLAuctionPersistence
 from market_data_center.persistence.call_auction_market_series_postgres import (
     PostgreSQLCallAuctionMarketSeriesPersistence,
+)
+from market_data_center.persistence.close_price_new_highs_postgres import (
+    PostgreSQLClosePriceNewHighsPersistence,
 )
 from market_data_center.persistence.operations_postgres import PostgreSQLOperationsPersistence
 from market_data_center.persistence.stock_pool_postgres import PostgreSQLStockPoolPersistence
@@ -53,6 +57,7 @@ from market_data_center.scheduling_catalog import (
     AUCTION_COLLECTION_QUOTE_BATCH_SIZE,
     CALL_AUCTION_MARKET_SERIES_JOB_ID,
     CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID,
+    CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID,
     DAILY_RUN_JOB_ID,
     DEDUCTED_PROFIT_JOB_ID,
     EOD_QUOTE_SNAPSHOT_JOB_ID,
@@ -231,6 +236,37 @@ def run_daily_market_job() -> None:
                 PostgreSQLPersistence(engine),
                 LocalRawStore(settings.raw_data_root),
                 execution=execution,
+            )
+        except BaseException as error:
+            execution.fail(error)
+            raise
+        execution.succeed()
+    finally:
+        engine.dispose()
+
+
+def run_close_price_new_highs_120d_job() -> None:
+    """Build one immutable exact-date closing-high snapshot after daily market ingestion."""
+    settings = WorkerSettings()  # type: ignore[call-arg]
+    scheduling = SchedulerSettings()
+    engine = create_engine(
+        sqlalchemy_url(settings.database_url.get_secret_value()), pool_pre_ping=True
+    )
+    scheduled_for = _scheduled_job_fire_time(CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID, scheduling)
+    trade_date = scheduled_for.astimezone(ZoneInfo(SCHEDULER_TIMEZONE)).date()
+    try:
+        execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
+            WorkflowCode.CLOSE_PRICE_NEW_HIGHS_120D,
+            scheduled_for,
+            TriggerSource.SCHEDULED,
+        )
+        try:
+            execution.step(
+                "build_close_price_new_highs_120d_snapshot",
+                1,
+                lambda: ClosePriceNewHighsService(
+                    PostgreSQLClosePriceNewHighsPersistence(engine)
+                ).build(trade_date),
             )
         except BaseException as error:
             execution.fail(error)
@@ -604,6 +640,7 @@ def build_scheduler(settings: SchedulerSettings | None = None) -> BlockingSchedu
         CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID: run_call_auction_market_snapshot_job,
         CALL_AUCTION_MARKET_SERIES_JOB_ID: run_call_auction_market_series_job,
         TODAY_LIMIT_UP_SNAPSHOT_JOB_ID: run_today_limit_up_snapshot_job,
+        CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID: run_close_price_new_highs_120d_job,
         PYTDX_POOL_REFRESH_JOB_ID: run_pytdx_pool_refresh_job,
     }
     for definition in job_definitions(settings):
