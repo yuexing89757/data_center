@@ -411,7 +411,10 @@ class FakeQueryService:
             trade_date=day,
             ingestion_id="dddddddd-dddd-dddd-dddd-dddddddddddd",
             ingestion_status="partial",
-            price_limit_calculation_id="eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+            price_limit_calculation_id=None,
+            price_limit_rule_version="CN_MAINBOARD_2026_07_06",
+            price_limit_algorithm_version="1.0.0",
+            calculation_mode="realtime_read",
             snapshot_window="09:26:00-09:26:59 Asia/Shanghai",
             candidate_count=2,
             omitted_incomplete_count=1,
@@ -1186,6 +1189,27 @@ def test_auction_one_price_limits_returns_separate_sets() -> None:
     assert response.json()["up"][0]["direction"] == "up"
     assert response.json()["down"] == []
     assert response.json()["ingestion_status"] == "partial"
+    assert response.json()["price_limit_calculation_id"] is None
+    assert response.json()["price_limit_rule_version"] == "CN_MAINBOARD_2026_07_06"
+    assert response.json()["price_limit_algorithm_version"] == "1.0.0"
+    assert response.json()["calculation_mode"] == "realtime_read"
+
+
+def test_auction_one_price_limits_openapi_exposes_realtime_lineage() -> None:
+    schema = _client(FakeQueryService()).get("/openapi.json").json()
+    response = schema["components"]["schemas"]["AuctionOnePriceLimitResponse"]
+
+    assert {
+        item["type"] for item in response["properties"]["price_limit_calculation_id"]["anyOf"]
+    } == {
+        "string",
+        "null",
+    }
+    assert response["properties"]["price_limit_rule_version"]["const"] == (
+        "CN_MAINBOARD_2026_07_06"
+    )
+    assert response["properties"]["price_limit_algorithm_version"]["const"] == "1.0.0"
+    assert response["properties"]["calculation_mode"]["const"] == "realtime_read"
 
 
 def test_auction_indicative_details_falls_back_to_live_only_when_database_is_empty() -> None:

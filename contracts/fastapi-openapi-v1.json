@@ -349,6 +349,11 @@
       "AuctionOnePriceLimitResponse": {
         "additionalProperties": false,
         "properties": {
+          "calculation_mode": {
+            "const": "realtime_read",
+            "title": "Calculation Mode",
+            "type": "string"
+          },
           "candidate_count": {
             "minimum": 0.0,
             "title": "Candidate Count",
@@ -384,9 +389,26 @@
             "title": "Omitted Incomplete Count",
             "type": "integer"
           },
+          "price_limit_algorithm_version": {
+            "const": "1.0.0",
+            "title": "Price Limit Algorithm Version",
+            "type": "string"
+          },
           "price_limit_calculation_id": {
-            "format": "uuid",
-            "title": "Price Limit Calculation Id",
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Limit Calculation Id"
+          },
+          "price_limit_rule_version": {
+            "const": "CN_MAINBOARD_2026_07_06",
+            "title": "Price Limit Rule Version",
             "type": "string"
           },
           "snapshot_window": {
@@ -417,6 +439,9 @@
           "ingestion_id",
           "ingestion_status",
           "price_limit_calculation_id",
+          "price_limit_rule_version",
+          "price_limit_algorithm_version",
+          "calculation_mode",
           "snapshot_window",
           "candidate_count",
           "omitted_incomplete_count",
@@ -2841,6 +2866,7 @@
     },
     "/api/v1/call-auction-one-price-limits": {
       "get": {
+        "description": "Selects one stored 09:26 SSE/SZSE market snapshot and calculates the accepted mainboard 10% price limits at read time. It does not depend on the nightly price-limit batch, fetch providers, use later daily bars, or write data.",
         "operationId": "auction_one_price_limits_api_v1_call_auction_one_price_limits_get",
         "parameters": [
           {
@@ -2888,7 +2914,7 @@
             "APIKeyHeader": []
           }
         ],
-        "summary": "Query evidence-complete 09:26 one-price limit stocks",
+        "summary": "Calculate evidence-complete 09:26 mainboard one-price limits",
         "tags": [
           "market-data"
         ]

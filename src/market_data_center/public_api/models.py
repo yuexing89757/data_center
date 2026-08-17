@@ -343,7 +343,10 @@ class AuctionOnePriceLimitResponse(ApiModel):
     trade_date: date
     ingestion_id: UUID
     ingestion_status: Literal["succeeded", "partial"]
-    price_limit_calculation_id: UUID
+    price_limit_calculation_id: UUID | None
+    price_limit_rule_version: Literal["CN_MAINBOARD_2026_07_06"]
+    price_limit_algorithm_version: Literal["1.0.0"]
+    calculation_mode: Literal["realtime_read"]
     snapshot_window: Literal["09:26:00-09:26:59 Asia/Shanghai"]
     candidate_count: int = Field(ge=0)
     omitted_incomplete_count: int = Field(ge=0)
