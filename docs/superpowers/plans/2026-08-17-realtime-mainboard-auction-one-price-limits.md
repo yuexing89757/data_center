@@ -42,11 +42,11 @@ Add a test that reads the new ADR/domain guide and asserts all controlled terms:
 
 ```python
 def test_realtime_auction_one_price_limit_decision_is_documented() -> None:
-    adr = (ROOT / "docs/adr/ADR-0039-09点26沪深主板一字涨跌停实时计算.md").read_text(
+    adr = (PROJECT_ROOT / "docs/adr/ADR-0039-09点26沪深主板一字涨跌停实时计算.md").read_text(
         encoding="utf-8"
     )
     detail = (
-        ROOT / "docs/领域详设-09点26沪深主板一字涨跌停实时计算-2026-08-17.md"
+        PROJECT_ROOT / "docs/领域详设-09点26沪深主板一字涨跌停实时计算-2026-08-17.md"
     ).read_text(encoding="utf-8")
     for term in (
         "CN_MAINBOARD_2026_07_06",
@@ -237,10 +237,12 @@ git commit -m "feat: calculate auction limits at read time"
 Change the fake response and endpoint assertion to:
 
 ```python
-price_limit_calculation_id=None,
-price_limit_rule_version="CN_MAINBOARD_2026_07_06",
-price_limit_algorithm_version="1.0.0",
-calculation_mode="realtime_read",
+expected_lineage = {
+    "price_limit_calculation_id": None,
+    "price_limit_rule_version": "CN_MAINBOARD_2026_07_06",
+    "price_limit_algorithm_version": "1.0.0",
+    "calculation_mode": "realtime_read",
+}
 ```
 
 Assert the serialized JSON contains `null` and all three literal fields. Add an OpenAPI assertion that `price_limit_calculation_id` accepts null and the mode enum contains only `realtime_read`.
