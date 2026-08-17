@@ -173,6 +173,139 @@ def test_migrations_apply_to_empty_database_and_are_idempotent(
     }.issubset({row[1] for row in first_snapshot["routines"]})
 
 
+def test_auction_series_semantics_migration_labels_existing_rows_without_rewrite(
+    empty_database_url: str,
+) -> None:
+    migration = MIGRATIONS[-1]
+    assert migration.name == "20260817000200_add_auction_series_value_semantics.sql"
+    with psycopg.connect(empty_database_url) as connection:
+        apply_migrations(connection, MIGRATIONS[:-1])
+
+    trade_date = date(2026, 8, 17)
+    slots = series_slots(trade_date)
+    workflow_id = uuid4()
+    session_id = uuid4()
+    ingestion_id = uuid4()
+    engine = create_engine(_sqlalchemy_url(empty_database_url))
+    try:
+        with engine.begin() as connection:
+            _insert_call_auction_security_universe(connection)
+            connection.execute(
+                text("""
+                    insert into operations.workflow_run (
+                        workflow_run_id, workflow_code, scheduled_for, trigger_source,
+                        attempt, status, started_at, finished_at
+                    ) values (
+                        :workflow_id, 'call_auction_market_series', :started_at,
+                        'scheduled', 1, 'succeeded', :started_at, :finished_at
+                    )
+                """),
+                {
+                    "workflow_id": workflow_id,
+                    "started_at": slots[0],
+                    "finished_at": slots[0] + timedelta(seconds=2),
+                },
+            )
+            connection.execute(
+                text("""
+                    insert into realtime.call_auction_market_series_session (
+                        session_id, workflow_run_id, trade_date, window_start, window_end,
+                        cadence_seconds, expected_rounds, universe_symbols, universe_count,
+                        universe_hash, status, started_at, finished_at, successful_rounds,
+                        successful_quotes
+                    ) values (
+                        :session_id, :workflow_id, :trade_date, :window_start, :window_end,
+                        20, 32, array['SSE:600000'], 1, :universe_hash, 'succeeded',
+                        :window_start, :finished_at, 1, 1
+                    )
+                """),
+                {
+                    "session_id": session_id,
+                    "workflow_id": workflow_id,
+                    "trade_date": trade_date,
+                    "window_start": slots[0],
+                    "window_end": slots[-1] + timedelta(seconds=20),
+                    "universe_hash": universe_hash(("SSE:600000",)),
+                    "finished_at": slots[0] + timedelta(seconds=2),
+                },
+            )
+            connection.execute(
+                text("""
+                    insert into ingestion.ingestion_run (
+                        ingestion_id, provider_code, dataset_code, status, requested_at,
+                        started_at, finished_at, fetched_rows, accepted_rows
+                    ) values (
+                        :ingestion_id, 'pytdx_hq', 'call_auction_market_series',
+                        'succeeded', :started_at, :started_at, :finished_at, 1, 1
+                    )
+                """),
+                {
+                    "ingestion_id": ingestion_id,
+                    "started_at": slots[0],
+                    "finished_at": slots[0] + timedelta(seconds=2),
+                },
+            )
+            connection.execute(
+                text("""
+                    insert into realtime.call_auction_market_series_round (
+                        session_id, sample_seq, scheduled_at, collected_at, status,
+                        attempt_count, expected_quotes, successful_quotes, failed_quotes,
+                        selected_ingestion_id
+                    ) values (
+                        :session_id, 0, :scheduled_at, :collected_at, 'succeeded',
+                        1, 1, 1, 0, :ingestion_id
+                    )
+                """),
+                {
+                    "session_id": session_id,
+                    "scheduled_at": slots[0],
+                    "collected_at": slots[0] + timedelta(seconds=2),
+                    "ingestion_id": ingestion_id,
+                },
+            )
+            connection.execute(
+                text("""
+                    insert into realtime.call_auction_market_series_snapshot (
+                        trade_date, ingestion_id, session_id, sample_seq, scheduled_at,
+                        symbol, observed_at, last_price, cumulative_volume,
+                        cumulative_amount, source_code
+                    ) values (
+                        :trade_date, :ingestion_id, :session_id, 0, :scheduled_at,
+                        'SSE:600000', :observed_at, 9.8700, 32100, 316827.0000,
+                        'pytdx_hq'
+                    )
+                """),
+                {
+                    "trade_date": trade_date,
+                    "ingestion_id": ingestion_id,
+                    "session_id": session_id,
+                    "scheduled_at": slots[0],
+                    "observed_at": slots[0] + timedelta(seconds=1),
+                },
+            )
+            before = tuple(
+                connection.execute(
+                    text("""
+                        select last_price, cumulative_volume, cumulative_amount
+                        from realtime.call_auction_market_series_snapshot
+                    """)
+                ).one()
+            )
+    finally:
+        engine.dispose()
+
+    with psycopg.connect(empty_database_url) as connection:
+        apply_migrations(connection, (migration,))
+        after = connection.execute("""
+            select last_price, cumulative_volume, cumulative_amount, value_semantics
+            from realtime.call_auction_market_series_snapshot
+        """).fetchone()
+
+    assert after is not None
+    assert tuple(after[:3]) == before
+    assert after[3] == "legacy_source_quote"
+
+
 def test_call_auction_market_series_schema_is_partitioned_and_internal(
     database_engine: Engine,
 ) -> None:
