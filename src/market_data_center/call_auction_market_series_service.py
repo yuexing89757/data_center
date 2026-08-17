@@ -5,12 +5,14 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
+from decimal import Decimal
 from json import dumps
 from time import sleep
 from types import TracebackType
 from typing import Protocol, Self
 from uuid import UUID, uuid4
+from zoneinfo import ZoneInfo
 
 from market_data_center.domain.call_auction_market_series import (
     SERIES_CADENCE_SECONDS,
@@ -18,6 +20,7 @@ from market_data_center.domain.call_auction_market_series import (
     MarketSeriesSession,
     MarketSeriesSnapshotRecord,
     MarketSeriesStatus,
+    MarketSeriesValueSemantics,
     series_slots,
     universe_hash,
 )
@@ -399,6 +402,9 @@ def _to_snapshot(
     session: MarketSeriesSession,
     round_state: MarketSeriesRound,
 ) -> MarketSeriesSnapshotRecord:
+    last_price, cumulative_volume, cumulative_amount, value_semantics = _series_values(
+        quote, round_state.scheduled_at
+    )
     return MarketSeriesSnapshotRecord(
         symbol=quote.symbol,
         trade_date=session.trade_date,
@@ -407,12 +413,35 @@ def _to_snapshot(
         scheduled_at=round_state.scheduled_at,
         observed_at=quote.observed_at,
         source_code=quote.source_code,
-        last_price=quote.last_price,
+        value_semantics=value_semantics,
+        last_price=last_price,
         previous_close=quote.previous_close,
         high_price=quote.high,
         low_price=quote.low,
-        cumulative_volume=quote.cumulative_volume,
-        cumulative_amount=quote.cumulative_amount,
+        cumulative_volume=cumulative_volume,
+        cumulative_amount=cumulative_amount,
+    )
+
+
+def _series_values(
+    quote: FiveLevelQuoteSnapshotRecord,
+    scheduled_at: datetime,
+) -> tuple[Decimal | None, int | None, Decimal | None, MarketSeriesValueSemantics]:
+    if scheduled_at.astimezone(ZoneInfo("Asia/Shanghai")).time() < time(9, 25):
+        bid1 = quote.bid_levels[0]
+        if bid1.price is None or bid1.volume is None:
+            return None, None, None, MarketSeriesValueSemantics.AUCTION_INDICATIVE
+        return (
+            bid1.price,
+            bid1.volume,
+            bid1.price * bid1.volume,
+            MarketSeriesValueSemantics.AUCTION_INDICATIVE,
+        )
+    return (
+        quote.last_price,
+        quote.cumulative_volume,
+        quote.cumulative_amount,
+        MarketSeriesValueSemantics.OPENING_TRADE,
     )
 
 

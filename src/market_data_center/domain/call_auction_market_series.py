@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 
 SHANGHAI_ZONE = ZoneInfo("Asia/Shanghai")
 SERIES_START = time(9, 15)
+SERIES_OPENING_TRADE_START = time(9, 25)
 SERIES_CADENCE_SECONDS = 20
 SERIES_ROUND_COUNT = 32
 
@@ -24,6 +25,12 @@ class MarketSeriesStatus(StrEnum):
     SUCCEEDED = "succeeded"
     PARTIAL = "partial"
     FAILED = "failed"
+
+
+class MarketSeriesValueSemantics(StrEnum):
+    AUCTION_INDICATIVE = "auction_indicative"
+    OPENING_TRADE = "opening_trade"
+    LEGACY_SOURCE_QUOTE = "legacy_source_quote"
 
 
 def series_slots(trade_date: date) -> tuple[datetime, ...]:
@@ -191,6 +198,7 @@ class MarketSeriesSnapshotRecord:
     scheduled_at: datetime
     observed_at: datetime
     source_code: str
+    value_semantics: MarketSeriesValueSemantics
     last_price: Decimal | None = None
     previous_close: Decimal | None = None
     high_price: Decimal | None = None
@@ -212,6 +220,19 @@ class MarketSeriesSnapshotRecord:
             raise ValueError("observed_at must be within the scheduled round")
         if self.source_code != "pytdx_hq":
             raise ValueError("market series source_code must be pytdx_hq")
+        if not isinstance(self.value_semantics, MarketSeriesValueSemantics):
+            raise TypeError("value_semantics must be a MarketSeriesValueSemantics")
+        scheduled_time = self.scheduled_at.astimezone(SHANGHAI_ZONE).time()
+        if (
+            self.value_semantics is MarketSeriesValueSemantics.AUCTION_INDICATIVE
+            and scheduled_time >= SERIES_OPENING_TRADE_START
+        ):
+            raise ValueError("auction_indicative must be scheduled before 09:25")
+        if (
+            self.value_semantics is MarketSeriesValueSemantics.OPENING_TRADE
+            and scheduled_time < SERIES_OPENING_TRADE_START
+        ):
+            raise ValueError("opening_trade must not be scheduled before 09:25")
         decimal_values = (
             self.last_price,
             self.previous_close,
@@ -230,6 +251,24 @@ class MarketSeriesSnapshotRecord:
                 raise TypeError("cumulative_volume must be an integer share count")
             if self.cumulative_volume < 0:
                 raise ValueError("cumulative_volume must not be negative")
+        if self.value_semantics is MarketSeriesValueSemantics.AUCTION_INDICATIVE:
+            indicative_values = (
+                self.last_price,
+                self.cumulative_volume,
+                self.cumulative_amount,
+            )
+            if any(value is None for value in indicative_values) and not all(
+                value is None for value in indicative_values
+            ):
+                raise ValueError(
+                    "auction indicative price, volume and amount must be jointly present"
+                )
+            if (
+                self.last_price is not None
+                and self.cumulative_volume is not None
+                and self.cumulative_amount != self.last_price * self.cumulative_volume
+            ):
+                raise ValueError("auction indicative amount must equal price multiplied by volume")
         if (
             self.high_price is not None
             and self.low_price is not None

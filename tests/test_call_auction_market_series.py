@@ -9,6 +9,7 @@ from market_data_center.domain.call_auction_market_series import (
     MarketSeriesSession,
     MarketSeriesSnapshotRecord,
     MarketSeriesStatus,
+    MarketSeriesValueSemantics,
     series_slots,
     universe_hash,
 )
@@ -73,6 +74,7 @@ def _snapshot(**changes: object) -> MarketSeriesSnapshotRecord:
         "low_price": Decimal("10.00"),
         "cumulative_volume": 123_400,
         "cumulative_amount": Decimal("1246340.00"),
+        "value_semantics": MarketSeriesValueSemantics.AUCTION_INDICATIVE,
     }
     values.update(changes)
     return MarketSeriesSnapshotRecord(**values)  # type: ignore[arg-type]
@@ -151,11 +153,46 @@ def test_snapshot_requires_exact_round_window_and_price_invariants() -> None:
     with pytest.raises(ValueError, match="observed_at"):
         _snapshot(observed_at=SLOTS[0] + timedelta(seconds=20))
     with pytest.raises(ValueError, match="price bounds"):
-        _snapshot(last_price=Decimal("10.20"), high_price=Decimal("10.10"))
+        _snapshot(
+            last_price=Decimal("10.20"),
+            high_price=Decimal("10.10"),
+            cumulative_amount=Decimal("1258680.00"),
+        )
     with pytest.raises(TypeError, match="Decimal"):
         _snapshot(cumulative_amount=1.0)
     with pytest.raises(TypeError, match="integer"):
         _snapshot(cumulative_volume=True)
+
+
+def test_auction_indicative_snapshot_requires_consistent_bid1_values() -> None:
+    snapshot = _snapshot(
+        last_price=Decimal("9.99"),
+        high_price=None,
+        low_price=None,
+        cumulative_volume=1200,
+        cumulative_amount=Decimal("11988.00"),
+        value_semantics=MarketSeriesValueSemantics.AUCTION_INDICATIVE,
+    )
+    assert snapshot.cumulative_amount == Decimal("11988.00")
+    with pytest.raises(ValueError, match="price multiplied by volume"):
+        _snapshot(
+            last_price=Decimal("9.99"),
+            high_price=None,
+            low_price=None,
+            cumulative_volume=1200,
+            cumulative_amount=Decimal("1"),
+            value_semantics=MarketSeriesValueSemantics.AUCTION_INDICATIVE,
+        )
+
+
+def test_snapshot_semantics_follow_the_scheduled_0925_boundary() -> None:
+    with pytest.raises(ValueError, match="before 09:25"):
+        _snapshot(
+            sample_seq=30,
+            scheduled_at=SLOTS[30],
+            observed_at=SLOTS[30] + timedelta(seconds=2),
+            value_semantics=MarketSeriesValueSemantics.AUCTION_INDICATIVE,
+        )
 
 
 def test_series_codes_are_controlled_enums() -> None:
