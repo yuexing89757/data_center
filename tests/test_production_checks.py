@@ -24,6 +24,23 @@ VIEW_COUNT = cast(Any, SMOKE_CHECKS["_view_count"])
 PUBLISHED_FUNCTIONS = cast(tuple[str, ...], FASTAPI_CHECKS["PUBLISHED_FUNCTIONS"])
 
 
+def test_realtime_auction_one_price_limit_decision_is_documented() -> None:
+    adr = (
+        PROJECT_ROOT / "docs/adr/ADR-0039-09点26沪深主板一字涨跌停实时计算.md"
+    ).read_text(encoding="utf-8")
+    detail = (
+        PROJECT_ROOT / "docs/领域详设-09点26沪深主板一字涨跌停实时计算-2026-08-17.md"
+    ).read_text(encoding="utf-8")
+    for term in (
+        "CN_MAINBOARD_2026_07_06",
+        "realtime_read",
+        "price_limit_calculation_id",
+        "market_data_api",
+        "09:26:00",
+    ):
+        assert term in adr + detail
+
+
 def test_fastapi_preflight_checks_call_auction_market_snapshot_rpc() -> None:
     assert "api_v1.query_call_auction_market_snapshots(date,text[])" in PUBLISHED_FUNCTIONS
     assert (
