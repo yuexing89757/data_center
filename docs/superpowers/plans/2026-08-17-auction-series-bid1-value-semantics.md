@@ -43,12 +43,10 @@ Add to `tests/test_production_checks.py`:
 
 ```python
 def test_auction_series_bid1_semantics_are_governed() -> None:
-    adr = (PROJECT_ROOT / "docs/adr/ADR-0040-竞价序列买一价量额语义.md").read_text(
+    adr = (PROJECT_ROOT / "docs/adr/ADR-0040-竞价序列买一价量额语义.md").read_text(encoding="utf-8")
+    detail = (PROJECT_ROOT / "docs/领域详设-沪深全市场竞价序列买一价量额-2026-08-17.md").read_text(
         encoding="utf-8"
     )
-    detail = (
-        PROJECT_ROOT / "docs/领域详设-沪深全市场竞价序列买一价量额-2026-08-17.md"
-    ).read_text(encoding="utf-8")
     for token in (
         "scheduled_at < 09:25:00",
         "auction_indicative",
@@ -158,9 +156,7 @@ def test_series_values_use_bid1_before_0925_and_source_trade_at_0925() -> None:
 def test_series_values_keep_all_bid1_values_missing_together() -> None:
     quote = replace(
         _quote("SSE:600000", SLOTS[0]),
-        bid_levels=(OrderBookLevel(1, None, None),) + _quote(
-            "SSE:600000", SLOTS[0]
-        ).bid_levels[1:],
+        bid_levels=(OrderBookLevel(1, None, None),) + _quote("SSE:600000", SLOTS[0]).bid_levels[1:],
     )
     assert _series_values(quote, SLOTS[0]) == (
         None,
@@ -260,9 +256,11 @@ Add a static test:
 
 ```python
 def test_auction_series_value_semantics_migration_is_bounded() -> None:
-    sql = (MIGRATION_DIR / "20260817000200_add_auction_series_value_semantics.sql").read_text(
-        encoding="utf-8"
-    ).lower()
+    sql = (
+        (MIGRATION_DIR / "20260817000200_add_auction_series_value_semantics.sql")
+        .read_text(encoding="utf-8")
+        .lower()
+    )
     assert "legacy_source_quote" in sql
     assert "auction_indicative" in sql
     assert "opening_trade" in sql
