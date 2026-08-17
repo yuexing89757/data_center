@@ -107,8 +107,9 @@ ingestion ID 冒充 calculation lineage。新增：
 - `price_limit_algorithm_version = "1.0.0"`；
 - `calculation_mode = "realtime_read"`。
 
-FastAPI、PostgREST OpenAPI 和 Agent 工具契约同步更新。消费者可根据非空 ingestion lineage、
-规则版本、算法版本和计算模式重放同一结果。
+FastAPI OpenAPI 契约同步更新，并把该 RPC 加入独立 API release preflight。RPC 继续只授予
+`market_data_api`；不得加入 anon/authenticated PostgREST 或 Agent 工具契约。消费者可根据非空
+ingestion lineage、规则版本、算法版本和计算模式重放同一结果。
 
 ## 错误与性能
 
@@ -127,7 +128,8 @@ RPC 保持 `stable security definer`、受控 `search_path`、5 秒 statement ti
 
 1. 新 accepted ADR 取代 ADR-0032 中“必须读取同日 CalculationRun”的条款，明确实时只读计算。
 2. ordered SQL migration 替换 RPC，不做 ad-hoc DDL。
-3. FastAPI response model、三个检查入契约和接口/数据库导航文档同步更新。
+3. FastAPI response model/OpenAPI、API release preflight 和接口/数据库导航文档同步更新；
+   PostgREST/Agent 契约保持不暴露该 RPC。
 4. PostgreSQL integration tests 覆盖 succeeded/partial 选择、精确日期、主板代码边界、上市前五日、
    10% numeric 舍入、严格等式、遗漏计数、空列表、无快照 P0002、权限和5秒上限。
 5. FastAPI 单元/契约测试覆盖 nullable calculation ID 和新增版本字段。
