@@ -25,9 +25,9 @@ PUBLISHED_FUNCTIONS = cast(tuple[str, ...], FASTAPI_CHECKS["PUBLISHED_FUNCTIONS"
 
 
 def test_realtime_auction_one_price_limit_decision_is_documented() -> None:
-    adr = (
-        PROJECT_ROOT / "docs/adr/ADR-0039-09点26沪深主板一字涨跌停实时计算.md"
-    ).read_text(encoding="utf-8")
+    adr = (PROJECT_ROOT / "docs/adr/ADR-0039-09点26沪深主板一字涨跌停实时计算.md").read_text(
+        encoding="utf-8"
+    )
     detail = (
         PROJECT_ROOT / "docs/领域详设-09点26沪深主板一字涨跌停实时计算-2026-08-17.md"
     ).read_text(encoding="utf-8")
@@ -59,6 +59,19 @@ def _migration_sql() -> str:
     return "\n".join(
         migration.read_text(encoding="utf-8") for migration in sorted(MIGRATION_DIR.glob("*.sql"))
     )
+
+
+def test_realtime_auction_limit_migration_is_read_only_and_independent() -> None:
+    migration = (MIGRATION_DIR / "20260817000100_realtime_auction_one_price_limits.sql").read_text(
+        encoding="utf-8"
+    )
+    normalized = migration.lower()
+    assert "create or replace function api_v1.query_auction_one_price_limits" in normalized
+    assert "derived.daily_price_limit" not in normalized
+    assert "cn_a_mainboard_price_limit_pools" not in normalized
+    assert "market_data_api" in normalized
+    assert "realtime_read" in normalized
+    assert not re.search(r"(?im)^\s*(insert|update|delete)\s", migration)
 
 
 def test_production_schema_expectations_follow_all_migrations() -> None:

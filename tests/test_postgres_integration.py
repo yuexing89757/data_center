@@ -937,6 +937,117 @@ select api_v1.query_call_auction_market_snapshots(
     assert partial_payload["items"][0]["last_price"] == 99.0000
 
 
+def test_auction_one_price_limits_calculates_mainboard_limits_from_0926_snapshot(
+    database_engine: Engine,
+) -> None:
+    security_ingestion_id = uuid4()
+    calendar_ingestion_id = uuid4()
+    bar_ingestion_id = uuid4()
+    snapshot_ingestion_id = uuid4()
+    trade_date = date(2026, 8, 17)
+    observed_at = datetime(2026, 8, 17, 1, 26, tzinfo=UTC)
+    prior_dates = tuple(date(2026, 8, day) for day in range(10, 15))
+    with database_engine.begin() as connection:
+        connection.execute(
+            text("""
+insert into ingestion.ingestion_run (
+ ingestion_id,provider_code,dataset_code,status,requested_at,started_at,finished_at,
+ fetched_rows,accepted_rows
+) values
+ (:security_id,'baostock','security','running',:started_at,:started_at,null,0,0),
+ (:calendar_id,'baostock','trading_calendar','running',:started_at,:started_at,null,0,0),
+ (:bar_id,'baostock','daily_bar','running',:started_at,:started_at,null,0,0),
+ (:snapshot_id,'pytdx_hq','call_auction_market_snapshot','succeeded',
+  :started_at,:started_at,:finished_at,4,4)
+"""),
+            {
+                "security_id": security_ingestion_id,
+                "calendar_id": calendar_ingestion_id,
+                "bar_id": bar_ingestion_id,
+                "snapshot_id": snapshot_ingestion_id,
+                "started_at": observed_at - timedelta(minutes=1),
+                "finished_at": observed_at + timedelta(seconds=10),
+            },
+        )
+        connection.execute(
+            text("""
+insert into core.security (
+ symbol,code,exchange,current_name,security_type,status,ipo_date,source_code,ingestion_id
+) values
+ ('SSE:600000','600000','SSE','上海涨停','stock','listed','2026-08-03','baostock',:id),
+ ('SZSE:000001','000001','SZSE','深圳跌停','stock','listed','2026-08-03','baostock',:id),
+ ('SSE:600001','600001','SSE','上海普通','stock','listed','2026-08-03','baostock',:id),
+ ('SSE:688001','688001','SSE','科创排除','stock','listed','2026-08-03','baostock',:id)
+"""),
+            {"id": security_ingestion_id},
+        )
+        connection.execute(
+            text("""
+insert into core.security_name_history (
+ symbol,name,effective_from,source_code,ingestion_id
+)
+select symbol,current_name,'2026-08-03','baostock',:id
+from core.security where ingestion_id=:id
+"""),
+            {"id": security_ingestion_id},
+        )
+        connection.execute(
+            text("""
+insert into core.trading_calendar (
+ market,trade_date,is_trading_day,source_code,ingestion_id
+)
+select 'CN_A_SHARE',day,true,'baostock',:id
+from unnest(cast(:days as date[])) day
+"""),
+            {"id": calendar_ingestion_id, "days": [*prior_dates, trade_date]},
+        )
+        connection.execute(
+            text("""
+insert into core.daily_bar (
+ symbol,trade_date,market,open,high,low,close,previous_close,volume,amount,
+ trade_status,is_st,source_code,ingestion_id
+)
+select symbol,day,'CN_A_SHARE',10,10,10,10,10,100,1000,
+       'unknown',false,'baostock',:bar_id
+from unnest(cast(:symbols as text[])) symbol
+cross join unnest(cast(:days as date[])) day
+"""),
+            {
+                "bar_id": bar_ingestion_id,
+                "symbols": ["SSE:600000", "SZSE:000001", "SSE:600001"],
+                "days": list(prior_dates),
+            },
+        )
+        connection.execute(
+            text("""
+insert into realtime.call_auction_market_snapshot (
+ ingestion_id,symbol,trade_date,observed_at,last_price,previous_close,
+ high_price,low_price,cumulative_volume,cumulative_amount,source_code
+) values
+ (:id,'SSE:600000',:day,:at,11,10,11,11,100,1100,'pytdx_hq'),
+ (:id,'SZSE:000001',:day,:at,9,10,9,9,100,900,'pytdx_hq'),
+ (:id,'SSE:600001',:day,:at,10.5,10,10.5,10.5,100,1050,'pytdx_hq'),
+ (:id,'SSE:688001',:day,:at,11,10,11,11,100,1100,'pytdx_hq')
+"""),
+            {"id": snapshot_ingestion_id, "day": trade_date, "at": observed_at},
+        )
+        connection.execute(text("set local role market_data_api"))
+        payload = connection.scalar(
+            text("select api_v1.query_auction_one_price_limits(:day)"),
+            {"day": trade_date},
+        )
+
+    assert payload["ingestion_id"] == str(snapshot_ingestion_id)
+    assert payload["price_limit_calculation_id"] is None
+    assert payload["price_limit_rule_version"] == "CN_MAINBOARD_2026_07_06"
+    assert payload["price_limit_algorithm_version"] == "1.0.0"
+    assert payload["calculation_mode"] == "realtime_read"
+    assert payload["candidate_count"] == 3
+    assert payload["omitted_incomplete_count"] == 0
+    assert [item["symbol"] for item in payload["up"]] == ["SSE:600000"]
+    assert [item["symbol"] for item in payload["down"]] == ["SZSE:000001"]
+
+
 def test_call_auction_market_series_rpc_selects_one_session_and_orders_rounds(
     database_engine: Engine,
 ) -> None:
