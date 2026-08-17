@@ -1302,17 +1302,17 @@ insert into realtime.call_auction_market_series_round (
 insert into realtime.call_auction_market_series_snapshot (
     trade_date, ingestion_id, session_id, sample_seq, scheduled_at, symbol,
     observed_at, last_price, previous_close, high_price, low_price,
-    cumulative_volume, cumulative_amount, source_code
+    cumulative_volume, cumulative_amount, source_code, value_semantics
 ) values
     (:trade_date, :round_zero_id, :succeeded_session_id, 0, :slot_zero,
      'SSE:600000', :round_zero_observed, 10.1000, 10.0000, 10.1000, 10.0000,
-     100, 1010.0000, 'pytdx_hq'),
+     100, 1010.0000, 'pytdx_hq', 'auction_indicative'),
     (:trade_date, :round_one_id, :succeeded_session_id, 1, :slot_one,
      'SSE:600000', :round_one_observed, 10.2000, 10.0000, 10.2000, 10.0000,
-     200, 2040.0000, 'pytdx_hq'),
+     200, 2040.0000, 'pytdx_hq', 'auction_indicative'),
     (:trade_date, :partial_id, :partial_session_id, 0, :slot_zero,
      'SSE:600000', :partial_observed, 99.0000, 98.0000, 99.0000, 98.0000,
-     1, 99.0000, 'pytdx_hq')
+     1, 99.0000, 'pytdx_hq', 'auction_indicative')
 """),
             {
                 "trade_date": trade_date,
@@ -1380,6 +1380,7 @@ select api_v1.query_call_auction_market_series_snapshots(
     assert [item["sample_seq"] for item in payload["rounds"]] == [0, 1]
     assert payload["rounds"][0]["missing_codes"] == ["000001"]
     assert payload["rounds"][0]["items"][0]["last_price"] == 10.1000
+    assert payload["rounds"][0]["items"][0]["value_semantics"] == "auction_indicative"
     assert payload["rounds"][1]["items"][0]["last_price"] == 10.2000
     assert partial_payload["session_id"] == str(partial_session_id)
     assert partial_payload["session_status"] == "partial"
