@@ -99,6 +99,23 @@ def test_realtime_auction_limit_migration_is_read_only_and_independent() -> None
     assert not re.search(r"(?im)^\s*(insert|update|delete)\s", migration)
 
 
+def test_auction_series_bid1_semantics_are_governed() -> None:
+    adr = (PROJECT_ROOT / "docs/adr/ADR-0040-竞价序列买一价量额语义.md").read_text(
+        encoding="utf-8"
+    )
+    detail = (
+        PROJECT_ROOT / "docs/领域详设-沪深全市场竞价序列买一价量额-2026-08-17.md"
+    ).read_text(encoding="utf-8")
+    for token in (
+        "scheduled_at < 09:25:00",
+        "auction_indicative",
+        "opening_trade",
+        "legacy_source_quote",
+        "bid1.price * bid1.volume",
+    ):
+        assert token in adr + detail
+
+
 def test_production_schema_expectations_follow_all_migrations() -> None:
     sql = _migration_sql()
     tables = set(re.findall(r"(?im)^create table ([a-z0-9_]+)\.([a-z0-9_]+)", sql))

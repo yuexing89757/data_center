@@ -61,3 +61,4 @@ ADR 记录已经接受的架构决策。其优先级低于项目宪法，高于�
 - `ADR-0033-live-fetch-clarification.md`: accepts bounded on-request fetch with narrow append-only persistence before response.
 - `ADR-0034-沪深全市场开盘竞价序列快照.md`：接受工作日 09:15–09:25:20 每 20 秒采集沪深上市股票全集，使用独立月度分区事实表和两线程早盘执行器，不改变 09:26 契约。
 - `ADR-0039-09点26沪深主板一字涨跌停实时计算.md`：取代 ADR-0032 的晚间 CalculationRun 依赖，基于已存 09:26 快照只读实时计算沪深主板一字涨跌停。
+- `ADR-0040-竞价序列买一价量额语义.md`：明确 09:25 前全市场竞价序列按买一价、买一股数及两者乘积复用价量额字段，并用显式语义标识区分开盘成交和历史记录。
