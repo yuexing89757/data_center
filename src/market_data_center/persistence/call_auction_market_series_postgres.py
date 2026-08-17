@@ -204,11 +204,11 @@ class PostgreSQLCallAuctionMarketSeriesPersistence:
                         insert into realtime.call_auction_market_series_snapshot (
                           trade_date,ingestion_id,session_id,sample_seq,scheduled_at,symbol,
                           observed_at,last_price,previous_close,high_price,low_price,
-                          cumulative_volume,cumulative_amount,source_code
+                          cumulative_volume,cumulative_amount,source_code,value_semantics
                         ) values (
                           :trade_date,:ingestion_id,:session_id,:sample_seq,:scheduled_at,:symbol,
                           :observed_at,:last_price,:previous_close,:high_price,:low_price,
-                          :cumulative_volume,:cumulative_amount,:source_code
+                          :cumulative_volume,:cumulative_amount,:source_code,:value_semantics
                         )
                     """),
                     [_snapshot_parameters(record, run.ingestion_id) for record in records],
@@ -501,6 +501,7 @@ def _snapshot_parameters(
         "cumulative_volume": value.cumulative_volume,
         "cumulative_amount": value.cumulative_amount,
         "source_code": value.source_code,
+        "value_semantics": value.value_semantics.value,
     }
 
 

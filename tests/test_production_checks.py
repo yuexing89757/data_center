@@ -116,6 +116,21 @@ def test_auction_series_bid1_semantics_are_governed() -> None:
         assert token in adr + detail
 
 
+def test_auction_series_value_semantics_migration_is_bounded() -> None:
+    sql = (
+        MIGRATION_DIR / "20260817000200_add_auction_series_value_semantics.sql"
+    ).read_text(encoding="utf-8")
+    normalized = sql.lower()
+    assert "legacy_source_quote" in normalized
+    assert "auction_indicative" in normalized
+    assert "opening_trade" in normalized
+    assert (
+        "create or replace function api_v1.query_call_auction_market_series_snapshots"
+        in normalized
+    )
+    assert "drop table" not in normalized
+
+
 def test_production_schema_expectations_follow_all_migrations() -> None:
     sql = _migration_sql()
     tables = set(re.findall(r"(?im)^create table ([a-z0-9_]+)\.([a-z0-9_]+)", sql))

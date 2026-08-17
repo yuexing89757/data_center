@@ -64,6 +64,7 @@ from market_data_center.domain.call_auction_market_series import (
     MarketSeriesSession,
     MarketSeriesSnapshotRecord,
     MarketSeriesStatus,
+    MarketSeriesValueSemantics,
     series_slots,
     universe_hash,
 )
@@ -403,6 +404,7 @@ def test_market_series_persistence_commits_attempt_and_finishes_partial_session(
             scheduled_at=slots[0],
             observed_at=slots[0] + timedelta(seconds=1),
             source_code="pytdx_hq",
+            value_semantics=MarketSeriesValueSemantics.AUCTION_INDICATIVE,
             last_price=Decimal("10.10"),
             previous_close=Decimal("10.00"),
             high_price=Decimal("10.10"),
@@ -443,6 +445,20 @@ def test_market_series_persistence_commits_attempt_and_finishes_partial_session(
                 text("select count(*) from realtime.call_auction_market_series_snapshot")
             )
             == 1
+        )
+        stored = connection.execute(
+            text(
+                """
+                select last_price, cumulative_volume, cumulative_amount, value_semantics
+                from realtime.call_auction_market_series_snapshot
+                """
+            )
+        ).one()
+        assert tuple(stored) == (
+            Decimal("10.1000"),
+            100,
+            Decimal("1010.0000"),
+            "auction_indicative",
         )
         assert (
             connection.scalar(
@@ -512,6 +528,7 @@ def test_market_series_attempt_rolls_back_manifest_quality_and_facts(
         slots[0],
         slots[0] + timedelta(seconds=1),
         "pytdx_hq",
+        MarketSeriesValueSemantics.AUCTION_INDICATIVE,
         Decimal("10.00"),
         Decimal("9.90"),
         Decimal("10.00"),
