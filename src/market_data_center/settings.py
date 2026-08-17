@@ -57,6 +57,23 @@ class PytdxHqSettings(BaseSettings):
     pytdx_hq_max_retries: int = Field(default=1, ge=0, le=1)
 
 
+class PysnowballSettings(BaseSettings):
+    """Server-only credential for the bounded Xueqiu pankou adapter."""
+
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    pysnowball_token: SecretStr
+
+    @model_validator(mode="after")
+    def require_token(self) -> Self:
+        if not self.pysnowball_token.get_secret_value().strip():
+            raise ValueError("PYSNOWBALL_TOKEN is required")
+        return self
+
+    def resolved_token(self) -> str:
+        return self.pysnowball_token.get_secret_value()
+
+
 class PytdxDailyBarSettings(BaseSettings):
     """Bounded local and remote unadjusted Daily Bar settings."""
 

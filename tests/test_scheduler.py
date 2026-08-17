@@ -275,25 +275,68 @@ def test_closing_high_snapshot_can_only_be_enabled_or_disabled(tmp_path: Path) -
     assert scheduler.get_job(DAILY_RUN_JOB_ID) is not None
 
 
-def test_auction_collection_job_requests_one_symbol_per_pytdx_call(
-    monkeypatch: pytest.MonkeyPatch,
+def test_auction_collection_job_wires_only_pysnowball_provider(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     captured: dict[str, object] = {}
+    engine = SimpleNamespace(disposed=False)
+    engine.dispose = lambda: setattr(engine, "disposed", True)
+    quote_settings = object()
+    provider = SimpleNamespace(source_code="pysnowball")
 
-    class StopAfterQuoteSettings(Exception):
-        pass
+    class FakeExecution:
+        def step(self, code, sequence, operation):
+            captured["step"] = (code, sequence)
+            return operation()
 
-    def quote_settings(**kwargs: object) -> None:
-        captured.update(kwargs)
-        raise StopAfterQuoteSettings
+        def succeed(self):
+            captured["succeeded"] = True
 
-    monkeypatch.setattr(scheduler_module, "WorkerSettings", lambda: object())
-    monkeypatch.setattr(scheduler_module, "PytdxHqSettings", quote_settings)
+        def fail(self, error):
+            raise AssertionError(error)
 
-    with pytest.raises(StopAfterQuoteSettings):
-        scheduler_module.run_auction_collection_job()
+    class FakeService:
+        def __init__(self, *args, **kwargs):
+            captured["service_args"] = args
+            captured["service_kwargs"] = kwargs
 
-    assert captured == {"pytdx_hq_batch_size": 1}
+        def collect(self, trade_date):
+            captured["trade_date"] = trade_date
+
+    monkeypatch.setattr(
+        scheduler_module,
+        "WorkerSettings",
+        lambda: SimpleNamespace(
+            database_url=SimpleNamespace(get_secret_value=lambda: "unused"),
+            raw_data_root=tmp_path / "raw",
+        ),
+    )
+    monkeypatch.setattr(scheduler_module, "PysnowballSettings", lambda: quote_settings)
+    monkeypatch.setattr(
+        scheduler_module,
+        "PytdxHqSettings",
+        lambda **kwargs: pytest.fail("auction collector must not construct PytdxHqSettings"),
+    )
+    monkeypatch.setattr(scheduler_module, "PysnowballQuoteProvider", lambda value: provider)
+    monkeypatch.setattr(scheduler_module, "sqlalchemy_url", lambda value: value)
+    monkeypatch.setattr(scheduler_module, "create_engine", lambda *args, **kwargs: engine)
+    monkeypatch.setattr(scheduler_module, "PostgreSQLOperationsPersistence", lambda value: value)
+    monkeypatch.setattr(
+        scheduler_module,
+        "WorkflowExecutionService",
+        lambda value: SimpleNamespace(start=lambda *args: FakeExecution()),
+    )
+    monkeypatch.setattr(scheduler_module, "PostgreSQLAuctionPersistence", lambda value: value)
+    monkeypatch.setattr(scheduler_module, "LocalRawStore", lambda value: value)
+    monkeypatch.setattr(scheduler_module, "AuctionCollectionService", FakeService)
+
+    scheduler_module.run_auction_collection_job()
+
+    assert captured["service_args"][1] is provider
+    assert captured["service_kwargs"] == {"cadence_seconds": 30, "max_retries": 0}
+    assert captured["step"] == ("collect_auction_quotes", 1)
+    assert captured["succeeded"] is True
+    assert engine.disposed is True
 
 
 def test_call_auction_market_series_runner_wires_isolated_dependencies(

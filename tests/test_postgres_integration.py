@@ -173,11 +173,134 @@ def test_migrations_apply_to_empty_database_and_are_idempotent(
     }.issubset({row[1] for row in first_snapshot["routines"]})
 
 
+def test_pysnowball_auction_session_and_quote_are_valid_source_facts(
+    database_engine: Engine,
+) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    _commit_security_prerequisite(persistence)
+    calculation_id = uuid4()
+    snapshot_id = uuid4()
+    session_id = uuid4()
+    ingestion_id = uuid4()
+    raw_id = uuid4()
+    basis = date(2026, 8, 14)
+    effective = date(2026, 8, 17)
+    scheduled_at = datetime(2026, 8, 17, 1, 15, tzinfo=UTC)
+
+    with database_engine.begin() as connection:
+        connection.execute(
+            text("""
+insert into derived.calculation_run (
+ calculation_id, calculation_code, algorithm_version, mode, start_date, end_date,
+ status, input_watermark, input_hash, requested_at, calculated_at, finished_at, output_rows
+) values (
+ :calculation_id, 'cn_a_mainboard_price_limit_pools', '1.0.0', 'incremental',
+ :basis, :basis, 'succeeded', '{}'::jsonb, :input_hash, now(), now(), now(), 1
+)
+"""),
+            {"calculation_id": calculation_id, "basis": basis, "input_hash": "0" * 64},
+        )
+        connection.execute(
+            text("""
+insert into stock_pool.snapshot (
+ snapshot_id, calculation_id, pool_code, basis_trade_date, effective_trade_date,
+ version, status, member_count, candidate_count, rejected_count, content_hash,
+ input_hash, rule_version, algorithm_version, generated_at
+) values (
+ :snapshot_id, :calculation_id, 'CN_A_PREVIOUS_DAY_MAINBOARD_LIMIT_UP',
+ :basis, :effective, 1, 'ready', 1, 1, 0, :content_hash,
+ :input_hash, 'CN_MAINBOARD_2026_07_06', '1.0.0', now()
+)
+"""),
+            {
+                "snapshot_id": snapshot_id,
+                "calculation_id": calculation_id,
+                "basis": basis,
+                "effective": effective,
+                "content_hash": "1" * 64,
+                "input_hash": "0" * 64,
+            },
+        )
+        connection.execute(
+            text("""
+insert into realtime.auction_collection_session (
+ session_id, pool_snapshot_id, pool_snapshot_version, basis_trade_date,
+ effective_trade_date, window_start, window_end, cadence_seconds, expected_rounds,
+ expected_quotes, provider_code, status, started_at
+) values (
+ :session_id, :snapshot_id, 1, :basis, :effective, :window_start,
+ :window_end, 30, 21, 21, 'pysnowball', 'running', :window_start
+)
+"""),
+            {
+                "session_id": session_id,
+                "snapshot_id": snapshot_id,
+                "basis": basis,
+                "effective": effective,
+                "window_start": scheduled_at,
+                "window_end": scheduled_at + timedelta(minutes=10),
+            },
+        )
+        connection.execute(
+            text("""
+insert into ingestion.ingestion_run (
+ ingestion_id, provider_code, dataset_code, status, requested_at, started_at
+) values (:ingestion_id, 'pysnowball', 'five_level_quote', 'running', :at, :at)
+"""),
+            {"ingestion_id": ingestion_id, "at": scheduled_at},
+        )
+        connection.execute(
+            text("""
+insert into ingestion.raw_manifest (
+ raw_id, ingestion_id, object_path, file_format, content_sha256,
+ byte_size, row_count, schema_version
+) values (
+ :raw_id, :ingestion_id, 'pysnowball/auction.jsonl', 'jsonl', :sha,
+ 1, 1, 'pysnowball.pankou.v1'
+)
+"""),
+            {"raw_id": raw_id, "ingestion_id": ingestion_id, "sha": "2" * 64},
+        )
+        connection.execute(
+            text("""
+insert into realtime.five_level_quote_snapshot (
+ session_id, pool_snapshot_id, ingestion_id, raw_id, symbol, sample_seq,
+ scheduled_at, collected_at, phase, quote_semantics, quote_status,
+ last_price, bid1_price, bid1_volume, ask1_price, ask1_volume, source_code
+) values (
+ :session_id, :snapshot_id, :ingestion_id, :raw_id, :symbol, 0,
+ :at, :at, 'cancellable', 'auction_indicative', 'trading',
+ 10.00, 9.99, 100, 10.01, 200, 'pysnowball'
+)
+"""),
+            {
+                "session_id": session_id,
+                "snapshot_id": snapshot_id,
+                "ingestion_id": ingestion_id,
+                "raw_id": raw_id,
+                "symbol": SYMBOL,
+                "at": scheduled_at,
+            },
+        )
+
+    assert (
+        _scalar(
+            database_engine,
+            "select source_code from realtime.five_level_quote_snapshot where session_id=:id",
+            {"id": session_id},
+        )
+        == "pysnowball"
+    )
+
+
 def test_auction_series_semantics_migration_labels_existing_rows_without_rewrite(
     empty_database_url: str,
 ) -> None:
-    migration = MIGRATIONS[-1]
-    assert migration.name == "20260817000200_add_auction_series_value_semantics.sql"
+    migration = next(
+        migration
+        for migration in MIGRATIONS
+        if migration.name == "20260817000200_add_auction_series_value_semantics.sql"
+    )
     with psycopg.connect(empty_database_url) as connection:
         apply_migrations(connection, MIGRATIONS[:-1])
 

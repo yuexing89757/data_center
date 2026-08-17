@@ -1,8 +1,15 @@
 from pathlib import Path
 
+import pytest
 from pydantic import SecretStr
+from pydantic_core import ValidationError
 
-from market_data_center.settings import PytdxPoolSettings, SchedulerSettings, WorkerSettings
+from market_data_center.settings import (
+    PysnowballSettings,
+    PytdxPoolSettings,
+    SchedulerSettings,
+    WorkerSettings,
+)
 
 
 def test_optional_scheduled_tasks_default_enabled() -> None:
@@ -74,3 +81,17 @@ def test_worker_daily_bar_write_batch_size_is_bounded() -> None:
     settings = WorkerSettings(database_url=SecretStr("unused"), _env_file=None)
 
     assert settings.daily_bar_write_batch_size == 100
+
+
+def test_pysnowball_token_is_required_and_remains_secret() -> None:
+    token = "xq_a_token=secret-cookie;u=123456"
+    settings = PysnowballSettings(pysnowball_token=SecretStr(token), _env_file=None)
+
+    assert settings.resolved_token() == token
+    assert token not in repr(settings)
+
+
+@pytest.mark.parametrize("token", ["", "   "])
+def test_pysnowball_token_rejects_blank_values(token: str) -> None:
+    with pytest.raises(ValidationError, match="PYSNOWBALL_TOKEN is required"):
+        PysnowballSettings(pysnowball_token=SecretStr(token), _env_file=None)

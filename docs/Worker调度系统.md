@@ -113,7 +113,7 @@ BlockingScheduler
 | `run_stale_recovery_job` | **4 步**：恢复 stale ingestion run、stale workflow run、涨停池 auction session 和过期全市场竞价序列 session。每小时 + 启动时各跑一次 |
 | `run_deducted_profit_job` | tushare 扣非净利润增量同步（按披露变化发现新公告/修订） |
 | `run_stock_pool_job` | 解析基准交易日 → 构建下一交易日生效的涨跌停股票池（依赖当日日K+指标成功） |
-| `run_auction_collection_job` | pytdx_hq 集合竞价五档采集（09:15-09:25 按 30 秒节奏采样，每只股票单独请求，默认启用） |
+| `run_auction_collection_job` | pysnowball-only 集合竞价涨停池五档采集（09:15-09:25 按 30 秒节奏采样，每只股票单独请求，默认启用） |
 | `run_eod_quote_snapshot_job` | 对当日 ready 涨停池采集收盘五档快照（默认启用） |
 | `run_call_auction_market_snapshot_job` | 09:26 从一个 quote-capable endpoint 采集 SSE/SZSE `stock`、`listed` 全集的开盘竞价来源快照；BSE、ETF、可转债和指数不进入本任务 |
 | `run_call_auction_market_series_job` | 09:15 启动 32 轮 SSE/SZSE `stock`、`listed` 全集采集；每轮最多两个 endpoint 完整 attempt，不合并 partial |

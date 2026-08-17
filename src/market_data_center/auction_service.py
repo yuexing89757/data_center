@@ -152,7 +152,7 @@ class AuctionCollectionService:
         started_at = self._clock()
         run = IngestionRun(
             ingestion_id,
-            ProviderCode.PYTDX_HQ,
+            ProviderCode(self._provider.source_code),
             DatasetCode.FIVE_LEVEL_QUOTE,
             IngestionStatus.RUNNING,
             started_at,
@@ -219,7 +219,7 @@ class AuctionCollectionService:
                 self._uuid_factory,
             )
             stored = self._raw_store.write_jsonl(
-                provider="pytdx_hq",
+                provider=self._provider.source_code,
                 dataset=DatasetCode.FIVE_LEVEL_QUOTE.value,
                 partition_date=session.effective_trade_date,
                 ingestion_id=ingestion_id,
@@ -285,13 +285,13 @@ class AuctionCollectionService:
     def _fetch_with_bounded_retry(
         self, symbols: tuple[str, ...], scheduled_at: datetime
     ) -> RealtimeQuoteFetch:
-        result = self._provider.fetch_five_level_quotes(symbols)
+        deadline = scheduled_at + timedelta(seconds=self._cadence)
+        result = self._provider.fetch_five_level_quotes(symbols, deadline=deadline)
         if not result.failed_symbols or not self._max_retries:
             return result
-        deadline = scheduled_at + timedelta(seconds=self._cadence)
         if self._clock() + timedelta(seconds=self._retry_budget) >= deadline:
             return result
-        retry = self._provider.fetch_five_level_quotes(result.failed_symbols)
+        retry = self._provider.fetch_five_level_quotes(result.failed_symbols, deadline=deadline)
         records = {item.symbol: item for item in (*result.records, *retry.records)}
         failed = tuple(symbol for symbol in symbols if symbol not in records)
         return RealtimeQuoteFetch(

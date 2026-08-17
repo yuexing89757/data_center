@@ -82,16 +82,18 @@ ingestion；不得拼接批次或回退日期。响应显式返回 provider-neut
 
 > 集合竞价采集落地决策：`adr/ADR-0022-集合竞价涨停池五档快照采集.md`（Accepted）
 
-## 集合竞价采集边界（v1）
+## 集合竞价采集边界（v2）
 
 - `AuctionCollectionSession` 冻结当日精确 ready 的
   `CN_A_PREVIOUS_DAY_MAINBOARD_LIMIT_UP` snapshot ID/version；不回退旧日期，也不采跌停池。
 - 上海时间 09:15:00 至 09:25:00（含端点）每 30 秒一轮，共 21 轮；每只股票单独
-  发起一次 PYTDX 请求；APScheduler 只注册一个 09:15 会话任务，轮询在会话内部完成。
+  发起一次 pysnowball `pankou` 请求；APScheduler 只注册一个 09:15 会话任务。
+- 涨停池任务只使用 pysnowball，不回退 PYTDX。全市场竞价序列与 09:26 快照仍独立
+  使用 `pytdx_hq`。
 - 阶段明确记录为 09:15–09:20 可撤单、09:20–09:25 不可撤单、09:25 最终撮合附近。
 - `scheduled_at`、Worker 的 `collected_at` 与可选 provider `source_timestamp` 分开保存；
-  pytdx 不能提供可靠完整日期时不得拼造 source 时间。
-- pytdx 集合竞价档位暂标记 `auction_indicative`。在下一交易日 live validation
+  pysnowball 只在响应含合法 Unix 毫秒时保存 source 时间。
+- pysnowball 集合竞价档位暂标记 `auction_indicative`。在 live validation
   证明其为标准连续五档前，spread/depth/imbalance/seal amount 均保持 NULL。
 - 进程恢复只续采当前及未来轮次；过去轮次计入失败/缺失，禁止生成补采快照。
 

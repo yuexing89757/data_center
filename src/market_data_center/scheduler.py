@@ -42,6 +42,7 @@ from market_data_center.persistence.close_price_new_highs_postgres import (
 from market_data_center.persistence.operations_postgres import PostgreSQLOperationsPersistence
 from market_data_center.persistence.stock_pool_postgres import PostgreSQLStockPoolPersistence
 from market_data_center.pipeline import IngestionPipeline
+from market_data_center.providers.pysnowball_quote import PysnowballQuoteProvider
 from market_data_center.providers.pytdx_hq import PytdxHqProvider
 from market_data_center.providers.pytdx_pool import (
     PytdxCapability,
@@ -54,7 +55,6 @@ from market_data_center.raw_store import LocalRawStore
 from market_data_center.reliability import recover_stale_runs
 from market_data_center.scheduling_catalog import (
     AUCTION_COLLECTION_JOB_ID,
-    AUCTION_COLLECTION_QUOTE_BATCH_SIZE,
     CALL_AUCTION_MARKET_SERIES_JOB_ID,
     CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID,
     CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID,
@@ -72,6 +72,7 @@ from market_data_center.scheduling_catalog import (
     job_definitions,
 )
 from market_data_center.settings import (
+    PysnowballSettings,
     PytdxHqSettings,
     PytdxPoolSettings,
     SchedulerSettings,
@@ -409,7 +410,7 @@ def run_auction_collection_job() -> None:
     definition = job_definition(AUCTION_COLLECTION_JOB_ID, scheduling)
     if definition.cadence_seconds is None:
         raise ValueError(f"job has no cadence: {AUCTION_COLLECTION_JOB_ID}")
-    quote_settings = PytdxHqSettings(pytdx_hq_batch_size=AUCTION_COLLECTION_QUOTE_BATCH_SIZE)
+    quote_settings = PysnowballSettings()  # type: ignore[call-arg]
     engine = create_engine(
         sqlalchemy_url(settings.database_url.get_secret_value()), pool_pre_ping=True
     )
@@ -422,16 +423,15 @@ def run_auction_collection_job() -> None:
         )
         try:
             trade_date = datetime.now(ZoneInfo(definition.timezone)).date()
-            with PytdxHqProvider(quote_settings) as provider:
-                service = AuctionCollectionService(
-                    PostgreSQLAuctionPersistence(engine),
-                    provider,
-                    LocalRawStore(settings.raw_data_root),
-                    cadence_seconds=definition.cadence_seconds,
-                    max_retries=quote_settings.pytdx_hq_max_retries,
-                    retry_budget_seconds=quote_settings.pytdx_hq_timeout_seconds,
-                )
-                execution.step("collect_auction_quotes", 1, lambda: service.collect(trade_date))
+            provider = PysnowballQuoteProvider(quote_settings)
+            service = AuctionCollectionService(
+                PostgreSQLAuctionPersistence(engine),
+                provider,
+                LocalRawStore(settings.raw_data_root),
+                cadence_seconds=definition.cadence_seconds,
+                max_retries=0,
+            )
+            execution.step("collect_auction_quotes", 1, lambda: service.collect(trade_date))
         except BaseException as error:
             execution.fail(error)
             raise
