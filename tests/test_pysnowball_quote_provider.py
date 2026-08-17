@@ -1,11 +1,16 @@
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from gzip import compress
 from json import dumps
+from typing import ClassVar
 
 from pydantic import SecretStr
 
-from market_data_center.providers.pysnowball_quote import PysnowballQuoteProvider
+from market_data_center.providers.pysnowball_quote import (
+    PysnowballQuoteProvider,
+    _NetworkPankouClient,
+)
 from market_data_center.settings import PysnowballSettings
 
 TOKEN = "xq_a_token=server-secret;u=123456"
@@ -65,6 +70,38 @@ class FakePankouClient:
         if isinstance(response, Exception):
             raise response
         return response
+
+
+def test_network_client_requests_and_decodes_gzip_pankou_payload(monkeypatch) -> None:
+    body = b'{"symbol":"SZ002027"}'
+    captured: dict[str, object] = {}
+
+    class FakeResponse:
+        headers: ClassVar[dict[str, str]] = {"Content-Encoding": "gzip"}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return None
+
+        def read(self) -> bytes:
+            return compress(body)
+
+    def fake_urlopen(request, *, timeout):
+        captured["accept_encoding"] = request.get_header("Accept-encoding")
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setattr(
+        "market_data_center.providers.pysnowball_quote.urlopen",
+        fake_urlopen,
+    )
+
+    payload = _NetworkPankouClient().fetch("SZ002027", TOKEN, 2.0)
+
+    assert payload == body
+    assert captured == {"accept_encoding": "gzip, deflate", "timeout": 2.0}
 
 
 def _provider(client: FakePankouClient, *, clock=lambda: OBSERVED_AT) -> PysnowballQuoteProvider:

@@ -3,6 +3,7 @@
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
+from gzip import decompress as gzip_decompress
 from json import JSONDecodeError, loads
 from typing import Protocol, cast
 from urllib.parse import urlencode
@@ -35,12 +36,16 @@ class _NetworkPankouClient:
             f"{_PANKOU_URL}?{urlencode({'symbol': source_symbol})}",
             headers={
                 "Accept": "application/json",
+                "Accept-Encoding": "gzip, deflate",
                 "Cookie": token,
                 "User-Agent": "Xueqiu iPhone 14.15.1",
             },
         )
         with urlopen(request, timeout=timeout_seconds) as response:
-            return cast(bytes, response.read())
+            payload = cast(bytes, response.read())
+            if response.headers.get("Content-Encoding") == "gzip":
+                return gzip_decompress(payload)
+            return payload
 
 
 class _PankouNormalizationError(ProviderError):
