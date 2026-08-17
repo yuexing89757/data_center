@@ -55,6 +55,25 @@ def test_fastapi_preflight_checks_call_auction_market_snapshot_rpc() -> None:
     )
 
 
+def test_fastapi_preflight_and_docs_publish_realtime_auction_limits() -> None:
+    assert "api_v1.query_auction_one_price_limits(date)" in PUBLISHED_FUNCTIONS
+    documentation = "\n".join(
+        (
+            (PROJECT_ROOT / "docs/FastAPI外部接口.md").read_text(encoding="utf-8"),
+            (PROJECT_ROOT / "docs/数据库导航.md").read_text(encoding="utf-8"),
+        )
+    )
+    for term in (
+        "realtime_read",
+        "CN_MAINBOARD_2026_07_06",
+        "1.0.0",
+        "price_limit_calculation_id=null",
+        "09:26",
+        "10%",
+    ):
+        assert term in documentation
+
+
 def _migration_sql() -> str:
     return "\n".join(
         migration.read_text(encoding="utf-8") for migration in sorted(MIGRATION_DIR.glob("*.sql"))
