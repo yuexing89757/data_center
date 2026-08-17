@@ -90,6 +90,12 @@ def test_realtime_auction_limit_migration_is_read_only_and_independent() -> None
     assert "cn_a_mainboard_price_limit_pools" not in normalized
     assert "market_data_api" in normalized
     assert "realtime_read" in normalized
+    assert "row_number() over" in normalized
+    assert "prior_bar_counts" in normalized
+    assert "abs(raw_upper_limit - previous_close)" in normalized
+    assert "previous_close + 0.01::numeric" in normalized
+    assert "greatest(" in normalized
+    assert "security.code ~ '^[0-9]{6}$'" in normalized
     assert not re.search(r"(?im)^\s*(insert|update|delete)\s", migration)
 
 

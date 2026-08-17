@@ -49,15 +49,24 @@ begin
              run.ingestion_id desc
     limit 1;
 
-    with prior_five_dates as materialized (
-        select calendar.trade_date
+    with calendar_ordinals as materialized (
+        select calendar.trade_date,
+               row_number() over (order by calendar.trade_date) as trading_day_number
         from core.trading_calendar calendar
         where calendar.market = 'CN_A_SHARE'
           and calendar.is_trading_day
-          and calendar.trade_date < selected_date
-        order by calendar.trade_date desc
+          and calendar.trade_date <= selected_date
+    ), target_calendar as materialized (
+        select trading_day_number
+        from calendar_ordinals
+        where trade_date = selected_date
+    ), prior_five_dates as materialized (
+        select trade_date
+        from calendar_ordinals
+        where trade_date < selected_date
+        order by trade_date desc
         limit 5
-    ), mainboard_facts as materialized (
+    ), mainboard_universe as materialized (
         select snapshot.symbol,
                security.code,
                security.exchange,
@@ -70,23 +79,16 @@ begin
                snapshot.low_price,
                snapshot.cumulative_volume,
                snapshot.cumulative_amount,
-               case when security.ipo_date is null then null else (
-                   select count(*)
-                   from core.trading_calendar listing_calendar
-                   where listing_calendar.market = 'CN_A_SHARE'
-                     and listing_calendar.is_trading_day
-                     and listing_calendar.trade_date
-                         between security.ipo_date and selected_date
-               ) end as listing_trading_day_number,
-               (
-                   select count(*)
-                   from core.daily_bar bar
-                   where bar.symbol = snapshot.symbol
-                     and bar.trade_date in (select trade_date from prior_five_dates)
-                     and bar.trade_status in ('trading', 'unknown')
-               ) as prior_five_bar_count
+               case
+                   when listing_calendar.trading_day_number is null then null
+                   else target_calendar.trading_day_number
+                        - listing_calendar.trading_day_number + 1
+               end as listing_trading_day_number
         from realtime.call_auction_market_snapshot snapshot
         join core.security security on security.symbol = snapshot.symbol
+        cross join target_calendar
+        left join calendar_ordinals listing_calendar
+          on listing_calendar.trade_date = security.ipo_date
         left join lateral (
             select history.name
             from core.security_name_history history
@@ -105,6 +107,7 @@ begin
               < time '09:27:00'
           and security.security_type = 'stock'
           and security.status = 'listed'
+          and security.code ~ '^[0-9]{6}$'
           and (
               (security.exchange = 'SSE' and (
                   security.code between '600000' and '603999'
@@ -116,22 +119,48 @@ begin
                   and security.code not between '001001' and '001199'
               )
           )
+    ), prior_bar_counts as materialized (
+        select bar.symbol, count(*) as prior_five_bar_count
+        from core.daily_bar bar
+        join prior_five_dates prior_date using (trade_date)
+        join mainboard_universe universe using (symbol)
+        where bar.market = 'CN_A_SHARE'
+          and bar.trade_status in ('trading', 'unknown')
+        group by bar.symbol
+    ), rounded as (
+        select universe.*,
+               coalesce(bar_counts.prior_five_bar_count, 0) as prior_five_bar_count,
+               round(universe.previous_close * 1.10::numeric, 2) as raw_upper_limit,
+               round(universe.previous_close * 0.90::numeric, 2) as raw_lower_limit
+        from mainboard_universe universe
+        left join prior_bar_counts bar_counts using (symbol)
     ), calculated as (
-        select facts.*,
-               round(facts.previous_close * 1.10::numeric, 2) as upper_limit,
-               round(facts.previous_close * 0.90::numeric, 2) as lower_limit,
+        select rounded.*,
+               case
+                   when abs(raw_upper_limit - previous_close) < 0.01::numeric
+                       then previous_close + 0.01::numeric
+                   else raw_upper_limit
+               end as upper_limit,
+               greatest(
+                   case
+                       when abs(raw_lower_limit - previous_close) < 0.01::numeric
+                           then previous_close - 0.01::numeric
+                       else raw_lower_limit
+                   end,
+                   0.01::numeric
+               ) as lower_limit,
                coalesce(
-                   facts.name is not null
-                   and facts.ipo_date is not null
-                   and facts.listing_trading_day_number > 5
-                   and facts.prior_five_bar_count = 5
-                   and facts.previous_close > 0
-                   and facts.last_price > 0
-                   and facts.high_price > 0
-                   and facts.low_price > 0,
+                   rounded.name is not null
+                   and rounded.ipo_date is not null
+                   and rounded.listing_trading_day_number > 5
+                   and rounded.prior_five_bar_count = 5
+                   and rounded.previous_close > 0
+                   and rounded.last_price > 0
+                   and rounded.high_price > 0
+                   and rounded.low_price > 0,
                    false
                ) as evidence_complete
-        from mainboard_facts facts
+        from rounded
     ), classified as (
         select calculated.*,
                case
