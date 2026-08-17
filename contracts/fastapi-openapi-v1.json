@@ -824,6 +824,15 @@
           "symbol": {
             "title": "Symbol",
             "type": "string"
+          },
+          "value_semantics": {
+            "enum": [
+              "auction_indicative",
+              "opening_trade",
+              "legacy_source_quote"
+            ],
+            "title": "Value Semantics",
+            "type": "string"
           }
         },
         "required": [
@@ -834,7 +843,8 @@
           "previous_close",
           "high_price",
           "low_price",
-          "cumulative_amount"
+          "cumulative_amount",
+          "value_semantics"
         ],
         "title": "CallAuctionMarketSeriesSnapshotItem",
         "type": "object"

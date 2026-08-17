@@ -299,6 +299,7 @@ class FakeQueryService:
                             "low_price": "9.9800",
                             "cumulative_volume": 123400,
                             "cumulative_amount": "1248808.0000",
+                            "value_semantics": "auction_indicative",
                         }
                     ],
                 }
@@ -947,6 +948,7 @@ def test_call_auction_market_series_snapshots_return_rounds_in_one_session() -> 
                         "low_price": "9.9800",
                         "cumulative_volume": 123400,
                         "cumulative_amount": "1248808.0000",
+                        "value_semantics": "auction_indicative",
                     }
                 ],
             }
