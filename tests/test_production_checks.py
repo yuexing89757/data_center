@@ -43,6 +43,7 @@ def test_realtime_auction_one_price_limit_decision_is_documented() -> None:
 
 def test_fastapi_preflight_checks_call_auction_market_snapshot_rpc() -> None:
     assert "api_v1.query_call_auction_market_snapshots(date,text[])" in PUBLISHED_FUNCTIONS
+    assert "api_v1.query_call_auction_market_series_snapshots(date,text[])" in PUBLISHED_FUNCTIONS
     assert (
         "api_v1.query_call_auction_indicative_details(text,date,integer,integer)"
         in PUBLISHED_FUNCTIONS
@@ -100,12 +101,10 @@ def test_realtime_auction_limit_migration_is_read_only_and_independent() -> None
 
 
 def test_auction_series_bid1_semantics_are_governed() -> None:
-    adr = (PROJECT_ROOT / "docs/adr/ADR-0040-竞价序列买一价量额语义.md").read_text(
+    adr = (PROJECT_ROOT / "docs/adr/ADR-0040-竞价序列买一价量额语义.md").read_text(encoding="utf-8")
+    detail = (PROJECT_ROOT / "docs/领域详设-沪深全市场竞价序列买一价量额-2026-08-17.md").read_text(
         encoding="utf-8"
     )
-    detail = (
-        PROJECT_ROOT / "docs/领域详设-沪深全市场竞价序列买一价量额-2026-08-17.md"
-    ).read_text(encoding="utf-8")
     for token in (
         "scheduled_at < 09:25:00",
         "auction_indicative",
@@ -117,16 +116,15 @@ def test_auction_series_bid1_semantics_are_governed() -> None:
 
 
 def test_auction_series_value_semantics_migration_is_bounded() -> None:
-    sql = (
-        MIGRATION_DIR / "20260817000200_add_auction_series_value_semantics.sql"
-    ).read_text(encoding="utf-8")
+    sql = (MIGRATION_DIR / "20260817000200_add_auction_series_value_semantics.sql").read_text(
+        encoding="utf-8"
+    )
     normalized = sql.lower()
     assert "legacy_source_quote" in normalized
     assert "auction_indicative" in normalized
     assert "opening_trade" in normalized
     assert (
-        "create or replace function api_v1.query_call_auction_market_series_snapshots"
-        in normalized
+        "create or replace function api_v1.query_call_auction_market_series_snapshots" in normalized
     )
     assert "drop table" not in normalized
 

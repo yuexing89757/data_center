@@ -65,8 +65,11 @@ partial session only when no succeeded session exists; sessions and dates are ne
 substituted. The response contains session status and all persisted rounds ordered by
 `sample_seq`. Every round reports its scheduled/collected times, status, selected provider-neutral
 ingestion ID, returned facts and its own `missing_codes`, so partial coverage remains explicit.
-Snapshot fields use the same provider-neutral price, cumulative volume/amount and observation-time
-semantics as the 09:26 batch route.
+Every item includes `value_semantics`. Before 09:25 it is `auction_indicative`: `last_price` is
+bid-1 price, `cumulative_volume` is bid-1 shares and `cumulative_amount` is their exact product; if
+either bid-1 input is missing, all three values are `null`. From 09:25 onward it is `opening_trade`
+and preserves the provider's actual trade price, cumulative volume and amount. Rows written before
+this contract are labeled `legacy_source_quote`; their historical values are not rewritten.
 
 `GET /api/v1/top-gainers-20d?end_date=&limit=10` ranks unadjusted close-to-close returns over
 exactly 20 calendar trading sessions (19 intervals), with exact observation dates/prices, end-date

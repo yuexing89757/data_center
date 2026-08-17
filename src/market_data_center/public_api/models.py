@@ -218,9 +218,7 @@ class CallAuctionMarketSeriesSnapshotQuery(CallAuctionMarketSnapshotQuery):
 
 
 class CallAuctionMarketSeriesSnapshotItem(CallAuctionMarketSnapshotItem):
-    value_semantics: Literal[
-        "auction_indicative", "opening_trade", "legacy_source_quote"
-    ]
+    value_semantics: Literal["auction_indicative", "opening_trade", "legacy_source_quote"]
 
 
 class CallAuctionMarketSeriesRound(ApiModel):
