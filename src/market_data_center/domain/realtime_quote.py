@@ -29,8 +29,8 @@ class OrderBookLevel:
     def __post_init__(self) -> None:
         if not 1 <= self.level <= 5:
             raise ValueError("order-book level must be between 1 and 5")
-        if (self.price is None) != (self.volume is None):
-            raise ValueError("order-book price and volume must both be present or both be absent")
+        if self.price is not None and self.volume is None:
+            raise ValueError("order-book volume must be present when price is present")
         if self.price is not None:
             if not isinstance(self.price, Decimal):
                 raise TypeError("order-book price must use Decimal")
