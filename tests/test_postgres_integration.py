@@ -45,6 +45,7 @@ from market_data_center.domain import (
     IngestionRun,
     IngestionStatus,
     Market,
+    OrderBookLevel,
     ProviderCode,
     QualityResult,
     QualitySeverity,
@@ -87,6 +88,17 @@ from market_data_center.recovery import (
 )
 
 pytestmark = pytest.mark.integration
+
+
+def _market_series_levels(first_price: str, second_volume: int) -> tuple[OrderBookLevel, ...]:
+    return (
+        OrderBookLevel(1, Decimal(first_price), 100),
+        OrderBookLevel(2, None, second_volume),
+        OrderBookLevel(3, None, None),
+        OrderBookLevel(4, None, None),
+        OrderBookLevel(5, None, None),
+    )
+
 
 MIGRATIONS = tuple(sorted(MIGRATION_DIR.glob("*.sql")))
 NOW = datetime(2026, 7, 28, 8, tzinfo=UTC)
@@ -301,8 +313,15 @@ def test_auction_series_semantics_migration_labels_existing_rows_without_rewrite
         for migration in MIGRATIONS
         if migration.name == "20260817000200_add_auction_series_value_semantics.sql"
     )
+    enrichment_migration = next(
+        item
+        for item in MIGRATIONS
+        if item.name == "20260818000100_enrich_call_auction_market_series.sql"
+    )
     with psycopg.connect(empty_database_url) as connection:
-        apply_migrations(connection, MIGRATIONS[:-1])
+        apply_migrations(
+            connection, tuple(item for item in MIGRATIONS if item.name < migration.name)
+        )
 
     trade_date = date(2026, 8, 17)
     slots = series_slots(trade_date)
@@ -428,6 +447,15 @@ def test_auction_series_semantics_migration_labels_existing_rows_without_rewrite
     assert tuple(after[:3]) == before
     assert after[3] == "legacy_source_quote"
 
+    with psycopg.connect(empty_database_url) as connection:
+        apply_migrations(connection, (enrichment_migration,))
+        enriched = connection.execute("""
+            select batch_code, bid1_price, bid1_volume, ask5_price, ask5_volume
+            from realtime.call_auction_market_series_snapshot
+        """).fetchone()
+
+    assert enriched == ("091500", None, None, None, None)
+
 
 def test_call_auction_market_series_schema_is_partitioned_and_internal(
     database_engine: Engine,
@@ -499,6 +527,29 @@ def test_call_auction_market_series_schema_is_partitioned_and_internal(
         assert constraints["call_auction_market_series_snapshot_pkey"] == (
             "PRIMARY KEY (trade_date, ingestion_id, symbol)"
         )
+        expected_quote_columns = {
+            "batch_code",
+            *(
+                f"{side}{level}_{field}"
+                for side in ("bid", "ask")
+                for level in range(1, 6)
+                for field in ("price", "volume")
+            ),
+        }
+        for table_name in (
+            "call_auction_market_series_snapshot",
+            "call_auction_market_series_snapshot_202608",
+        ):
+            columns = set(
+                connection.execute(
+                    text("""
+                        select column_name from information_schema.columns
+                        where table_schema='realtime' and table_name=:table_name
+                    """),
+                    {"table_name": table_name},
+                ).scalars()
+            )
+            assert expected_quote_columns <= columns
         grants = {
             (row.table_name, row.privilege_type)
             for row in connection.execute(
@@ -657,10 +708,13 @@ def test_market_series_persistence_commits_attempt_and_finishes_partial_session(
             trade_date=trade_date,
             session_id=session.session_id,
             sample_seq=0,
+            batch_code="091500",
             scheduled_at=slots[0],
             observed_at=slots[0] + timedelta(seconds=1),
             source_code="pytdx_hq",
             value_semantics=MarketSeriesValueSemantics.AUCTION_INDICATIVE,
+            bid_levels=_market_series_levels("10.00", 10_743_200),
+            ask_levels=_market_series_levels("10.01", 13_300),
             last_price=Decimal("10.10"),
             previous_close=Decimal("10.00"),
             high_price=Decimal("10.10"),
@@ -705,7 +759,8 @@ def test_market_series_persistence_commits_attempt_and_finishes_partial_session(
         stored = connection.execute(
             text(
                 """
-                select last_price, cumulative_volume, cumulative_amount, value_semantics
+                select last_price, cumulative_volume, cumulative_amount, value_semantics,
+                       batch_code, bid2_price, bid2_volume, ask2_price, ask2_volume
                 from realtime.call_auction_market_series_snapshot
                 """
             )
@@ -715,6 +770,11 @@ def test_market_series_persistence_commits_attempt_and_finishes_partial_session(
             100,
             Decimal("1010.0000"),
             "auction_indicative",
+            "091500",
+            None,
+            10_743_200,
+            None,
+            13_300,
         )
         assert (
             connection.scalar(
@@ -723,6 +783,18 @@ def test_market_series_persistence_commits_attempt_and_finishes_partial_session(
             )
             == "partial"
         )
+
+    invalid_updates = (
+        "update realtime.call_auction_market_series_snapshot set batch_code='091501'",
+        "update realtime.call_auction_market_series_snapshot set bid2_volume=-1",
+        """
+        update realtime.call_auction_market_series_snapshot
+        set bid2_price=9.9900, bid2_volume=null
+        """,
+    )
+    for statement in invalid_updates:
+        with pytest.raises(IntegrityError), database_engine.begin() as connection:
+            connection.execute(text(statement))
 
 
 def test_market_series_attempt_rolls_back_manifest_quality_and_facts(
@@ -777,20 +849,23 @@ def test_market_series_attempt_rolls_back_manifest_quality_and_facts(
     )
     persistence.create_ingestion_run(running_run)
     record = MarketSeriesSnapshotRecord(
-        "SSE:600000",
-        trade_date,
-        session.session_id,
-        0,
-        slots[0],
-        slots[0] + timedelta(seconds=1),
-        "pytdx_hq",
-        MarketSeriesValueSemantics.AUCTION_INDICATIVE,
-        Decimal("10.00"),
-        Decimal("9.90"),
-        Decimal("10.00"),
-        Decimal("10.00"),
-        100,
-        Decimal("1000.00"),
+        symbol="SSE:600000",
+        trade_date=trade_date,
+        session_id=session.session_id,
+        sample_seq=0,
+        batch_code="091500",
+        scheduled_at=slots[0],
+        observed_at=slots[0] + timedelta(seconds=1),
+        source_code="pytdx_hq",
+        value_semantics=MarketSeriesValueSemantics.AUCTION_INDICATIVE,
+        bid_levels=_market_series_levels("10.00", 10_743_200),
+        ask_levels=_market_series_levels("10.01", 13_300),
+        last_price=Decimal("10.00"),
+        previous_close=Decimal("9.90"),
+        high_price=Decimal("10.00"),
+        low_price=Decimal("10.00"),
+        cumulative_volume=100,
+        cumulative_amount=Decimal("1000.00"),
     )
     completed = replace(
         running_run,
@@ -1556,19 +1631,24 @@ insert into realtime.call_auction_market_series_round (
         connection.execute(
             text("""
 insert into realtime.call_auction_market_series_snapshot (
-    trade_date, ingestion_id, session_id, sample_seq, scheduled_at, symbol,
+    trade_date, ingestion_id, session_id, sample_seq, batch_code, scheduled_at, symbol,
     observed_at, last_price, previous_close, high_price, low_price,
-    cumulative_volume, cumulative_amount, source_code, value_semantics
+    cumulative_volume, cumulative_amount, source_code, value_semantics,
+    bid1_price, bid1_volume, bid2_price, bid2_volume,
+    ask1_price, ask1_volume, ask2_price, ask2_volume
 ) values
-    (:trade_date, :round_zero_id, :succeeded_session_id, 0, :slot_zero,
+    (:trade_date, :round_zero_id, :succeeded_session_id, 0, '091500', :slot_zero,
      'SSE:600000', :round_zero_observed, 10.1000, 10.0000, 10.1000, 10.0000,
-     100, 1010.0000, 'pytdx_hq', 'auction_indicative'),
-    (:trade_date, :round_one_id, :succeeded_session_id, 1, :slot_one,
+     100, 1010.0000, 'pytdx_hq', 'auction_indicative',
+     10.0000, 100, null, 10743200, 10.0100, 100, null, 13300),
+    (:trade_date, :round_one_id, :succeeded_session_id, 1, '091520', :slot_one,
      'SSE:600000', :round_one_observed, 10.2000, 10.0000, 10.2000, 10.0000,
-     200, 2040.0000, 'pytdx_hq', 'auction_indicative'),
-    (:trade_date, :partial_id, :partial_session_id, 0, :slot_zero,
+     200, 2040.0000, 'pytdx_hq', 'auction_indicative',
+     10.0000, 100, null, 10743200, 10.0100, 100, null, 13300),
+    (:trade_date, :partial_id, :partial_session_id, 0, '091500', :slot_zero,
      'SSE:600000', :partial_observed, 99.0000, 98.0000, 99.0000, 98.0000,
-     1, 99.0000, 'pytdx_hq', 'auction_indicative')
+     1, 99.0000, 'pytdx_hq', 'auction_indicative',
+     98.0000, 100, null, 10743200, 99.0000, 100, null, 13300)
 """),
             {
                 "trade_date": trade_date,
@@ -1637,6 +1717,10 @@ select api_v1.query_call_auction_market_series_snapshots(
     assert payload["rounds"][0]["missing_codes"] == ["000001"]
     assert payload["rounds"][0]["items"][0]["last_price"] == 10.1000
     assert payload["rounds"][0]["items"][0]["value_semantics"] == "auction_indicative"
+    assert payload["rounds"][0]["items"][0]["batch_code"] == "091500"
+    assert payload["rounds"][0]["items"][0]["bid2_price"] is None
+    assert payload["rounds"][0]["items"][0]["bid2_volume"] == 10_743_200
+    assert payload["rounds"][0]["items"][0]["ask2_volume"] == 13_300
     assert payload["rounds"][1]["items"][0]["last_price"] == 10.2000
     assert partial_payload["session_id"] == str(partial_session_id)
     assert partial_payload["session_status"] == "partial"

@@ -24,6 +24,28 @@ VIEW_COUNT = cast(Any, SMOKE_CHECKS["_view_count"])
 PUBLISHED_FUNCTIONS = cast(tuple[str, ...], FASTAPI_CHECKS["PUBLISHED_FUNCTIONS"])
 
 
+def test_auction_series_five_level_migration_is_bounded_and_preserves_history() -> None:
+    migration = (
+        (MIGRATION_DIR / "20260818000100_enrich_call_auction_market_series.sql")
+        .read_text(encoding="utf-8")
+        .lower()
+    )
+
+    assert "update realtime.call_auction_market_series_snapshot" in migration
+    update_body = migration.split(
+        "update realtime.call_auction_market_series_snapshot", maxsplit=1
+    )[1].split("alter table", maxsplit=1)[0]
+    assert "set batch_code" in update_body
+    assert "bid1_price" not in update_body
+    assert "ask5_volume" not in update_body
+    assert "security definer" in migration
+    assert "set search_path = pg_catalog, api_v1, realtime, core" in migration
+    assert "set statement_timeout = '5s'" in migration
+    assert "from public, anon, authenticated" in migration
+    assert "to market_data_api" in migration
+    assert all(token not in migration for token in ("schtasks", "crontab", "oncalendar"))
+
+
 def test_realtime_auction_one_price_limit_decision_is_documented() -> None:
     adr = (PROJECT_ROOT / "docs/adr/ADR-0039-09点26沪深主板一字涨跌停实时计算.md").read_text(
         encoding="utf-8"

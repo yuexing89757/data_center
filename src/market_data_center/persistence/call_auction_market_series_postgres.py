@@ -202,13 +202,22 @@ class PostgreSQLCallAuctionMarketSeriesPersistence:
                 connection.execute(
                     text("""
                         insert into realtime.call_auction_market_series_snapshot (
-                          trade_date,ingestion_id,session_id,sample_seq,scheduled_at,symbol,
+                          trade_date,ingestion_id,session_id,sample_seq,batch_code,scheduled_at,symbol,
                           observed_at,last_price,previous_close,high_price,low_price,
-                          cumulative_volume,cumulative_amount,source_code,value_semantics
+                          cumulative_volume,cumulative_amount,source_code,value_semantics,
+                          bid1_price,bid1_volume,bid2_price,bid2_volume,bid3_price,bid3_volume,
+                          bid4_price,bid4_volume,bid5_price,bid5_volume,
+                          ask1_price,ask1_volume,ask2_price,ask2_volume,ask3_price,ask3_volume,
+                          ask4_price,ask4_volume,ask5_price,ask5_volume
                         ) values (
-                          :trade_date,:ingestion_id,:session_id,:sample_seq,:scheduled_at,:symbol,
+                          :trade_date,:ingestion_id,:session_id,:sample_seq,:batch_code,
+                          :scheduled_at,:symbol,
                           :observed_at,:last_price,:previous_close,:high_price,:low_price,
-                          :cumulative_volume,:cumulative_amount,:source_code,:value_semantics
+                          :cumulative_volume,:cumulative_amount,:source_code,:value_semantics,
+                          :bid1_price,:bid1_volume,:bid2_price,:bid2_volume,:bid3_price,:bid3_volume,
+                          :bid4_price,:bid4_volume,:bid5_price,:bid5_volume,
+                          :ask1_price,:ask1_volume,:ask2_price,:ask2_volume,:ask3_price,:ask3_volume,
+                          :ask4_price,:ask4_volume,:ask5_price,:ask5_volume
                         )
                     """),
                     [_snapshot_parameters(record, run.ingestion_id) for record in records],
@@ -491,6 +500,7 @@ def _snapshot_parameters(
         "ingestion_id": ingestion_id,
         "session_id": value.session_id,
         "sample_seq": value.sample_seq,
+        "batch_code": value.batch_code,
         "scheduled_at": value.scheduled_at,
         "symbol": value.symbol,
         "observed_at": value.observed_at,
@@ -502,6 +512,26 @@ def _snapshot_parameters(
         "cumulative_amount": value.cumulative_amount,
         "source_code": value.source_code,
         "value_semantics": value.value_semantics.value,
+        "bid1_price": value.bid_levels[0].price,
+        "bid1_volume": value.bid_levels[0].volume,
+        "bid2_price": value.bid_levels[1].price,
+        "bid2_volume": value.bid_levels[1].volume,
+        "bid3_price": value.bid_levels[2].price,
+        "bid3_volume": value.bid_levels[2].volume,
+        "bid4_price": value.bid_levels[3].price,
+        "bid4_volume": value.bid_levels[3].volume,
+        "bid5_price": value.bid_levels[4].price,
+        "bid5_volume": value.bid_levels[4].volume,
+        "ask1_price": value.ask_levels[0].price,
+        "ask1_volume": value.ask_levels[0].volume,
+        "ask2_price": value.ask_levels[1].price,
+        "ask2_volume": value.ask_levels[1].volume,
+        "ask3_price": value.ask_levels[2].price,
+        "ask3_volume": value.ask_levels[2].volume,
+        "ask4_price": value.ask_levels[3].price,
+        "ask4_volume": value.ask_levels[3].volume,
+        "ask5_price": value.ask_levels[4].price,
+        "ask5_volume": value.ask_levels[4].volume,
     }
 
 
