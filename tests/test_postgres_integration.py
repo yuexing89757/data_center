@@ -38,6 +38,17 @@ from market_data_center.domain import (
     DatasetCode,
     DeductedProfitRecord,
     DistributionRecord,
+    DragonTigerActivitySide,
+    DragonTigerEvent,
+    DragonTigerEventStatus,
+    DragonTigerNormalizationStatus,
+    DragonTigerReason,
+    DragonTigerSeat,
+    DragonTigerSeatActivity,
+    DragonTigerSeatType,
+    DragonTigerSnapshotBatch,
+    DragonTigerSnapshotStatus,
+    DragonTigerSourceObservation,
     Exchange,
     IngestionEnvelope,
     IngestionRun,
@@ -55,11 +66,15 @@ from market_data_center.domain import (
     SecurityType,
     ShareCapitalRecord,
     TradeStatus,
+    calculate_dragon_tiger_summary,
     deducted_profit_revision_key,
 )
 from market_data_center.domain.operations import ExecutionStatus, TriggerSource, WorkflowCode
 from market_data_center.migrations import MIGRATION_DIR, apply_migrations
 from market_data_center.persistence import PostgreSQLDerivedPersistence, PostgreSQLPersistence
+from market_data_center.persistence.dragon_tiger_postgres import (
+    PostgreSQLDragonTigerPersistence,
+)
 from market_data_center.persistence.operations_postgres import PostgreSQLOperationsPersistence
 from market_data_center.quality_audit import audit_daily_bars
 from market_data_center.recovery import (
@@ -3344,6 +3359,115 @@ def _commit_calendar_prerequisite(persistence: PostgreSQLPersistence) -> None:
         _manifest(running.ingestion_id, "calendar-prerequisite"),
         _envelopes(running.ingestion_id, [trading_day]),
     )
+
+
+def test_dragon_tiger_snapshot_is_atomic_idempotent_and_append_only(
+    database_engine: Engine,
+) -> None:
+    _prepare_api_data(database_engine)
+    historical_name = _security().name
+    observation = DragonTigerSourceObservation(
+        "20260728:600000", SYMBOL, TRADE_DATE, NOW, historical_name
+    )
+    event = DragonTigerEvent(
+        SYMBOL,
+        TRADE_DATE,
+        historical_name,
+        "CN_A_SHARE",
+        Decimal("10.5000"),
+        Decimal("6.0606060606"),
+        Decimal("1000.0000"),
+        Decimal("2.0000000000"),
+        DragonTigerEventStatus.OBSERVED,
+        observation.source_event_key,
+    )
+    seat = DragonTigerSeat(
+        "institution:generic",
+        "机构专用",
+        DragonTigerSeatType.INSTITUTION,
+        TRADE_DATE,
+        "机构专用",
+        DragonTigerNormalizationStatus.MATCHED,
+    )
+    activity = DragonTigerSeatActivity(
+        SYMBOL,
+        TRADE_DATE,
+        seat.identity_key,
+        DragonTigerActivitySide.BUY,
+        Decimal("100"),
+        Decimal("0"),
+        Decimal("100"),
+        seat.source_name,
+        0,
+        buy_rank=1,
+    )
+    summary = calculate_dragon_tiger_summary(
+        event, (activity,), {seat.identity_key: seat}, calculated_at=NOW
+    )
+    batch = DragonTigerSnapshotBatch(
+        TRADE_DATE,
+        NOW,
+        DragonTigerSnapshotStatus.COMPLETE,
+        "a" * 64,
+        "b" * 64,
+        (observation,),
+        (event,),
+        (DragonTigerReason(SYMBOL, TRADE_DATE, "daily_deviation_top3", "偏离值", "来源原文", 0),),
+        (seat,),
+        (activity,),
+        (summary,),
+    )
+    run = IngestionRun(
+        uuid4(),
+        ProviderCode.EASTMONEY,
+        DatasetCode.DRAGON_TIGER,
+        IngestionStatus.SUCCEEDED,
+        NOW,
+        NOW,
+        NOW,
+        {"trade_date": TRADE_DATE.isoformat()},
+        1,
+        1,
+        0,
+    )
+    manifest = _manifest(run.ingestion_id, "dragon-tiger")
+    persistence = PostgreSQLDragonTigerPersistence(database_engine)
+
+    first = persistence.commit_snapshot(run, manifest, batch, ())
+    retry_run = replace(run, ingestion_id=uuid4())
+    retry_manifest = _manifest(retry_run.ingestion_id, "dragon-tiger-retry")
+    second = persistence.commit_snapshot(retry_run, retry_manifest, batch, ())
+
+    assert first.snapshot_id == second.snapshot_id
+    assert first.idempotent is False
+    assert second.idempotent is True
+    with database_engine.connect() as connection:
+        assert connection.scalar(text("select count(*) from dragon_tiger.event")) == 1
+        assert connection.scalar(text("select count(*) from dragon_tiger.reason")) == 1
+        assert connection.scalar(text("select count(*) from dragon_tiger.seat_activity")) == 1
+        assert connection.scalar(text("select count(*) from dragon_tiger.event_summary")) == 1
+        assert (
+            connection.scalar(
+                text(
+                    "select count(*) from ingestion.ingestion_run where dataset_code='dragon_tiger'"
+                )
+            )
+            == 2
+        )
+        assert (
+            connection.scalar(
+                text(
+                    "select has_table_privilege('market_data_worker','dragon_tiger.event','UPDATE')"
+                )
+            )
+            is False
+        )
+        assert (
+            connection.scalar(
+                text("select has_table_privilege('market_data_api','dragon_tiger.event','SELECT')")
+            )
+            is False
+        )
 
 
 def _prepare_api_data(engine: Engine) -> None:

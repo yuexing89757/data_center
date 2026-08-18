@@ -51,6 +51,13 @@ configure the bounds with `TODAY_LIMIT_UP_TIMEOUT_SECONDS` and
 
 GitHub Issues are the project's only task backlog and planning system. Linear is not used or synchronized.
 
+The Dragon Tiger List foundation is an internal, append-only domain only. It defines versioned
+source observations, immutable per-security events, normalized reasons, stable seat identities,
+objective seat activities and recomputable summaries under `dragon_tiger`; it does not yet collect
+Eastmoney data, schedule a job, expose an API, or assign subjective trader labels. See
+`docs/adr/ADR-0034-龙虎榜不可变事实与席位活动.md` and
+`docs/领域详设-DragonTigerList-2026-08-18.md`.
+
 ```bash
 uv sync --all-groups
 uv run ruff format --check .

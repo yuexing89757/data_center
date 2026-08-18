@@ -274,6 +274,38 @@ def test_live_auction_persistence_is_narrow_idempotent_and_not_direct_table_dml(
     assert not re.search(r"(?im)^grant\s+(insert|update|delete|all)", migration)
 
 
+def test_dragon_tiger_domain_is_internal_append_only_and_has_no_subjective_labels() -> None:
+    migration = (
+        (MIGRATION_DIR / "20260818000100_create_dragon_tiger_domain.sql")
+        .read_text(encoding="utf-8")
+        .lower()
+    )
+
+    tables = (
+        "source_snapshot",
+        "source_observation",
+        "event",
+        "reason",
+        "seat",
+        "seat_activity",
+        "event_summary",
+        "snapshot_quality",
+    )
+    assert all(f"create table dragon_tiger.{table}" in migration for table in tables)
+    assert all(
+        f"alter table dragon_tiger.{table} enable row level security" in migration
+        for table in tables
+    )
+    assert "grant select, insert on all tables in schema dragon_tiger" in migration
+    assert "revoke update, delete, truncate" in migration
+    assert "from public, market_data_api" in migration
+    assert "rolname = 'anon'" in migration
+    assert "rolname = 'authenticated'" in migration
+    assert "seat_label_assignment" not in migration
+    assert "游资" not in migration
+    assert "create function api_v1" not in migration
+
+
 def test_daily_limit_up_list_quality_fix_uses_calculation_quality_table() -> None:
     """Regression guard: the quality CTE must read today_limit_up.calculation_quality,
     not the non-existent today_limit_up.member_quality that caused HTTP 503."""

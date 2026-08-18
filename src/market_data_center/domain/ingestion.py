@@ -36,6 +36,7 @@ class DatasetCode(StrEnum):
     CALL_AUCTION_SNAPSHOT = "call_auction_snapshot"
     CALL_AUCTION_MARKET_SNAPSHOT = "call_auction_market_snapshot"
     CALL_AUCTION_INDICATIVE_DETAIL = "call_auction_indicative_detail"
+    DRAGON_TIGER = "dragon_tiger"
     TODAY_LIMIT_UP_SOURCE = "today_limit_up_source"
     CONVERTIBLE_BOND = "convertible_bond"
     CONVERTIBLE_BOND_DAILY_BAR = "convertible_bond_daily_bar"
