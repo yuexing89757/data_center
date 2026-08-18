@@ -296,6 +296,10 @@ def test_collects_thirty_two_exact_rounds_and_raw_lineage() -> None:
     assert first_raw["sample_seq"] == "0"
     assert first_raw["scheduled_at"] == SLOTS[0].isoformat()
     assert loads(first_raw["provider_raw_json"]) == {"symbol": "SSE:600000"}
+    first_snapshot = persistence.records[0][0]
+    assert first_snapshot.batch_code == "091500"
+    assert first_snapshot.bid_levels == _quote("SSE:600000", SLOTS[0]).bid_levels
+    assert first_snapshot.ask_levels == _quote("SSE:600000", SLOTS[0]).ask_levels
 
 
 def test_partial_attempt_retries_entire_universe_on_second_endpoint() -> None:

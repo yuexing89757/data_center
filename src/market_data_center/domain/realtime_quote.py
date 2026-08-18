@@ -91,8 +91,8 @@ class FiveLevelQuoteSnapshotRecord:
                 if value is not None and not self.low <= value <= self.high:
                     raise ValueError(f"{field_name} must be within [low, high]")
 
-        _validate_levels(self.bid_levels, descending=True, side="bid")
-        _validate_levels(self.ask_levels, descending=False, side="ask")
+        validate_order_book_levels(self.bid_levels, descending=True, side="bid")
+        validate_order_book_levels(self.ask_levels, descending=False, side="ask")
 
 
 @dataclass(frozen=True, slots=True)
@@ -278,7 +278,9 @@ def validate_realtime_quotes(
     return RealtimeQuoteValidationResult(tuple(accepted), tuple(findings), rejected_rows)
 
 
-def _validate_levels(levels: tuple[OrderBookLevel, ...], *, descending: bool, side: str) -> None:
+def validate_order_book_levels(
+    levels: tuple[OrderBookLevel, ...], *, descending: bool, side: str
+) -> None:
     if len(levels) != 5 or tuple(item.level for item in levels) != (1, 2, 3, 4, 5):
         raise ValueError(f"{side} levels must contain level 1 through 5 exactly once")
     seen_absent = False

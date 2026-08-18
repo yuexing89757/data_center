@@ -10,17 +10,31 @@ from market_data_center.domain.call_auction_market_series import (
     MarketSeriesSnapshotRecord,
     MarketSeriesStatus,
     MarketSeriesValueSemantics,
+    series_batch_code,
     series_slots,
     universe_hash,
 )
 from market_data_center.domain.ingestion import DatasetCode
 from market_data_center.domain.operations import WorkflowCode
+from market_data_center.domain.realtime_quote import OrderBookLevel
 
 TRADE_DATE = date(2026, 8, 17)
 SLOTS = tuple(
     datetime(2026, 8, 17, 1, 15, tzinfo=UTC) + timedelta(seconds=20 * seq) for seq in range(32)
 )
 UNIVERSE = ("SSE:600000", "SZSE:000001")
+
+
+def _levels(side: str) -> tuple[OrderBookLevel, ...]:
+    offset = Decimal("10")
+    return tuple(
+        OrderBookLevel(
+            level,
+            offset - Decimal(level) / 100 if side == "bid" else offset + Decimal(level) / 100,
+            level * 100,
+        )
+        for level in range(1, 6)
+    )
 
 
 def _session(**changes: object) -> MarketSeriesSession:
@@ -65,6 +79,7 @@ def _snapshot(**changes: object) -> MarketSeriesSnapshotRecord:
         "trade_date": TRADE_DATE,
         "session_id": uuid4(),
         "sample_seq": 0,
+        "batch_code": "091500",
         "scheduled_at": SLOTS[0],
         "observed_at": SLOTS[0] + timedelta(seconds=2),
         "source_code": "pytdx_hq",
@@ -75,6 +90,8 @@ def _snapshot(**changes: object) -> MarketSeriesSnapshotRecord:
         "cumulative_volume": 123_400,
         "cumulative_amount": Decimal("1246340.00"),
         "value_semantics": MarketSeriesValueSemantics.AUCTION_INDICATIVE,
+        "bid_levels": _levels("bid"),
+        "ask_levels": _levels("ask"),
     }
     values.update(changes)
     return MarketSeriesSnapshotRecord(**values)  # type: ignore[arg-type]
@@ -82,6 +99,9 @@ def _snapshot(**changes: object) -> MarketSeriesSnapshotRecord:
 
 def test_series_slots_are_exactly_thirty_two_twenty_second_points() -> None:
     assert series_slots(TRADE_DATE) == SLOTS
+    assert series_batch_code(SLOTS[0]) == "091500"
+    assert series_batch_code(SLOTS[1]) == "091520"
+    assert series_batch_code(SLOTS[-1]) == "092520"
 
 
 def test_universe_hash_requires_ordered_unique_sse_szse_symbols() -> None:
@@ -162,6 +182,23 @@ def test_snapshot_requires_exact_round_window_and_price_invariants() -> None:
         _snapshot(cumulative_amount=1.0)
     with pytest.raises(TypeError, match="integer"):
         _snapshot(cumulative_volume=True)
+    with pytest.raises(ValueError, match="batch_code"):
+        _snapshot(batch_code="091520")
+
+
+def test_snapshot_preserves_five_levels_including_volume_only_level() -> None:
+    bid_levels = (
+        OrderBookLevel(1, Decimal("9.99"), 100),
+        OrderBookLevel(2, None, 10_743_200),
+        OrderBookLevel(3, None, None),
+        OrderBookLevel(4, None, None),
+        OrderBookLevel(5, None, None),
+    )
+
+    snapshot = _snapshot(bid_levels=bid_levels)
+
+    assert snapshot.bid_levels[1].price is None
+    assert snapshot.bid_levels[1].volume == 10_743_200
 
 
 def test_auction_indicative_snapshot_requires_consistent_bid1_values() -> None:
@@ -189,6 +226,7 @@ def test_snapshot_semantics_follow_the_scheduled_0925_boundary() -> None:
     with pytest.raises(ValueError, match="before 09:25"):
         _snapshot(
             sample_seq=30,
+            batch_code="092500",
             scheduled_at=SLOTS[30],
             observed_at=SLOTS[30] + timedelta(seconds=2),
             value_semantics=MarketSeriesValueSemantics.AUCTION_INDICATIVE,
