@@ -308,7 +308,7 @@ def test_dragon_tiger_domain_is_internal_append_only_and_has_no_subjective_label
 
 def test_recent_daily_bars_rpc_is_bounded_and_fastapi_only() -> None:
     migration = (
-        (MIGRATION_DIR / "20260818000200_add_recent_daily_bars_api.sql")
+        (MIGRATION_DIR / "20260818000600_add_recent_daily_bars_api.sql")
         .read_text(encoding="utf-8")
         .lower()
     )
