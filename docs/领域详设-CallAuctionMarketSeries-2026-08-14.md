@@ -2,7 +2,7 @@
 
 > 状态：有效，已实现
 > 日期：2026-08-14
-> GitHub Issue：#48
+> GitHub Issue：#48、#54
 > 上级决策：`adr/ADR-0034-沪深全市场开盘竞价序列快照.md`（Accepted）
 
 ## 1. 领域职责
@@ -38,6 +38,9 @@ round deadline(seq=31) = 09:25:40
 
 `scheduled_at` 表示计划点；每条 `observed_at` 表示Worker收到并标准化该证券响应的时间；Round `collected_at` 表示该轮规范attempt完成或截止的时间。三者不得互相伪造。
 
+每轮另保存由 `scheduled_at` 上海时间格式化得到的六位 `batch_code=HHMMSS`，例如
+09:15:00 为 `091500`、09:15:20 为 `091520`。它是展示和检索字段，不替代 Round 自然键。
+
 ## 4. 领域对象
 
 ### MarketSeriesSession
@@ -56,7 +59,10 @@ round deadline(seq=31) = 09:25:40
 
 ### MarketSeriesSnapshotRecord
 
-包含symbol、trade date、scheduled/observed time、价格、累计量额和source code。价格/金额使用Decimal，数量为股，missing保持None，zero不等同missing。OHLC和非负约束与现有09:26来源事实一致。
+包含symbol、trade date、batch code、scheduled/observed time、价格、累计量额、买卖各五档和
+source code。价格/金额使用Decimal，数量为股，missing保持None，zero不等同missing。OHLC和
+非负约束与现有09:26来源事实一致。档位价格为零且数量为正时保存为 `price=NULL`、
+`volume=实际股数`；价格和数量均为零时两者均为 `NULL`。
 
 ## 5. 服务流程
 
@@ -66,7 +72,7 @@ round deadline(seq=31) = 09:25:40
 4. 等待当前slot，不提前请求。
 5. 为endpoint attempt创建running IngestionRun。
 6. Provider按80只批次和deadline读取全集。
-7. 保存不可变Raw，标准化并执行全集、时间、symbol、数值和基数校验。
+7. 保存不可变Raw，复制五档事实，标准化并执行全集、时间、symbol、数值、档位和基数校验。
 8. 在一个事务中完成IngestionRun、Manifest、质量结果和Snapshot事实。
 9. 成功则选择该ingestion并结束Round；partial且预算足够则从第二endpoint全量重试。
 10. 持久化Round终态，继续下一slot；最后聚合Session终态。
@@ -78,6 +84,9 @@ round deadline(seq=31) = 09:25:40
 所有生产schema变更来自 `supabase/migrations/*.sql`。Persistence负责事务、锁和lineage，不允许 `create_all()`、Alembic或运行时DDL。
 
 Snapshot父表按trade date月度Range Partition；初始migration创建当前及未来分区。分区主键包含partition key。父表只授予Worker select/insert；Session/Round允许Worker完成受控状态转换所需的select/insert/update。RLS策略只允许Worker角色。
+
+Snapshot 保存 `batch_code` 及 `bid/ask_price_1..5`、`bid/ask_volume_1..5`。迁移仅从历史
+`scheduled_at` 回填 `batch_code`；历史五档字段保持 `NULL`，不得从其他表或后续行情反推。
 
 同一attempt写入必须原子：任何Snapshot、Manifest或质量结果写入失败时，不能留下伪成功IngestionRun。Round selected ingestion只能引用已终态的同dataset attempt。
 
@@ -101,7 +110,9 @@ Snapshot父表按trade date月度Range Partition；初始migration创建当前�
 
 ## 9. 调度边界
 
-Worker注册一个代码目录固定的工作日09:15 job。`CALL_AUCTION_MARKET_SERIES_ENABLED`仅控制启停。专用`morning_auction` executor最大2线程并只分配两个早盘长会话；default executor保持1线程。
+Worker注册一个代码目录固定的工作日09:15 job。`CALL_AUCTION_MARKET_SERIES_ENABLED`仅控制启停。
+专用`morning_auction` executor承载该早盘长会话；default executor保持1线程。已退役的涨停池
+五档任务不得占用该 executor 或重新注册。
 
 JobStore仅保存调度定义，WorkflowRun/JobExecution、Session/Round和IngestionRun分别保存操作、会话和来源事实，不复制或反序列化APScheduler job state。
 
@@ -116,8 +127,8 @@ JobStore仅保存调度定义，WorkflowRun/JobExecution、Session/Round和Inges
 消费者不得直接依赖realtime内部表。只读
 `api_v1.query_call_auction_market_series_snapshots(p_trade_date,p_codes)` 接受精确交易日和
 1～500个六位代码，优先选择最新succeeded Session；没有成功Session时选择最新partial
-Session，不拼Session、不回退日期。响应按sample sequence正序返回每轮，并逐轮公开缺失代码、
-规范事实和provider-neutral selected ingestion ID。
+Session，不拼Session、不回退日期。响应按sample sequence正序返回每轮，并逐轮公开 batch code、
+五档事实、缺失代码、规范事实和provider-neutral selected ingestion ID。历史行五档字段为 NULL。
 
 FastAPI通过`POST /api/v1/call-auction-market-series-snapshots/query`代理该RPC，只使用
 `market_data_api`最小执行权限，不直接读取realtime表。PostgREST、Agent和FastAPI contracts
@@ -127,4 +138,6 @@ FastAPI通过`POST /api/v1/call-auction-market-series-snapshots/query`代理该R
 
 单元测试覆盖领域不变量、时槽、Provider批次、deadline、重试、恢复和Session汇总。PostgreSQL integration tests使用隔离`TEST_DATABASE_URL`覆盖schema、分区、RLS、权限、事务和lineage。
 
-生产只通过打包发布和受保护migration上线，不手工触发采集。下一交易日live gate验证两个早盘任务并行、32轮实际时间、每轮完整率、Raw/Manifest、数据库行数、存储增长和09:26任务成功。
+生产只通过打包发布和受保护migration上线，不手工触发采集。下一交易日live gate验证全市场
+序列任务的32轮实际时间、batch code、五档保存、每轮完整率、Raw/Manifest、数据库行数、存储
+增长和09:26任务成功。

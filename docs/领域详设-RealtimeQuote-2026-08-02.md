@@ -76,26 +76,18 @@ ingestion；不得拼接批次或回退日期。响应显式返回 provider-neut
 
 ### 保留和容量
 
-以 50 只涨停池估算每天约 1,050 行、每年约 26 万行。来源事实和 Raw 长期保留，首版不增加清理任务；只有原冻结全集
-的确定性身份被持久化并验证后，才可重新启用 Raw replay。每日单次
-快照不构成逐秒持续采集，也不改变 ADR-0012 对分钟、tick、逐笔和 Level-2 的禁止边界。
+来源事实和 Raw 长期保留，首版不增加清理任务；只有原冻结全集的确定性身份被持久化并验证后，
+才可重新启用 Raw replay。每日单次快照不构成逐秒持续采集，也不改变 ADR-0012 对分钟、tick、
+逐笔和 Level-2 的禁止边界。
 
 > 集合竞价采集落地决策：`adr/ADR-0022-集合竞价涨停池五档快照采集.md`（Accepted）
 
-## 集合竞价采集边界（v2）
+## 集合竞价涨停池采集边界（已退役）
 
-- `AuctionCollectionSession` 冻结当日精确 ready 的
-  `CN_A_PREVIOUS_DAY_MAINBOARD_LIMIT_UP` snapshot ID/version；不回退旧日期，也不采跌停池。
-- 上海时间 09:15:00 至 09:25:00（含端点）每 30 秒一轮，共 21 轮；每只股票单独
-  发起一次 pysnowball `pankou` 请求；APScheduler 只注册一个 09:15 会话任务。
-- 涨停池任务只使用 pysnowball，不回退 PYTDX。全市场竞价序列与 09:26 快照仍独立
-  使用 `pytdx_hq`。
-- 阶段明确记录为 09:15–09:20 可撤单、09:20–09:25 不可撤单、09:25 最终撮合附近。
-- `scheduled_at`、Worker 的 `collected_at` 与可选 provider `source_timestamp` 分开保存；
-  pysnowball 只在响应含合法 Unix 毫秒时保存 source 时间。
-- pysnowball 集合竞价档位暂标记 `auction_indicative`。在 live validation
-  证明其为标准连续五档前，spread/depth/imbalance/seal amount 均保持 NULL。
-- 进程恢复只续采当前及未来轮次；过去轮次计入失败/缺失，禁止生成补采快照。
+Issue #54 删除 `opening-auction-limit-up-quotes` Worker 任务和 pysnowball 运行时 Adapter。
+`AuctionCollectionSession`、历史来源身份、历史事实表、Raw、查询和陈旧会话恢复仍保留，以保证
+既有数据可追溯；不得再注册、启动或补采该会话。全市场竞价序列与 09:26 快照继续独立使用
+`pytdx_hq`。
 
 > 状态：有效，已实现
 > 日期：2026-08-02
@@ -140,7 +132,8 @@ OrderBookLevel
 ```
 
 `OrderBookLevel` 是值对象，方向由其所在的 `bid_levels`/`ask_levels` 决定，避免同一层级
-同时携带相互冲突的 side。元组固定五个位置，但允许某一档的价格和数量同时为空。
+同时携带相互冲突的 side。元组固定五个位置。`price` 非空时 `volume` 必须非空；集合竞价
+来源允许 `price=NULL` 且 `volume>0`，表示尚未形成价格的真实委托量；两者同时为空表示空档。
 
 DTO 不包含 `ingestion_id`。Pipeline 在校验后使用
 `IngestionEnvelope[FiveLevelQuoteSnapshotRecord]` 附加采集批次。
@@ -182,16 +175,15 @@ DTO 不包含 `ingestion_id`。Pipeline 在校验后使用
 - 只使用网络 `get_security_quotes`，与本地 `.day` Provider `pytdx` 分开注册；
 - `bid1..bid5`/`ask1..ask5` 转换为五档价格；
 - `bid_vol1..5`/`ask_vol1..5` 和累计量从“手”转换为股；
+- 来源档位价格为零且数量为正时保留股数并将价格标准化为 `NULL`；价格和数量均为零时
+  标准化为空档；
 - 记录节点、连接耗时和协议字段版本到采集参数/Raw，不进入领域 DTO；
 - 未验证 BSE 前返回 `ProviderRequestUnavailable`，不得猜测市场编号。
 
 ### 5.2 pysnowball
 
-- 输入标准 symbol，在 Adapter 内转换为 `SH600000`/`SZ000001`；
-- 使用显式配置的 Cookie Token；不得由 Provider 自动登录或输出 Cookie；
-- 只消费一至五档，即使响应存在六至十档字段也不进入本模型；
-- `level != 1`、授权状态变化和响应字段变化必须记录并触发契约检查；
-- 数量按来源“股”口径接入；样本对照必须验证，不能只依赖字段名。
+`pysnowball` 仅作为历史来源身份保留。Issue #54 删除其运行时 Adapter、配置和自动路由；历史
+快照及 ingestion lineage 不迁移、不改写。
 
 ## 6. 校验
 
@@ -200,7 +192,7 @@ DTO 不包含 `ingestion_id`。Pipeline 在校验后使用
 - symbol 不存在、不是允许的股票类型或交易所未获支持；
 - `observed_at` 无时区、晚于 Worker 当前时间的允许偏差，或同批观察时间不一致；
 - 任一价格、数量或金额为负；
-- 同一档位的价格和数量只有一个为空；
+- 同一档位价格非空但数量为空；
 - 买/卖元组不是严格的 level 1～5 且有重复或缺少位置；
 - 非空买价不按 level 递减，或非空卖价不按 level 递增；
 - OHLC 关系非法，或最新价明显超出当日高低范围；
@@ -252,7 +244,8 @@ DTO 不包含 `ingestion_id`。Pipeline 在校验后使用
 | `price` | numeric(18,4) | 可空、非负 |
 | `volume` | bigint | 可空、非负，股 |
 
-主键：`(snapshot_id, side, level)`。数据库约束保证 price/volume 同空或同非空。
+主键：`(snapshot_id, side, level)`。数据库约束禁止 price 非空而 volume 为空；允许集合竞价
+阶段的 price 为空、volume 为正，并禁止用双零表示空档。
 
 历史清理不能直接进入首个 migration。必须先确定热数据保留期、Raw 保留和恢复目标，并
 通过独立受测运维命令按明确截止时间执行；禁止依赖无界触发器静默删除。
@@ -317,12 +310,12 @@ PostgREST 是查询已有快照，不在请求线程中调用外部行情源。�
 ## 11. 测试矩阵
 
 - 标准 symbol 与 SSE/SZSE 映射；BSE 未验证时明确拒绝；
-- pytdx 手到股、雪球股单位和价格精度；
+- pytdx 手到股、价格精度和集合竞价“无价格但有量”语义；
 - 正常五档、单侧空档、涨跌停、停牌、闭市；
-- 乱序档位、重复 level、负数、半空 price/volume、交叉盘口；
+- 乱序档位、重复 level、负数、price 非空但 volume 为空、交叉盘口；
 - observed/source 时间、时区、陈旧和未来时间；
 - 同批多证券共享 observed_at、自然键幂等与冲突；
-- Provider 超时、节点失败、Token 缺失/失效、字段变更和确定性回退；
+- Provider 超时、节点失败和字段变更；
 - Raw 重放产生相同 DTO；
 - RLS、authenticated-only、时效上限、P0002 和 statement timeout；
 - OpenAPI/Agent 契约不含 Secret 和内部 Schema。
