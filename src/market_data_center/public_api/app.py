@@ -1,5 +1,7 @@
 """FastAPI application factory for external read-only consumers."""
 
+# ruff: noqa: RUF001 - Chinese API documentation intentionally uses Chinese punctuation.
+
 from argparse import ArgumentParser
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -60,6 +62,7 @@ from market_data_center.public_api.models import (
     SecuritySearchResponse,
     TopGainers20dResponse,
 )
+from market_data_center.public_api.openapi_zh import localize_openapi
 from market_data_center.public_api.queries import (
     BoardIndexBiasNotReady,
     PostgreSQLPublicQueryService,
@@ -127,9 +130,17 @@ def create_app(
             owned_write_engine.dispose()
 
     app = FastAPI(
-        title="Market Data Center API",
-        summary="Read-only A-share market data API",
+        title="股票市场数据中心 API",
+        summary="面向外部消费者的只读 A 股市场数据接口",
+        description=(
+            "提供有界、只读且可追溯的证券、日线、涨停池、集合竞价及客观衍生数据查询。"
+            "除健康检查外，业务接口均需通过 X-API-Key 鉴权。"
+        ),
         version="0.2.0",
+        openapi_tags=[
+            {"name": "系统状态", "description": "服务存活状态与数据库就绪状态检查。"},
+            {"name": "市场数据", "description": "只读的 A 股市场事实与客观衍生结果查询。"},
+        ],
         lifespan=lifespan,
     )
     app.state.api_settings = configured
@@ -164,7 +175,13 @@ def create_app(
 
     _install_exception_handlers(app)
 
-    @app.get("/healthz", response_model=HealthResponse, tags=["system"])
+    @app.get(
+        "/healthz",
+        response_model=HealthResponse,
+        tags=["系统状态"],
+        summary="检查 API 服务存活状态",
+        description="仅检查 API 进程是否正常响应，不访问数据库。",
+    )
     def health() -> HealthResponse:
         return HealthResponse(status="ok")
 
@@ -172,7 +189,9 @@ def create_app(
         "/readyz",
         response_model=HealthResponse,
         responses={503: {"model": ErrorResponse}},
-        tags=["system"],
+        tags=["系统状态"],
+        summary="检查 API 服务就绪状态",
+        description="检查只读数据库连接是否可用；不可用时返回 503。",
     )
     def readiness(service: QueryServiceDependency) -> HealthResponse:
         service.ready()
@@ -182,7 +201,9 @@ def create_app(
         "/api/v1/securities",
         response_model=SecuritySearchResponse,
         responses={401: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
-        tags=["market-data"],
+        tags=["市场数据"],
+        summary="按代码或名称搜索证券",
+        description="在证券主数据中按代码或当前名称搜索，并按指定上限返回结果。",
     )
     def search_securities(
         _: ApiKeyDependency,
@@ -197,7 +218,9 @@ def create_app(
         "/api/v1/daily-bars/{symbol}",
         response_model=DailyBarResponse,
         responses={401: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
-        tags=["market-data"],
+        tags=["市场数据"],
+        summary="查询证券日线行情",
+        description="查询一个标准证券代码在指定日期区间内的未复权日线事实。",
     )
     def daily_bars(
         _: ApiKeyDependency,
@@ -228,7 +251,9 @@ def create_app(
             404: {"model": ErrorResponse},
             503: {"model": ErrorResponse},
         },
-        tags=["market-data"],
+        tags=["市场数据"],
+        summary="查询指定日期的分类成员",
+        description="按分类体系、类型和代码查询指定有效日期的证券成员。",
     )
     def classification_members(
         _: ApiKeyDependency,
@@ -255,14 +280,12 @@ def create_app(
             404: {"model": ErrorResponse},
             503: {"model": ErrorResponse},
         },
-        tags=["market-data"],
-        summary="Get the exact-date mainboard limit-up pool",
+        tags=["市场数据"],
+        summary="查询指定交易日的主板涨停池",
         description=(
-            "Returns the versioned pool whose stocks closed exactly at the deterministic "
-            "upper price limit on trade_date. free_float_market_cap_cny is that date's "
-            "unadjusted close multiplied by free-float shares. Invalid rows are omitted with "
-            "grouped reason counts; valid rows are ordered by symbol before limit is applied. "
-            "No value or date fallback is used."
+            "返回指定交易日收盘价严格等于确定性涨停价的版本化主板股票池。流通市值按当日"
+            "未复权收盘价乘以自由流通股本计算；无效记录按原因汇总后省略，有效记录先按"
+            "标准证券代码排序再应用返回上限。不使用数值或日期回退。"
         ),
     )
     def limit_up_pool(
@@ -282,15 +305,12 @@ def create_app(
             404: {"model": ErrorResponse},
             503: {"model": ErrorResponse},
         },
-        tags=["market-data"],
-        summary="Get one immutable same-day limit-up snapshot",
+        tags=["市场数据"],
+        summary="查询指定交易日的不可变涨停列表快照",
         description=(
-            "Returns the exact trade_date latest or requested today_limit_up snapshot. "
-            "The response includes immutable revision, status, bounded quality metadata, "
-            "canonical unadjusted price facts, close times same-date free-float shares, "
-            "source-reported sealing facts, closing bid-1 computed sealing amount, optional "
-            "five-level buy order-book context, and provider-neutral lineage. No date or "
-            "value fallback is used; Decimal values are serialized as strings."
+            "返回指定交易日最新或指定版本的涨停列表快照，包含不可变版本、状态、质量摘要、"
+            "未复权价格事实、当日自由流通股本、来源封单事实、按收盘买一计算的封单额、"
+            "可选五档买盘和来源追溯信息。不使用日期或数值回退；高精度数值序列化为字符串。"
         ),
     )
     def daily_limit_up_list(
@@ -311,13 +331,12 @@ def create_app(
             404: {"model": ErrorResponse},
             503: {"model": ErrorResponse},
         },
-        tags=["market-data"],
-        summary="Batch query one opening-auction market snapshot",
+        tags=["市场数据"],
+        summary="批量查询开盘集合竞价市场快照",
         description=(
-            "Returns facts from the latest succeeded ingestion for the exact trade date, "
-            "or the latest partial ingestion only when no succeeded ingestion exists. "
-            "A six-digit code can return both SSE and SZSE symbols. Missing codes are "
-            "reported explicitly; no date or batch fallback is used."
+            "返回指定交易日最新成功采集批次的数据；仅在没有成功批次时使用最新部分成功批次。"
+            "同一个六位代码可能同时匹配沪市和深市证券，未命中的代码会明确列出。不使用日期"
+            "或其他批次回退。"
         ),
     )
     def call_auction_market_snapshots(
@@ -335,13 +354,12 @@ def create_app(
             404: {"model": ErrorResponse},
             503: {"model": ErrorResponse},
         },
-        tags=["market-data"],
-        summary="Batch query one opening-auction market series session",
+        tags=["市场数据"],
+        summary="批量查询开盘集合竞价序列快照",
         description=(
-            "Returns all recorded rounds from the latest succeeded session for the exact "
-            "trade date, or the latest partial session only when no succeeded session exists. "
-            "Rounds are ordered by scheduled time and report missing six-digit codes "
-            "independently. Sessions and dates are never merged or substituted."
+            "返回指定交易日最新成功采集会话的全部轮次；仅在没有成功会话时使用最新部分成功"
+            "会话。轮次按计划采集时间正序排列，并分别报告未命中的六位代码。不同会话或日期"
+            "的数据不会合并或替代。"
         ),
     )
     def call_auction_market_series_snapshots(
@@ -356,8 +374,9 @@ def create_app(
     @app.get(
         "/api/v1/top-gainers-20d",
         response_model=TopGainers20dResponse,
-        tags=["market-data"],
-        summary="Rank the top gainers over an exact 20-session window",
+        tags=["市场数据"],
+        summary="查询最近二十个交易日涨幅榜",
+        description="按严格的二十交易日窗口计算区间收益率，并返回涨幅最高的股票。",
     )
     def top_gainers_20d(
         _: ApiKeyDependency,
@@ -370,8 +389,9 @@ def create_app(
     @app.get(
         "/api/v1/close-price-new-highs-120d",
         response_model=ClosePriceNewHighs120dResponse,
-        tags=["market-data"],
-        summary="Query SSE and SZSE stocks making strict 120-session closing highs",
+        tags=["市场数据"],
+        summary="查询沪深两市收盘价创一百二十日新高的股票",
+        description="返回最新交易日收盘价严格高于此前一百一十九个交易日最高收盘价的股票。",
     )
     def close_price_new_highs_120d(
         _: ApiKeyDependency,
@@ -382,15 +402,13 @@ def create_app(
     @app.get(
         "/api/v1/board-indexes/883423/bias",
         response_model=BoardIndexBiasResponse,
-        tags=["market-data"],
-        summary="Query the latest THS 883423 MA5 bias metrics",
+        tags=["市场数据"],
+        summary="查询同花顺 883423 板块最新五日线乖离指标",
         description=(
-            "Uses fresh stored THS:883423 daily bars first. Missing, insufficient, or stale "
-            "history triggers one bounded live THS fetch after which immutable Raw is captured "
-            "and database persistence is queued. Returns the current "
-            "five-session simple moving-average bias, its direction versus the previous "
-            "available board session, and extrema from valid samples in the latest 30 "
-            "sessions. The endpoint accepts no input and never falls back to another board."
+            "优先使用数据库中有效的 THS:883423 日线；历史缺失、不足或过期时执行一次有界实时"
+            "获取，保存不可变原始数据并异步入库。返回当前五日简单移动平均乖离率、相对上一"
+            "有效交易日的变化方向，以及近三十个交易日有效样本的最高和最低乖离率。本接口"
+            "不接收参数，也不会回退到其他板块。"
         ),
         responses={
             401: {"model": ErrorResponse},
@@ -412,12 +430,11 @@ def create_app(
     @app.get(
         "/api/v1/call-auction-one-price-limits",
         response_model=AuctionOnePriceLimitResponse,
-        tags=["market-data"],
-        summary="Calculate evidence-complete 09:25:50 mainboard one-price limits",
+        tags=["市场数据"],
+        summary="实时计算 09:25:50 主板一字涨跌停列表",
         description=(
-            "Selects one stored 09:25:50 SSE/SZSE market snapshot and calculates the accepted "
-            "mainboard 10% price limits at read time. It does not depend on the nightly "
-            "price-limit batch, fetch providers, use later daily bars, or write data."
+            "选取一批已存储的沪深市场 09:25:50 快照，在读取时按已接受的主板百分之十涨跌停"
+            "规则计算结果。不依赖夜间涨跌停批次，不访问行情提供方，不使用更晚的日线，也不写入数据。"
         ),
     )
     def auction_one_price_limits(
@@ -430,19 +447,14 @@ def create_app(
     @app.get(
         "/api/v1/call-auction-indicative-details",
         response_model=AuctionIndicativeDetailResponse,
-        tags=["market-data"],
-        summary="Query current-day call-auction virtual indicative matching details",
+        tags=["市场数据"],
+        summary="查询当日集合竞价虚拟匹配明细",
         description=(
-            "Accepts one six-digit SSE/SZSE stock code and first reads the current Shanghai "
-            "date's latest stored snapshot. Only an explicit database miss triggers a bounded "
-            "Eastmoney fetch for 09:15:00-09:25:59 virtual indicative/reference price and "
-            "displayed matching-volume observations. Live data is returned immediately after "
-            "immutable Raw capture while database registration is queued asynchronously. "
-            "These are not exchange trade ticks or order-by-order records. The source display "
-            "classification is untrusted and is not a trade direction. data_origin and "
-            "persistence_status distinguish stored data from a queued live result. Items are "
-            "ordered by observed_at then source_sequence. Timestamp fields are rendered in "
-            "Asia/Shanghai as YYYY-MM-DD HH:mm:ss."
+            "接收一个六位沪深股票代码，优先读取上海时区当日最新数据库快照。仅在数据库明确"
+            "无数据时，有界访问东方财富，获取 09:15:00 至 09:25:59 的虚拟匹配或参考价格及"
+            "展示匹配量。实时结果在保存不可变原始数据后立即返回，数据库登记异步执行。该数据"
+            "不是交易所成交明细或逐笔委托，来源展示分类也不代表成交方向。结果按观察时间和"
+            "来源序号正序排列，时间格式为上海时区 YYYY-MM-DD HH:mm:ss。"
         ),
     )
     def auction_indicative_details(
@@ -459,6 +471,7 @@ def create_app(
         except PublicQueryNotFound:
             return live_service.fetch_current(symbol, offset, limit)
 
+    app.openapi_schema = localize_openapi(app.openapi())
     return app
 
 

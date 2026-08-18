@@ -5,17 +5,19 @@
         "additionalProperties": false,
         "properties": {
           "displayed_volume_shares": {
+            "description": "来源页面展示的竞价匹配量，单位为股。",
             "minimum": 0.0,
             "title": "Displayed Volume Shares",
             "type": "integer"
           },
           "indicative_price": {
+            "description": "竞价虚拟匹配价格。",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Indicative Price",
             "type": "string"
           },
           "observed_at": {
-            "description": "Asia/Shanghai wall-clock time formatted as YYYY-MM-DD HH:mm:ss",
+            "description": "行情观察时间，按上海时区格式化。",
             "examples": [
               "2026-08-14 09:15:05"
             ],
@@ -23,6 +25,7 @@
             "type": "string"
           },
           "source_display_classification": {
+            "description": "来源页面展示的分类；不代表成交方向。",
             "enum": [
               "internal",
               "external",
@@ -32,6 +35,7 @@
             "type": "string"
           },
           "source_sequence": {
+            "description": "来源记录的稳定排序序号。",
             "minimum": 0.0,
             "title": "Source Sequence",
             "type": "integer"
@@ -51,10 +55,12 @@
         "additionalProperties": false,
         "properties": {
           "cache_hit": {
+            "description": "本次结果是否命中服务内缓存。",
             "title": "Cache Hit",
             "type": "boolean"
           },
           "data_origin": {
+            "description": "本次返回数据的来源。",
             "enum": [
               "database",
               "eastmoney_live"
@@ -63,7 +69,7 @@
             "type": "string"
           },
           "fetched_at": {
-            "description": "Asia/Shanghai wall-clock time formatted as YYYY-MM-DD HH:mm:ss",
+            "description": "数据获取时间，按上海时区格式化。",
             "examples": [
               "2026-08-14 11:26:46"
             ],
@@ -71,10 +77,12 @@
             "type": "string"
           },
           "has_more": {
+            "description": "是否还有未返回的记录。",
             "title": "Has More",
             "type": "boolean"
           },
           "ingestion_id": {
+            "description": "采集批次标识。",
             "format": "uuid",
             "title": "Ingestion Id",
             "type": "string"
@@ -92,24 +100,29 @@
                 "type": "null"
               }
             ],
+            "description": "所选采集批次的状态。",
             "title": "Ingestion Status"
           },
           "input_hash": {
+            "description": "用于追溯计算输入的哈希值。",
             "pattern": "^[0-9a-f]{64}$",
             "title": "Input Hash",
             "type": "string"
           },
           "is_exchange_trade_tick": {
             "const": false,
+            "description": "是否为交易所成交明细；本接口固定为否。",
             "title": "Is Exchange Trade Tick",
             "type": "boolean"
           },
           "is_order_by_order": {
             "const": false,
+            "description": "是否为逐笔委托数据；本接口固定为否。",
             "title": "Is Order By Order",
             "type": "boolean"
           },
           "items": {
+            "description": "返回的数据记录列表。",
             "items": {
               "$ref": "#/components/schemas/AuctionIndicativeDetailItem"
             },
@@ -118,15 +131,18 @@
           },
           "live_provider_derived": {
             "const": true,
+            "description": "结果是否包含实时来源数据的计算值。",
             "title": "Live Provider Derived",
             "type": "boolean"
           },
           "offset": {
+            "description": "从结果集起点跳过的记录数。",
             "minimum": 0.0,
             "title": "Offset",
             "type": "integer"
           },
           "persistence_status": {
+            "description": "异步持久化状态。",
             "enum": [
               "queued",
               "persisted"
@@ -135,14 +151,17 @@
             "type": "string"
           },
           "quality": {
-            "$ref": "#/components/schemas/AuctionIndicativeQuality"
+            "$ref": "#/components/schemas/AuctionIndicativeQuality",
+            "description": "数据质量摘要。"
           },
           "raw_id": {
+            "description": "不可变原始数据对象标识。",
             "format": "uuid",
             "title": "Raw Id",
             "type": "string"
           },
           "returned_count": {
+            "description": "本次实际返回的记录数。",
             "maximum": 500.0,
             "minimum": 0.0,
             "title": "Returned Count",
@@ -150,24 +169,29 @@
           },
           "semantics": {
             "const": "auction_virtual_indicative_matching_detail",
+            "description": "数据语义标识。",
             "title": "Semantics",
             "type": "string"
           },
           "source": {
             "const": "eastmoney",
+            "description": "数据来源。",
             "title": "Source",
             "type": "string"
           },
           "symbol": {
+            "description": "带交易所前缀的标准证券代码。",
             "title": "Symbol",
             "type": "string"
           },
           "total_count": {
+            "description": "符合查询条件的记录总数。",
             "minimum": 0.0,
             "title": "Total Count",
             "type": "integer"
           },
           "trade_date": {
+            "description": "交易日。",
             "format": "date",
             "title": "Trade Date",
             "type": "string"
@@ -182,6 +206,7 @@
                 "type": "null"
               }
             ],
+            "description": "不可变结果版本。",
             "title": "Version"
           }
         },
@@ -214,12 +239,14 @@
         "additionalProperties": false,
         "properties": {
           "accepted_auction_row_count": {
+            "description": "通过校验的竞价记录数。",
             "exclusiveMaximum": 5000.0,
             "minimum": 0.0,
             "title": "Accepted Auction Row Count",
             "type": "integer"
           },
           "database_persistence": {
+            "description": "数据库异步持久化状态。",
             "enum": [
               "queued",
               "persisted"
@@ -229,21 +256,25 @@
           },
           "raw_captured": {
             "const": true,
+            "description": "是否已经保存不可变原始数据。",
             "title": "Raw Captured",
             "type": "boolean"
           },
           "source_display_classification_trusted": {
             "const": false,
+            "description": "来源展示分类是否可作为可信交易方向。",
             "title": "Source Display Classification Trusted",
             "type": "boolean"
           },
           "source_row_count": {
+            "description": "数据源返回的原始记录数。",
             "maximum": 5000.0,
             "minimum": 0.0,
             "title": "Source Row Count",
             "type": "integer"
           },
           "status": {
+            "description": "状态。",
             "enum": [
               "complete",
               "partial"
@@ -267,6 +298,7 @@
         "additionalProperties": false,
         "properties": {
           "code": {
+            "description": "不含交易所前缀的六位股票代码。",
             "pattern": "^[0-9]{6}$",
             "title": "Code",
             "type": "string"
@@ -281,6 +313,7 @@
                 "type": "null"
               }
             ],
+            "description": "截至快照时点的累计金额，单位为人民币元。",
             "title": "Cumulative Amount"
           },
           "cumulative_volume": {
@@ -293,9 +326,11 @@
                 "type": "null"
               }
             ],
+            "description": "截至快照时点的累计数量，单位为股。",
             "title": "Cumulative Volume"
           },
           "direction": {
+            "description": "涨停或跌停方向。",
             "enum": [
               "up",
               "down"
@@ -304,30 +339,36 @@
             "type": "string"
           },
           "indicated_price": {
+            "description": "竞价指示价格。",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Indicated Price",
             "type": "string"
           },
           "limit_price": {
+            "description": "按价格限制规则计算的涨停价或跌停价。",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Limit Price",
             "type": "string"
           },
           "name": {
+            "description": "证券或板块名称。",
             "title": "Name",
             "type": "string"
           },
           "observed_at": {
+            "description": "行情观察时间，按上海时区格式化。",
             "format": "date-time",
             "title": "Observed At",
             "type": "string"
           },
           "previous_close": {
+            "description": "上一交易日收盘价。",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Previous Close",
             "type": "string"
           },
           "symbol": {
+            "description": "带交易所前缀的标准证券代码。",
             "title": "Symbol",
             "type": "string"
           }
@@ -351,15 +392,18 @@
         "properties": {
           "calculation_mode": {
             "const": "realtime_read",
+            "description": "计算模式。",
             "title": "Calculation Mode",
             "type": "string"
           },
           "candidate_count": {
+            "description": "候选股票数量。",
             "minimum": 0.0,
             "title": "Candidate Count",
             "type": "integer"
           },
           "down": {
+            "description": "一字跌停股票列表。",
             "items": {
               "$ref": "#/components/schemas/AuctionOnePriceLimitItem"
             },
@@ -367,16 +411,19 @@
             "type": "array"
           },
           "down_count": {
+            "description": "一字跌停股票数量。",
             "minimum": 0.0,
             "title": "Down Count",
             "type": "integer"
           },
           "ingestion_id": {
+            "description": "采集批次标识。",
             "format": "uuid",
             "title": "Ingestion Id",
             "type": "string"
           },
           "ingestion_status": {
+            "description": "所选采集批次的状态。",
             "enum": [
               "succeeded",
               "partial"
@@ -385,12 +432,14 @@
             "type": "string"
           },
           "omitted_incomplete_count": {
+            "description": "因证据字段不完整而省略的记录数。",
             "minimum": 0.0,
             "title": "Omitted Incomplete Count",
             "type": "integer"
           },
           "price_limit_algorithm_version": {
             "const": "1.0.0",
+            "description": "涨跌停价格计算算法版本。",
             "title": "Price Limit Algorithm Version",
             "type": "string"
           },
@@ -404,24 +453,29 @@
                 "type": "null"
               }
             ],
+            "description": "涨跌停价格计算批次标识。",
             "title": "Price Limit Calculation Id"
           },
           "price_limit_rule_version": {
             "const": "CN_MAINBOARD_2026_07_06",
+            "description": "涨跌停价格规则版本。",
             "title": "Price Limit Rule Version",
             "type": "string"
           },
           "snapshot_window": {
             "const": "09:25:50-09:29:59 Asia/Shanghai",
+            "description": "允许参与计算的快照时间窗口。",
             "title": "Snapshot Window",
             "type": "string"
           },
           "trade_date": {
+            "description": "交易日。",
             "format": "date",
             "title": "Trade Date",
             "type": "string"
           },
           "up": {
+            "description": "一字涨停股票列表。",
             "items": {
               "$ref": "#/components/schemas/AuctionOnePriceLimitItem"
             },
@@ -429,6 +483,7 @@
             "type": "array"
           },
           "up_count": {
+            "description": "一字涨停股票数量。",
             "minimum": 0.0,
             "title": "Up Count",
             "type": "integer"
@@ -458,6 +513,7 @@
         "properties": {
           "algorithm_version": {
             "const": "board_index_bias_v1",
+            "description": "计算算法版本。",
             "title": "Algorithm Version",
             "type": "string"
           },
@@ -471,6 +527,7 @@
                 "type": "null"
               }
             ],
+            "description": "当日收盘价相对五日均线的乖离率，单位为百分比。",
             "title": "Bias 5 Pct"
           },
           "bias_direction": {
@@ -487,9 +544,11 @@
                 "type": "null"
               }
             ],
+            "description": "乖离率相对上一交易日的变化方向。",
             "title": "Bias Direction"
           },
           "bias_sample_count": {
+            "description": "用于近三十日极值计算的有效样本数。",
             "maximum": 30.0,
             "minimum": 0.0,
             "title": "Bias Sample Count",
@@ -497,24 +556,29 @@
           },
           "board_code": {
             "const": "883423",
+            "description": "板块的六位代码。",
             "title": "Board Code",
             "type": "string"
           },
           "board_id": {
             "const": "THS:883423",
+            "description": "带市场前缀的板块标识。",
             "title": "Board Id",
             "type": "string"
           },
           "board_name": {
+            "description": "板块名称。",
             "title": "Board Name",
             "type": "string"
           },
           "close": {
+            "description": "收盘价。",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Close",
             "type": "string"
           },
           "data_origin": {
+            "description": "本次返回数据的来源。",
             "enum": [
               "database",
               "ths_live"
@@ -523,6 +587,7 @@
             "type": "string"
           },
           "fetched_at": {
+            "description": "数据获取时间，按上海时区格式化。",
             "format": "date-time",
             "title": "Fetched At",
             "type": "string"
@@ -537,6 +602,7 @@
                 "type": "null"
               }
             ],
+            "description": "近三十个交易日内的最高五日线乖离率。",
             "title": "Highest Bias 5 Pct"
           },
           "highest_bias_trade_date": {
@@ -549,6 +615,7 @@
                 "type": "null"
               }
             ],
+            "description": "最高五日线乖离率对应的交易日。",
             "title": "Highest Bias Trade Date"
           },
           "lowest_bias_5_pct": {
@@ -561,6 +628,7 @@
                 "type": "null"
               }
             ],
+            "description": "近三十个交易日内的最低五日线乖离率。",
             "title": "Lowest Bias 5 Pct"
           },
           "lowest_bias_trade_date": {
@@ -573,6 +641,7 @@
                 "type": "null"
               }
             ],
+            "description": "最低五日线乖离率对应的交易日。",
             "title": "Lowest Bias Trade Date"
           },
           "moving_average_5": {
@@ -585,9 +654,11 @@
                 "type": "null"
               }
             ],
+            "description": "最近五个有效交易日收盘价的简单移动平均值。",
             "title": "Moving Average 5"
           },
           "persistence_status": {
+            "description": "异步持久化状态。",
             "enum": [
               "persisted",
               "queued"
@@ -605,6 +676,7 @@
                 "type": "null"
               }
             ],
+            "description": "上一有效交易日的五日线乖离率。",
             "title": "Previous Bias 5 Pct"
           },
           "previous_trade_date": {
@@ -617,15 +689,18 @@
                 "type": "null"
               }
             ],
+            "description": "上一有效交易日。",
             "title": "Previous Trade Date"
           },
           "trade_date": {
+            "description": "交易日。",
             "format": "date",
             "title": "Trade Date",
             "type": "string"
           },
           "window_trading_days": {
             "const": 30,
+            "description": "近端统计窗口的交易日数量。",
             "title": "Window Trading Days",
             "type": "integer"
           }
@@ -659,11 +734,13 @@
         "additionalProperties": false,
         "properties": {
           "collected_at": {
+            "description": "实际完成采集的时间。",
             "format": "date-time",
             "title": "Collected At",
             "type": "string"
           },
           "items": {
+            "description": "返回的数据记录列表。",
             "items": {
               "$ref": "#/components/schemas/CallAuctionMarketSeriesSnapshotItem"
             },
@@ -671,6 +748,7 @@
             "type": "array"
           },
           "missing_codes": {
+            "description": "请求中未查询到数据的六位股票代码。",
             "items": {
               "pattern": "^[0-9]{6}$",
               "type": "string"
@@ -679,17 +757,20 @@
             "type": "array"
           },
           "requested_count": {
+            "description": "请求的股票代码数量。",
             "maximum": 500.0,
             "minimum": 1.0,
             "title": "Requested Count",
             "type": "integer"
           },
           "returned_count": {
+            "description": "本次实际返回的记录数。",
             "minimum": 0.0,
             "title": "Returned Count",
             "type": "integer"
           },
           "round_status": {
+            "description": "本轮采集状态。",
             "enum": [
               "succeeded",
               "partial",
@@ -699,12 +780,14 @@
             "type": "string"
           },
           "sample_seq": {
+            "description": "采集轮次序号。",
             "maximum": 31.0,
             "minimum": 0.0,
             "title": "Sample Seq",
             "type": "integer"
           },
           "scheduled_at": {
+            "description": "计划采集时间。",
             "format": "date-time",
             "title": "Scheduled At",
             "type": "string"
@@ -719,6 +802,7 @@
                 "type": "null"
               }
             ],
+            "description": "本次查询选中的采集批次标识。",
             "title": "Selected Ingestion Id"
           }
         },
@@ -749,6 +833,7 @@
                 "type": "null"
               }
             ],
+            "description": "卖一价。",
             "title": "Ask1 Price"
           },
           "ask1_volume": {
@@ -761,6 +846,7 @@
                 "type": "null"
               }
             ],
+            "description": "卖一量，单位为股；价格为空或为零时仍保留来源返回的数量。",
             "title": "Ask1 Volume"
           },
           "ask2_price": {
@@ -773,6 +859,7 @@
                 "type": "null"
               }
             ],
+            "description": "卖二价。",
             "title": "Ask2 Price"
           },
           "ask2_volume": {
@@ -785,6 +872,7 @@
                 "type": "null"
               }
             ],
+            "description": "卖二量，单位为股；价格为空或为零时仍保留来源返回的数量。",
             "title": "Ask2 Volume"
           },
           "ask3_price": {
@@ -797,6 +885,7 @@
                 "type": "null"
               }
             ],
+            "description": "卖三价。",
             "title": "Ask3 Price"
           },
           "ask3_volume": {
@@ -809,6 +898,7 @@
                 "type": "null"
               }
             ],
+            "description": "卖三量，单位为股；价格为空或为零时仍保留来源返回的数量。",
             "title": "Ask3 Volume"
           },
           "ask4_price": {
@@ -821,6 +911,7 @@
                 "type": "null"
               }
             ],
+            "description": "卖四价。",
             "title": "Ask4 Price"
           },
           "ask4_volume": {
@@ -833,6 +924,7 @@
                 "type": "null"
               }
             ],
+            "description": "卖四量，单位为股；价格为空或为零时仍保留来源返回的数量。",
             "title": "Ask4 Volume"
           },
           "ask5_price": {
@@ -845,6 +937,7 @@
                 "type": "null"
               }
             ],
+            "description": "卖五价。",
             "title": "Ask5 Price"
           },
           "ask5_volume": {
@@ -857,9 +950,11 @@
                 "type": "null"
               }
             ],
+            "description": "卖五量，单位为股；价格为空或为零时仍保留来源返回的数量。",
             "title": "Ask5 Volume"
           },
           "batch_code": {
+            "description": "采集批次代码，格式为 HHMMSS。",
             "pattern": "^[0-9]{6}$",
             "title": "Batch Code",
             "type": "string"
@@ -874,6 +969,7 @@
                 "type": "null"
               }
             ],
+            "description": "买一价。",
             "title": "Bid1 Price"
           },
           "bid1_volume": {
@@ -886,6 +982,7 @@
                 "type": "null"
               }
             ],
+            "description": "买一量，单位为股；价格为空或为零时仍保留来源返回的数量。",
             "title": "Bid1 Volume"
           },
           "bid2_price": {
@@ -898,6 +995,7 @@
                 "type": "null"
               }
             ],
+            "description": "买二价。",
             "title": "Bid2 Price"
           },
           "bid2_volume": {
@@ -910,6 +1008,7 @@
                 "type": "null"
               }
             ],
+            "description": "买二量，单位为股；价格为空或为零时仍保留来源返回的数量。",
             "title": "Bid2 Volume"
           },
           "bid3_price": {
@@ -922,6 +1021,7 @@
                 "type": "null"
               }
             ],
+            "description": "买三价。",
             "title": "Bid3 Price"
           },
           "bid3_volume": {
@@ -934,6 +1034,7 @@
                 "type": "null"
               }
             ],
+            "description": "买三量，单位为股；价格为空或为零时仍保留来源返回的数量。",
             "title": "Bid3 Volume"
           },
           "bid4_price": {
@@ -946,6 +1047,7 @@
                 "type": "null"
               }
             ],
+            "description": "买四价。",
             "title": "Bid4 Price"
           },
           "bid4_volume": {
@@ -958,6 +1060,7 @@
                 "type": "null"
               }
             ],
+            "description": "买四量，单位为股；价格为空或为零时仍保留来源返回的数量。",
             "title": "Bid4 Volume"
           },
           "bid5_price": {
@@ -970,6 +1073,7 @@
                 "type": "null"
               }
             ],
+            "description": "买五价。",
             "title": "Bid5 Price"
           },
           "bid5_volume": {
@@ -982,9 +1086,11 @@
                 "type": "null"
               }
             ],
+            "description": "买五量，单位为股；价格为空或为零时仍保留来源返回的数量。",
             "title": "Bid5 Volume"
           },
           "code": {
+            "description": "不含交易所前缀的六位股票代码。",
             "pattern": "^[0-9]{6}$",
             "title": "Code",
             "type": "string"
@@ -999,6 +1105,7 @@
                 "type": "null"
               }
             ],
+            "description": "截至快照时点的累计金额，单位为人民币元。",
             "title": "Cumulative Amount"
           },
           "cumulative_volume": {
@@ -1011,6 +1118,7 @@
                 "type": "null"
               }
             ],
+            "description": "截至快照时点的累计数量，单位为股。",
             "title": "Cumulative Volume"
           },
           "high_price": {
@@ -1023,6 +1131,7 @@
                 "type": "null"
               }
             ],
+            "description": "截至快照时点的最高价。",
             "title": "High Price"
           },
           "last_price": {
@@ -1035,6 +1144,7 @@
                 "type": "null"
               }
             ],
+            "description": "快照时点价格；竞价阶段按既定口径取值。",
             "title": "Last Price"
           },
           "low_price": {
@@ -1047,9 +1157,11 @@
                 "type": "null"
               }
             ],
+            "description": "截至快照时点的最低价。",
             "title": "Low Price"
           },
           "observed_at": {
+            "description": "行情观察时间，按上海时区格式化。",
             "format": "date-time",
             "title": "Observed At",
             "type": "string"
@@ -1064,13 +1176,16 @@
                 "type": "null"
               }
             ],
+            "description": "上一交易日收盘价。",
             "title": "Previous Close"
           },
           "symbol": {
+            "description": "带交易所前缀的标准证券代码。",
             "title": "Symbol",
             "type": "string"
           },
           "value_semantics": {
+            "description": "竞价快照价格和数量字段采用的语义口径。",
             "enum": [
               "auction_indicative",
               "opening_trade",
@@ -1099,6 +1214,7 @@
         "additionalProperties": false,
         "properties": {
           "codes": {
+            "description": "不含交易所前缀的六位股票代码集合，最多五百个。",
             "items": {
               "pattern": "^[0-9]{6}$",
               "type": "string"
@@ -1109,6 +1225,7 @@
             "type": "array"
           },
           "trade_date": {
+            "description": "交易日。",
             "format": "date",
             "title": "Trade Date",
             "type": "string"
@@ -1126,22 +1243,26 @@
         "properties": {
           "expected_rounds": {
             "const": 32,
+            "description": "竞价序列应包含的采集轮次数。",
             "title": "Expected Rounds",
             "type": "integer"
           },
           "requested_count": {
+            "description": "请求的股票代码数量。",
             "maximum": 500.0,
             "minimum": 1.0,
             "title": "Requested Count",
             "type": "integer"
           },
           "returned_rounds": {
+            "description": "本次实际返回的采集轮次数。",
             "maximum": 32.0,
             "minimum": 0.0,
             "title": "Returned Rounds",
             "type": "integer"
           },
           "rounds": {
+            "description": "按计划执行时间正序排列的采集轮次。",
             "items": {
               "$ref": "#/components/schemas/CallAuctionMarketSeriesRound"
             },
@@ -1149,11 +1270,13 @@
             "type": "array"
           },
           "session_id": {
+            "description": "竞价序列采集会话标识。",
             "format": "uuid",
             "title": "Session Id",
             "type": "string"
           },
           "session_status": {
+            "description": "竞价序列采集会话状态。",
             "enum": [
               "succeeded",
               "partial"
@@ -1162,6 +1285,7 @@
             "type": "string"
           },
           "trade_date": {
+            "description": "交易日。",
             "format": "date",
             "title": "Trade Date",
             "type": "string"
@@ -1192,6 +1316,7 @@
                 "type": "null"
               }
             ],
+            "description": "卖一价。",
             "title": "Ask1 Price"
           },
           "ask1_volume": {
@@ -1204,6 +1329,7 @@
                 "type": "null"
               }
             ],
+            "description": "卖一量，单位为股；价格为空或为零时仍保留来源返回的数量。",
             "title": "Ask1 Volume"
           },
           "ask2_price": {
@@ -1216,6 +1342,7 @@
                 "type": "null"
               }
             ],
+            "description": "卖二价。",
             "title": "Ask2 Price"
           },
           "ask2_volume": {
@@ -1228,6 +1355,7 @@
                 "type": "null"
               }
             ],
+            "description": "卖二量，单位为股；价格为空或为零时仍保留来源返回的数量。",
             "title": "Ask2 Volume"
           },
           "ask3_price": {
@@ -1240,6 +1368,7 @@
                 "type": "null"
               }
             ],
+            "description": "卖三价。",
             "title": "Ask3 Price"
           },
           "ask3_volume": {
@@ -1252,6 +1381,7 @@
                 "type": "null"
               }
             ],
+            "description": "卖三量，单位为股；价格为空或为零时仍保留来源返回的数量。",
             "title": "Ask3 Volume"
           },
           "ask4_price": {
@@ -1264,6 +1394,7 @@
                 "type": "null"
               }
             ],
+            "description": "卖四价。",
             "title": "Ask4 Price"
           },
           "ask4_volume": {
@@ -1276,6 +1407,7 @@
                 "type": "null"
               }
             ],
+            "description": "卖四量，单位为股；价格为空或为零时仍保留来源返回的数量。",
             "title": "Ask4 Volume"
           },
           "ask5_price": {
@@ -1288,6 +1420,7 @@
                 "type": "null"
               }
             ],
+            "description": "卖五价。",
             "title": "Ask5 Price"
           },
           "ask5_volume": {
@@ -1300,6 +1433,7 @@
                 "type": "null"
               }
             ],
+            "description": "卖五量，单位为股；价格为空或为零时仍保留来源返回的数量。",
             "title": "Ask5 Volume"
           },
           "bid1_price": {
@@ -1312,6 +1446,7 @@
                 "type": "null"
               }
             ],
+            "description": "买一价。",
             "title": "Bid1 Price"
           },
           "bid1_volume": {
@@ -1324,6 +1459,7 @@
                 "type": "null"
               }
             ],
+            "description": "买一量，单位为股；价格为空或为零时仍保留来源返回的数量。",
             "title": "Bid1 Volume"
           },
           "bid2_price": {
@@ -1336,6 +1472,7 @@
                 "type": "null"
               }
             ],
+            "description": "买二价。",
             "title": "Bid2 Price"
           },
           "bid2_volume": {
@@ -1348,6 +1485,7 @@
                 "type": "null"
               }
             ],
+            "description": "买二量，单位为股；价格为空或为零时仍保留来源返回的数量。",
             "title": "Bid2 Volume"
           },
           "bid3_price": {
@@ -1360,6 +1498,7 @@
                 "type": "null"
               }
             ],
+            "description": "买三价。",
             "title": "Bid3 Price"
           },
           "bid3_volume": {
@@ -1372,6 +1511,7 @@
                 "type": "null"
               }
             ],
+            "description": "买三量，单位为股；价格为空或为零时仍保留来源返回的数量。",
             "title": "Bid3 Volume"
           },
           "bid4_price": {
@@ -1384,6 +1524,7 @@
                 "type": "null"
               }
             ],
+            "description": "买四价。",
             "title": "Bid4 Price"
           },
           "bid4_volume": {
@@ -1396,6 +1537,7 @@
                 "type": "null"
               }
             ],
+            "description": "买四量，单位为股；价格为空或为零时仍保留来源返回的数量。",
             "title": "Bid4 Volume"
           },
           "bid5_price": {
@@ -1408,6 +1550,7 @@
                 "type": "null"
               }
             ],
+            "description": "买五价。",
             "title": "Bid5 Price"
           },
           "bid5_volume": {
@@ -1420,9 +1563,11 @@
                 "type": "null"
               }
             ],
+            "description": "买五量，单位为股；价格为空或为零时仍保留来源返回的数量。",
             "title": "Bid5 Volume"
           },
           "code": {
+            "description": "不含交易所前缀的六位股票代码。",
             "pattern": "^[0-9]{6}$",
             "title": "Code",
             "type": "string"
@@ -1437,6 +1582,7 @@
                 "type": "null"
               }
             ],
+            "description": "截至快照时点的累计金额，单位为人民币元。",
             "title": "Cumulative Amount"
           },
           "cumulative_volume": {
@@ -1449,6 +1595,7 @@
                 "type": "null"
               }
             ],
+            "description": "截至快照时点的累计数量，单位为股。",
             "title": "Cumulative Volume"
           },
           "high_price": {
@@ -1461,6 +1608,7 @@
                 "type": "null"
               }
             ],
+            "description": "截至快照时点的最高价。",
             "title": "High Price"
           },
           "last_price": {
@@ -1473,6 +1621,7 @@
                 "type": "null"
               }
             ],
+            "description": "快照时点价格；竞价阶段按既定口径取值。",
             "title": "Last Price"
           },
           "low_price": {
@@ -1485,9 +1634,11 @@
                 "type": "null"
               }
             ],
+            "description": "截至快照时点的最低价。",
             "title": "Low Price"
           },
           "observed_at": {
+            "description": "行情观察时间，按上海时区格式化。",
             "format": "date-time",
             "title": "Observed At",
             "type": "string"
@@ -1502,6 +1653,7 @@
                 "type": "null"
               }
             ],
+            "description": "上一交易日收盘价。",
             "title": "Previous Close"
           },
           "seal_amount": {
@@ -1514,9 +1666,11 @@
                 "type": "null"
               }
             ],
+            "description": "竞价封单额，按买一价乘以买一量计算，单位为人民币元。",
             "title": "Seal Amount"
           },
           "symbol": {
+            "description": "带交易所前缀的标准证券代码。",
             "title": "Symbol",
             "type": "string"
           }
@@ -1538,6 +1692,7 @@
         "additionalProperties": false,
         "properties": {
           "codes": {
+            "description": "不含交易所前缀的六位股票代码集合，最多五百个。",
             "items": {
               "pattern": "^[0-9]{6}$",
               "type": "string"
@@ -1548,6 +1703,7 @@
             "type": "array"
           },
           "trade_date": {
+            "description": "交易日。",
             "format": "date",
             "title": "Trade Date",
             "type": "string"
@@ -1564,11 +1720,13 @@
         "additionalProperties": false,
         "properties": {
           "ingestion_id": {
+            "description": "采集批次标识。",
             "format": "uuid",
             "title": "Ingestion Id",
             "type": "string"
           },
           "ingestion_status": {
+            "description": "所选采集批次的状态。",
             "enum": [
               "succeeded",
               "partial"
@@ -1577,6 +1735,7 @@
             "type": "string"
           },
           "items": {
+            "description": "返回的数据记录列表。",
             "items": {
               "$ref": "#/components/schemas/CallAuctionMarketSnapshotItem"
             },
@@ -1584,6 +1743,7 @@
             "type": "array"
           },
           "missing_codes": {
+            "description": "请求中未查询到数据的六位股票代码。",
             "items": {
               "pattern": "^[0-9]{6}$",
               "type": "string"
@@ -1592,17 +1752,20 @@
             "type": "array"
           },
           "requested_count": {
+            "description": "请求的股票代码数量。",
             "maximum": 500.0,
             "minimum": 1.0,
             "title": "Requested Count",
             "type": "integer"
           },
           "returned_count": {
+            "description": "本次实际返回的记录数。",
             "minimum": 0.0,
             "title": "Returned Count",
             "type": "integer"
           },
           "trade_date": {
+            "description": "交易日。",
             "format": "date",
             "title": "Trade Date",
             "type": "string"
@@ -1624,11 +1787,13 @@
         "additionalProperties": false,
         "properties": {
           "member_count": {
+            "description": "快照中的成员总数。",
             "minimum": 0.0,
             "title": "Member Count",
             "type": "integer"
           },
           "members": {
+            "description": "分类成员证券代码列表。",
             "items": {
               "type": "string"
             },
@@ -1636,11 +1801,13 @@
             "type": "array"
           },
           "returned_count": {
+            "description": "本次实际返回的记录数。",
             "minimum": 0.0,
             "title": "Returned Count",
             "type": "integer"
           },
           "snapshot_date": {
+            "description": "分类快照日期。",
             "format": "date",
             "title": "Snapshot Date",
             "type": "string"
@@ -1668,30 +1835,36 @@
         "additionalProperties": false,
         "properties": {
           "breakout_pct": {
+            "description": "收盘价超过此前一百一十九日最高收盘价的幅度，单位为百分比。",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Breakout Pct",
             "type": "string"
           },
           "close": {
+            "description": "收盘价。",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Close",
             "type": "string"
           },
           "code": {
+            "description": "不含交易所前缀的六位股票代码。",
             "pattern": "^[0-9]{6}$",
             "title": "Code",
             "type": "string"
           },
           "name": {
+            "description": "证券或板块名称。",
             "title": "Name",
             "type": "string"
           },
           "previous_119d_high": {
+            "description": "当日前一百一十九个交易日的最高收盘价。",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Previous 119D High",
             "type": "string"
           },
           "symbol": {
+            "description": "带交易所前缀的标准证券代码。",
             "title": "Symbol",
             "type": "string"
           }
@@ -1711,21 +1884,25 @@
         "additionalProperties": false,
         "properties": {
           "incomplete_history": {
+            "description": "因历史数据不足而省略的股票数量。",
             "minimum": 0.0,
             "title": "Incomplete History",
             "type": "integer"
           },
           "missing_name": {
+            "description": "因缺少证券名称而省略的记录数。",
             "minimum": 0.0,
             "title": "Missing Name",
             "type": "integer"
           },
           "non_trading_bar": {
+            "description": "因行情不属于有效交易日而省略的记录数。",
             "minimum": 0.0,
             "title": "Non Trading Bar",
             "type": "integer"
           },
           "nonpositive_price": {
+            "description": "因价格不大于零而省略的记录数。",
             "minimum": 0.0,
             "title": "Nonpositive Price",
             "type": "integer"
@@ -1745,16 +1922,19 @@
         "properties": {
           "comparison_session_count": {
             "const": 119,
+            "description": "用于比较的历史交易日数量。",
             "title": "Comparison Session Count",
             "type": "integer"
           },
           "eligible_history_count": {
+            "description": "具备完整历史数据的股票数量。",
             "maximum": 10000.0,
             "minimum": 0.0,
             "title": "Eligible History Count",
             "type": "integer"
           },
           "items": {
+            "description": "返回的数据记录列表。",
             "items": {
               "$ref": "#/components/schemas/ClosePriceNewHigh120dItem"
             },
@@ -1762,33 +1942,39 @@
             "type": "array"
           },
           "omissions": {
-            "$ref": "#/components/schemas/ClosePriceNewHigh120dOmissions"
+            "$ref": "#/components/schemas/ClosePriceNewHigh120dOmissions",
+            "description": "本次计算省略记录的汇总。"
           },
           "omitted_count": {
+            "description": "因数据质量或业务规则而省略的记录数。",
             "maximum": 10000.0,
             "minimum": 0.0,
             "title": "Omitted Count",
             "type": "integer"
           },
           "returned_count": {
+            "description": "本次实际返回的记录数。",
             "maximum": 10000.0,
             "minimum": 0.0,
             "title": "Returned Count",
             "type": "integer"
           },
           "total_candidate_count": {
+            "description": "进入计算的候选股票总数。",
             "maximum": 10000.0,
             "minimum": 0.0,
             "title": "Total Candidate Count",
             "type": "integer"
           },
           "trade_date": {
+            "description": "交易日。",
             "format": "date",
             "title": "Trade Date",
             "type": "string"
           },
           "window_trading_session_count": {
             "const": 120,
+            "description": "新高判断窗口包含的交易日数量。",
             "title": "Window Trading Session Count",
             "type": "integer"
           }
@@ -1820,6 +2006,7 @@
                 "type": "null"
               }
             ],
+            "description": "成交金额，单位为人民币元。",
             "title": "Amount"
           },
           "close": {
@@ -1832,6 +2019,7 @@
                 "type": "null"
               }
             ],
+            "description": "收盘价。",
             "title": "Close"
           },
           "high": {
@@ -1844,6 +2032,7 @@
                 "type": "null"
               }
             ],
+            "description": "最高价。",
             "title": "High"
           },
           "is_st": {
@@ -1855,6 +2044,7 @@
                 "type": "null"
               }
             ],
+            "description": "当日是否为风险警示证券。",
             "title": "Is St"
           },
           "low": {
@@ -1867,6 +2057,7 @@
                 "type": "null"
               }
             ],
+            "description": "最低价。",
             "title": "Low"
           },
           "open": {
@@ -1879,6 +2070,7 @@
                 "type": "null"
               }
             ],
+            "description": "开盘价。",
             "title": "Open"
           },
           "previous_close": {
@@ -1891,19 +2083,23 @@
                 "type": "null"
               }
             ],
+            "description": "上一交易日收盘价。",
             "title": "Previous Close"
           },
           "symbol": {
+            "description": "带交易所前缀的标准证券代码。",
             "title": "Symbol",
             "type": "string"
           },
           "trade_date": {
+            "description": "交易日。",
             "format": "date",
             "title": "Trade Date",
             "type": "string"
           },
           "trade_status": {
-            "$ref": "#/components/schemas/TradeStatus"
+            "$ref": "#/components/schemas/TradeStatus",
+            "description": "证券当日交易状态。"
           },
           "volume": {
             "anyOf": [
@@ -1914,6 +2110,7 @@
                 "type": "null"
               }
             ],
+            "description": "成交量，单位为股。",
             "title": "Volume"
           }
         },
@@ -1937,16 +2134,19 @@
         "additionalProperties": false,
         "properties": {
           "count": {
+            "description": "返回记录总数。",
             "minimum": 0.0,
             "title": "Count",
             "type": "integer"
           },
           "end_date": {
+            "description": "查询结束日期，包含当日。",
             "format": "date",
             "title": "End Date",
             "type": "string"
           },
           "items": {
+            "description": "返回的数据记录列表。",
             "items": {
               "$ref": "#/components/schemas/DailyBarItem"
             },
@@ -1954,11 +2154,13 @@
             "type": "array"
           },
           "start_date": {
+            "description": "查询开始日期，包含当日。",
             "format": "date",
             "title": "Start Date",
             "type": "string"
           },
           "symbol": {
+            "description": "带交易所前缀的标准证券代码。",
             "title": "Symbol",
             "type": "string"
           }
@@ -1986,14 +2188,17 @@
                 "type": "null"
               }
             ],
+            "description": "成交金额，单位为人民币元。",
             "title": "Amount Cny"
           },
           "change_percent": {
+            "description": "涨跌幅，单位为百分比。",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Change Percent",
             "type": "string"
           },
           "close": {
+            "description": "收盘价。",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Close",
             "type": "string"
@@ -2008,6 +2213,7 @@
                 "type": "null"
               }
             ],
+            "description": "收盘买一价。",
             "title": "Closing Bid1 Price"
           },
           "closing_bid1_sealing_amount_cny": {
@@ -2020,6 +2226,7 @@
                 "type": "null"
               }
             ],
+            "description": "按收盘买一价和买一量计算的封单额，单位为人民币元。",
             "title": "Closing Bid1 Sealing Amount Cny"
           },
           "closing_bid1_volume_shares": {
@@ -2032,6 +2239,7 @@
                 "type": "null"
               }
             ],
+            "description": "收盘买一量，单位为股。",
             "title": "Closing Bid1 Volume Shares"
           },
           "closing_bid2_price": {
@@ -2044,6 +2252,7 @@
                 "type": "null"
               }
             ],
+            "description": "收盘买二价。",
             "title": "Closing Bid2 Price"
           },
           "closing_bid2_volume_shares": {
@@ -2056,6 +2265,7 @@
                 "type": "null"
               }
             ],
+            "description": "收盘买二量，单位为股。",
             "title": "Closing Bid2 Volume Shares"
           },
           "closing_bid3_price": {
@@ -2068,6 +2278,7 @@
                 "type": "null"
               }
             ],
+            "description": "收盘买三价。",
             "title": "Closing Bid3 Price"
           },
           "closing_bid3_volume_shares": {
@@ -2080,6 +2291,7 @@
                 "type": "null"
               }
             ],
+            "description": "收盘买三量，单位为股。",
             "title": "Closing Bid3 Volume Shares"
           },
           "closing_bid4_price": {
@@ -2092,6 +2304,7 @@
                 "type": "null"
               }
             ],
+            "description": "收盘买四价。",
             "title": "Closing Bid4 Price"
           },
           "closing_bid4_volume_shares": {
@@ -2104,6 +2317,7 @@
                 "type": "null"
               }
             ],
+            "description": "收盘买四量，单位为股。",
             "title": "Closing Bid4 Volume Shares"
           },
           "closing_bid5_price": {
@@ -2116,6 +2330,7 @@
                 "type": "null"
               }
             ],
+            "description": "收盘买五价。",
             "title": "Closing Bid5 Price"
           },
           "closing_bid5_volume_shares": {
@@ -2128,9 +2343,11 @@
                 "type": "null"
               }
             ],
+            "description": "收盘买五量，单位为股。",
             "title": "Closing Bid5 Volume Shares"
           },
           "code": {
+            "description": "不含交易所前缀的六位股票代码。",
             "title": "Code",
             "type": "string"
           },
@@ -2144,14 +2361,17 @@
                 "type": "null"
               }
             ],
+            "description": "连续涨停交易日数量。",
             "title": "Consecutive Limit Up Days"
           },
           "daily_bar_ingestion_id": {
+            "description": "日线数据采集批次标识。",
             "format": "uuid",
             "title": "Daily Bar Ingestion Id",
             "type": "string"
           },
           "duration_semantics": {
+            "description": "涨停持续时间字段的统计口径。",
             "title": "Duration Semantics",
             "type": "string"
           },
@@ -2165,14 +2385,17 @@
                 "type": "null"
               }
             ],
+            "description": "当日首次涨停时间。",
             "title": "First Limit Up At"
           },
           "free_float_market_cap_cny": {
+            "description": "流通市值，单位为人民币元。",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Free Float Market Cap Cny",
             "type": "string"
           },
           "free_float_shares": {
+            "description": "自由流通股本，单位为股。",
             "exclusiveMinimum": 0.0,
             "title": "Free Float Shares",
             "type": "integer"
@@ -2187,9 +2410,11 @@
                 "type": "null"
               }
             ],
+            "description": "自由流通换手率，单位为百分比。",
             "title": "Free Float Turnover Rate Pct"
           },
           "indicator_ingestion_id": {
+            "description": "指标来源采集批次标识。",
             "format": "uuid",
             "title": "Indicator Ingestion Id",
             "type": "string"
@@ -2204,9 +2429,11 @@
                 "type": "null"
               }
             ],
+            "description": "当日最后一次涨停时间。",
             "title": "Last Limit Up At"
           },
           "limit_price": {
+            "description": "按价格限制规则计算的涨停价或跌停价。",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Limit Price",
             "type": "string"
@@ -2221,13 +2448,16 @@
                 "type": "null"
               }
             ],
+            "description": "当日涨停持续时间，单位为秒。",
             "title": "Limit Up Duration Seconds"
           },
           "name": {
+            "description": "证券或板块名称。",
             "title": "Name",
             "type": "string"
           },
           "name_ingestion_id": {
+            "description": "证券名称来源采集批次标识。",
             "format": "uuid",
             "title": "Name Ingestion Id",
             "type": "string"
@@ -2242,6 +2472,7 @@
                 "type": "null"
               }
             ],
+            "description": "涨停打开次数。",
             "title": "Open Count"
           },
           "order_book_ingestion_id": {
@@ -2254,14 +2485,17 @@
                 "type": "null"
               }
             ],
+            "description": "盘口数据采集批次标识。",
             "title": "Order Book Ingestion Id"
           },
           "pool_calculation_id": {
+            "description": "股票池计算批次标识。",
             "format": "uuid",
             "title": "Pool Calculation Id",
             "type": "string"
           },
           "previous_close": {
+            "description": "上一交易日收盘价。",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Previous Close",
             "type": "string"
@@ -2276,6 +2510,7 @@
                 "type": "null"
               }
             ],
+            "description": "来源观察记录的采集批次标识。",
             "title": "Source Observation Ingestion Id"
           },
           "source_observation_raw_id": {
@@ -2288,6 +2523,7 @@
                 "type": "null"
               }
             ],
+            "description": "来源观察记录的原始数据标识。",
             "title": "Source Observation Raw Id"
           },
           "source_reported_sealed_funds_cny": {
@@ -2300,9 +2536,11 @@
                 "type": "null"
               }
             ],
+            "description": "数据源报告的封单资金，单位为人民币元。",
             "title": "Source Reported Sealed Funds Cny"
           },
           "symbol": {
+            "description": "带交易所前缀的标准证券代码。",
             "title": "Symbol",
             "type": "string"
           },
@@ -2316,6 +2554,7 @@
                 "type": "null"
               }
             ],
+            "description": "成交量，单位为股。",
             "title": "Volume"
           }
         },
@@ -2356,6 +2595,7 @@
         "additionalProperties": false,
         "properties": {
           "algorithm_version": {
+            "description": "计算算法版本。",
             "title": "Algorithm Version",
             "type": "string"
           },
@@ -2369,27 +2609,33 @@
                 "type": "null"
               }
             ],
+            "description": "计算批次标识。",
             "title": "Calculation Id"
           },
           "candidate_count": {
+            "description": "候选股票数量。",
             "minimum": 0.0,
             "title": "Candidate Count",
             "type": "integer"
           },
           "generated_at": {
+            "description": "结果生成时间。",
             "format": "date-time",
             "title": "Generated At",
             "type": "string"
           },
           "has_more": {
+            "description": "是否还有未返回的记录。",
             "title": "Has More",
             "type": "boolean"
           },
           "input_hash": {
+            "description": "用于追溯计算输入的哈希值。",
             "title": "Input Hash",
             "type": "string"
           },
           "items": {
+            "description": "返回的数据记录列表。",
             "items": {
               "$ref": "#/components/schemas/DailyLimitUpListItem"
             },
@@ -2397,33 +2643,40 @@
             "type": "array"
           },
           "member_count": {
+            "description": "快照中的成员总数。",
             "minimum": 0.0,
             "title": "Member Count",
             "type": "integer"
           },
           "offset": {
+            "description": "从结果集起点跳过的记录数。",
             "minimum": 0.0,
             "title": "Offset",
             "type": "integer"
           },
           "quality": {
-            "$ref": "#/components/schemas/DailyLimitUpQualitySummary"
+            "$ref": "#/components/schemas/DailyLimitUpQualitySummary",
+            "description": "数据质量摘要。"
           },
           "rejected_count": {
+            "description": "未通过校验的候选记录数。",
             "minimum": 0.0,
             "title": "Rejected Count",
             "type": "integer"
           },
           "returned_count": {
+            "description": "本次实际返回的记录数。",
             "minimum": 0.0,
             "title": "Returned Count",
             "type": "integer"
           },
           "rule_version": {
+            "description": "业务规则版本。",
             "title": "Rule Version",
             "type": "string"
           },
           "snapshot_id": {
+            "description": "不可变快照标识。",
             "format": "uuid",
             "title": "Snapshot Id",
             "type": "string"
@@ -2438,9 +2691,11 @@
                 "type": "null"
               }
             ],
+            "description": "来源数据采集批次标识。",
             "title": "Source Ingestion Id"
           },
           "status": {
+            "description": "状态。",
             "enum": [
               "ready",
               "partial",
@@ -2451,11 +2706,13 @@
             "type": "string"
           },
           "trade_date": {
+            "description": "交易日。",
             "format": "date",
             "title": "Trade Date",
             "type": "string"
           },
           "version": {
+            "description": "不可变结果版本。",
             "minimum": 1.0,
             "title": "Version",
             "type": "integer"
@@ -2491,10 +2748,12 @@
             "additionalProperties": {
               "type": "integer"
             },
+            "description": "按规则分组的质量问题数量。",
             "title": "By Rule",
             "type": "object"
           },
           "total_findings": {
+            "description": "数据质量问题总数。",
             "minimum": 0.0,
             "title": "Total Findings",
             "type": "integer"
@@ -2511,10 +2770,12 @@
         "additionalProperties": false,
         "properties": {
           "code": {
+            "description": "不含交易所前缀的六位股票代码。",
             "title": "Code",
             "type": "string"
           },
           "message": {
+            "description": "面向调用方的错误说明。",
             "title": "Message",
             "type": "string"
           }
@@ -2530,7 +2791,8 @@
         "additionalProperties": false,
         "properties": {
           "error": {
-            "$ref": "#/components/schemas/ErrorDetail"
+            "$ref": "#/components/schemas/ErrorDetail",
+            "description": "错误详情。"
           }
         },
         "required": [
@@ -2566,15 +2828,18 @@
         "properties": {
           "service": {
             "default": "market-data-center-api",
+            "description": "服务名称。",
             "title": "Service",
             "type": "string"
           },
           "status": {
+            "description": "状态。",
             "title": "Status",
             "type": "string"
           },
           "version": {
             "default": "0.2.0",
+            "description": "不可变结果版本。",
             "title": "Version",
             "type": "string"
           }
@@ -2589,19 +2854,23 @@
         "additionalProperties": false,
         "properties": {
           "code": {
+            "description": "不含交易所前缀的六位股票代码。",
             "title": "Code",
             "type": "string"
           },
           "free_float_market_cap_cny": {
+            "description": "流通市值，单位为人民币元。",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Free Float Market Cap Cny",
             "type": "string"
           },
           "name": {
+            "description": "证券或板块名称。",
             "title": "Name",
             "type": "string"
           },
           "symbol": {
+            "description": "带交易所前缀的标准证券代码。",
             "title": "Symbol",
             "type": "string"
           }
@@ -2619,16 +2888,19 @@
         "additionalProperties": false,
         "properties": {
           "missing_close": {
+            "description": "因缺少收盘价而省略的记录数。",
             "minimum": 0.0,
             "title": "Missing Close",
             "type": "integer"
           },
           "missing_free_float_shares": {
+            "description": "因缺少自由流通股本而省略的记录数。",
             "minimum": 0.0,
             "title": "Missing Free Float Shares",
             "type": "integer"
           },
           "missing_name": {
+            "description": "因缺少证券名称而省略的记录数。",
             "minimum": 0.0,
             "title": "Missing Name",
             "type": "integer"
@@ -2646,33 +2918,40 @@
         "additionalProperties": false,
         "properties": {
           "algorithm_version": {
+            "description": "计算算法版本。",
             "title": "Algorithm Version",
             "type": "string"
           },
           "calculation_id": {
+            "description": "计算批次标识。",
             "format": "uuid",
             "title": "Calculation Id",
             "type": "string"
           },
           "effective_trade_date": {
+            "description": "结果实际对应的交易日。",
             "format": "date",
             "title": "Effective Trade Date",
             "type": "string"
           },
           "generated_at": {
+            "description": "结果生成时间。",
             "format": "date-time",
             "title": "Generated At",
             "type": "string"
           },
           "has_more": {
+            "description": "是否还有未返回的记录。",
             "title": "Has More",
             "type": "boolean"
           },
           "input_hash": {
+            "description": "用于追溯计算输入的哈希值。",
             "title": "Input Hash",
             "type": "string"
           },
           "items": {
+            "description": "返回的数据记录列表。",
             "items": {
               "$ref": "#/components/schemas/LimitUpPoolItem"
             },
@@ -2680,43 +2959,52 @@
             "type": "array"
           },
           "omission_reasons": {
-            "$ref": "#/components/schemas/LimitUpPoolOmissionReasons"
+            "$ref": "#/components/schemas/LimitUpPoolOmissionReasons",
+            "description": "按原因汇总的省略记录数量。"
           },
           "omitted_count": {
+            "description": "因数据质量或业务规则而省略的记录数。",
             "minimum": 0.0,
             "title": "Omitted Count",
             "type": "integer"
           },
           "returned_count": {
+            "description": "本次实际返回的记录数。",
             "minimum": 0.0,
             "title": "Returned Count",
             "type": "integer"
           },
           "rule_version": {
+            "description": "业务规则版本。",
             "title": "Rule Version",
             "type": "string"
           },
           "snapshot_id": {
+            "description": "不可变快照标识。",
             "format": "uuid",
             "title": "Snapshot Id",
             "type": "string"
           },
           "total_candidate_count": {
+            "description": "进入计算的候选股票总数。",
             "minimum": 0.0,
             "title": "Total Candidate Count",
             "type": "integer"
           },
           "trade_date": {
+            "description": "交易日。",
             "format": "date",
             "title": "Trade Date",
             "type": "string"
           },
           "valid_count": {
+            "description": "通过校验的记录数。",
             "minimum": 0.0,
             "title": "Valid Count",
             "type": "integer"
           },
           "version": {
+            "description": "不可变结果版本。",
             "minimum": 1.0,
             "title": "Version",
             "type": "integer"
@@ -2747,10 +3035,12 @@
         "additionalProperties": false,
         "properties": {
           "code": {
+            "description": "不含交易所前缀的六位股票代码。",
             "title": "Code",
             "type": "string"
           },
           "current_name": {
+            "description": "证券当前名称。",
             "title": "Current Name",
             "type": "string"
           },
@@ -2764,10 +3054,12 @@
                 "type": "null"
               }
             ],
+            "description": "退市日期；未退市时为空。",
             "title": "Delisting Date"
           },
           "exchange": {
-            "$ref": "#/components/schemas/Exchange"
+            "$ref": "#/components/schemas/Exchange",
+            "description": "证券所属交易所。"
           },
           "ipo_date": {
             "anyOf": [
@@ -2779,15 +3071,19 @@
                 "type": "null"
               }
             ],
+            "description": "上市日期。",
             "title": "Ipo Date"
           },
           "security_type": {
-            "$ref": "#/components/schemas/SecurityType"
+            "$ref": "#/components/schemas/SecurityType",
+            "description": "证券类型。"
           },
           "status": {
-            "$ref": "#/components/schemas/SecurityStatus"
+            "$ref": "#/components/schemas/SecurityStatus",
+            "description": "状态。"
           },
           "symbol": {
+            "description": "带交易所前缀的标准证券代码。",
             "title": "Symbol",
             "type": "string"
           }
@@ -2809,11 +3105,13 @@
         "additionalProperties": false,
         "properties": {
           "count": {
+            "description": "返回记录总数。",
             "minimum": 0.0,
             "title": "Count",
             "type": "integer"
           },
           "items": {
+            "description": "返回的数据记录列表。",
             "items": {
               "$ref": "#/components/schemas/SecurityItem"
             },
@@ -2853,40 +3151,48 @@
         "additionalProperties": false,
         "properties": {
           "code": {
+            "description": "不含交易所前缀的六位股票代码。",
             "pattern": "^[0-9]{6}$",
             "title": "Code",
             "type": "string"
           },
           "end_close": {
+            "description": "区间结束交易日的收盘价。",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "End Close",
             "type": "string"
           },
           "end_trade_date": {
+            "description": "计算区间的结束交易日。",
             "format": "date",
             "title": "End Trade Date",
             "type": "string"
           },
           "name": {
+            "description": "证券或板块名称。",
             "title": "Name",
             "type": "string"
           },
           "return_pct": {
+            "description": "区间收益率，单位为百分比。",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Return Pct",
             "type": "string"
           },
           "start_close": {
+            "description": "区间开始交易日的收盘价。",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Start Close",
             "type": "string"
           },
           "start_trade_date": {
+            "description": "计算区间的开始交易日。",
             "format": "date",
             "title": "Start Trade Date",
             "type": "string"
           },
           "symbol": {
+            "description": "带交易所前缀的标准证券代码。",
             "title": "Symbol",
             "type": "string"
           }
@@ -2908,26 +3214,31 @@
         "additionalProperties": false,
         "properties": {
           "missing_end_bar": {
+            "description": "因缺少区间结束日行情而省略的记录数。",
             "minimum": 0.0,
             "title": "Missing End Bar",
             "type": "integer"
           },
           "missing_name": {
+            "description": "因缺少证券名称而省略的记录数。",
             "minimum": 0.0,
             "title": "Missing Name",
             "type": "integer"
           },
           "missing_start_bar": {
+            "description": "因缺少区间开始日行情而省略的记录数。",
             "minimum": 0.0,
             "title": "Missing Start Bar",
             "type": "integer"
           },
           "non_trading_bar": {
+            "description": "因行情不属于有效交易日而省略的记录数。",
             "minimum": 0.0,
             "title": "Non Trading Bar",
             "type": "integer"
           },
           "nonpositive_price": {
+            "description": "因价格不大于零而省略的记录数。",
             "minimum": 0.0,
             "title": "Nonpositive Price",
             "type": "integer"
@@ -2947,16 +3258,19 @@
         "additionalProperties": false,
         "properties": {
           "eligible_count": {
+            "description": "满足计算条件的股票数量。",
             "minimum": 0.0,
             "title": "Eligible Count",
             "type": "integer"
           },
           "end_trade_date": {
+            "description": "计算区间的结束交易日。",
             "format": "date",
             "title": "End Trade Date",
             "type": "string"
           },
           "items": {
+            "description": "返回的数据记录列表。",
             "items": {
               "$ref": "#/components/schemas/TopGainer20dItem"
             },
@@ -2964,36 +3278,43 @@
             "type": "array"
           },
           "omissions": {
-            "$ref": "#/components/schemas/TopGainer20dOmissions"
+            "$ref": "#/components/schemas/TopGainer20dOmissions",
+            "description": "本次计算省略记录的汇总。"
           },
           "omitted_count": {
+            "description": "因数据质量或业务规则而省略的记录数。",
             "minimum": 0.0,
             "title": "Omitted Count",
             "type": "integer"
           },
           "return_interval_count": {
             "const": 19,
+            "description": "收益率计算包含的相邻交易日区间数。",
             "title": "Return Interval Count",
             "type": "integer"
           },
           "returned_count": {
+            "description": "本次实际返回的记录数。",
             "maximum": 10.0,
             "minimum": 0.0,
             "title": "Returned Count",
             "type": "integer"
           },
           "start_trade_date": {
+            "description": "计算区间的开始交易日。",
             "format": "date",
             "title": "Start Trade Date",
             "type": "string"
           },
           "total_candidate_count": {
+            "description": "进入计算的候选股票总数。",
             "minimum": 0.0,
             "title": "Total Candidate Count",
             "type": "integer"
           },
           "trading_session_count": {
             "const": 20,
+            "description": "计算窗口包含的交易日数量。",
             "title": "Trading Session Count",
             "type": "integer"
           }
@@ -3072,15 +3393,16 @@
     }
   },
   "info": {
-    "summary": "Read-only A-share market data API",
-    "title": "Market Data Center API",
+    "description": "提供有界、只读且可追溯的证券、日线、涨停池、集合竞价及客观衍生数据查询。除健康检查外，业务接口均需通过 X-API-Key 鉴权。",
+    "summary": "面向外部消费者的只读 A 股市场数据接口",
+    "title": "股票市场数据中心 API",
     "version": "0.2.0"
   },
   "openapi": "3.1.0",
   "paths": {
     "/api/v1/board-indexes/883423/bias": {
       "get": {
-        "description": "Uses fresh stored THS:883423 daily bars first. Missing, insufficient, or stale history triggers one bounded live THS fetch after which immutable Raw is captured and database persistence is queued. Returns the current five-session simple moving-average bias, its direction versus the previous available board session, and extrema from valid samples in the latest 30 sessions. The endpoint accepts no input and never falls back to another board.",
+        "description": "优先使用数据库中有效的 THS:883423 日线；历史缺失、不足或过期时执行一次有界实时获取，保存不可变原始数据并异步入库。返回当前五日简单移动平均乖离率、相对上一有效交易日的变化方向，以及近三十个交易日有效样本的最高和最低乖离率。本接口不接收参数，也不会回退到其他板块。",
         "operationId": "board_index_bias_latest_api_v1_board_indexes_883423_bias_get",
         "responses": {
           "200": {
@@ -3139,18 +3461,19 @@
             "APIKeyHeader": []
           }
         ],
-        "summary": "Query the latest THS 883423 MA5 bias metrics",
+        "summary": "查询同花顺 883423 板块最新五日线乖离指标",
         "tags": [
-          "market-data"
+          "市场数据"
         ]
       }
     },
     "/api/v1/call-auction-indicative-details": {
       "get": {
-        "description": "Accepts one six-digit SSE/SZSE stock code and first reads the current Shanghai date's latest stored snapshot. Only an explicit database miss triggers a bounded Eastmoney fetch for 09:15:00-09:25:59 virtual indicative/reference price and displayed matching-volume observations. Live data is returned immediately after immutable Raw capture while database registration is queued asynchronously. These are not exchange trade ticks or order-by-order records. The source display classification is untrusted and is not a trade direction. data_origin and persistence_status distinguish stored data from a queued live result. Items are ordered by observed_at then source_sequence. Timestamp fields are rendered in Asia/Shanghai as YYYY-MM-DD HH:mm:ss.",
+        "description": "接收一个六位沪深股票代码，优先读取上海时区当日最新数据库快照。仅在数据库明确无数据时，有界访问东方财富，获取 09:15:00 至 09:25:59 的虚拟匹配或参考价格及展示匹配量。实时结果在保存不可变原始数据后立即返回，数据库登记异步执行。该数据不是交易所成交明细或逐笔委托，来源展示分类也不代表成交方向。结果按观察时间和来源序号正序排列，时间格式为上海时区 YYYY-MM-DD HH:mm:ss。",
         "operationId": "auction_indicative_details_api_v1_call_auction_indicative_details_get",
         "parameters": [
           {
+            "description": "不含交易所前缀的六位股票代码。",
             "in": "query",
             "name": "code",
             "required": true,
@@ -3161,6 +3484,7 @@
             }
           },
           {
+            "description": "从结果集起点跳过的记录数。",
             "in": "query",
             "name": "offset",
             "required": false,
@@ -3173,6 +3497,7 @@
             }
           },
           {
+            "description": "最多返回的记录数。",
             "in": "query",
             "name": "limit",
             "required": false,
@@ -3212,15 +3537,15 @@
             "APIKeyHeader": []
           }
         ],
-        "summary": "Query current-day call-auction virtual indicative matching details",
+        "summary": "查询当日集合竞价虚拟匹配明细",
         "tags": [
-          "market-data"
+          "市场数据"
         ]
       }
     },
     "/api/v1/call-auction-market-series-snapshots/query": {
       "post": {
-        "description": "Returns all recorded rounds from the latest succeeded session for the exact trade date, or the latest partial session only when no succeeded session exists. Rounds are ordered by scheduled time and report missing six-digit codes independently. Sessions and dates are never merged or substituted.",
+        "description": "返回指定交易日最新成功采集会话的全部轮次；仅在没有成功会话时使用最新部分成功会话。轮次按计划采集时间正序排列，并分别报告未命中的六位代码。不同会话或日期的数据不会合并或替代。",
         "operationId": "call_auction_market_series_snapshots_api_v1_call_auction_market_series_snapshots_query_post",
         "requestBody": {
           "content": {
@@ -3289,15 +3614,15 @@
             "APIKeyHeader": []
           }
         ],
-        "summary": "Batch query one opening-auction market series session",
+        "summary": "批量查询开盘集合竞价序列快照",
         "tags": [
-          "market-data"
+          "市场数据"
         ]
       }
     },
     "/api/v1/call-auction-market-snapshots/query": {
       "post": {
-        "description": "Returns facts from the latest succeeded ingestion for the exact trade date, or the latest partial ingestion only when no succeeded ingestion exists. A six-digit code can return both SSE and SZSE symbols. Missing codes are reported explicitly; no date or batch fallback is used.",
+        "description": "返回指定交易日最新成功采集批次的数据；仅在没有成功批次时使用最新部分成功批次。同一个六位代码可能同时匹配沪市和深市证券，未命中的代码会明确列出。不使用日期或其他批次回退。",
         "operationId": "call_auction_market_snapshots_api_v1_call_auction_market_snapshots_query_post",
         "requestBody": {
           "content": {
@@ -3366,18 +3691,19 @@
             "APIKeyHeader": []
           }
         ],
-        "summary": "Batch query one opening-auction market snapshot",
+        "summary": "批量查询开盘集合竞价市场快照",
         "tags": [
-          "market-data"
+          "市场数据"
         ]
       }
     },
     "/api/v1/call-auction-one-price-limits": {
       "get": {
-        "description": "Selects one stored 09:25:50 SSE/SZSE market snapshot and calculates the accepted mainboard 10% price limits at read time. It does not depend on the nightly price-limit batch, fetch providers, use later daily bars, or write data.",
+        "description": "选取一批已存储的沪深市场 09:25:50 快照，在读取时按已接受的主板百分之十涨跌停规则计算结果。不依赖夜间涨跌停批次，不访问行情提供方，不使用更晚的日线，也不写入数据。",
         "operationId": "auction_one_price_limits_api_v1_call_auction_one_price_limits_get",
         "parameters": [
           {
+            "description": "交易日。",
             "in": "query",
             "name": "trade_date",
             "required": false,
@@ -3422,17 +3748,19 @@
             "APIKeyHeader": []
           }
         ],
-        "summary": "Calculate evidence-complete 09:25:50 mainboard one-price limits",
+        "summary": "实时计算 09:25:50 主板一字涨跌停列表",
         "tags": [
-          "market-data"
+          "市场数据"
         ]
       }
     },
     "/api/v1/classifications/{namespace}/{classification_type}/{classification_code}/members": {
       "get": {
+        "description": "按分类体系、类型和代码查询指定有效日期的证券成员。",
         "operationId": "classification_members_api_v1_classifications__namespace___classification_type___classification_code__members_get",
         "parameters": [
           {
+            "description": "分类体系命名空间。",
             "in": "path",
             "name": "namespace",
             "required": true,
@@ -3444,6 +3772,7 @@
             }
           },
           {
+            "description": "分类类型。",
             "in": "path",
             "name": "classification_type",
             "required": true,
@@ -3452,6 +3781,7 @@
             }
           },
           {
+            "description": "分类代码。",
             "in": "path",
             "name": "classification_code",
             "required": true,
@@ -3463,6 +3793,7 @@
             }
           },
           {
+            "description": "查询采用的有效日期。",
             "in": "query",
             "name": "as_of_date",
             "required": true,
@@ -3473,6 +3804,7 @@
             }
           },
           {
+            "description": "最多返回的记录数。",
             "in": "query",
             "name": "limit",
             "required": false,
@@ -3542,14 +3874,15 @@
             "APIKeyHeader": []
           }
         ],
-        "summary": "Classification Members",
+        "summary": "查询指定日期的分类成员",
         "tags": [
-          "market-data"
+          "市场数据"
         ]
       }
     },
     "/api/v1/close-price-new-highs-120d": {
       "get": {
+        "description": "返回最新交易日收盘价严格高于此前一百一十九个交易日最高收盘价的股票。",
         "operationId": "close_price_new_highs_120d_api_v1_close_price_new_highs_120d_get",
         "responses": {
           "200": {
@@ -3568,17 +3901,19 @@
             "APIKeyHeader": []
           }
         ],
-        "summary": "Query SSE and SZSE stocks making strict 120-session closing highs",
+        "summary": "查询沪深两市收盘价创一百二十日新高的股票",
         "tags": [
-          "market-data"
+          "市场数据"
         ]
       }
     },
     "/api/v1/daily-bars/{symbol}": {
       "get": {
+        "description": "查询一个标准证券代码在指定日期区间内的未复权日线事实。",
         "operationId": "daily_bars_api_v1_daily_bars__symbol__get",
         "parameters": [
           {
+            "description": "带交易所前缀的标准证券代码。",
             "in": "path",
             "name": "symbol",
             "required": true,
@@ -3589,6 +3924,7 @@
             }
           },
           {
+            "description": "查询开始日期，包含当日。",
             "in": "query",
             "name": "start_date",
             "required": true,
@@ -3599,6 +3935,7 @@
             }
           },
           {
+            "description": "查询结束日期，包含当日。",
             "in": "query",
             "name": "end_date",
             "required": true,
@@ -3609,6 +3946,7 @@
             }
           },
           {
+            "description": "最多返回的记录数。",
             "in": "query",
             "name": "limit",
             "required": false,
@@ -3668,18 +4006,19 @@
             "APIKeyHeader": []
           }
         ],
-        "summary": "Daily Bars",
+        "summary": "查询证券日线行情",
         "tags": [
-          "market-data"
+          "市场数据"
         ]
       }
     },
     "/api/v1/daily-limit-up-list": {
       "get": {
-        "description": "Returns the exact trade_date latest or requested today_limit_up snapshot. The response includes immutable revision, status, bounded quality metadata, canonical unadjusted price facts, close times same-date free-float shares, source-reported sealing facts, closing bid-1 computed sealing amount, optional five-level buy order-book context, and provider-neutral lineage. No date or value fallback is used; Decimal values are serialized as strings.",
+        "description": "返回指定交易日最新或指定版本的涨停列表快照，包含不可变版本、状态、质量摘要、未复权价格事实、当日自由流通股本、来源封单事实、按收盘买一计算的封单额、可选五档买盘和来源追溯信息。不使用日期或数值回退；高精度数值序列化为字符串。",
         "operationId": "daily_limit_up_list_api_v1_daily_limit_up_list_get",
         "parameters": [
           {
+            "description": "交易日。",
             "in": "query",
             "name": "trade_date",
             "required": true,
@@ -3690,6 +4029,7 @@
             }
           },
           {
+            "description": "不可变结果版本。",
             "in": "query",
             "name": "version",
             "required": false,
@@ -3707,6 +4047,7 @@
             }
           },
           {
+            "description": "从结果集起点跳过的记录数。",
             "in": "query",
             "name": "offset",
             "required": false,
@@ -3719,6 +4060,7 @@
             }
           },
           {
+            "description": "最多返回的记录数。",
             "in": "query",
             "name": "limit",
             "required": false,
@@ -3788,18 +4130,19 @@
             "APIKeyHeader": []
           }
         ],
-        "summary": "Get one immutable same-day limit-up snapshot",
+        "summary": "查询指定交易日的不可变涨停列表快照",
         "tags": [
-          "market-data"
+          "市场数据"
         ]
       }
     },
     "/api/v1/limit-up-pool": {
       "get": {
-        "description": "Returns the versioned pool whose stocks closed exactly at the deterministic upper price limit on trade_date. free_float_market_cap_cny is that date's unadjusted close multiplied by free-float shares. Invalid rows are omitted with grouped reason counts; valid rows are ordered by symbol before limit is applied. No value or date fallback is used.",
+        "description": "返回指定交易日收盘价严格等于确定性涨停价的版本化主板股票池。流通市值按当日未复权收盘价乘以自由流通股本计算；无效记录按原因汇总后省略，有效记录先按标准证券代码排序再应用返回上限。不使用数值或日期回退。",
         "operationId": "limit_up_pool_api_v1_limit_up_pool_get",
         "parameters": [
           {
+            "description": "交易日。",
             "in": "query",
             "name": "trade_date",
             "required": true,
@@ -3810,6 +4153,7 @@
             }
           },
           {
+            "description": "不可变结果版本。",
             "in": "query",
             "name": "version",
             "required": false,
@@ -3827,6 +4171,7 @@
             }
           },
           {
+            "description": "最多返回的记录数。",
             "in": "query",
             "name": "limit",
             "required": false,
@@ -3896,17 +4241,19 @@
             "APIKeyHeader": []
           }
         ],
-        "summary": "Get the exact-date mainboard limit-up pool",
+        "summary": "查询指定交易日的主板涨停池",
         "tags": [
-          "market-data"
+          "市场数据"
         ]
       }
     },
     "/api/v1/securities": {
       "get": {
+        "description": "在证券主数据中按代码或当前名称搜索，并按指定上限返回结果。",
         "operationId": "search_securities_api_v1_securities_get",
         "parameters": [
           {
+            "description": "证券代码或名称搜索词。",
             "in": "query",
             "name": "query",
             "required": true,
@@ -3918,6 +4265,7 @@
             }
           },
           {
+            "description": "最多返回的记录数。",
             "in": "query",
             "name": "limit",
             "required": false,
@@ -3977,17 +4325,19 @@
             "APIKeyHeader": []
           }
         ],
-        "summary": "Search Securities",
+        "summary": "按代码或名称搜索证券",
         "tags": [
-          "market-data"
+          "市场数据"
         ]
       }
     },
     "/api/v1/top-gainers-20d": {
       "get": {
+        "description": "按严格的二十交易日窗口计算区间收益率，并返回涨幅最高的股票。",
         "operationId": "top_gainers_20d_api_v1_top_gainers_20d_get",
         "parameters": [
           {
+            "description": "查询结束日期，包含当日。",
             "in": "query",
             "name": "end_date",
             "required": false,
@@ -4005,6 +4355,7 @@
             }
           },
           {
+            "description": "最多返回的记录数。",
             "in": "query",
             "name": "limit",
             "required": false,
@@ -4044,14 +4395,15 @@
             "APIKeyHeader": []
           }
         ],
-        "summary": "Rank the top gainers over an exact 20-session window",
+        "summary": "查询最近二十个交易日涨幅榜",
         "tags": [
-          "market-data"
+          "市场数据"
         ]
       }
     },
     "/healthz": {
       "get": {
+        "description": "仅检查 API 进程是否正常响应，不访问数据库。",
         "operationId": "health_healthz_get",
         "responses": {
           "200": {
@@ -4065,14 +4417,15 @@
             "description": "Successful Response"
           }
         },
-        "summary": "Health",
+        "summary": "检查 API 服务存活状态",
         "tags": [
-          "system"
+          "系统状态"
         ]
       }
     },
     "/readyz": {
       "get": {
+        "description": "检查只读数据库连接是否可用；不可用时返回 503。",
         "operationId": "readiness_readyz_get",
         "responses": {
           "200": {
@@ -4096,11 +4449,21 @@
             "description": "Service Unavailable"
           }
         },
-        "summary": "Readiness",
+        "summary": "检查 API 服务就绪状态",
         "tags": [
-          "system"
+          "系统状态"
         ]
       }
     }
-  }
+  },
+  "tags": [
+    {
+      "description": "服务存活状态与数据库就绪状态检查。",
+      "name": "系统状态"
+    },
+    {
+      "description": "只读的 A 股市场事实与客观衍生结果查询。",
+      "name": "市场数据"
+    }
+  ]
 }

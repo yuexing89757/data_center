@@ -109,6 +109,59 @@ def test_fastapi_openapi_contract_matches_the_application() -> None:
     )
 
 
+def test_fastapi_docs_use_chinese_annotations_for_owned_contracts() -> None:
+    settings = ApiSettings(
+        fastapi_database_url=SecretStr("unused"),
+        fastapi_api_key=SecretStr("contract-api-key-0000000000000000"),
+    )
+    schema = create_app(
+        settings=settings,
+        query_service=cast(PublicQueryService, object()),
+        auction_indicative_service=cast(object, object()),  # type: ignore[arg-type]
+        board_index_bias_live_service=cast(object, object()),  # type: ignore[arg-type]
+    ).openapi()
+
+    def contains_chinese(value: object) -> bool:
+        return isinstance(value, str) and any("\u4e00" <= char <= "\u9fff" for char in value)
+
+    info = schema["info"]
+    assert contains_chinese(info["title"])
+    assert contains_chinese(info["summary"])
+    assert contains_chinese(info["description"])
+
+    tags = schema["tags"]
+    assert tags
+    assert all(contains_chinese(tag["name"]) for tag in tags)
+    assert all(contains_chinese(tag["description"]) for tag in tags)
+
+    for path_item in schema["paths"].values():
+        for method, operation in path_item.items():
+            if method == "parameters":
+                continue
+            assert contains_chinese(operation["summary"])
+            assert contains_chinese(operation["description"])
+            assert all(contains_chinese(tag) for tag in operation["tags"])
+            assert all(
+                contains_chinese(parameter.get("description"))
+                for parameter in operation.get("parameters", [])
+            )
+
+    owned_schemas = {
+        name: component
+        for name, component in schema["components"]["schemas"].items()
+        if name not in {"HTTPValidationError", "ValidationError"}
+    }
+    for component in owned_schemas.values():
+        assert all(
+            contains_chinese(property_schema.get("description"))
+            for property_schema in component.get("properties", {}).values()
+        )
+
+    snapshot_properties = owned_schemas["CallAuctionMarketSnapshotItem"]["properties"]
+    assert "买二" in snapshot_properties["bid2_volume"]["description"]
+    assert "封单额" in snapshot_properties["seal_amount"]["description"]
+
+
 def test_auction_series_item_contract_exposes_batch_and_five_levels() -> None:
     schema = _load("fastapi-openapi-v1.json")["components"]["schemas"][  # type: ignore[index]
         "CallAuctionMarketSeriesSnapshotItem"

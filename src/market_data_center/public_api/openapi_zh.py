@@ -1,0 +1,217 @@
+"""Chinese annotations for the public FastAPI OpenAPI contract."""
+
+# ruff: noqa: RUF001 - Chinese descriptions intentionally use Chinese punctuation.
+
+from typing import Any
+
+FIELD_DESCRIPTIONS_ZH = {
+    "accepted_auction_row_count": "通过校验的竞价记录数。",
+    "algorithm_version": "计算算法版本。",
+    "amount": "成交金额，单位为人民币元。",
+    "amount_cny": "成交金额，单位为人民币元。",
+    "batch_code": "采集批次代码，格式为 HHMMSS。",
+    "bias_5_pct": "当日收盘价相对五日均线的乖离率，单位为百分比。",
+    "bias_direction": "乖离率相对上一交易日的变化方向。",
+    "bias_sample_count": "用于近三十日极值计算的有效样本数。",
+    "board_code": "板块的六位代码。",
+    "board_id": "带市场前缀的板块标识。",
+    "board_name": "板块名称。",
+    "breakout_pct": "收盘价超过此前一百一十九日最高收盘价的幅度，单位为百分比。",
+    "by_rule": "按规则分组的质量问题数量。",
+    "cache_hit": "本次结果是否命中服务内缓存。",
+    "calculation_id": "计算批次标识。",
+    "calculation_mode": "计算模式。",
+    "candidate_count": "候选股票数量。",
+    "change_percent": "涨跌幅，单位为百分比。",
+    "close": "收盘价。",
+    "closing_bid1_sealing_amount_cny": "按收盘买一价和买一量计算的封单额，单位为人民币元。",
+    "code": "不含交易所前缀的六位股票代码。",
+    "codes": "不含交易所前缀的六位股票代码集合，最多五百个。",
+    "collected_at": "实际完成采集的时间。",
+    "comparison_session_count": "用于比较的历史交易日数量。",
+    "consecutive_limit_up_days": "连续涨停交易日数量。",
+    "count": "返回记录总数。",
+    "cumulative_amount": "截至快照时点的累计金额，单位为人民币元。",
+    "cumulative_volume": "截至快照时点的累计数量，单位为股。",
+    "current_name": "证券当前名称。",
+    "daily_bar_ingestion_id": "日线数据采集批次标识。",
+    "data_origin": "本次返回数据的来源。",
+    "database_persistence": "数据库异步持久化状态。",
+    "delisting_date": "退市日期；未退市时为空。",
+    "direction": "涨停或跌停方向。",
+    "displayed_volume_shares": "来源页面展示的竞价匹配量，单位为股。",
+    "down": "一字跌停股票列表。",
+    "down_count": "一字跌停股票数量。",
+    "duration_semantics": "涨停持续时间字段的统计口径。",
+    "effective_trade_date": "结果实际对应的交易日。",
+    "eligible_count": "满足计算条件的股票数量。",
+    "eligible_history_count": "具备完整历史数据的股票数量。",
+    "end_close": "区间结束交易日的收盘价。",
+    "end_date": "查询结束日期，包含当日。",
+    "end_trade_date": "计算区间的结束交易日。",
+    "error": "错误详情。",
+    "exchange": "证券所属交易所。",
+    "expected_rounds": "竞价序列应包含的采集轮次数。",
+    "fetched_at": "数据获取时间，按上海时区格式化。",
+    "first_limit_up_at": "当日首次涨停时间。",
+    "free_float_market_cap_cny": "流通市值，单位为人民币元。",
+    "free_float_shares": "自由流通股本，单位为股。",
+    "free_float_turnover_rate_pct": "自由流通换手率，单位为百分比。",
+    "generated_at": "结果生成时间。",
+    "has_more": "是否还有未返回的记录。",
+    "high": "最高价。",
+    "high_price": "截至快照时点的最高价。",
+    "highest_bias_5_pct": "近三十个交易日内的最高五日线乖离率。",
+    "highest_bias_trade_date": "最高五日线乖离率对应的交易日。",
+    "incomplete_history": "因历史数据不足而省略的股票数量。",
+    "indicated_price": "竞价指示价格。",
+    "indicative_price": "竞价虚拟匹配价格。",
+    "indicator_ingestion_id": "指标来源采集批次标识。",
+    "ingestion_id": "采集批次标识。",
+    "ingestion_status": "所选采集批次的状态。",
+    "input_hash": "用于追溯计算输入的哈希值。",
+    "ipo_date": "上市日期。",
+    "is_exchange_trade_tick": "是否为交易所成交明细；本接口固定为否。",
+    "is_order_by_order": "是否为逐笔委托数据；本接口固定为否。",
+    "is_st": "当日是否为风险警示证券。",
+    "items": "返回的数据记录列表。",
+    "last_limit_up_at": "当日最后一次涨停时间。",
+    "last_price": "快照时点价格；竞价阶段按既定口径取值。",
+    "limit_price": "按价格限制规则计算的涨停价或跌停价。",
+    "limit_up_duration_seconds": "当日涨停持续时间，单位为秒。",
+    "live_provider_derived": "结果是否包含实时来源数据的计算值。",
+    "low": "最低价。",
+    "low_price": "截至快照时点的最低价。",
+    "lowest_bias_5_pct": "近三十个交易日内的最低五日线乖离率。",
+    "lowest_bias_trade_date": "最低五日线乖离率对应的交易日。",
+    "member_count": "快照中的成员总数。",
+    "members": "分类成员证券代码列表。",
+    "message": "面向调用方的错误说明。",
+    "missing_close": "因缺少收盘价而省略的记录数。",
+    "missing_codes": "请求中未查询到数据的六位股票代码。",
+    "missing_end_bar": "因缺少区间结束日行情而省略的记录数。",
+    "missing_free_float_shares": "因缺少自由流通股本而省略的记录数。",
+    "missing_name": "因缺少证券名称而省略的记录数。",
+    "missing_start_bar": "因缺少区间开始日行情而省略的记录数。",
+    "moving_average_5": "最近五个有效交易日收盘价的简单移动平均值。",
+    "name": "证券或板块名称。",
+    "name_ingestion_id": "证券名称来源采集批次标识。",
+    "non_trading_bar": "因行情不属于有效交易日而省略的记录数。",
+    "nonpositive_price": "因价格不大于零而省略的记录数。",
+    "observed_at": "行情观察时间，按上海时区格式化。",
+    "offset": "从结果集起点跳过的记录数。",
+    "omission_reasons": "按原因汇总的省略记录数量。",
+    "omissions": "本次计算省略记录的汇总。",
+    "omitted_count": "因数据质量或业务规则而省略的记录数。",
+    "omitted_incomplete_count": "因证据字段不完整而省略的记录数。",
+    "open": "开盘价。",
+    "open_count": "涨停打开次数。",
+    "order_book_ingestion_id": "盘口数据采集批次标识。",
+    "persistence_status": "异步持久化状态。",
+    "pool_calculation_id": "股票池计算批次标识。",
+    "previous_119d_high": "当日前一百一十九个交易日的最高收盘价。",
+    "previous_bias_5_pct": "上一有效交易日的五日线乖离率。",
+    "previous_close": "上一交易日收盘价。",
+    "previous_trade_date": "上一有效交易日。",
+    "price_limit_algorithm_version": "涨跌停价格计算算法版本。",
+    "price_limit_calculation_id": "涨跌停价格计算批次标识。",
+    "price_limit_rule_version": "涨跌停价格规则版本。",
+    "quality": "数据质量摘要。",
+    "raw_captured": "是否已经保存不可变原始数据。",
+    "raw_id": "不可变原始数据对象标识。",
+    "rejected_count": "未通过校验的候选记录数。",
+    "requested_count": "请求的股票代码数量。",
+    "return_interval_count": "收益率计算包含的相邻交易日区间数。",
+    "return_pct": "区间收益率，单位为百分比。",
+    "returned_count": "本次实际返回的记录数。",
+    "returned_rounds": "本次实际返回的采集轮次数。",
+    "round_status": "本轮采集状态。",
+    "rounds": "按计划执行时间正序排列的采集轮次。",
+    "rule_version": "业务规则版本。",
+    "sample_seq": "采集轮次序号。",
+    "scheduled_at": "计划采集时间。",
+    "seal_amount": "竞价封单额，按买一价乘以买一量计算，单位为人民币元。",
+    "security_type": "证券类型。",
+    "selected_ingestion_id": "本次查询选中的采集批次标识。",
+    "semantics": "数据语义标识。",
+    "service": "服务名称。",
+    "session_id": "竞价序列采集会话标识。",
+    "session_status": "竞价序列采集会话状态。",
+    "snapshot_date": "分类快照日期。",
+    "snapshot_id": "不可变快照标识。",
+    "snapshot_window": "允许参与计算的快照时间窗口。",
+    "source": "数据来源。",
+    "source_display_classification": "来源页面展示的分类；不代表成交方向。",
+    "source_display_classification_trusted": "来源展示分类是否可作为可信交易方向。",
+    "source_ingestion_id": "来源数据采集批次标识。",
+    "source_observation_ingestion_id": "来源观察记录的采集批次标识。",
+    "source_observation_raw_id": "来源观察记录的原始数据标识。",
+    "source_reported_sealed_funds_cny": "数据源报告的封单资金，单位为人民币元。",
+    "source_row_count": "数据源返回的原始记录数。",
+    "source_sequence": "来源记录的稳定排序序号。",
+    "start_close": "区间开始交易日的收盘价。",
+    "start_date": "查询开始日期，包含当日。",
+    "start_trade_date": "计算区间的开始交易日。",
+    "status": "状态。",
+    "symbol": "带交易所前缀的标准证券代码。",
+    "total_candidate_count": "进入计算的候选股票总数。",
+    "total_count": "符合查询条件的记录总数。",
+    "total_findings": "数据质量问题总数。",
+    "trade_date": "交易日。",
+    "trade_status": "证券当日交易状态。",
+    "trading_session_count": "计算窗口包含的交易日数量。",
+    "up": "一字涨停股票列表。",
+    "up_count": "一字涨停股票数量。",
+    "valid_count": "通过校验的记录数。",
+    "value_semantics": "竞价快照价格和数量字段采用的语义口径。",
+    "version": "不可变结果版本。",
+    "volume": "成交量，单位为股。",
+    "window_trading_days": "近端统计窗口的交易日数量。",
+    "window_trading_session_count": "新高判断窗口包含的交易日数量。",
+    # Query/path parameters that are not response-model fields.
+    "as_of_date": "查询采用的有效日期。",
+    "classification_code": "分类代码。",
+    "classification_type": "分类类型。",
+    "limit": "最多返回的记录数。",
+    "namespace": "分类体系命名空间。",
+    "query": "证券代码或名称搜索词。",
+}
+
+
+for side_en, side_zh in (("bid", "买"), ("ask", "卖")):
+    for level, level_zh in enumerate(("一", "二", "三", "四", "五"), start=1):
+        FIELD_DESCRIPTIONS_ZH[f"{side_en}{level}_price"] = f"{side_zh}{level_zh}价。"
+        FIELD_DESCRIPTIONS_ZH[f"{side_en}{level}_volume"] = (
+            f"{side_zh}{level_zh}量，单位为股；价格为空或为零时仍保留来源返回的数量。"
+        )
+
+for level, level_zh in enumerate(("一", "二", "三", "四", "五"), start=1):
+    FIELD_DESCRIPTIONS_ZH[f"closing_bid{level}_price"] = f"收盘买{level_zh}价。"
+    FIELD_DESCRIPTIONS_ZH[f"closing_bid{level}_volume_shares"] = f"收盘买{level_zh}量，单位为股。"
+
+
+def localize_openapi(schema: dict[str, Any]) -> dict[str, Any]:
+    """Attach Chinese descriptions to owned fields and parameters, failing closed."""
+
+    for path_item in schema["paths"].values():
+        for method, operation in path_item.items():
+            if method == "parameters":
+                continue
+            for parameter in operation.get("parameters", []):
+                name = parameter["name"]
+                parameter["description"] = _description(name)
+
+    for name, component in schema["components"]["schemas"].items():
+        if name in {"HTTPValidationError", "ValidationError"}:
+            continue
+        for field_name, field_schema in component.get("properties", {}).items():
+            field_schema["description"] = _description(field_name)
+
+    return schema
+
+
+def _description(field_name: str) -> str:
+    try:
+        return FIELD_DESCRIPTIONS_ZH[field_name]
+    except KeyError as error:
+        raise RuntimeError(f"missing Chinese OpenAPI description for {field_name!r}") from error
