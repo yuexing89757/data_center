@@ -489,6 +489,25 @@ def test_live_board_index_persistence_is_narrow_and_fastapi_only() -> None:
     assert not re.search(r"(?im)^grant\s+(insert|update|delete|all)", migration)
 
 
+def test_recent_daily_bars_rpc_is_bounded_and_fastapi_only() -> None:
+    migration = (
+        (MIGRATION_DIR / "20260818000600_add_recent_daily_bars_api.sql")
+        .read_text(encoding="utf-8")
+        .lower()
+    )
+
+    assert "query_recent_daily_bars" in migration
+    assert "p_code !~ '^[0-9]{6}$'" in migration
+    assert "p_limit > 5000" in migration
+    assert "bar.trade_date <= p_trade_date" in migration
+    assert "order by bar.trade_date desc" in migration
+    assert "from public" in migration
+    assert "from anon" in migration
+    assert "from authenticated" in migration
+    assert "to market_data_api" in migration
+    assert not re.search(r"(?im)^grant\s+(insert|update|delete|all)", migration)
+
+
 def test_daily_limit_up_list_quality_fix_uses_calculation_quality_table() -> None:
     """Regression guard: the quality CTE must read today_limit_up.calculation_quality,
     not the non-existent today_limit_up.member_quality that caused HTTP 503."""

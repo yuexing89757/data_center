@@ -66,9 +66,10 @@ class DailyBarItem(ApiModel):
 
 
 class DailyBarResponse(ApiModel):
+    code: str = Field(pattern=r"^[0-9]{6}$")
     symbol: str
-    start_date: date
-    end_date: date
+    trade_date: date
+    limit: int = Field(ge=1, le=5000)
     count: int = Field(ge=0)
     items: list[DailyBarItem]
 

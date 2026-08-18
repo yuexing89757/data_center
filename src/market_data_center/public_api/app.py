@@ -77,7 +77,7 @@ from market_data_center.raw_store import LocalRawStore
 from market_data_center.settings import ApiSettings
 
 API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
-STANDARD_SYMBOL_PATTERN = r"^(SSE|SZSE|BSE):[0-9]{6}$"
+STOCK_CODE_PATTERN = r"^[0-9]{6}$"
 
 
 def create_app(
@@ -226,23 +226,27 @@ def create_app(
     def daily_bars(
         _: ApiKeyDependency,
         service: QueryServiceDependency,
-        symbol: Annotated[str, Path(pattern=STANDARD_SYMBOL_PATTERN)],
-        start_date: Annotated[date, Query()],
-        end_date: Annotated[date, Query()],
-        limit: Annotated[int, Query(ge=1, le=5000)] = 1000,
+        symbol: Annotated[
+            str,
+            Path(
+                pattern=STOCK_CODE_PATTERN,
+                description="Six-digit stock code; the exchange is resolved from Security facts.",
+            ),
+        ],
+        trade_date: Annotated[
+            date,
+            Query(description="Inclusive trading-date cutoff; no later bar is returned."),
+        ],
+        limit: Annotated[
+            int,
+            Query(
+                ge=1,
+                le=5000,
+                description="Maximum number of most-recent stored trading-day bars.",
+            ),
+        ] = 20,
     ) -> DailyBarResponse:
-        if end_date < start_date:
-            raise HTTPException(status_code=422, detail="end_date must not precede start_date")
-        if (end_date - start_date).days > 3660:
-            raise HTTPException(status_code=422, detail="date range must not exceed 3661 days")
-        items = service.daily_bars(symbol, start_date, end_date, limit)
-        return DailyBarResponse(
-            symbol=symbol,
-            start_date=start_date,
-            end_date=end_date,
-            count=len(items),
-            items=list(items),
-        )
+        return service.daily_bars(symbol, trade_date, limit)
 
     @app.get(
         "/api/v1/classifications/{namespace}/{classification_type}/{classification_code}/members",

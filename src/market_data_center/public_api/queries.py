@@ -18,7 +18,7 @@ from market_data_center.public_api.models import (
     CallAuctionOnePricePatternResponse,
     ClassificationMembersResponse,
     ClosePriceNewHighs120dResponse,
-    DailyBarItem,
+    DailyBarResponse,
     DailyLimitUpListResponse,
     LimitUpPoolResponse,
     SecurityItem,
@@ -33,13 +33,11 @@ from api_v1.query_securities(p_query => :query, p_limit => :limit)
 """)
 
 QUERY_DAILY_BARS = text("""
-select *
-from api_v1.query_daily_bars(
-    p_symbol => :symbol,
-    p_start_date => :start_date,
-    p_end_date => :end_date,
+select api_v1.query_recent_daily_bars(
+    p_code => :code,
+    p_trade_date => :trade_date,
     p_limit => :limit
-)
+) as payload
 """)
 
 QUERY_CLASSIFICATION_MEMBERS = text("""
@@ -145,9 +143,7 @@ class PublicQueryService(Protocol):
 
     def search_securities(self, query: str, limit: int) -> tuple[SecurityItem, ...]: ...
 
-    def daily_bars(
-        self, symbol: str, start_date: date, end_date: date, limit: int
-    ) -> tuple[DailyBarItem, ...]: ...
+    def daily_bars(self, code: str, trade_date: date, limit: int) -> DailyBarResponse: ...
 
     def classification_members(
         self,
@@ -202,19 +198,12 @@ class PostgreSQLPublicQueryService:
         rows = self._execute(QUERY_SECURITIES, {"query": query, "limit": limit})
         return tuple(SecurityItem.model_validate(dict(row)) for row in rows)
 
-    def daily_bars(
-        self, symbol: str, start_date: date, end_date: date, limit: int
-    ) -> tuple[DailyBarItem, ...]:
+    def daily_bars(self, code: str, trade_date: date, limit: int) -> DailyBarResponse:
         rows = self._execute(
             QUERY_DAILY_BARS,
-            {
-                "symbol": symbol,
-                "start_date": start_date,
-                "end_date": end_date,
-                "limit": limit,
-            },
+            {"code": code, "trade_date": trade_date, "limit": limit},
         )
-        return tuple(DailyBarItem.model_validate(dict(row)) for row in rows)
+        return DailyBarResponse.model_validate(rows[0]["payload"])
 
     def classification_members(
         self,

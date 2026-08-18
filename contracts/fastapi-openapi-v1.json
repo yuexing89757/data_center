@@ -2291,17 +2291,17 @@
       "DailyBarResponse": {
         "additionalProperties": false,
         "properties": {
+          "code": {
+            "description": "不含交易所前缀的六位股票代码。",
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
           "count": {
             "description": "返回记录总数。",
             "minimum": 0.0,
             "title": "Count",
             "type": "integer"
-          },
-          "end_date": {
-            "description": "查询结束日期，包含当日。",
-            "format": "date",
-            "title": "End Date",
-            "type": "string"
           },
           "items": {
             "description": "返回的数据记录列表。",
@@ -2311,22 +2311,30 @@
             "title": "Items",
             "type": "array"
           },
-          "start_date": {
-            "description": "查询开始日期，包含当日。",
-            "format": "date",
-            "title": "Start Date",
-            "type": "string"
+          "limit": {
+            "description": "最多返回的记录数。",
+            "maximum": 5000.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
           },
           "symbol": {
             "description": "带交易所前缀的标准证券代码。",
             "title": "Symbol",
             "type": "string"
+          },
+          "trade_date": {
+            "description": "交易日。",
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
           }
         },
         "required": [
+          "code",
           "symbol",
-          "start_date",
-          "end_date",
+          "trade_date",
+          "limit",
           "count",
           "items"
         ],
@@ -4163,30 +4171,21 @@
             "name": "symbol",
             "required": true,
             "schema": {
-              "pattern": "^(SSE|SZSE|BSE):[0-9]{6}$",
+              "description": "Six-digit stock code; the exchange is resolved from Security facts.",
+              "pattern": "^[0-9]{6}$",
               "title": "Symbol",
               "type": "string"
             }
           },
           {
-            "description": "查询开始日期，包含当日。",
+            "description": "交易日。",
             "in": "query",
-            "name": "start_date",
+            "name": "trade_date",
             "required": true,
             "schema": {
+              "description": "Inclusive trading-date cutoff; no later bar is returned.",
               "format": "date",
-              "title": "Start Date",
-              "type": "string"
-            }
-          },
-          {
-            "description": "查询结束日期，包含当日。",
-            "in": "query",
-            "name": "end_date",
-            "required": true,
-            "schema": {
-              "format": "date",
-              "title": "End Date",
+              "title": "Trade Date",
               "type": "string"
             }
           },
@@ -4196,7 +4195,8 @@
             "name": "limit",
             "required": false,
             "schema": {
-              "default": 1000,
+              "default": 20,
+              "description": "Maximum number of most-recent stored trading-day bars.",
               "maximum": 5000,
               "minimum": 1,
               "title": "Limit",
