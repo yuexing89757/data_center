@@ -109,6 +109,17 @@ def test_fastapi_openapi_contract_matches_the_application() -> None:
     )
 
 
+def test_auction_series_item_contract_exposes_batch_and_five_levels() -> None:
+    schema = _load("fastapi-openapi-v1.json")["components"]["schemas"][  # type: ignore[index]
+        "CallAuctionMarketSeriesSnapshotItem"
+    ]
+    properties = schema["properties"]
+
+    assert properties["batch_code"]["pattern"] == "^[0-9]{6}$"
+    assert properties["bid2_volume"]["anyOf"][0]["minimum"] == 0
+    assert "ask5_price" in properties
+
+
 def test_close_price_new_highs_contract_is_no_input_strict_and_bounded() -> None:
     postgrest = _load("postgrest-openapi-v1.json")
     agent = _load("agent-tools-v1.json")

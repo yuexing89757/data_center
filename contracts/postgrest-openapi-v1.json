@@ -109,7 +109,7 @@
         "security": [{"bearerAuth": []}],
         "requestBody": {"$ref": "#/components/requestBodies/CallAuctionMarketSnapshots"},
         "responses": {
-          "200": {"description": "One succeeded or partial session with time-ordered rounds"},
+          "200": {"description": "One succeeded or partial session with time-ordered rounds, batch codes, and bid/ask five-level price-volume facts"},
           "404": {"description": "No eligible session exists for the exact date"}
         }
       }

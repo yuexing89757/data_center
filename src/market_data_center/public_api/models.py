@@ -179,6 +179,7 @@ class DailyLimitUpListResponse(ApiModel):
 
 
 SixDigitCode = Annotated[str, Field(pattern=r"^[0-9]{6}$")]
+BatchCode = Annotated[str, Field(pattern=r"^[0-9]{6}$")]
 
 
 class CallAuctionMarketSnapshotQuery(ApiModel):
@@ -218,7 +219,28 @@ class CallAuctionMarketSeriesSnapshotQuery(CallAuctionMarketSnapshotQuery):
 
 
 class CallAuctionMarketSeriesSnapshotItem(CallAuctionMarketSnapshotItem):
+    batch_code: BatchCode
     value_semantics: Literal["auction_indicative", "opening_trade", "legacy_source_quote"]
+    bid1_price: Decimal | None = None
+    bid1_volume: int | None = Field(default=None, ge=0)
+    bid2_price: Decimal | None = None
+    bid2_volume: int | None = Field(default=None, ge=0)
+    bid3_price: Decimal | None = None
+    bid3_volume: int | None = Field(default=None, ge=0)
+    bid4_price: Decimal | None = None
+    bid4_volume: int | None = Field(default=None, ge=0)
+    bid5_price: Decimal | None = None
+    bid5_volume: int | None = Field(default=None, ge=0)
+    ask1_price: Decimal | None = None
+    ask1_volume: int | None = Field(default=None, ge=0)
+    ask2_price: Decimal | None = None
+    ask2_volume: int | None = Field(default=None, ge=0)
+    ask3_price: Decimal | None = None
+    ask3_volume: int | None = Field(default=None, ge=0)
+    ask4_price: Decimal | None = None
+    ask4_volume: int | None = Field(default=None, ge=0)
+    ask5_price: Decimal | None = None
+    ask5_volume: int | None = Field(default=None, ge=0)
 
 
 class CallAuctionMarketSeriesRound(ApiModel):
