@@ -46,6 +46,20 @@ def test_auction_series_five_level_migration_is_bounded_and_preserves_history() 
     assert all(token not in migration for token in ("schtasks", "crontab", "oncalendar"))
 
 
+def test_auction_series_rpc_qualifies_cte_payload_against_plpgsql_variable() -> None:
+    signature = "query_call_auction_market_series_snapshots("
+    defining_migrations = [
+        path
+        for path in sorted(MIGRATION_DIR.glob("*.sql"))
+        if signature in path.read_text(encoding="utf-8")
+    ]
+
+    latest_definition = defining_migrations[-1].read_text(encoding="utf-8").lower()
+    assert (
+        "jsonb_agg(round_payloads.payload order by round_payloads.sample_seq)" in latest_definition
+    )
+
+
 def test_realtime_auction_one_price_limit_decision_is_documented() -> None:
     adr = (PROJECT_ROOT / "docs/adr/ADR-0039-09点26沪深主板一字涨跌停实时计算.md").read_text(
         encoding="utf-8"
