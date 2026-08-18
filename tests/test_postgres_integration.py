@@ -66,6 +66,7 @@ from market_data_center.domain.call_auction_market_series import (
     MarketSeriesSnapshotRecord,
     MarketSeriesStatus,
     MarketSeriesValueSemantics,
+    series_batch_code,
     series_slots,
     universe_hash,
 )
@@ -1532,6 +1533,108 @@ def test_auction_one_price_limits_requires_exact_092550_snapshot(
             )
 
     assert raised.value.orig.sqlstate == "P0002"
+
+
+def test_call_auction_one_price_patterns_requires_a_complete_window_session(
+    database_engine: Engine,
+) -> None:
+    with database_engine.connect() as connection:
+        connection.execute(text("set local role market_data_api"))
+        with pytest.raises(DBAPIError) as raised:
+            connection.scalar(
+                text("select api_v1.query_call_auction_one_price_patterns(:day)"),
+                {"day": date(2026, 8, 18)},
+            )
+
+    assert raised.value.orig.sqlstate == "P0002"
+
+
+def test_call_auction_one_price_patterns_filters_strict_29_round_window(
+    database_engine: Engine,
+) -> None:
+    trade_date = date(2026, 8, 18)
+    session_id = uuid4()
+
+    with database_engine.begin() as connection:
+        _seed_one_price_pattern_session(connection, trade_date, session_id)
+        connection.execute(text("set local role market_data_api"))
+        payload = connection.scalar(
+            text("select api_v1.query_call_auction_one_price_patterns(:day)"),
+            {"day": trade_date},
+        )
+        latest_payload = connection.scalar(
+            text("select api_v1.query_call_auction_one_price_patterns(null)"),
+        )
+        connection.execute(text("reset role"))
+
+        assert connection.scalar(
+            text("""
+select has_function_privilege(
+    'market_data_api',
+    'api_v1.query_call_auction_one_price_patterns(date)',
+    'execute'
+)
+""")
+        )
+        assert not connection.scalar(
+            text("""
+select has_function_privilege(
+    'authenticated',
+    'api_v1.query_call_auction_one_price_patterns(date)',
+    'execute'
+)
+""")
+        )
+        assert connection.scalar(
+            text("""
+select 'statement_timeout=10s' = any(proconfig)
+from pg_proc
+where oid = 'api_v1.query_call_auction_one_price_patterns(date)'::regprocedure
+""")
+        )
+        assert connection.scalar(
+            text("""
+select to_regclass(
+    'realtime.call_auction_market_series_snapshot_session_symbol_idx'
+) is not null
+""")
+        )
+
+        connection.execute(
+            text("""
+update realtime.call_auction_market_series_snapshot
+set last_price = 10.5000
+where session_id = :session_id
+  and symbol in ('SSE:600000','SZSE:000001','SZSE:000002')
+"""),
+            {"session_id": session_id},
+        )
+        connection.execute(text("set local role market_data_api"))
+        empty_payload = connection.scalar(
+            text("select api_v1.query_call_auction_one_price_patterns(:day)"),
+            {"day": trade_date},
+        )
+
+    assert payload["trade_date"] == trade_date.isoformat()
+    assert payload["session_id"] == str(session_id)
+    assert payload["session_status"] == "partial"
+    assert payload["round_count"] == 29
+    assert payload["candidate_count"] == 3
+    assert [item["code"] for item in payload["items"]] == [
+        "000002",
+        "600000",
+        "000001",
+    ]
+    assert [Decimal(str(item["change_pct"])) for item in payload["items"]] == [
+        Decimal("4.0000000000"),
+        Decimal("2.0000000000"),
+        Decimal("-4.0000000000"),
+    ]
+    assert payload["items"][1]["name"] == "浦发银行"
+    assert all(item["sample_count"] == 29 for item in payload["items"])
+    assert latest_payload == payload
+    assert empty_payload["candidate_count"] == 0
+    assert empty_payload["items"] == []
 
 
 def test_call_auction_market_series_rpc_selects_one_session_and_orders_rounds(
@@ -4640,6 +4743,221 @@ def test_daily_bar_quality_audit_excludes_pre_ipo_days_and_reports_active_gaps(
     assert report.gap_candidates[0].symbol == "SZSE:000001"
     assert report.gap_candidates[0].first_missing_date == date(2026, 7, 28)
     assert report.gap_candidates[0].last_missing_date == date(2026, 7, 29)
+
+
+def _seed_one_price_pattern_session(
+    connection: Connection,
+    trade_date: date,
+    session_id: UUID,
+) -> None:
+    _insert_call_auction_security_universe(connection)
+    security_ingestion_id = uuid4()
+    workflow_id = uuid4()
+    slots = series_slots(trade_date)
+    extra_symbols = tuple(f"SSE:60000{suffix}" for suffix in range(4, 10))
+    symbols = tuple(
+        sorted(
+            (
+                "SSE:600000",
+                "SZSE:000001",
+                "SZSE:000002",
+                *extra_symbols,
+            )
+        )
+    )
+    snapshot_symbols = (*symbols, "BSE:920000", "SSE:510300")
+    connection.execute(
+        text("""
+insert into ingestion.ingestion_run (
+    ingestion_id, provider_code, dataset_code, status, requested_at, started_at
+) values (
+    :ingestion_id, 'baostock', 'security', 'running', :started_at, :started_at
+)
+"""),
+        {"ingestion_id": security_ingestion_id, "started_at": slots[0]},
+    )
+    connection.execute(
+        text("""
+insert into core.security (
+    symbol, code, exchange, current_name, security_type, status,
+    source_code, ingestion_id
+) values (
+    :symbol, :code, 'SSE', :current_name, 'stock', 'listed',
+    'baostock', :ingestion_id
+)
+"""),
+        [
+            {
+                "symbol": symbol,
+                "code": symbol.split(":", maxsplit=1)[1],
+                "current_name": f"测试{symbol[-2:]}",
+                "ingestion_id": security_ingestion_id,
+            }
+            for symbol in extra_symbols
+        ],
+    )
+    connection.execute(
+        text("""
+insert into core.security_name_history (
+    symbol, name, effective_from, effective_to, source_code, ingestion_id
+)
+select symbol, current_name, date '2020-01-01', null, 'baostock', ingestion_id
+from core.security
+"""),
+    )
+    connection.execute(
+        text("""
+insert into operations.workflow_run (
+    workflow_run_id, workflow_code, scheduled_for, trigger_source,
+    attempt, status, started_at, finished_at
+) values (
+    :workflow_id, 'call_auction_market_series', :started_at, 'scheduled',
+    1, 'succeeded', :started_at, :finished_at
+)
+"""),
+        {
+            "workflow_id": workflow_id,
+            "started_at": slots[0],
+            "finished_at": slots[-1] + timedelta(seconds=2),
+        },
+    )
+    connection.execute(
+        text("""
+insert into realtime.call_auction_market_series_session (
+    session_id, workflow_run_id, trade_date, window_start, window_end,
+    cadence_seconds, expected_rounds, universe_symbols, universe_count,
+    universe_hash, status, started_at, finished_at, successful_rounds,
+    partial_rounds, failed_rounds, successful_quotes, failed_quotes
+) values (
+    :session_id, :workflow_id, :trade_date, :window_start, :window_end,
+    20, 32, :universe_symbols, :universe_count,
+    :universe_hash, 'partial', :window_start, :finished_at, 29,
+    0, 3, :successful_quotes, :failed_quotes
+)
+"""),
+        {
+            "session_id": session_id,
+            "workflow_id": workflow_id,
+            "trade_date": trade_date,
+            "window_start": slots[0],
+            "window_end": slots[-1] + timedelta(seconds=20),
+            "universe_symbols": list(symbols),
+            "universe_count": len(symbols),
+            "universe_hash": universe_hash(symbols),
+            "finished_at": slots[-1] + timedelta(seconds=2),
+            "successful_quotes": len(symbols) * 29,
+            "failed_quotes": len(symbols) * 3,
+        },
+    )
+
+    ingestion_ids = {sample_seq: uuid4() for sample_seq in range(1, 30)}
+    connection.execute(
+        text("""
+insert into ingestion.ingestion_run (
+    ingestion_id, provider_code, dataset_code, status, requested_at,
+    started_at, finished_at, fetched_rows, accepted_rows
+) values (
+    :ingestion_id, 'pytdx_hq', 'call_auction_market_series', 'succeeded',
+    :scheduled_at, :scheduled_at, :finished_at, :row_count, :row_count
+)
+"""),
+        [
+            {
+                "ingestion_id": ingestion_id,
+                "scheduled_at": slots[sample_seq],
+                "finished_at": slots[sample_seq] + timedelta(seconds=2),
+                "row_count": len(snapshot_symbols),
+            }
+            for sample_seq, ingestion_id in ingestion_ids.items()
+        ],
+    )
+    connection.execute(
+        text("""
+insert into realtime.call_auction_market_series_round (
+    session_id, sample_seq, scheduled_at, collected_at, status,
+    attempt_count, expected_quotes, successful_quotes, failed_quotes,
+    selected_ingestion_id
+) values (
+    :session_id, :sample_seq, :scheduled_at, :collected_at, :status,
+    1, :expected_quotes, :successful_quotes, :failed_quotes,
+    :selected_ingestion_id
+)
+"""),
+        [
+            {
+                "session_id": session_id,
+                "sample_seq": sample_seq,
+                "scheduled_at": slots[sample_seq],
+                "collected_at": slots[sample_seq] + timedelta(seconds=2),
+                "status": "succeeded" if sample_seq in ingestion_ids else "failed",
+                "expected_quotes": len(symbols),
+                "successful_quotes": len(symbols) if sample_seq in ingestion_ids else 0,
+                "failed_quotes": 0 if sample_seq in ingestion_ids else len(symbols),
+                "selected_ingestion_id": ingestion_ids.get(sample_seq),
+            }
+            for sample_seq in range(32)
+        ],
+    )
+
+    base_prices = {
+        "SSE:600000": (Decimal("10.20"), Decimal("10.00")),
+        "SZSE:000001": (Decimal("9.60"), Decimal("10.00")),
+        "SZSE:000002": (Decimal("10.40"), Decimal("10.00")),
+        "BSE:920000": (Decimal("10.20"), Decimal("10.00")),
+        "SSE:510300": (Decimal("10.20"), Decimal("10.00")),
+        "SSE:600004": (Decimal("10.4001"), Decimal("10.00")),
+        "SSE:600005": (Decimal("10.20"), Decimal("10.00")),
+        "SSE:600006": (Decimal("10.20"), Decimal("10.00")),
+        "SSE:600007": (Decimal("10.20"), Decimal("10.00")),
+        "SSE:600008": (Decimal("10.20"), Decimal("10.00")),
+        "SSE:600009": (Decimal("10.20"), Decimal("10.00")),
+    }
+    snapshots: list[dict[str, object]] = []
+    for sample_seq, ingestion_id in ingestion_ids.items():
+        for symbol in snapshot_symbols:
+            if symbol == "SSE:600009" and sample_seq == 29:
+                continue
+            last_price, previous_close = base_prices[symbol]
+            if symbol == "SSE:600005" and sample_seq == 7:
+                last_price = Decimal("10.21")
+            if symbol == "SSE:600006" and sample_seq == 7:
+                previous_close = Decimal("9.99")
+            if symbol == "SSE:600007" and sample_seq == 7:
+                last_price = None
+            value_semantics = (
+                "opening_trade"
+                if symbol == "SSE:600008" and sample_seq == 7
+                else "auction_indicative"
+            )
+            snapshots.append(
+                {
+                    "trade_date": trade_date,
+                    "ingestion_id": ingestion_id,
+                    "session_id": session_id,
+                    "sample_seq": sample_seq,
+                    "batch_code": series_batch_code(slots[sample_seq]),
+                    "scheduled_at": slots[sample_seq],
+                    "symbol": symbol,
+                    "observed_at": slots[sample_seq] + timedelta(seconds=1),
+                    "last_price": last_price,
+                    "previous_close": previous_close,
+                    "value_semantics": value_semantics,
+                }
+            )
+    connection.execute(
+        text("""
+insert into realtime.call_auction_market_series_snapshot (
+    trade_date, ingestion_id, session_id, sample_seq, batch_code,
+    scheduled_at, symbol, observed_at, last_price, previous_close,
+    source_code, value_semantics
+) values (
+    :trade_date, :ingestion_id, :session_id, :sample_seq, :batch_code,
+    :scheduled_at, :symbol, :observed_at, :last_price, :previous_close,
+    'pytdx_hq', :value_semantics
+)
+"""),
+        snapshots,
+    )
 
 
 def _insert_call_auction_security_universe(connection: Connection) -> None:
