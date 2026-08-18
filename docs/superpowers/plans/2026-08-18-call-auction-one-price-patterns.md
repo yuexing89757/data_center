@@ -39,7 +39,8 @@
 
 ```python
 def _seed_one_price_pattern_session(connection, *, day: date, session_id: UUID) -> None:
-    connection.execute(text("""
+    connection.execute(
+        text("""
         insert into realtime.call_auction_market_series_round (
             session_id, sample_seq, scheduled_at, collected_at, status,
             attempt_count, expected_quotes, successful_quotes, failed_quotes,
@@ -56,7 +57,9 @@ def _seed_one_price_pattern_session(connection, *, day: date, session_id: UUID) 
                case when seq between 1 and 29 then 0 else 1 end,
                case when seq between 1 and 29 then :ingestion_id else null end
         from generate_series(0, 31) seq
-    """), {"session_id": session_id, "day": day, "ingestion_id": INGESTION_ID})
+    """),
+        {"session_id": session_id, "day": day, "ingestion_id": INGESTION_ID},
+    )
 ```
 
 测试调用尚不存在的 RPC，并断言：2% 股票进入；精确 -4% 与 4% 进入；4.0001% 排除；BSE/ETF 排除；`round_count=29`；seq 0、30、31 失败不影响结果；排序为 change_pct desc、code asc。
@@ -205,10 +208,22 @@ grant execute on function api_v1.query_call_auction_one_price_patterns(date)
     ("mutation_sql", "reason"),
     [
         ("delete from realtime.call_auction_market_series_snapshot where sample_seq=29", "missing"),
-        ("update realtime.call_auction_market_series_snapshot set last_price=null where sample_seq=7", "null"),
-        ("update realtime.call_auction_market_series_snapshot set last_price=10.01 where sample_seq=7", "changed"),
-        ("update realtime.call_auction_market_series_snapshot set previous_close=9.99 where sample_seq=7", "close"),
-        ("update realtime.call_auction_market_series_snapshot set value_semantics='opening_trade' where sample_seq=7", "semantics"),
+        (
+            "update realtime.call_auction_market_series_snapshot set last_price=null where sample_seq=7",
+            "null",
+        ),
+        (
+            "update realtime.call_auction_market_series_snapshot set last_price=10.01 where sample_seq=7",
+            "changed",
+        ),
+        (
+            "update realtime.call_auction_market_series_snapshot set previous_close=9.99 where sample_seq=7",
+            "close",
+        ),
+        (
+            "update realtime.call_auction_market_series_snapshot set value_semantics='opening_trade' where sample_seq=7",
+            "semantics",
+        ),
     ],
 )
 def test_one_price_pattern_rejects_incomplete_symbol(database_engine, mutation_sql, reason):
@@ -259,9 +274,7 @@ git commit -m "feat: add auction one-price pattern RPC"
 扩展 `FakeQueryService` 记录日期调用，构造以下响应并断言 Decimal 不转 float：
 
 ```python
-def auction_one_price_patterns(
-    self, trade_date: date | None
-) -> CallAuctionOnePricePatternResponse:
+def auction_one_price_patterns(self, trade_date: date | None) -> CallAuctionOnePricePatternResponse:
     self.auction_one_price_pattern_calls.append(trade_date)
     return CallAuctionOnePricePatternResponse(
         trade_date=date(2026, 8, 18),
@@ -271,12 +284,18 @@ def auction_one_price_patterns(
         window_end=datetime(2026, 8, 18, 9, 24, 40, tzinfo=SHANGHAI),
         round_count=29,
         candidate_count=1,
-        items=[CallAuctionOnePricePatternItem(
-            symbol="SSE:600000", code="600000", name="浦发银行",
-            exchange="SSE", one_price=Decimal("10.20"),
-            previous_close=Decimal("10.00"), change_pct=Decimal("2.0000000000"),
-            sample_count=29,
-        )],
+        items=[
+            CallAuctionOnePricePatternItem(
+                symbol="SSE:600000",
+                code="600000",
+                name="浦发银行",
+                exchange="SSE",
+                one_price=Decimal("10.20"),
+                previous_close=Decimal("10.00"),
+                change_pct=Decimal("2.0000000000"),
+                sample_count=29,
+            )
+        ],
     )
 ```
 
@@ -325,9 +344,8 @@ select api_v1.query_call_auction_one_price_patterns(
 ) as payload
 """)
 
-def auction_one_price_patterns(
-    self, trade_date: date | None
-) -> CallAuctionOnePricePatternResponse:
+
+def auction_one_price_patterns(self, trade_date: date | None) -> CallAuctionOnePricePatternResponse:
     rows = self._execute(QUERY_AUCTION_ONE_PRICE_PATTERNS, {"trade_date": trade_date})
     if not rows or rows[0]["payload"] is None:
         raise PublicQueryNotFound("call-auction one-price pattern session was not found")
@@ -402,8 +420,11 @@ Expected: FAIL，路由为404且 OpenAPI path 不存在。
 @app.get(
     "/api/v1/call-auction-one-price-patterns",
     response_model=CallAuctionOnePricePatternResponse,
-    responses={401: {"model": ErrorResponse}, 404: {"model": ErrorResponse},
-               503: {"model": ErrorResponse}},
+    responses={
+        401: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        503: {"model": ErrorResponse},
+    },
     tags=["市场数据"],
     summary="查询集合竞价29轮同价形态股票",
     description=(
