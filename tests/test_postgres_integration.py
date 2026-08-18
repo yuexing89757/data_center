@@ -161,6 +161,7 @@ def test_migrations_apply_to_empty_database_and_are_idempotent(
     assert {
         "query_securities",
         "query_daily_bars",
+        "query_recent_daily_bars",
         "query_adjusted_daily_bars",
         "query_market_snapshot",
         "query_classification_members_as_of",
@@ -189,6 +190,23 @@ def test_auction_indicative_schema_and_api_permission_boundary(
         assert connection.execute(
             "select has_table_privilege('market_data_api', "
             "'realtime.call_auction_indicative_detail', 'select')"
+        ).fetchone() == (False,)
+
+
+def test_recent_daily_bars_rpc_permission_boundary(migrated_database_url: str) -> None:
+    signature = "api_v1.query_recent_daily_bars(text,date,integer)"
+    with psycopg.connect(migrated_database_url) as connection:
+        assert connection.execute(
+            "select has_function_privilege('market_data_api', %s, 'execute')",
+            (signature,),
+        ).fetchone() == (True,)
+        assert connection.execute(
+            "select has_function_privilege('anon', %s, 'execute')",
+            (signature,),
+        ).fetchone() == (False,)
+        assert connection.execute(
+            "select has_function_privilege('authenticated', %s, 'execute')",
+            (signature,),
         ).fetchone() == (False,)
 
 
@@ -1987,6 +2005,10 @@ def test_postgrest_query_contracts_are_bounded_version_coherent_and_as_of(
             .scalars()
             .all()
         )
+        recent_payload = connection.execute(
+            text("select api_v1.query_recent_daily_bars(:code, :trade_date, :limit)"),
+            {"code": "600000", "trade_date": date(2026, 7, 29), "limit": 2},
+        ).scalar_one()
         adjusted = connection.execute(
             text("""
                 select trade_date, adjustment_type, calculation_id
@@ -2019,6 +2041,15 @@ def test_postgrest_query_contracts_are_bounded_version_coherent_and_as_of(
 
     assert securities == [SYMBOL]
     assert raw_dates == [date(2026, 7, 27), date(2026, 7, 28)]
+    assert recent_payload["code"] == "600000"
+    assert recent_payload["symbol"] == SYMBOL
+    assert recent_payload["trade_date"] == "2026-07-29"
+    assert recent_payload["limit"] == 2
+    assert recent_payload["count"] == 2
+    assert [item["trade_date"] for item in recent_payload["items"]] == [
+        "2026-07-29",
+        "2026-07-28",
+    ]
     assert [tuple(row) for row in adjusted] == [
         (date(2026, 7, 27), "forward", calculation_id),
         (date(2026, 7, 28), "forward", calculation_id),

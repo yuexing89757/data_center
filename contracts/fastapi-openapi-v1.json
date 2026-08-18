@@ -739,15 +739,15 @@
       "DailyBarResponse": {
         "additionalProperties": false,
         "properties": {
+          "code": {
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
           "count": {
             "minimum": 0.0,
             "title": "Count",
             "type": "integer"
-          },
-          "end_date": {
-            "format": "date",
-            "title": "End Date",
-            "type": "string"
           },
           "items": {
             "items": {
@@ -756,20 +756,27 @@
             "title": "Items",
             "type": "array"
           },
-          "start_date": {
-            "format": "date",
-            "title": "Start Date",
-            "type": "string"
+          "limit": {
+            "maximum": 5000.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
           },
           "symbol": {
             "title": "Symbol",
             "type": "string"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
           }
         },
         "required": [
+          "code",
           "symbol",
-          "start_date",
-          "end_date",
+          "trade_date",
+          "limit",
           "count",
           "items"
         ],
@@ -2221,41 +2228,37 @@
         "operationId": "daily_bars_api_v1_daily_bars__symbol__get",
         "parameters": [
           {
+            "description": "Six-digit stock code; the exchange is resolved from Security facts.",
             "in": "path",
             "name": "symbol",
             "required": true,
             "schema": {
-              "pattern": "^(SSE|SZSE|BSE):[0-9]{6}$",
+              "description": "Six-digit stock code; the exchange is resolved from Security facts.",
+              "pattern": "^[0-9]{6}$",
               "title": "Symbol",
               "type": "string"
             }
           },
           {
+            "description": "Inclusive trading-date cutoff; no later bar is returned.",
             "in": "query",
-            "name": "start_date",
+            "name": "trade_date",
             "required": true,
             "schema": {
+              "description": "Inclusive trading-date cutoff; no later bar is returned.",
               "format": "date",
-              "title": "Start Date",
+              "title": "Trade Date",
               "type": "string"
             }
           },
           {
-            "in": "query",
-            "name": "end_date",
-            "required": true,
-            "schema": {
-              "format": "date",
-              "title": "End Date",
-              "type": "string"
-            }
-          },
-          {
+            "description": "Maximum number of most-recent stored trading-day bars.",
             "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
-              "default": 1000,
+              "default": 20,
+              "description": "Maximum number of most-recent stored trading-day bars.",
               "maximum": 5000,
               "minimum": 1,
               "title": "Limit",

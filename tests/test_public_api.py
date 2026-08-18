@@ -25,6 +25,7 @@ from market_data_center.public_api.models import (
     CallAuctionMarketSnapshotResponse,
     ClassificationMembersResponse,
     DailyBarItem,
+    DailyBarResponse,
     DailyLimitUpListItem,
     DailyLimitUpListResponse,
     DailyLimitUpQualitySummary,
@@ -51,7 +52,7 @@ class FakeQueryService:
         self.ready_error: Exception | None = None
         self.classification_error: Exception | None = None
         self.security_calls: list[tuple[str, int]] = []
-        self.daily_bar_calls: list[tuple[str, date, date, int]] = []
+        self.daily_bar_calls: list[tuple[str, date, int]] = []
         self.limit_up_calls: list[tuple[date, int | None, int]] = []
         self.daily_limit_up_calls: list[tuple[date, int | None, int, int]] = []
         self.call_auction_market_snapshot_calls: list[tuple[date, tuple[str, ...]]] = []
@@ -78,24 +79,30 @@ class FakeQueryService:
             ),
         )
 
-    def daily_bars(
-        self, symbol: str, start_date: date, end_date: date, limit: int
-    ) -> tuple[DailyBarItem, ...]:
-        self.daily_bar_calls.append((symbol, start_date, end_date, limit))
-        return (
-            DailyBarItem(
-                symbol=symbol,
-                trade_date=start_date,
-                open=Decimal("10.10"),
-                high=Decimal("10.30"),
-                low=Decimal("10.00"),
-                close=Decimal("10.20"),
-                previous_close=Decimal("10.05"),
-                volume=123_400,
-                amount=Decimal("1258680.00"),
-                trade_status=TradeStatus.TRADING,
-                is_st=False,
-            ),
+    def daily_bars(self, code: str, trade_date: date, limit: int) -> DailyBarResponse:
+        self.daily_bar_calls.append((code, trade_date, limit))
+        symbol = "SSE:600000"
+        return DailyBarResponse(
+            code=code,
+            symbol=symbol,
+            trade_date=trade_date,
+            limit=limit,
+            count=1,
+            items=[
+                DailyBarItem(
+                    symbol=symbol,
+                    trade_date=trade_date,
+                    open=Decimal("10.10"),
+                    high=Decimal("10.30"),
+                    low=Decimal("10.00"),
+                    close=Decimal("10.20"),
+                    previous_close=Decimal("10.05"),
+                    volume=123_400,
+                    amount=Decimal("1258680.00"),
+                    trade_status=TradeStatus.TRADING,
+                    is_st=False,
+                ),
+            ],
         )
 
     def classification_members(
@@ -466,33 +473,36 @@ def test_daily_bars_keep_decimal_values_as_strings() -> None:
     service = FakeQueryService()
 
     response = _client(service).get(
-        "/api/v1/daily-bars/SSE:600000",
-        params={"start_date": "2026-07-29", "end_date": "2026-07-29"},
+        "/api/v1/daily-bars/600000",
+        params={"trade_date": "2026-07-29", "limit": 5},
         headers=_headers(),
     )
 
     assert response.status_code == 200
     assert response.json()["items"][0]["close"] == "10.20"
     assert response.json()["items"][0]["amount"] == "1258680.00"
-    assert service.daily_bar_calls == [("SSE:600000", date(2026, 7, 29), date(2026, 7, 29), 1000)]
+    assert response.json()["code"] == "600000"
+    assert response.json()["symbol"] == "SSE:600000"
+    assert response.json()["trade_date"] == "2026-07-29"
+    assert response.json()["limit"] == 5
+    assert service.daily_bar_calls == [("600000", date(2026, 7, 29), 5)]
 
 
 def test_daily_bar_validation_does_not_call_the_service() -> None:
     service = FakeQueryService()
 
     invalid_symbol = _client(service).get(
-        "/api/v1/daily-bars/600000",
-        params={"start_date": "2026-07-29", "end_date": "2026-07-29"},
+        "/api/v1/daily-bars/SSE:600000",
+        params={"trade_date": "2026-07-29"},
         headers=_headers(),
     )
-    reversed_dates = _client(service).get(
-        "/api/v1/daily-bars/SSE:600000",
-        params={"start_date": "2026-07-30", "end_date": "2026-07-29"},
+    missing_trade_date = _client(service).get(
+        "/api/v1/daily-bars/600000",
         headers=_headers(),
     )
 
     assert invalid_symbol.status_code == 422
-    assert reversed_dates.status_code == 422
+    assert missing_trade_date.status_code == 422
     assert service.daily_bar_calls == []
 
 

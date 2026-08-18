@@ -16,7 +16,7 @@ FASTAPI_PORT=8000
 `market_data_api` group role. The API never falls back to the Worker's `DATABASE_URL`. Connections
 force read-only transactions and a five-second statement timeout.
 
-Stable v1 routes are security search (100 rows), unadjusted daily bars (5,000 rows and 3,661 days),
+Stable v1 routes are security search (100 rows), recent unadjusted daily bars (5,000 rows),
 classification members (5,000 rows), the exact-date generic limit-up pool (5,000 rows), the
 versioned same-day limit-up snapshot (500 rows per page), and exact-date call-auction market
 snapshots (500 requested six-digit codes). Business routes require `X-API-Key`. `/healthz` is
@@ -36,6 +36,13 @@ or free-float shares are omitted individually and reported through total/valid/r
 counts plus grouped omission reasons; no value or date is substituted. Validation covers the whole
 snapshot, then `limit` selects valid rows in ascending symbol order. `has_more` reports truncation;
 v1 has no offset/cursor, so request 5,000 for the complete bounded set.
+
+`GET /api/v1/daily-bars/{code}?trade_date=YYYY-MM-DD&limit=20` accepts exactly one six-digit
+stock code. `trade_date` is an inclusive cutoff and `limit` is the maximum number of most-recent
+stored unadjusted daily bars to return. The database resolves the code to one standard symbol from
+Security facts; it does not guess an exchange from the code prefix. Items are newest first and
+never later than the cutoff. Missing or suspended sessions are not fabricated, so `count` may be
+less than `limit`. Unknown codes return 404 and ambiguous codes are rejected.
 
 `GET /api/v1/daily-limit-up-list?trade_date=YYYY-MM-DD&version=&offset=0&limit=200`
 returns the immutable `today_limit_up` snapshot for the exact date. When `version` is omitted it
