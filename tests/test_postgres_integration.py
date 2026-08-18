@@ -1447,6 +1447,14 @@ insert into realtime.call_auction_market_snapshot (
                 "at": observed_at,
             },
         )
+        connection.execute(
+            text("""
+update realtime.call_auction_market_snapshot
+set bid1_price=11, bid1_volume=100, seal_amount=1100
+where ingestion_id=:id and symbol='SSE:600000'
+"""),
+            {"id": snapshot_ingestion_id},
+        )
         assert connection.scalar(
             text(
                 "select has_function_privilege('market_data_api', "
@@ -1498,11 +1506,13 @@ insert into realtime.call_auction_market_snapshot (
     ]
     assert payload["up"][1]["limit_price"] == 0.05
     assert payload["up"][2]["limit_price"] == 11.06
+    assert payload["up"][0]["seal_amount"] == 1100
     assert [item["symbol"] for item in payload["down"]] == [
         "SSE:600006",
         "SZSE:000001",
     ]
     assert payload["down"][0]["limit_price"] == 0.01
+    assert payload["down"][0]["seal_amount"] is None
     assert partial_payload["ingestion_id"] == str(partial_ingestion_id)
     assert partial_payload["ingestion_status"] == "partial"
     assert partial_payload["candidate_count"] == 1

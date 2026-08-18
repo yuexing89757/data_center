@@ -120,7 +120,10 @@ up/down lists. The response identifies `calculation_mode=realtime_read` and
 snapshot is the only market-data dependency, so the endpoint does not wait for the nightly
 price-limit batch. It does not fetch providers, write data or use later bars. Partial status and
 incomplete mainboard omissions remain visible; a valid empty list is HTTP 200, while no exact
-09:25:50 snapshot is HTTP 404.
+09:25:50 snapshot is HTTP 404. Each item exposes the stored `seal_amount`; under the accepted
+snapshot rule it is `bid1_price * bid1_volume` when ask-1 volume is missing or zero, so down-limit
+items normally return `null`. `observed_at` is rendered in Asia/Shanghai as
+`YYYY-MM-DD HH:mm:ss`.
 
 `GET /api/v1/call-auction-indicative-details?code=688796&offset=0&limit=200` requires only one
 six-digit SSE/SZSE stock code; the service derives the current Asia/Shanghai date and standardized

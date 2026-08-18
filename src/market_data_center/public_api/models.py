@@ -377,12 +377,20 @@ class AuctionOnePriceLimitItem(ApiModel):
     code: SixDigitCode
     name: str
     direction: Literal["up", "down"]
-    observed_at: datetime
+    observed_at: datetime = Field(
+        description="上海时区行情观察时间。格式为 YYYY-MM-DD HH:mm:ss",
+        examples=["2026-08-18 14:27:46"],
+    )
     indicated_price: Decimal
     limit_price: Decimal
     previous_close: Decimal
     cumulative_volume: int | None = Field(default=None, ge=0)
     cumulative_amount: Decimal | None
+    seal_amount: Decimal | None = Field(default=None, ge=0)
+
+    @field_serializer("observed_at", when_used="json")
+    def serialize_observed_at(self, value: datetime) -> str:
+        return value.astimezone(SHANGHAI).strftime("%Y-%m-%d %H:%M:%S")
 
 
 class AuctionOnePriceLimitResponse(ApiModel):

@@ -356,8 +356,10 @@
             "type": "string"
           },
           "observed_at": {
-            "description": "行情观察时间，按上海时区格式化。",
-            "format": "date-time",
+            "description": "上海时区行情观察时间。格式为 YYYY-MM-DD HH:mm:ss",
+            "examples": [
+              "2026-08-18 14:27:46"
+            ],
             "title": "Observed At",
             "type": "string"
           },
@@ -366,6 +368,19 @@
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Previous Close",
             "type": "string"
+          },
+          "seal_amount": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "竞价封单额，按买一价乘以买一量计算，单位为人民币元。",
+            "title": "Seal Amount"
           },
           "symbol": {
             "description": "带交易所前缀的标准证券代码。",

@@ -205,7 +205,8 @@ def localize_openapi(schema: dict[str, Any]) -> dict[str, Any]:
         if name in {"HTTPValidationError", "ValidationError"}:
             continue
         for field_name, field_schema in component.get("properties", {}).items():
-            field_schema["description"] = _description(field_name)
+            if not _contains_chinese(field_schema.get("description")):
+                field_schema["description"] = _description(field_name)
 
     return schema
 
@@ -215,3 +216,7 @@ def _description(field_name: str) -> str:
         return FIELD_DESCRIPTIONS_ZH[field_name]
     except KeyError as error:
         raise RuntimeError(f"missing Chinese OpenAPI description for {field_name!r}") from error
+
+
+def _contains_chinese(value: object) -> bool:
+    return isinstance(value, str) and any("\u4e00" <= char <= "\u9fff" for char in value)

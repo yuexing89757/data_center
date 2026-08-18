@@ -437,6 +437,7 @@ class FakeQueryService:
             previous_close=Decimal("10"),
             cumulative_volume=100,
             cumulative_amount=Decimal("1100"),
+            seal_amount=Decimal("1100"),
         )
         return AuctionOnePriceLimitResponse(
             trade_date=day,
@@ -1267,11 +1268,14 @@ def test_auction_one_price_limits_returns_separate_sets() -> None:
     assert response.json()["price_limit_rule_version"] == "CN_MAINBOARD_2026_07_06"
     assert response.json()["price_limit_algorithm_version"] == "1.0.0"
     assert response.json()["calculation_mode"] == "realtime_read"
+    assert response.json()["up"][0]["seal_amount"] == "1100"
+    assert response.json()["up"][0]["observed_at"] == "2026-08-13 09:26:00"
 
 
 def test_auction_one_price_limits_openapi_exposes_realtime_lineage() -> None:
     schema = _client(FakeQueryService()).get("/openapi.json").json()
     response = schema["components"]["schemas"]["AuctionOnePriceLimitResponse"]
+    item = schema["components"]["schemas"]["AuctionOnePriceLimitItem"]
 
     assert {
         item["type"] for item in response["properties"]["price_limit_calculation_id"]["anyOf"]
@@ -1284,6 +1288,9 @@ def test_auction_one_price_limits_openapi_exposes_realtime_lineage() -> None:
     )
     assert response["properties"]["price_limit_algorithm_version"]["const"] == "1.0.0"
     assert response["properties"]["calculation_mode"]["const"] == "realtime_read"
+    assert "seal_amount" in item["properties"]
+    assert "封单额" in item["properties"]["seal_amount"]["description"]
+    assert item["properties"]["observed_at"]["examples"] == ["2026-08-18 14:27:46"]
 
 
 def test_auction_indicative_details_falls_back_to_live_only_when_database_is_empty() -> None:
