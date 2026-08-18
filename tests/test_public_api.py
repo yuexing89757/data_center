@@ -156,6 +156,7 @@ class FakeQueryService:
         self.board_index_bias_live_calls = 0
         self.board_index_bias_live_error: Exception | None = None
         self.auction_one_price_limit_calls: list[date | None] = []
+        self.auction_one_price_pattern_calls: list[date | None] = []
         self.auction_indicative_database_calls: list[tuple[str, int, int]] = []
         self.auction_indicative_database_error: Exception | None = PublicQueryNotFound("not stored")
         self.auction_indicative_calls: list[tuple[str, date, int, int]] = []
@@ -538,6 +539,32 @@ class FakeQueryService:
             down_count=0,
             up=[item],
             down=[],
+        )
+
+    def auction_one_price_patterns(
+        self, trade_date: date | None
+    ) -> api_models.CallAuctionOnePricePatternResponse:
+        self.auction_one_price_pattern_calls.append(trade_date)
+        return api_models.CallAuctionOnePricePatternResponse(
+            trade_date=trade_date or date(2026, 8, 18),
+            session_id="00000000-0000-0000-0000-000000000056",
+            session_status="partial",
+            window_start="2026-08-18T09:15:20+08:00",
+            window_end="2026-08-18T09:24:40+08:00",
+            round_count=29,
+            candidate_count=1,
+            items=[
+                api_models.CallAuctionOnePricePatternItem(
+                    symbol="SSE:600000",
+                    code="600000",
+                    name="浦发银行",
+                    exchange="SSE",
+                    one_price=Decimal("10.20"),
+                    previous_close=Decimal("10.00"),
+                    change_pct=Decimal("2.0000000000"),
+                    sample_count=29,
+                )
+            ],
         )
 
     def auction_indicative_details(
@@ -1354,6 +1381,32 @@ def test_auction_one_price_limits_returns_separate_sets() -> None:
     assert response.json()["calculation_mode"] == "realtime_read"
     assert response.json()["up"][0]["seal_amount"] == "1100"
     assert response.json()["up"][0]["observed_at"] == "2026-08-13 09:26:00"
+
+
+def test_call_auction_one_price_patterns_returns_fixed_window() -> None:
+    service = FakeQueryService()
+    response = _client(service).get(
+        "/api/v1/call-auction-one-price-patterns",
+        params={"trade_date": "2026-08-18"},
+        headers=_headers(),
+    )
+
+    assert response.status_code == 200
+    assert service.auction_one_price_pattern_calls == [date(2026, 8, 18)]
+    assert response.json()["round_count"] == 29
+    assert response.json()["items"][0]["one_price"] == "10.20"
+    assert response.json()["items"][0]["change_pct"] == "2.0000000000"
+
+
+def test_call_auction_one_price_patterns_openapi_is_chinese() -> None:
+    schema = _client(FakeQueryService()).get("/openapi.json").json()
+    operation = schema["paths"]["/api/v1/call-auction-one-price-patterns"]["get"]
+
+    assert "集合竞价" in operation["summary"]
+    assert "09:15:20" in operation["description"]
+    assert "09:24:40" in operation["description"]
+    assert "29" in operation["description"]
+    assert "不回退" in operation["description"]
 
 
 def test_auction_one_price_limits_openapi_exposes_realtime_lineage() -> None:

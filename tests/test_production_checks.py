@@ -94,6 +94,10 @@ def test_fastapi_preflight_checks_call_auction_market_snapshot_rpc() -> None:
 
 def test_fastapi_preflight_and_docs_publish_realtime_auction_limits() -> None:
     assert "api_v1.query_auction_one_price_limits(date)" in PUBLISHED_FUNCTIONS
+
+
+def test_fastapi_preflight_publishes_auction_one_price_patterns() -> None:
+    assert "api_v1.query_call_auction_one_price_patterns(date)" in PUBLISHED_FUNCTIONS
     documentation = "\n".join(
         (
             (PROJECT_ROOT / "docs/FastAPI外部接口.md").read_text(encoding="utf-8"),

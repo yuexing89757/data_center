@@ -1798,6 +1798,149 @@
         "title": "CallAuctionMarketSnapshotResponse",
         "type": "object"
       },
+      "CallAuctionOnePricePatternItem": {
+        "additionalProperties": false,
+        "properties": {
+          "change_pct": {
+            "description": "相对上一交易日收盘价的涨跌幅，单位为百分比。",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Change Pct",
+            "type": "string"
+          },
+          "code": {
+            "description": "不含交易所前缀的六位股票代码。",
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "exchange": {
+            "description": "证券所属交易所。",
+            "enum": [
+              "SSE",
+              "SZSE"
+            ],
+            "title": "Exchange",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "证券或板块名称。",
+            "title": "Name"
+          },
+          "one_price": {
+            "description": "观察窗口内二十九轮完全一致的集合竞价价格。",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "One Price",
+            "type": "string"
+          },
+          "previous_close": {
+            "description": "上一交易日收盘价。",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Previous Close",
+            "type": "string"
+          },
+          "sample_count": {
+            "const": 29,
+            "description": "该股票参与形态判定的有效采样数，固定为二十九。",
+            "title": "Sample Count",
+            "type": "integer"
+          },
+          "symbol": {
+            "description": "带交易所前缀的标准证券代码。",
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "code",
+          "name",
+          "exchange",
+          "one_price",
+          "previous_close",
+          "change_pct",
+          "sample_count"
+        ],
+        "title": "CallAuctionOnePricePatternItem",
+        "type": "object"
+      },
+      "CallAuctionOnePricePatternResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "candidate_count": {
+            "description": "候选股票数量。",
+            "minimum": 0.0,
+            "title": "Candidate Count",
+            "type": "integer"
+          },
+          "items": {
+            "description": "返回的数据记录列表。",
+            "items": {
+              "$ref": "#/components/schemas/CallAuctionOnePricePatternItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "round_count": {
+            "const": 29,
+            "description": "参与形态判定的成功采样轮次数，固定为二十九。",
+            "title": "Round Count",
+            "type": "integer"
+          },
+          "session_id": {
+            "description": "竞价序列采集会话标识。",
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "session_status": {
+            "description": "竞价序列采集会话状态。",
+            "enum": [
+              "succeeded",
+              "partial"
+            ],
+            "title": "Session Status",
+            "type": "string"
+          },
+          "trade_date": {
+            "description": "交易日。",
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "window_end": {
+            "description": "形态观察窗口结束时间。",
+            "format": "date-time",
+            "title": "Window End",
+            "type": "string"
+          },
+          "window_start": {
+            "description": "形态观察窗口开始时间。",
+            "format": "date-time",
+            "title": "Window Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "trade_date",
+          "session_id",
+          "session_status",
+          "window_start",
+          "window_end",
+          "round_count",
+          "candidate_count",
+          "items"
+        ],
+        "title": "CallAuctionOnePricePatternResponse",
+        "type": "object"
+      },
       "ClassificationMembersResponse": {
         "additionalProperties": false,
         "properties": {
@@ -3764,6 +3907,93 @@
           }
         ],
         "summary": "实时计算 09:25:50 主板一字涨跌停列表",
+        "tags": [
+          "市场数据"
+        ]
+      }
+    },
+    "/api/v1/call-auction-one-price-patterns": {
+      "get": {
+        "description": "读取沪深上市股票在 09:15:20–09:24:40 的29轮集合竞价序列事实。仅返回29轮价格完全相同、相对昨收精确涨跌幅位于闭区间 [-4%, 4%] 的股票。显式交易日无完整窗口时返回404且不回退；省略日期时选择最近完整窗口。",
+        "operationId": "auction_one_price_patterns_api_v1_call_auction_one_price_patterns_get",
+        "parameters": [
+          {
+            "description": "交易日。",
+            "in": "query",
+            "name": "trade_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Trade Date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallAuctionOnePricePatternResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "查询集合竞价29轮同价形态股票",
         "tags": [
           "市场数据"
         ]

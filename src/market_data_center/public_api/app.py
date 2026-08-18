@@ -51,6 +51,7 @@ from market_data_center.public_api.models import (
     CallAuctionMarketSeriesSnapshotResponse,
     CallAuctionMarketSnapshotQuery,
     CallAuctionMarketSnapshotResponse,
+    CallAuctionOnePricePatternResponse,
     ClassificationMembersResponse,
     ClosePriceNewHighs120dResponse,
     DailyBarResponse,
@@ -443,6 +444,29 @@ def create_app(
         trade_date: Annotated[date | None, Query()] = None,
     ) -> AuctionOnePriceLimitResponse:
         return service.auction_one_price_limits(trade_date)
+
+    @app.get(
+        "/api/v1/call-auction-one-price-patterns",
+        response_model=CallAuctionOnePricePatternResponse,
+        responses={
+            401: {"model": ErrorResponse},
+            404: {"model": ErrorResponse},
+            503: {"model": ErrorResponse},
+        },
+        tags=["市场数据"],
+        summary="查询集合竞价29轮同价形态股票",
+        description=(
+            "读取沪深上市股票在 09:15:20–09:24:40 的29轮集合竞价序列事实。"
+            "仅返回29轮价格完全相同、相对昨收精确涨跌幅位于闭区间 [-4%, 4%] 的股票。"
+            "显式交易日无完整窗口时返回404且不回退；省略日期时选择最近完整窗口。"
+        ),
+    )
+    def auction_one_price_patterns(
+        _: ApiKeyDependency,
+        service: QueryServiceDependency,
+        trade_date: Annotated[date | None, Query()] = None,
+    ) -> CallAuctionOnePricePatternResponse:
+        return service.auction_one_price_patterns(trade_date)
 
     @app.get(
         "/api/v1/call-auction-indicative-details",

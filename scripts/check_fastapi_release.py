@@ -15,6 +15,7 @@ PUBLISHED_FUNCTIONS = (
     "api_v1.query_call_auction_market_snapshots(date,text[])",
     "api_v1.query_call_auction_market_series_snapshots(date,text[])",
     "api_v1.query_auction_one_price_limits(date)",
+    "api_v1.query_call_auction_one_price_patterns(date)",
     "api_v1.query_call_auction_indicative_details(text,date,integer,integer)",
     "api_v1.persist_call_auction_indicative_details(uuid,uuid,text,date,timestamptz,text,text,text,bigint,integer,jsonb)",
     "api_v1.query_close_price_new_highs_120d()",
