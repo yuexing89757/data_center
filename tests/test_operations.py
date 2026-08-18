@@ -128,11 +128,8 @@ def test_job_catalog_is_stable_and_references_defined_workflows() -> None:
 def test_job_catalog_owns_all_fixed_schedules() -> None:
     jobs = {job.code: job for job in job_definitions(SchedulerSettings(_env_file=None))}
 
-    assert (
-        jobs["opening-auction-limit-up-quotes"].hour,
-        jobs["opening-auction-limit-up-quotes"].minute,
-    ) == (9, 15)
-    assert jobs["opening-auction-limit-up-quotes"].cadence_seconds == 30
+    assert "opening-auction-limit-up-quotes" not in jobs
+    assert WorkflowCode("auction_collection") is WorkflowCode.AUCTION_COLLECTION
     assert (
         jobs["call-auction-market-series"].hour,
         jobs["call-auction-market-series"].minute,

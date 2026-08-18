@@ -9,7 +9,6 @@ STOCK_DAILY_INDICATOR_JOB_ID = "stock-daily-indicators-daily"
 STALE_RUN_RECOVERY_JOB_ID = "recover-stale-ingestion-runs"
 DEDUCTED_PROFIT_JOB_ID = "deducted-profit-daily"
 STOCK_POOL_JOB_ID = "mainboard-price-limit-stock-pools-daily"
-AUCTION_COLLECTION_JOB_ID = "opening-auction-limit-up-quotes"
 EOD_QUOTE_SNAPSHOT_JOB_ID = "eod-quote-snapshot-daily"
 CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID = "call-auction-market-snapshot-daily"
 CALL_AUCTION_MARKET_SERIES_JOB_ID = "call-auction-market-series"
@@ -18,8 +17,6 @@ PYTDX_POOL_REFRESH_JOB_ID = "pytdx-pool-refresh"
 CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID = "close-price-new-highs-120d-daily"
 SCHEDULER_TIMEZONE = "Asia/Shanghai"
 JOB_TIMEOUT_SECONDS = 21_600
-AUCTION_COLLECTION_CADENCE_SECONDS = 30
-AUCTION_COLLECTION_QUOTE_BATCH_SIZE = 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,22 +137,6 @@ def job_definitions(settings: SchedulerSettings) -> tuple[JobDefinition, ...]:
     timezone = SCHEDULER_TIMEZONE
     timeout = JOB_TIMEOUT_SECONDS
     return (
-        JobDefinition(
-            AUCTION_COLLECTION_JOB_ID,
-            "集合竞价涨停池五档采集",
-            "单次启动十分钟会话, 仅采集精确 ready 的昨日涨停池。",
-            "auction_collection",
-            "cron",
-            "周一至周五 09:15",
-            timezone,
-            settings.auction_collection_enabled,
-            timeout,
-            "进程恢复仅续采当前及未来轮次, 过去轮次记为缺失, 不回填。",
-            day_of_week="mon-fri",
-            hour=9,
-            minute=15,
-            cadence_seconds=AUCTION_COLLECTION_CADENCE_SECONDS,
-        ),
         JobDefinition(
             DAILY_RUN_JOB_ID,
             "日 K 与基础数据更新",

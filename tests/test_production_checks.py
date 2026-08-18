@@ -605,7 +605,8 @@ def test_linux_worker_uses_the_shared_pool_runtime_contract() -> None:
 
     assert "check_pytdx_" + "daily_bar_endpoints.py" not in unit
     assert "PYTDX_POOL_PATH=/var/lib/market-data-center/pytdx_pool.json" in template
-    assert "AUCTION_COLLECTION_ENABLED=true" in template
+    assert "AUCTION_COLLECTION_ENABLED" not in template
+    assert "PYSNOWBALL_TOKEN" not in template
     assert "EOD_QUOTE_SNAPSHOT_ENABLED=true" in template
     assert "CALL_AUCTION_SNAPSHOT_ENABLED=true" in template
     assert "CALL_AUCTION_MARKET_SERIES_ENABLED=true" in template
@@ -622,7 +623,6 @@ def test_release_templates_expose_task_switches_but_not_task_times() -> None:
         )
     )
     switches = (
-        "AUCTION_COLLECTION_ENABLED=true",
         "EOD_QUOTE_SNAPSHOT_ENABLED=true",
         "CALL_AUCTION_SNAPSHOT_ENABLED=true",
         "CALL_AUCTION_MARKET_SERIES_ENABLED=true",

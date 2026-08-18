@@ -21,7 +21,6 @@ from market_data_center.scheduler import (
     prepare_locked_worker,
 )
 from market_data_center.scheduling_catalog import (
-    AUCTION_COLLECTION_JOB_ID,
     CALL_AUCTION_MARKET_SERIES_JOB_ID,
     CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID,
     CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID,
@@ -40,7 +39,6 @@ def test_scheduler_registers_persistent_single_instance_market_job(tmp_path: Pat
     store_path = tmp_path / "scheduler" / "jobs.sqlite"
     settings = SchedulerSettings(
         scheduler_store_path=store_path,
-        auction_collection_enabled=False,
         _env_file=None,
     )
     scheduler = build_scheduler(settings)
@@ -70,7 +68,7 @@ def test_scheduler_registers_persistent_single_instance_market_job(tmp_path: Pat
     assert closing_highs is not None
     assert str(closing_highs.trigger) == ("cron[day_of_week='mon-fri', hour='21', minute='30']")
     assert store_path.parent.is_dir()
-    assert scheduler.get_job(AUCTION_COLLECTION_JOB_ID) is None
+    assert scheduler.get_job("opening-auction-limit-up-quotes") is None
 
 
 def test_scheduler_registers_twelve_hour_pytdx_pool_refresh(tmp_path: Path) -> None:
@@ -215,50 +213,34 @@ def test_locked_worker_does_not_build_runtime_when_refresh_fails() -> None:
     assert events == ["pool-failed"]
 
 
-def test_scheduler_registers_one_auction_session_job_only_when_enabled(tmp_path: Path) -> None:
-    scheduler = build_scheduler(
-        SchedulerSettings(
-            scheduler_store_path=tmp_path / "auction.sqlite",
-            auction_collection_enabled=True,
-            _env_file=None,
-        )
-    )
-
-    auction = scheduler.get_job(AUCTION_COLLECTION_JOB_ID)
-    assert auction is not None
-    assert str(auction.trigger) == "cron[day_of_week='mon-fri', hour='9', minute='15']"
-    assert auction.max_instances == 1
-
-
-def test_morning_auction_jobs_have_a_dedicated_two_thread_executor(tmp_path: Path) -> None:
+def test_market_series_has_a_dedicated_morning_executor(tmp_path: Path) -> None:
     scheduler = build_scheduler(
         SchedulerSettings(scheduler_store_path=tmp_path / "executors.sqlite", _env_file=None)
     )
 
     series = scheduler.get_job(CALL_AUCTION_MARKET_SERIES_JOB_ID)
-    limit_up = scheduler.get_job(AUCTION_COLLECTION_JOB_ID)
     snapshot_0926 = scheduler.get_job(CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID)
-    assert series is not None and limit_up is not None and snapshot_0926 is not None
-    assert series.executor == limit_up.executor == "morning_auction"
+    assert series is not None and snapshot_0926 is not None
+    assert scheduler.get_job("opening-auction-limit-up-quotes") is None
+    assert series.executor == "morning_auction"
     assert snapshot_0926.executor == "default"
-    assert series.max_instances == limit_up.max_instances == 1
+    assert series.max_instances == 1
     assert scheduler._executors["default"]._pool._max_workers == 1
-    assert scheduler._executors["morning_auction"]._pool._max_workers == 2
+    assert scheduler._executors["morning_auction"]._pool._max_workers == 1
 
 
-def test_disabling_series_does_not_disable_other_morning_jobs(tmp_path: Path) -> None:
+def test_disabling_series_does_not_disable_0926_snapshot(tmp_path: Path) -> None:
     scheduler = build_scheduler(
         SchedulerSettings(
             scheduler_store_path=tmp_path / "no_series.sqlite",
             call_auction_market_series_enabled=False,
-            auction_collection_enabled=True,
             call_auction_snapshot_enabled=True,
             _env_file=None,
         )
     )
 
     assert scheduler.get_job(CALL_AUCTION_MARKET_SERIES_JOB_ID) is None
-    assert scheduler.get_job(AUCTION_COLLECTION_JOB_ID) is not None
+    assert scheduler.get_job("opening-auction-limit-up-quotes") is None
     assert scheduler.get_job(CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID) is not None
 
 
@@ -273,70 +255,6 @@ def test_closing_high_snapshot_can_only_be_enabled_or_disabled(tmp_path: Path) -
 
     assert scheduler.get_job(CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID) is None
     assert scheduler.get_job(DAILY_RUN_JOB_ID) is not None
-
-
-def test_auction_collection_job_wires_only_pysnowball_provider(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    captured: dict[str, object] = {}
-    engine = SimpleNamespace(disposed=False)
-    engine.dispose = lambda: setattr(engine, "disposed", True)
-    quote_settings = object()
-    provider = SimpleNamespace(source_code="pysnowball")
-
-    class FakeExecution:
-        def step(self, code, sequence, operation):
-            captured["step"] = (code, sequence)
-            return operation()
-
-        def succeed(self):
-            captured["succeeded"] = True
-
-        def fail(self, error):
-            raise AssertionError(error)
-
-    class FakeService:
-        def __init__(self, *args, **kwargs):
-            captured["service_args"] = args
-            captured["service_kwargs"] = kwargs
-
-        def collect(self, trade_date):
-            captured["trade_date"] = trade_date
-
-    monkeypatch.setattr(
-        scheduler_module,
-        "WorkerSettings",
-        lambda: SimpleNamespace(
-            database_url=SimpleNamespace(get_secret_value=lambda: "unused"),
-            raw_data_root=tmp_path / "raw",
-        ),
-    )
-    monkeypatch.setattr(scheduler_module, "PysnowballSettings", lambda: quote_settings)
-    monkeypatch.setattr(
-        scheduler_module,
-        "PytdxHqSettings",
-        lambda **kwargs: pytest.fail("auction collector must not construct PytdxHqSettings"),
-    )
-    monkeypatch.setattr(scheduler_module, "PysnowballQuoteProvider", lambda value: provider)
-    monkeypatch.setattr(scheduler_module, "sqlalchemy_url", lambda value: value)
-    monkeypatch.setattr(scheduler_module, "create_engine", lambda *args, **kwargs: engine)
-    monkeypatch.setattr(scheduler_module, "PostgreSQLOperationsPersistence", lambda value: value)
-    monkeypatch.setattr(
-        scheduler_module,
-        "WorkflowExecutionService",
-        lambda value: SimpleNamespace(start=lambda *args: FakeExecution()),
-    )
-    monkeypatch.setattr(scheduler_module, "PostgreSQLAuctionPersistence", lambda value: value)
-    monkeypatch.setattr(scheduler_module, "LocalRawStore", lambda value: value)
-    monkeypatch.setattr(scheduler_module, "AuctionCollectionService", FakeService)
-
-    scheduler_module.run_auction_collection_job()
-
-    assert captured["service_args"][1] is provider
-    assert captured["service_kwargs"] == {"cadence_seconds": 30, "max_retries": 0}
-    assert captured["step"] == ("collect_auction_quotes", 1)
-    assert captured["succeeded"] is True
-    assert engine.disposed is True
 
 
 def test_call_auction_market_series_runner_wires_isolated_dependencies(
@@ -611,7 +529,6 @@ def test_scheduler_health_requires_jobs_fresh_snapshot_and_no_stale_runs(tmp_pat
     )
     settings = SchedulerSettings(
         scheduler_store_path=store_path,
-        auction_collection_enabled=False,
         eod_quote_snapshot_enabled=False,
         call_auction_snapshot_enabled=False,
         call_auction_market_series_enabled=False,

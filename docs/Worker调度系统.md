@@ -88,7 +88,6 @@ BlockingScheduler
 
 | # | Job ID | 名称 | Workflow | 触发 | 默认时间 | 启用 |
 |---|---|---|---|---|---|---|
-| 1 | `opening-auction-limit-up-quotes` | 集合竞价涨停池五档采集 | `auction_collection` | cron 周一至周五 | 09:15 | ✅ |
 | 2 | `call-auction-market-series` | 沪深全市场开盘竞价序列快照 | `call_auction_market_series` | cron 周一至周五 | 09:15 | ✅ |
 | 3 | `call-auction-market-snapshot-daily` | 沪深全市场开盘竞价快照 | `call_auction_market_snapshot` | cron 周一至周五 | 09:26 | ✅ |
 | 4 | `daily-run` | 日 K 与基础数据更新 | `daily_market` | cron 周一至周五 | 20:00 | ✅ |
@@ -113,7 +112,6 @@ BlockingScheduler
 | `run_stale_recovery_job` | **4 步**：恢复 stale ingestion run、stale workflow run、涨停池 auction session 和过期全市场竞价序列 session。每小时 + 启动时各跑一次 |
 | `run_deducted_profit_job` | tushare 扣非净利润增量同步（按披露变化发现新公告/修订） |
 | `run_stock_pool_job` | 解析基准交易日 → 构建下一交易日生效的涨跌停股票池（依赖当日日K+指标成功） |
-| `run_auction_collection_job` | pysnowball-only 集合竞价涨停池五档采集（09:15-09:25 按 30 秒节奏采样，每只股票单独请求，默认启用） |
 | `run_eod_quote_snapshot_job` | 对当日 ready 涨停池采集收盘五档快照（默认启用） |
 | `run_call_auction_market_snapshot_job` | 09:26 从一个 quote-capable endpoint 采集 SSE/SZSE `stock`、`listed` 全集的开盘竞价来源快照；BSE、ETF、可转债和指数不进入本任务 |
 | `run_call_auction_market_series_job` | 09:15 启动 32 轮 SSE/SZSE `stock`、`listed` 全集采集；每轮最多两个 endpoint 完整 attempt，不合并 partial |
@@ -138,7 +136,6 @@ BlockingScheduler
 |---|---|---|
 | `SCHEDULER_STORE_PATH` | `data/scheduler/jobs.sqlite` | APScheduler 持久化路径 |
 | `WORKER_ADMIN_PORT` | `8765` | 管理页面端口 |
-| `AUCTION_COLLECTION_ENABLED` | `true` | 集合竞价采集开关 |
 | `EOD_QUOTE_SNAPSHOT_ENABLED` | `true` | 收盘五档任务开关 |
 | `CALL_AUCTION_SNAPSHOT_ENABLED` | `true` | 只控制 09:26 沪深全市场开盘竞价来源采集 |
 | `CALL_AUCTION_MARKET_SERIES_ENABLED` | `true` | 只控制 09:15 全市场竞价序列任务 |

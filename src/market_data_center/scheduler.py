@@ -21,7 +21,6 @@ from apscheduler.triggers.cron import CronTrigger  # type: ignore[import-untyped
 from apscheduler.triggers.interval import IntervalTrigger  # type: ignore[import-untyped]
 from sqlalchemy import URL, create_engine
 
-from market_data_center.auction_service import AuctionCollectionService
 from market_data_center.call_auction_market_series_service import (
     CallAuctionMarketSeriesService,
 )
@@ -42,7 +41,6 @@ from market_data_center.persistence.close_price_new_highs_postgres import (
 from market_data_center.persistence.operations_postgres import PostgreSQLOperationsPersistence
 from market_data_center.persistence.stock_pool_postgres import PostgreSQLStockPoolPersistence
 from market_data_center.pipeline import IngestionPipeline
-from market_data_center.providers.pysnowball_quote import PysnowballQuoteProvider
 from market_data_center.providers.pytdx_hq import PytdxHqProvider
 from market_data_center.providers.pytdx_pool import (
     PytdxCapability,
@@ -54,7 +52,6 @@ from market_data_center.providers.pytdx_pool import (
 from market_data_center.raw_store import LocalRawStore
 from market_data_center.reliability import recover_stale_runs
 from market_data_center.scheduling_catalog import (
-    AUCTION_COLLECTION_JOB_ID,
     CALL_AUCTION_MARKET_SERIES_JOB_ID,
     CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID,
     CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID,
@@ -72,7 +69,6 @@ from market_data_center.scheduling_catalog import (
     job_definitions,
 )
 from market_data_center.settings import (
-    PysnowballSettings,
     PytdxHqSettings,
     PytdxPoolSettings,
     SchedulerSettings,
@@ -82,7 +78,7 @@ from market_data_center.stock_pool_service import StockPoolService
 
 SCHEDULER_LOCK_KEY = "market-data-center:scheduler"
 LOGGER = getLogger(__name__)
-_RETIRED_JOB_IDS = ("call-auction-snapshot-daily",)
+_RETIRED_JOB_IDS = ("call-auction-snapshot-daily", "opening-auction-limit-up-quotes")
 
 
 @dataclass(frozen=True, slots=True)
@@ -403,43 +399,6 @@ def run_stock_pool_job() -> None:
         engine.dispose()
 
 
-def run_auction_collection_job() -> None:
-    """Collect one bounded opening-auction session for today's exact limit-up pool."""
-    settings = WorkerSettings()  # type: ignore[call-arg]
-    scheduling = SchedulerSettings()
-    definition = job_definition(AUCTION_COLLECTION_JOB_ID, scheduling)
-    if definition.cadence_seconds is None:
-        raise ValueError(f"job has no cadence: {AUCTION_COLLECTION_JOB_ID}")
-    quote_settings = PysnowballSettings()  # type: ignore[call-arg]
-    engine = create_engine(
-        sqlalchemy_url(settings.database_url.get_secret_value()), pool_pre_ping=True
-    )
-    try:
-        operations = PostgreSQLOperationsPersistence(engine)
-        execution = WorkflowExecutionService(operations).start(
-            WorkflowCode.AUCTION_COLLECTION,
-            _scheduled_job_fire_time(AUCTION_COLLECTION_JOB_ID, scheduling),
-            TriggerSource.SCHEDULED,
-        )
-        try:
-            trade_date = datetime.now(ZoneInfo(definition.timezone)).date()
-            provider = PysnowballQuoteProvider(quote_settings)
-            service = AuctionCollectionService(
-                PostgreSQLAuctionPersistence(engine),
-                provider,
-                LocalRawStore(settings.raw_data_root),
-                cadence_seconds=definition.cadence_seconds,
-                max_retries=0,
-            )
-            execution.step("collect_auction_quotes", 1, lambda: service.collect(trade_date))
-        except BaseException as error:
-            execution.fail(error)
-            raise
-        execution.succeed()
-    finally:
-        engine.dispose()
-
-
 def run_eod_quote_snapshot_job() -> None:
     """Collect end-of-day five-level quotes for the latest limit-up pool."""
     from market_data_center.snapshot_collector import collect_eod_quotes
@@ -625,7 +584,7 @@ def build_scheduler(settings: SchedulerSettings | None = None) -> BlockingSchedu
         jobstores={"default": SQLAlchemyJobStore(engine=job_store_engine)},
         executors={
             "default": ThreadPoolExecutor(max_workers=1),
-            "morning_auction": ThreadPoolExecutor(max_workers=2),
+            "morning_auction": ThreadPoolExecutor(max_workers=1),
         },
         timezone=SCHEDULER_TIMEZONE,
     )
@@ -635,7 +594,6 @@ def build_scheduler(settings: SchedulerSettings | None = None) -> BlockingSchedu
         STALE_RUN_RECOVERY_JOB_ID: run_stale_recovery_job,
         DEDUCTED_PROFIT_JOB_ID: run_deducted_profit_job,
         STOCK_POOL_JOB_ID: run_stock_pool_job,
-        AUCTION_COLLECTION_JOB_ID: run_auction_collection_job,
         EOD_QUOTE_SNAPSHOT_JOB_ID: run_eod_quote_snapshot_job,
         CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID: run_call_auction_market_snapshot_job,
         CALL_AUCTION_MARKET_SERIES_JOB_ID: run_call_auction_market_series_job,
@@ -647,9 +605,7 @@ def build_scheduler(settings: SchedulerSettings | None = None) -> BlockingSchedu
         if not definition.enabled:
             continue
         executor = (
-            "morning_auction"
-            if definition.code in {AUCTION_COLLECTION_JOB_ID, CALL_AUCTION_MARKET_SERIES_JOB_ID}
-            else "default"
+            "morning_auction" if definition.code == CALL_AUCTION_MARKET_SERIES_JOB_ID else "default"
         )
         scheduler.add_job(
             functions[definition.code],

@@ -91,7 +91,6 @@ PYTDX_POOL_PATH=/var/lib/market-data-center/pytdx_pool.json
 PYTDX_VIPDOC_PATH=D:\new_tdx64\vipdoc
 RAW_DATA_ROOT=/var/lib/market-data-center/raw
 SCHEDULER_STORE_PATH=/var/lib/market-data-center/scheduler/jobs.sqlite
-AUCTION_COLLECTION_ENABLED=true
 EOD_QUOTE_SNAPSHOT_ENABLED=true
 CALL_AUCTION_SNAPSHOT_ENABLED=true
 CALL_AUCTION_MARKET_SERIES_ENABLED=true

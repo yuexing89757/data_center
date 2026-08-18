@@ -312,7 +312,7 @@ def _record(
 
 def _level(row: Mapping[str, object], side: str, level: int) -> OrderBookLevel:
     price = _optional_price(row[f"{side}{level}"])
-    volume = _lots_to_shares(row[f"{side}_vol{level}"])
+    volume: int | None = _lots_to_shares(row[f"{side}_vol{level}"])
     if price is None and volume == 0:
         volume = None
     return OrderBookLevel(level, price, volume)

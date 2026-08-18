@@ -303,9 +303,11 @@ Expected: record 缺少 `batch_code`/五档或值未复制。
 传入：
 
 ```python
-batch_code=series_batch_code(round_state.scheduled_at),
-bid_levels=quote.bid_levels,
-ask_levels=quote.ask_levels,
+return MarketSeriesSnapshotRecord(
+    batch_code=series_batch_code(round_state.scheduled_at),
+    bid_levels=quote.bid_levels,
+    ask_levels=quote.ask_levels,
+)
 ```
 
 不改变 `_series_values()` 的 09:25 前竞价指示值语义。

@@ -30,7 +30,6 @@ class SchedulerSettings(BaseSettings):
 
     scheduler_store_path: Path = Path("data/scheduler/jobs.sqlite")
     worker_admin_port: int = Field(default=8765, ge=1, le=65_535)
-    auction_collection_enabled: bool = True
     eod_quote_snapshot_enabled: bool = True
     call_auction_snapshot_enabled: bool = True
     call_auction_market_series_enabled: bool = True
@@ -55,23 +54,6 @@ class PytdxHqSettings(BaseSettings):
     pytdx_hq_timeout_seconds: float = Field(default=2.0, gt=0, le=4.0)
     pytdx_hq_batch_size: int = Field(default=80, ge=1, le=80)
     pytdx_hq_max_retries: int = Field(default=1, ge=0, le=1)
-
-
-class PysnowballSettings(BaseSettings):
-    """Server-only credential for the bounded Xueqiu pankou adapter."""
-
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
-
-    pysnowball_token: SecretStr
-
-    @model_validator(mode="after")
-    def require_token(self) -> Self:
-        if not self.pysnowball_token.get_secret_value().strip():
-            raise ValueError("PYSNOWBALL_TOKEN is required")
-        return self
-
-    def resolved_token(self) -> str:
-        return self.pysnowball_token.get_secret_value()
 
 
 class PytdxDailyBarSettings(BaseSettings):

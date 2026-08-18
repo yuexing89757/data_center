@@ -127,6 +127,12 @@ Shenzhen market source facts for 1–500 six-digit codes. It selects one coheren
 falling back to one partial batch only when no succeeded batch exists, and reports missing codes
 without substituting another date or combining ingestions.
 
+`POST /api/v1/call-auction-market-series-snapshots/query` reads the exact-date 09:15:00–09:25:20
+PYTDX full-market series for 1–500 six-digit codes. Each item includes its deterministic `HHMMSS`
+batch code and bid/ask levels 1–5; a missing price with positive volume is preserved as a source
+fact. The retired limit-up-pool auction collector is not registered by the Worker, while its
+historical workflow and stored facts remain readable.
+
 Daily Bar bulk ingestion keeps one provider/Raw/ingestion lineage unit per security while writing
 validated facts in bounded PostgreSQL transactions. Configure `DAILY_BAR_WRITE_BATCH_SIZE`
 (default 100, range 1..500); see `docs/DailyBar批量写入与性能基线-2026-08-11.md`.
