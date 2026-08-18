@@ -16,6 +16,7 @@ from market_data_center.domain import (
     TradeStatus,
 )
 from market_data_center.public_api import create_app
+from market_data_center.public_api import models as api_models
 from market_data_center.public_api.board_index_bias_live import (
     BoardIndexBiasLiveBusy,
     BoardIndexBiasLivePersistence,
@@ -53,6 +54,89 @@ from market_data_center.public_api.queries import (
 from market_data_center.settings import ApiSettings
 
 API_KEY = "test-api-key-00000000000000000000"
+
+
+def test_call_auction_one_price_pattern_models_enforce_fixed_contract() -> None:
+    assert hasattr(api_models, "CallAuctionOnePricePatternItem")
+    assert hasattr(api_models, "CallAuctionOnePricePatternResponse")
+    item_type = api_models.CallAuctionOnePricePatternItem
+    response_type = api_models.CallAuctionOnePricePatternResponse
+    item = item_type(
+        symbol="SSE:600000",
+        code="600000",
+        name="浦发银行",
+        exchange="SSE",
+        one_price=Decimal("10.20"),
+        previous_close=Decimal("10.00"),
+        change_pct=Decimal("2.0000000000"),
+        sample_count=29,
+    )
+    response = response_type(
+        trade_date=date(2026, 8, 18),
+        session_id="00000000-0000-0000-0000-000000000056",
+        session_status="partial",
+        window_start="2026-08-18T09:15:20+08:00",
+        window_end="2026-08-18T09:24:40+08:00",
+        round_count=29,
+        candidate_count=1,
+        items=[item],
+    )
+
+    assert response.items[0].one_price == Decimal("10.20")
+    with pytest.raises(ValidationError):
+        item_type(
+            symbol="SSE:600000",
+            code="600000",
+            name=None,
+            exchange="SSE",
+            one_price=Decimal("10.20"),
+            previous_close=Decimal("10.00"),
+            change_pct=Decimal("4.0000000001"),
+            sample_count=29,
+        )
+
+
+def test_call_auction_one_price_pattern_query_uses_optional_date() -> None:
+    calls: list[tuple[str, object]] = []
+    payload = {
+        "trade_date": "2026-08-18",
+        "session_id": "00000000-0000-0000-0000-000000000056",
+        "session_status": "succeeded",
+        "window_start": "2026-08-18T09:15:20+08:00",
+        "window_end": "2026-08-18T09:24:40+08:00",
+        "round_count": 29,
+        "candidate_count": 0,
+        "items": [],
+    }
+
+    class StubResult:
+        def mappings(self) -> "StubResult":
+            return self
+
+        def all(self) -> list[dict[str, object]]:
+            return [{"payload": payload}]
+
+    class StubConnection:
+        def __enter__(self) -> "StubConnection":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def execute(self, statement: object, parameters: object) -> StubResult:
+            calls.append((str(statement), parameters))
+            return StubResult()
+
+    class StubEngine:
+        def connect(self) -> StubConnection:
+            return StubConnection()
+
+    service = PostgreSQLPublicQueryService(StubEngine())  # type: ignore[arg-type]
+    response = service.auction_one_price_patterns(None)
+
+    assert response.candidate_count == 0
+    assert "query_call_auction_one_price_patterns" in calls[0][0]
+    assert calls[0][1] == {"trade_date": None}
 
 
 class FakeQueryService:

@@ -410,6 +410,28 @@ class AuctionOnePriceLimitResponse(ApiModel):
     down: list[AuctionOnePriceLimitItem]
 
 
+class CallAuctionOnePricePatternItem(ApiModel):
+    symbol: str
+    code: SixDigitCode
+    name: str | None
+    exchange: Literal["SSE", "SZSE"]
+    one_price: Decimal = Field(gt=0)
+    previous_close: Decimal = Field(gt=0)
+    change_pct: Decimal = Field(ge=Decimal("-4"), le=Decimal("4"))
+    sample_count: Literal[29]
+
+
+class CallAuctionOnePricePatternResponse(ApiModel):
+    trade_date: date
+    session_id: UUID
+    session_status: Literal["succeeded", "partial"]
+    window_start: datetime
+    window_end: datetime
+    round_count: Literal[29]
+    candidate_count: int = Field(ge=0)
+    items: list[CallAuctionOnePricePatternItem]
+
+
 class AuctionIndicativeDetailItem(ApiModel):
     observed_at: datetime = Field(
         description="Asia/Shanghai wall-clock time formatted as YYYY-MM-DD HH:mm:ss",

@@ -15,6 +15,7 @@ from market_data_center.public_api.models import (
     BoardIndexBiasResponse,
     CallAuctionMarketSeriesSnapshotResponse,
     CallAuctionMarketSnapshotResponse,
+    CallAuctionOnePricePatternResponse,
     ClassificationMembersResponse,
     ClosePriceNewHighs120dResponse,
     DailyBarItem,
@@ -99,6 +100,12 @@ QUERY_AUCTION_ONE_PRICE_LIMITS = text("""
 select api_v1.query_auction_one_price_limits(p_trade_date => :trade_date) as payload
 """)
 
+QUERY_AUCTION_ONE_PRICE_PATTERNS = text("""
+select api_v1.query_call_auction_one_price_patterns(
+    p_trade_date => :trade_date
+) as payload
+""")
+
 QUERY_AUCTION_INDICATIVE_DETAILS = text("""
 select api_v1.query_call_auction_indicative_details(
     p_symbol => :symbol,
@@ -174,6 +181,10 @@ class PublicQueryService(Protocol):
     def board_index_bias_latest(self) -> BoardIndexBiasResponse: ...
 
     def auction_one_price_limits(self, trade_date: date | None) -> AuctionOnePriceLimitResponse: ...
+
+    def auction_one_price_patterns(
+        self, trade_date: date | None
+    ) -> CallAuctionOnePricePatternResponse: ...
 
     def auction_indicative_details(
         self, symbol: str, offset: int, limit: int
@@ -294,6 +305,14 @@ class PostgreSQLPublicQueryService:
     def auction_one_price_limits(self, trade_date: date | None) -> AuctionOnePriceLimitResponse:
         rows = self._execute(QUERY_AUCTION_ONE_PRICE_LIMITS, {"trade_date": trade_date})
         return AuctionOnePriceLimitResponse.model_validate(rows[0]["payload"])
+
+    def auction_one_price_patterns(
+        self, trade_date: date | None
+    ) -> CallAuctionOnePricePatternResponse:
+        rows = self._execute(QUERY_AUCTION_ONE_PRICE_PATTERNS, {"trade_date": trade_date})
+        if not rows or rows[0]["payload"] is None:
+            raise PublicQueryNotFound("call-auction one-price pattern session was not found")
+        return CallAuctionOnePricePatternResponse.model_validate(rows[0]["payload"])
 
     def auction_indicative_details(
         self, symbol: str, offset: int, limit: int
