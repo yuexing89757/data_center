@@ -332,6 +332,13 @@ def _raw_envelopes(
 def _to_market_record(
     quote: FiveLevelQuoteSnapshotRecord, trade_date: date
 ) -> CallAuctionMarketSnapshotRecord:
+    bid1 = quote.bid_levels[0]
+    ask1 = quote.ask_levels[0]
+    seal_amount = (
+        bid1.price * bid1.volume
+        if ask1.volume in (None, 0) and bid1.price is not None and bid1.volume is not None
+        else None
+    )
     return CallAuctionMarketSnapshotRecord(
         symbol=quote.symbol,
         trade_date=trade_date,
@@ -343,6 +350,9 @@ def _to_market_record(
         low_price=quote.low,
         cumulative_volume=quote.cumulative_volume,
         cumulative_amount=quote.cumulative_amount,
+        bid_levels=quote.bid_levels,
+        ask_levels=quote.ask_levels,
+        seal_amount=seal_amount,
     )
 
 

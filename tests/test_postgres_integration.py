@@ -1209,14 +1209,18 @@ insert into core.security (
 insert into realtime.call_auction_market_snapshot (
     ingestion_id, symbol, trade_date, observed_at, last_price,
     previous_close, high_price, low_price, cumulative_volume,
-    cumulative_amount, source_code
+    cumulative_amount, bid1_price, bid1_volume, bid2_volume,
+    ask1_volume, ask2_volume, seal_amount, source_code
 ) values
     (:succeeded_id, 'SSE:600000', :trade_date, :observed_at,
-     10.1200, 10.0000, 10.1500, 9.9800, 123400, 1248808.0000, 'pytdx_hq'),
+     10.1200, 10.0000, 10.1500, 9.9800, 123400, 1248808.0000,
+     10.1200, 560200, 10743200, 0, 13300, 5673224.0000, 'pytdx_hq'),
     (:succeeded_id, 'SZSE:600000', :trade_date, :observed_at,
-     20.1200, 20.0000, 20.1500, 19.9800, 223400, 4494808.0000, 'pytdx_hq'),
+     20.1200, 20.0000, 20.1500, 19.9800, 223400, 4494808.0000,
+     null, null, null, null, null, null, 'pytdx_hq'),
     (:partial_id, 'SSE:600000', :trade_date, :observed_at,
-     99.0000, 98.0000, 99.0000, 98.0000, 1, 99.0000, 'pytdx_hq')
+     99.0000, 98.0000, 99.0000, 98.0000, 1, 99.0000,
+     null, null, null, null, null, null, 'pytdx_hq')
 """),
             {
                 "succeeded_id": succeeded_ingestion_id,
@@ -1279,13 +1283,17 @@ select api_v1.query_call_auction_market_snapshots(
         ("600000", "SZSE:600000"),
     ]
     assert payload["items"][0]["last_price"] == 10.1200
+    assert payload["items"][0]["bid2_price"] is None
+    assert payload["items"][0]["bid2_volume"] == 10_743_200
+    assert payload["items"][0]["ask2_volume"] == 13_300
+    assert payload["items"][0]["seal_amount"] == 5_673_224.0000
     assert partial_payload["ingestion_id"] == str(partial_ingestion_id)
     assert partial_payload["ingestion_status"] == "partial"
     assert partial_payload["returned_count"] == 1
     assert partial_payload["items"][0]["last_price"] == 99.0000
 
 
-def test_auction_one_price_limits_calculates_mainboard_limits_from_0926_snapshot(
+def test_auction_one_price_limits_calculates_mainboard_limits_from_092550_snapshot(
     database_engine: Engine,
 ) -> None:
     security_ingestion_id = uuid4()
@@ -1294,7 +1302,7 @@ def test_auction_one_price_limits_calculates_mainboard_limits_from_0926_snapshot
     snapshot_ingestion_id = uuid4()
     partial_ingestion_id = uuid4()
     trade_date = date(2026, 8, 17)
-    observed_at = datetime(2026, 8, 17, 1, 26, tzinfo=UTC)
+    observed_at = datetime(2026, 8, 17, 1, 25, 50, tzinfo=UTC)
     prior_dates = tuple(date(2026, 8, day) for day in range(10, 15))
     with database_engine.begin() as connection:
         connection.execute(
@@ -1502,7 +1510,7 @@ insert into realtime.call_auction_market_snapshot (
     assert partial_payload["down"] == []
 
 
-def test_auction_one_price_limits_requires_exact_0926_snapshot(
+def test_auction_one_price_limits_requires_exact_092550_snapshot(
     database_engine: Engine,
 ) -> None:
     with database_engine.connect() as connection:
@@ -1886,6 +1894,27 @@ def test_call_auction_market_schema_enforces_append_only_source_facts(
             "low_price",
             "cumulative_volume",
             "cumulative_amount",
+            "bid1_price",
+            "bid1_volume",
+            "bid2_price",
+            "bid2_volume",
+            "bid3_price",
+            "bid3_volume",
+            "bid4_price",
+            "bid4_volume",
+            "bid5_price",
+            "bid5_volume",
+            "ask1_price",
+            "ask1_volume",
+            "ask2_price",
+            "ask2_volume",
+            "ask3_price",
+            "ask3_volume",
+            "ask4_price",
+            "ask4_volume",
+            "ask5_price",
+            "ask5_volume",
+            "seal_amount",
             "source_code",
             "created_at",
         }
@@ -1904,6 +1933,17 @@ def test_call_auction_market_schema_enforces_append_only_source_facts(
             "high_price": (18, 4, "YES"),
             "low_price": (18, 4, "YES"),
             "cumulative_amount": (30, 4, "YES"),
+            "bid1_price": (18, 4, "YES"),
+            "bid2_price": (18, 4, "YES"),
+            "bid3_price": (18, 4, "YES"),
+            "bid4_price": (18, 4, "YES"),
+            "bid5_price": (18, 4, "YES"),
+            "ask1_price": (18, 4, "YES"),
+            "ask2_price": (18, 4, "YES"),
+            "ask3_price": (18, 4, "YES"),
+            "ask4_price": (18, 4, "YES"),
+            "ask5_price": (18, 4, "YES"),
+            "seal_amount": (30, 4, "YES"),
         }
         nonnumeric_columns = {
             cast(str, row["column_name"]): (row["data_type"], row["is_nullable"])
@@ -1973,7 +2013,11 @@ def test_call_auction_market_schema_enforces_append_only_source_facts(
         assert check_constraints == {
             "call_auction_market_nonnegative": True,
             "call_auction_market_observation_window": True,
+            "call_auction_market_order_book_nonnegative": True,
+            "call_auction_market_order_book_price_requires_volume": True,
+            "call_auction_market_order_book_volume_only_positive": True,
             "call_auction_market_price_range": True,
+            "call_auction_market_seal_amount_rule": True,
             "call_auction_market_snapshot_source_code_check": True,
         }
         index_columns = connection.execute(

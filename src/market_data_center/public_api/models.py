@@ -192,7 +192,7 @@ class CallAuctionMarketSnapshotQuery(ApiModel):
         return list(dict.fromkeys(codes))
 
 
-class CallAuctionMarketSnapshotItem(ApiModel):
+class _CallAuctionMarketSnapshotBaseItem(ApiModel):
     symbol: str
     code: SixDigitCode
     observed_at: datetime
@@ -202,6 +202,30 @@ class CallAuctionMarketSnapshotItem(ApiModel):
     low_price: Decimal | None
     cumulative_volume: int | None = Field(default=None, ge=0)
     cumulative_amount: Decimal | None
+
+
+class CallAuctionMarketSnapshotItem(_CallAuctionMarketSnapshotBaseItem):
+    bid1_price: Decimal | None = None
+    bid1_volume: int | None = Field(default=None, ge=0)
+    bid2_price: Decimal | None = None
+    bid2_volume: int | None = Field(default=None, ge=0)
+    bid3_price: Decimal | None = None
+    bid3_volume: int | None = Field(default=None, ge=0)
+    bid4_price: Decimal | None = None
+    bid4_volume: int | None = Field(default=None, ge=0)
+    bid5_price: Decimal | None = None
+    bid5_volume: int | None = Field(default=None, ge=0)
+    ask1_price: Decimal | None = None
+    ask1_volume: int | None = Field(default=None, ge=0)
+    ask2_price: Decimal | None = None
+    ask2_volume: int | None = Field(default=None, ge=0)
+    ask3_price: Decimal | None = None
+    ask3_volume: int | None = Field(default=None, ge=0)
+    ask4_price: Decimal | None = None
+    ask4_volume: int | None = Field(default=None, ge=0)
+    ask5_price: Decimal | None = None
+    ask5_volume: int | None = Field(default=None, ge=0)
+    seal_amount: Decimal | None = None
 
 
 class CallAuctionMarketSnapshotResponse(ApiModel):
@@ -218,7 +242,7 @@ class CallAuctionMarketSeriesSnapshotQuery(CallAuctionMarketSnapshotQuery):
     pass
 
 
-class CallAuctionMarketSeriesSnapshotItem(CallAuctionMarketSnapshotItem):
+class CallAuctionMarketSeriesSnapshotItem(_CallAuctionMarketSnapshotBaseItem):
     batch_code: BatchCode
     value_semantics: Literal["auction_indicative", "opening_trade", "legacy_source_quote"]
     bid1_price: Decimal | None = None
@@ -369,7 +393,7 @@ class AuctionOnePriceLimitResponse(ApiModel):
     price_limit_rule_version: Literal["CN_MAINBOARD_2026_07_06"]
     price_limit_algorithm_version: Literal["1.0.0"]
     calculation_mode: Literal["realtime_read"]
-    snapshot_window: Literal["09:26:00-09:26:59 Asia/Shanghai"]
+    snapshot_window: Literal["09:25:50-09:29:59 Asia/Shanghai"]
     candidate_count: int = Field(ge=0)
     omitted_incomplete_count: int = Field(ge=0)
     up_count: int = Field(ge=0)

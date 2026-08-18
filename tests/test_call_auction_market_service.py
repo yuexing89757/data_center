@@ -335,6 +335,47 @@ def test_single_endpoint_complete_collection_succeeds() -> None:
     assert persistence.manifest_row_counts == [2]
 
 
+@pytest.mark.parametrize(
+    ("ask1_price", "ask1_volume", "expected_seal_amount"),
+    [
+        (None, None, Decimal("5602000.00")),
+        (Decimal("10.01"), 0, Decimal("5602000.00")),
+        (Decimal("10.01"), 100, None),
+    ],
+)
+def test_market_snapshot_preserves_five_levels_and_calculates_auction_seal_amount(
+    ask1_price: Decimal | None,
+    ask1_volume: int | None,
+    expected_seal_amount: Decimal | None,
+) -> None:
+    bid_levels = (
+        OrderBookLevel(1, Decimal("10.00"), 560_200),
+        OrderBookLevel(2, None, 10_743_200),
+        *(OrderBookLevel(level, None, None) for level in range(3, 6)),
+    )
+    ask_levels = (
+        OrderBookLevel(1, ask1_price, ask1_volume),
+        OrderBookLevel(2, None, 13_300),
+        *(OrderBookLevel(level, None, None) for level in range(3, 6)),
+    )
+    persistence = FakePersistence()
+    provider_factory = FakeProviderFactory(
+        [
+            _fetch(
+                _quote("SSE:600000", bid_levels=bid_levels, ask_levels=ask_levels),
+                _quote("SZSE:000001"),
+            )
+        ]
+    )
+
+    _service(persistence, provider_factory).collect(TRADE_DATE)
+
+    record = next(item for item in persistence.committed_records if item.symbol == "SSE:600000")
+    assert record.bid_levels[1] == OrderBookLevel(2, None, 10_743_200)
+    assert record.ask_levels[1] == OrderBookLevel(2, None, 13_300)
+    assert record.seal_amount == expected_seal_amount
+
+
 def test_raw_envelope_preserves_distinct_worker_observations_and_source_fields() -> None:
     persistence = FakePersistence()
     raw_store = FakeRawStore()

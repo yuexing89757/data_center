@@ -57,7 +57,9 @@ never combines ingestions or falls back to another date. A code shared by SSE an
 both standardized symbols. `missing_codes` reports requested codes absent from the selected batch.
 The envelope includes the selected provider-neutral ingestion ID and status so consumers can prove
 batch coherence. Items expose observation time, latest/previous-close/high/low prices, cumulative
-volume and amount; source codes, Raw fields and internal timestamps remain private.
+volume and amount, bid/ask levels 1–5, and nullable `seal_amount`. The seal amount is calculated as
+bid-1 price times bid-1 shares only when ask-1 volume is missing or zero; source codes, Raw fields
+and internal timestamps remain private.
 
 `POST /api/v1/call-auction-market-series-snapshots/query` accepts the same exact `trade_date` and
 1–500 six-digit `codes`. It selects the latest succeeded session for that date, or the latest
@@ -109,16 +111,16 @@ and one waiting slot. Provider failure is 502, Raw/persistence failure is 503, a
 full queue is 429. The endpoint never accepts a board/date input, fills gaps, changes the formula,
 or adds a Worker/OS schedule.
 
-`GET /api/v1/call-auction-one-price-limits?trade_date=` selects the exact stored 09:26
+`GET /api/v1/call-auction-one-price-limits?trade_date=` selects the exact stored 09:25:50
 Asia/Shanghai snapshot and calculates SSE/SZSE mainboard limits at read time. Ordinary and ST
 stocks both use the accepted 10% rule, tick 0.01, `CN_MAINBOARD_2026_07_06` and algorithm `1.0.0`.
 Only complete `last_price=high_price=low_price=upper_limit/lower_limit` evidence enters the separate
 up/down lists. The response identifies `calculation_mode=realtime_read` and
-`price_limit_calculation_id=null`; the selected ingestion remains the source lineage. A ready 09:26
+`price_limit_calculation_id=null`; the selected ingestion remains the source lineage. A ready 09:25:50
 snapshot is the only market-data dependency, so the endpoint does not wait for the nightly
 price-limit batch. It does not fetch providers, write data or use later bars. Partial status and
 incomplete mainboard omissions remain visible; a valid empty list is HTTP 200, while no exact
-09:26 snapshot is HTTP 404.
+09:25:50 snapshot is HTTP 404.
 
 `GET /api/v1/call-auction-indicative-details?code=688796&offset=0&limit=200` requires only one
 six-digit SSE/SZSE stock code; the service derives the current Asia/Shanghai date and standardized

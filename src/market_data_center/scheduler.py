@@ -544,12 +544,13 @@ def _scheduled_fire_time(
     minute: int,
     timezone_name: str,
     *,
+    second: int = 0,
     weekdays_only: bool = True,
 ) -> datetime:
     """Resolve the intended weekday fire time, including after-midnight misfires."""
     timezone = ZoneInfo(timezone_name)
     now = datetime.now(timezone)
-    candidate = datetime.combine(now.date(), time(hour, minute), timezone)
+    candidate = datetime.combine(now.date(), time(hour, minute, second), timezone)
     if candidate > now:
         candidate -= timedelta(days=1)
     while weekdays_only and candidate.weekday() >= 5:
@@ -570,6 +571,7 @@ def _scheduled_job_fire_time(
         definition.hour,
         definition.minute,
         definition.timezone,
+        second=definition.second or 0,
         weekdays_only=weekdays_only,
     )
 
@@ -637,11 +639,16 @@ def _trigger(definition: JobDefinition) -> CronTrigger | IntervalTrigger:
     if definition.trigger_type == "cron":
         if definition.hour is None or definition.minute is None:
             raise ValueError(f"incomplete cron definition: {definition.code}")
+        trigger_options: dict[str, object] = {
+            "day_of_week": definition.day_of_week,
+            "hour": definition.hour,
+            "minute": definition.minute,
+            "timezone": definition.timezone,
+        }
+        if definition.second is not None:
+            trigger_options["second"] = definition.second
         return CronTrigger(
-            day_of_week=definition.day_of_week,
-            hour=definition.hour,
-            minute=definition.minute,
-            timezone=definition.timezone,
+            **trigger_options,
         )
     if definition.trigger_type == "interval" and definition.interval_hours is not None:
         return IntervalTrigger(hours=definition.interval_hours, timezone=definition.timezone)

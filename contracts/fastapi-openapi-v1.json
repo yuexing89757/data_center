@@ -412,7 +412,7 @@
             "type": "string"
           },
           "snapshot_window": {
-            "const": "09:26:00-09:26:59 Asia/Shanghai",
+            "const": "09:25:50-09:29:59 Asia/Shanghai",
             "title": "Snapshot Window",
             "type": "string"
           },
@@ -1182,6 +1182,246 @@
       "CallAuctionMarketSnapshotItem": {
         "additionalProperties": false,
         "properties": {
+          "ask1_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ask1 Price"
+          },
+          "ask1_volume": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ask1 Volume"
+          },
+          "ask2_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ask2 Price"
+          },
+          "ask2_volume": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ask2 Volume"
+          },
+          "ask3_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ask3 Price"
+          },
+          "ask3_volume": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ask3 Volume"
+          },
+          "ask4_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ask4 Price"
+          },
+          "ask4_volume": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ask4 Volume"
+          },
+          "ask5_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ask5 Price"
+          },
+          "ask5_volume": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ask5 Volume"
+          },
+          "bid1_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bid1 Price"
+          },
+          "bid1_volume": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bid1 Volume"
+          },
+          "bid2_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bid2 Price"
+          },
+          "bid2_volume": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bid2 Volume"
+          },
+          "bid3_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bid3 Price"
+          },
+          "bid3_volume": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bid3 Volume"
+          },
+          "bid4_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bid4 Price"
+          },
+          "bid4_volume": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bid4 Volume"
+          },
+          "bid5_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bid5 Price"
+          },
+          "bid5_volume": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bid5 Volume"
+          },
           "code": {
             "pattern": "^[0-9]{6}$",
             "title": "Code",
@@ -1263,6 +1503,18 @@
               }
             ],
             "title": "Previous Close"
+          },
+          "seal_amount": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seal Amount"
           },
           "symbol": {
             "title": "Symbol",
@@ -3122,7 +3374,7 @@
     },
     "/api/v1/call-auction-one-price-limits": {
       "get": {
-        "description": "Selects one stored 09:26 SSE/SZSE market snapshot and calculates the accepted mainboard 10% price limits at read time. It does not depend on the nightly price-limit batch, fetch providers, use later daily bars, or write data.",
+        "description": "Selects one stored 09:25:50 SSE/SZSE market snapshot and calculates the accepted mainboard 10% price limits at read time. It does not depend on the nightly price-limit batch, fetch providers, use later daily bars, or write data.",
         "operationId": "auction_one_price_limits_api_v1_call_auction_one_price_limits_get",
         "parameters": [
           {
@@ -3170,7 +3422,7 @@
             "APIKeyHeader": []
           }
         ],
-        "summary": "Calculate evidence-complete 09:26 mainboard one-price limits",
+        "summary": "Calculate evidence-complete 09:25:50 mainboard one-price limits",
         "tags": [
           "market-data"
         ]

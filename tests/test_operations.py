@@ -156,7 +156,8 @@ def test_job_catalog_owns_all_fixed_schedules() -> None:
     assert (
         jobs["call-auction-market-snapshot-daily"].hour,
         jobs["call-auction-market-snapshot-daily"].minute,
-    ) == (9, 26)
+        jobs["call-auction-market-snapshot-daily"].second,
+    ) == (9, 25, 50)
     assert jobs["call-auction-market-snapshot-daily"].enabled is True
     assert "call-auction-snapshot-daily" not in jobs
     assert (

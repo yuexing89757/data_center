@@ -89,7 +89,7 @@ BlockingScheduler
 | # | Job ID | 名称 | Workflow | 触发 | 默认时间 | 启用 |
 |---|---|---|---|---|---|---|
 | 2 | `call-auction-market-series` | 沪深全市场开盘竞价序列快照 | `call_auction_market_series` | cron 周一至周五 | 09:15 | ✅ |
-| 3 | `call-auction-market-snapshot-daily` | 沪深全市场开盘竞价快照 | `call_auction_market_snapshot` | cron 周一至周五 | 09:26 | ✅ |
+| 3 | `call-auction-market-snapshot-daily` | 沪深全市场开盘竞价快照 | `call_auction_market_snapshot` | cron 周一至周五 | 09:25:50 | ✅ |
 | 4 | `daily-run` | 日 K 与基础数据更新 | `daily_market` | cron 周一至周五 | 20:00 | ✅ |
 | 5 | `deducted-profit-daily` | 扣非净利润增量同步 | `deducted_profit` | cron 每天 | 20:00 | ✅ |
 | 6 | `stock-daily-indicators-daily` | 股票每日指标更新 | `stock_daily_indicator` | cron 周一至周五 | 20:30 | ✅ |
@@ -99,7 +99,7 @@ BlockingScheduler
 | 10 | `recover-stale-ingestion-runs` | 陈旧运行恢复 | `stale_run_recovery` | interval | 每 1 小时 | ✅ |
 | 11 | `pytdx-pool-refresh` | PYTDX 节点池刷新 | `pytdx_pool_refresh` | interval | 每 12 小时 | ✅ |
 
-> 时间与调度策略固定在 `scheduling_catalog.py`，不能通过 `.env` 覆盖。两个 09:15 任务使用 `morning_auction` executor 并行，涨停池任务仍每 30 秒逐只请求；全市场序列固定 09:15:00--09:25:20 每 20 秒一轮，共 32 轮、每批最多 80 只。09:26 任务继续使用 `default` executor，与序列表和会话完全隔离。其他任务仍在单线程 `default` executor 串行执行。
+> 时间与调度策略固定在 `scheduling_catalog.py`，不能通过 `.env` 覆盖。全市场序列固定 09:15:00--09:25:20 每 20 秒一轮，共 32 轮、每批最多 80 只。09:25:50 单次快照继续使用 `default` executor，与序列表和会话完全隔离。其他任务仍在单线程 `default` executor 串行执行。
 
 ### 每个 job 做什么（scheduler.py 里的执行函数）
 
@@ -113,7 +113,7 @@ BlockingScheduler
 | `run_deducted_profit_job` | tushare 扣非净利润增量同步（按披露变化发现新公告/修订） |
 | `run_stock_pool_job` | 解析基准交易日 → 构建下一交易日生效的涨跌停股票池（依赖当日日K+指标成功） |
 | `run_eod_quote_snapshot_job` | 对当日 ready 涨停池采集收盘五档快照（默认启用） |
-| `run_call_auction_market_snapshot_job` | 09:26 从一个 quote-capable endpoint 采集 SSE/SZSE `stock`、`listed` 全集的开盘竞价来源快照；BSE、ETF、可转债和指数不进入本任务 |
+| `run_call_auction_market_snapshot_job` | 09:25:50 从一个 quote-capable endpoint 采集 SSE/SZSE `stock`、`listed` 全集的开盘竞价五档来源快照并按卖一量规则计算封单额；BSE、ETF、可转债和指数不进入本任务 |
 | `run_call_auction_market_series_job` | 09:15 启动 32 轮 SSE/SZSE `stock`、`listed` 全集采集；每轮最多两个 endpoint 完整 attempt，不合并 partial |
 | `run_pytdx_pool_refresh_job` | 有界探测候选节点能力；成功时原子发布，失败时保留 last-good |
 
@@ -137,7 +137,7 @@ BlockingScheduler
 | `SCHEDULER_STORE_PATH` | `data/scheduler/jobs.sqlite` | APScheduler 持久化路径 |
 | `WORKER_ADMIN_PORT` | `8765` | 管理页面端口 |
 | `EOD_QUOTE_SNAPSHOT_ENABLED` | `true` | 收盘五档任务开关 |
-| `CALL_AUCTION_SNAPSHOT_ENABLED` | `true` | 只控制 09:26 沪深全市场开盘竞价来源采集 |
+| `CALL_AUCTION_SNAPSHOT_ENABLED` | `true` | 只控制 09:25:50 沪深全市场开盘竞价来源采集 |
 | `CALL_AUCTION_MARKET_SERIES_ENABLED` | `true` | 只控制 09:15 全市场竞价序列任务 |
 | `TODAY_LIMIT_UP_SNAPSHOT_ENABLED` | `false` | 只控制 22:00 同日涨停快照；迁移和出站预检前保持关闭 |
 | `PYTDX_POOL_PATH` | `data/pytdx_pool.json` | 统一版本化能力节点池路径；生产使用持久化绝对路径 |

@@ -72,7 +72,7 @@ def test_realtime_auction_one_price_limit_decision_is_documented() -> None:
         "realtime_read",
         "price_limit_calculation_id",
         "market_data_api",
-        "09:26:00",
+        "09:25:50",
     ):
         assert term in adr + detail
 
@@ -105,7 +105,7 @@ def test_fastapi_preflight_and_docs_publish_realtime_auction_limits() -> None:
         "CN_MAINBOARD_2026_07_06",
         "1.0.0",
         "price_limit_calculation_id=null",
-        "09:26",
+        "09:25:50",
         "10%",
     ):
         assert term in documentation

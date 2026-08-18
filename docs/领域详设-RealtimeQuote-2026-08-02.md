@@ -10,7 +10,7 @@
 stock 来源事实。它不是逐笔成交、分钟行情或盘后历史重建。BSE 不在 v2 支持范围。
 
 ```text
-09:26 Security 全集
+09:25:50 Security 全集
   → 单 endpoint、每批 ≤80 的 pytdx_hq 采集
   → Raw JSONL + RawManifest + IngestionRun
   → realtime.call_auction_market_snapshot（append-only）
@@ -29,6 +29,9 @@ CallAuctionMarketSnapshotRecord
 ├── low_price: Decimal | None
 ├── cumulative_volume: int | None
 ├── cumulative_amount: Decimal | None
+├── bid_levels: tuple[OrderBookLevel, ×5]
+├── ask_levels: tuple[OrderBookLevel, ×5]
+├── seal_amount: Decimal | None
 └── source_code: pytdx_hq
 ```
 
@@ -49,7 +52,9 @@ CallAuctionMarketSnapshotRecord
 ### 存储和查询
 
 `realtime.call_auction_market_snapshot` 以 `(ingestion_id,symbol)` 为主键，保存 `trade_date`、
-`observed_at`、最新价、昨收、截至观察时点的当日最高价/最低价、标准量额和来源。最高价/最低价
+`observed_at`、最新价、昨收、截至观察时点的当日最高价/最低价、标准量额、买卖五档、
+`seal_amount` 和来源。档位价格为零且数量为正时保存为 `price=NULL` 并保留数量；卖一量为空或
+零且买一价量完整时，`seal_amount=bid1_price*bid1_volume`，否则为 `NULL`。最高价/最低价
 允许缺失；非空时必须非负且 `high_price >= low_price`，最新价与两者均非空时必须落在该区间。
 索引支持按 `(trade_date,ingestion_id,symbol)` 读取。
 成功输入的选择先在 `ingestion.ingestion_run` 限定 dataset/status，再与精确日期事实连接；不得从
@@ -68,10 +73,10 @@ ingestion；不得拼接批次或回退日期。响应显式返回 provider-neut
 
 ### 时间和调度
 
-- `call-auction-market-snapshot-daily`：工作日 09:26；
+- `call-auction-market-snapshot-daily`：工作日 09:25:50；
 - 09:29:30 后不发新请求，`observed_at >=09:30` 硬拒绝；
 - `call-auction-snapshot-daily` 已移除，无替代自动调度；
-- `CALL_AUCTION_SNAPSHOT_ENABLED` 只控制 09:26 任务；时间只在代码目录；
+- `CALL_AUCTION_SNAPSHOT_ENABLED` 只控制 09:25:50 任务；时间只在代码目录；
 - 非交易日跳过，错过晨间窗口不补采，盘后不调用历史成交或实时行情伪造。
 
 ### 保留和容量
@@ -86,7 +91,7 @@ ingestion；不得拼接批次或回退日期。响应显式返回 provider-neut
 
 Issue #54 删除 `opening-auction-limit-up-quotes` Worker 任务和 pysnowball 运行时 Adapter。
 `AuctionCollectionSession`、历史来源身份、历史事实表、Raw、查询和陈旧会话恢复仍保留，以保证
-既有数据可追溯；不得再注册、启动或补采该会话。全市场竞价序列与 09:26 快照继续独立使用
+既有数据可追溯；不得再注册、启动或补采该会话。全市场竞价序列与 09:25:50 快照继续独立使用
 `pytdx_hq`。
 
 > 状态：有效，已实现

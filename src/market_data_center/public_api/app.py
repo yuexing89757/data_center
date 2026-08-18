@@ -413,9 +413,9 @@ def create_app(
         "/api/v1/call-auction-one-price-limits",
         response_model=AuctionOnePriceLimitResponse,
         tags=["market-data"],
-        summary="Calculate evidence-complete 09:26 mainboard one-price limits",
+        summary="Calculate evidence-complete 09:25:50 mainboard one-price limits",
         description=(
-            "Selects one stored 09:26 SSE/SZSE market snapshot and calculates the accepted "
+            "Selects one stored 09:25:50 SSE/SZSE market snapshot and calculates the accepted "
             "mainboard 10% price limits at read time. It does not depend on the nightly "
             "price-limit batch, fetch providers, use later daily bars, or write data."
         ),

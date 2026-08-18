@@ -1,7 +1,7 @@
 """Provider-neutral realtime five-level quote facts and objective metrics."""
 
 from collections.abc import Collection, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from enum import StrEnum
@@ -394,6 +394,9 @@ class CallAuctionMarketSnapshotRecord:
     low_price: Decimal | None = None
     cumulative_volume: int | None = None
     cumulative_amount: Decimal | None = None
+    bid_levels: tuple[OrderBookLevel, ...] = field(default_factory=lambda: _empty_levels())
+    ask_levels: tuple[OrderBookLevel, ...] = field(default_factory=lambda: _empty_levels())
+    seal_amount: Decimal | None = None
 
     def __post_init__(self) -> None:
         if fullmatch(r"(?:SSE|SZSE):[0-9]{6}", self.symbol) is None:
@@ -452,3 +455,18 @@ class CallAuctionMarketSnapshotRecord:
             and self.last_price < self.low_price
         ):
             raise ValueError("last_price must be within supplied price bounds")
+        validate_order_book_levels(self.bid_levels, descending=True, side="bid")
+        validate_order_book_levels(self.ask_levels, descending=False, side="ask")
+        bid1 = self.bid_levels[0]
+        ask1 = self.ask_levels[0]
+        expected_seal_amount = (
+            bid1.price * Decimal(bid1.volume)
+            if ask1.volume in (None, 0) and bid1.price is not None and bid1.volume is not None
+            else None
+        )
+        if self.seal_amount != expected_seal_amount:
+            raise ValueError("seal_amount must match the auction order-book rule")
+
+
+def _empty_levels() -> tuple[OrderBookLevel, ...]:
+    return tuple(OrderBookLevel(level, None, None) for level in range(1, 6))

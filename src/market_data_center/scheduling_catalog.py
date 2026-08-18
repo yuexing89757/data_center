@@ -42,6 +42,7 @@ class JobDefinition:
     day_of_week: str | None = None
     hour: int | None = None
     minute: int | None = None
+    second: int | None = None
     interval_hours: int | None = None
     cadence_seconds: int | None = None
 
@@ -214,17 +215,18 @@ def job_definitions(settings: SchedulerSettings) -> tuple[JobDefinition, ...]:
         JobDefinition(
             CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID,
             "沪深全市场开盘竞价快照",
-            "采集沪深上市股票在开盘集合竞价结束后的完整来源快照。",
+            "采集沪深上市股票在开盘集合竞价结束后、连续竞价前的完整五档来源快照。",
             "call_auction_market_snapshot",
             "cron",
-            "周一至周五 09:26",
+            "周一至周五 09:25:50",
             timezone,
             settings.call_auction_snapshot_enabled,
             timeout,
             "只在当日 09:25-09:30 窗口内采集; 失败保持显式缺口, 不盘后补采。",
             day_of_week="mon-fri",
             hour=9,
-            minute=26,
+            minute=25,
+            second=50,
         ),
         JobDefinition(
             CALL_AUCTION_MARKET_SERIES_JOB_ID,
