@@ -333,10 +333,13 @@ def _to_market_record(
     quote: FiveLevelQuoteSnapshotRecord, trade_date: date
 ) -> CallAuctionMarketSnapshotRecord:
     bid1 = quote.bid_levels[0]
-    ask1 = quote.ask_levels[0]
     seal_amount = (
         bid1.price * bid1.volume
-        if ask1.volume in (None, 0) and bid1.price is not None and bid1.volume is not None
+        if (
+            all(level.volume in (None, 0) for level in quote.ask_levels[:3])
+            and bid1.price is not None
+            and bid1.volume is not None
+        )
         else None
     )
     return CallAuctionMarketSnapshotRecord(

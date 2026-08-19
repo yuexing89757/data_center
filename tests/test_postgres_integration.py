@@ -1312,7 +1312,7 @@ select api_v1.query_call_auction_market_snapshots(
     assert partial_payload["items"][0]["last_price"] == 99.0000
 
 
-def test_auction_one_price_limits_calculates_mainboard_limits_from_092550_snapshot(
+def test_auction_one_price_limits_calculates_mainboard_limits_from_092530_snapshot(
     database_engine: Engine,
 ) -> None:
     security_ingestion_id = uuid4()
@@ -1321,7 +1321,7 @@ def test_auction_one_price_limits_calculates_mainboard_limits_from_092550_snapsh
     snapshot_ingestion_id = uuid4()
     partial_ingestion_id = uuid4()
     trade_date = date(2026, 8, 17)
-    observed_at = datetime(2026, 8, 17, 1, 25, 50, tzinfo=UTC)
+    observed_at = datetime(2026, 8, 17, 1, 25, 30, tzinfo=UTC)
     prior_dates = tuple(date(2026, 8, day) for day in range(10, 15))
     with database_engine.begin() as connection:
         connection.execute(
@@ -2398,6 +2398,87 @@ def test_call_auction_market_schema_enforces_append_only_source_facts(
 
     orphaned_snapshot = capture_database_snapshot(database_url)
     assert orphaned_snapshot.orphan_facts == 1
+
+
+def test_call_auction_market_seal_rule_preserves_legacy_and_checks_three_ask_levels(
+    database_engine: Engine,
+) -> None:
+    security_ingestion_id = uuid4()
+    legacy_ingestion_id = uuid4()
+    current_ingestion_id = uuid4()
+    invalid_ingestion_id = uuid4()
+    with database_engine.begin() as connection:
+        connection.execute(
+            text("""
+                insert into ingestion.ingestion_run (
+                    ingestion_id, provider_code, dataset_code, status
+                ) values
+                    (:security_id, 'baostock', 'security', 'running'),
+                    (:legacy_id, 'pytdx_hq', 'call_auction_market_snapshot', 'running'),
+                    (:current_id, 'pytdx_hq', 'call_auction_market_snapshot', 'running'),
+                    (:invalid_id, 'pytdx_hq', 'call_auction_market_snapshot', 'running')
+            """),
+            {
+                "security_id": security_ingestion_id,
+                "legacy_id": legacy_ingestion_id,
+                "current_id": current_ingestion_id,
+                "invalid_id": invalid_ingestion_id,
+            },
+        )
+        connection.execute(
+            text("""
+                insert into core.security (
+                    symbol, code, exchange, current_name, security_type, status,
+                    source_code, ingestion_id
+                ) values (
+                    'SSE:600000', '600000', 'SSE', '浦发银行', 'stock', 'listed',
+                    'baostock', :security_id
+                )
+            """),
+            {"security_id": security_ingestion_id},
+        )
+        insert_snapshot = text("""
+            insert into realtime.call_auction_market_snapshot (
+                ingestion_id, symbol, trade_date, observed_at,
+                bid1_price, bid1_volume,
+                ask1_volume, ask2_volume, ask3_volume,
+                seal_amount, source_code
+            ) values (
+                :ingestion_id, 'SSE:600000', :trade_date, :observed_at,
+                10, 100, null, 100, null, :seal_amount, 'pytdx_hq'
+            )
+        """)
+        connection.execute(
+            insert_snapshot,
+            [
+                {
+                    "ingestion_id": legacy_ingestion_id,
+                    "trade_date": date(2026, 8, 19),
+                    "observed_at": datetime(2026, 8, 19, 1, 25, 50, tzinfo=UTC),
+                    "seal_amount": Decimal("1000"),
+                },
+                {
+                    "ingestion_id": current_ingestion_id,
+                    "trade_date": date(2026, 8, 20),
+                    "observed_at": datetime(2026, 8, 20, 1, 25, 30, tzinfo=UTC),
+                    "seal_amount": None,
+                },
+            ],
+        )
+
+    with pytest.raises(DBAPIError) as raised, database_engine.begin() as connection:
+        connection.execute(
+            insert_snapshot,
+            {
+                "ingestion_id": invalid_ingestion_id,
+                "trade_date": date(2026, 8, 20),
+                "observed_at": datetime(2026, 8, 20, 1, 25, 30, tzinfo=UTC),
+                "seal_amount": Decimal("1000"),
+            },
+        )
+
+    assert isinstance(raised.value.orig, CheckViolation)
+    assert raised.value.orig.diag.constraint_name == "call_auction_market_seal_amount_rule"
 
 
 def test_call_auction_market_attempts_are_append_only_and_finalize_latest_success(

@@ -539,7 +539,7 @@ class FakeQueryService:
             price_limit_rule_version="CN_MAINBOARD_2026_07_06",
             price_limit_algorithm_version="1.0.0",
             calculation_mode="realtime_read",
-            snapshot_window="09:25:50-09:29:59 Asia/Shanghai",
+            snapshot_window="09:25:30-09:29:59 Asia/Shanghai",
             candidate_count=2,
             omitted_incomplete_count=1,
             up_count=1,

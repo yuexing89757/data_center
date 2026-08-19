@@ -458,10 +458,13 @@ class CallAuctionMarketSnapshotRecord:
         validate_order_book_levels(self.bid_levels, descending=True, side="bid")
         validate_order_book_levels(self.ask_levels, descending=False, side="ask")
         bid1 = self.bid_levels[0]
-        ask1 = self.ask_levels[0]
         expected_seal_amount = (
             bid1.price * Decimal(bid1.volume)
-            if ask1.volume in (None, 0) and bid1.price is not None and bid1.volume is not None
+            if (
+                all(level.volume in (None, 0) for level in self.ask_levels[:3])
+                and bid1.price is not None
+                and bid1.volume is not None
+            )
             else None
         )
         if self.seal_amount != expected_seal_amount:

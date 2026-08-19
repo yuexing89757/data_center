@@ -103,7 +103,7 @@ def test_legacy_time_environment_cannot_change_registered_jobs(monkeypatch, tmp_
     )
 
     assert str(scheduler.get_job(CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID).trigger) == (
-        "cron[day_of_week='mon-fri', hour='9', minute='25', second='50']"
+        "cron[day_of_week='mon-fri', hour='9', minute='25', second='30']"
     )
     assert scheduler.get_job("call-auction-snapshot-daily") is None
     assert str(scheduler.get_job(EOD_QUOTE_SNAPSHOT_JOB_ID).trigger) == (
@@ -138,7 +138,7 @@ def test_scheduled_job_fire_time_uses_catalog_definition(monkeypatch) -> None:
     )
 
     assert actual == expected
-    assert captured == [(9, 25, 50, "Asia/Shanghai", True)]
+    assert captured == [(9, 25, 30, "Asia/Shanghai", True)]
 
 
 class FakeScheduler:
@@ -442,7 +442,7 @@ def test_only_call_auction_morning_job_is_registered_when_enabled(tmp_path: Path
     morning = scheduler.get_job(CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID)
     assert morning is not None
     assert str(morning.trigger) == (
-        "cron[day_of_week='mon-fri', hour='9', minute='25', second='50']"
+        "cron[day_of_week='mon-fri', hour='9', minute='25', second='30']"
     )
     assert morning.func is scheduler_module.run_call_auction_market_snapshot_job
     assert morning.max_instances == 1

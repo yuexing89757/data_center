@@ -72,7 +72,7 @@ def test_realtime_auction_one_price_limit_decision_is_documented() -> None:
         "realtime_read",
         "price_limit_calculation_id",
         "market_data_api",
-        "09:25:50",
+        "09:25:30",
     ):
         assert term in adr + detail
 
@@ -109,7 +109,7 @@ def test_fastapi_preflight_publishes_auction_one_price_patterns() -> None:
         "CN_MAINBOARD_2026_07_06",
         "1.0.0",
         "price_limit_calculation_id=null",
-        "09:25:50",
+        "09:25:30",
         "10%",
     ):
         assert term in documentation
@@ -137,6 +137,22 @@ def test_realtime_auction_limit_migration_is_read_only_and_independent() -> None
     assert "previous_close + 0.01::numeric" in normalized
     assert "greatest(" in normalized
     assert "security.code ~ '^[0-9]{6}$'" in normalized
+    assert not re.search(r"(?im)^\s*(insert|update|delete)\s", migration)
+
+
+def test_auction_snapshot_schedule_and_seal_rule_migration_is_versioned() -> None:
+    migration = (
+        MIGRATION_DIR / "20260819000100_adjust_call_auction_market_snapshot_schedule.sql"
+    ).read_text(encoding="utf-8")
+    normalized = migration.lower()
+    assert "drop constraint call_auction_market_seal_amount_rule" in normalized
+    assert "date '2026-08-20'" in normalized
+    for level in (1, 2, 3):
+        assert f"(ask{level}_volume is null or ask{level}_volume = 0)" in normalized
+    assert "time '09:25:30'" in normalized
+    assert "'snapshot_window', '09:25:30-09:29:59 asia/shanghai'" in normalized
+    assert "create or replace function api_v1.query_auction_one_price_limits" in normalized
+    assert "market_data_api" in normalized
     assert not re.search(r"(?im)^\s*(insert|update|delete)\s", migration)
 
 
