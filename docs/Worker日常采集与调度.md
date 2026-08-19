@@ -69,7 +69,7 @@ pytdx 还可从通达信 `T0002/hq_cache` 读取行业和概念完整快照，�
 80 只，每轮最多使用两个 endpoint 做完整全集 attempt，partial 结果不跨 endpoint 拼接。错过的轮次
 显式记为 failed，最后一轮 deadline 为 09:25:40，不补采过去时槽。两个 09:15 任务只在专用
 `morning_auction` 两线程 executor 内并行，其他 Worker 任务仍使用单线程 executor。另有沪深全市场
-开盘竞价来源采集任务在工作日 09:25:50 运行：只采集 `SSE`、`SZSE` 的 `stock`、`listed` 证券，BSE
+开盘竞价来源采集任务在工作日 09:25:30 运行：只采集 `SSE`、`SZSE` 的 `stock`、`listed` 证券，BSE
 暂缓，ETF、可转债和指数不进入集合。每次尝试固定一个 quote-capable endpoint，按最多 80 只分批；
 每个 endpoint 只允许形成完整全集，至多进行两次完整尝试，绝不拼接 endpoint 的 partial 结果。新
 请求的硬截止为 09:29:30；09:30 后观察到的记录不能进入成功快照。失败或 partial 尝试仍保留 Raw、
@@ -77,7 +77,7 @@ Manifest、质量结果和 ingestion lineage。
 
 项目所有者已移除工作日 21:30 “今日竞价量”自动最终化，不提供替代调度、环境时间或 OS 计划任务。
 数据库最终化实现和历史 workflow code 仅作为非调度的内部能力保留。`CALL_AUCTION_SNAPSHOT_ENABLED`
-只控制 09:25:50 来源采集。该数据集的来源 Raw 继续长期保留，但 operational Raw replay 暂停；只有持久化并
+只控制 09:25:30 来源采集。该数据集的来源 Raw 继续长期保留，但 operational Raw replay 暂停；只有持久化并
 验证原始冻结 SSE/SZSE listed-stock 全集的确定性身份后，才可通过后续接受决策重新启用。
 
 Worker 启动时先探测一个有界候选集，按 quote、SSE 日 K、SZSE 日 K 和 BSE 日 K 能力生成

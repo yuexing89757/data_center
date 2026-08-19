@@ -218,7 +218,7 @@ def job_definitions(settings: SchedulerSettings) -> tuple[JobDefinition, ...]:
             "采集沪深上市股票在开盘集合竞价结束后、连续竞价前的完整五档来源快照。",
             "call_auction_market_snapshot",
             "cron",
-            "周一至周五 09:25:50",
+            "周一至周五 09:25:30",
             timezone,
             settings.call_auction_snapshot_enabled,
             timeout,
@@ -226,7 +226,7 @@ def job_definitions(settings: SchedulerSettings) -> tuple[JobDefinition, ...]:
             day_of_week="mon-fri",
             hour=9,
             minute=25,
-            second=50,
+            second=30,
         ),
         JobDefinition(
             CALL_AUCTION_MARKET_SERIES_JOB_ID,

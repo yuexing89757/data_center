@@ -436,9 +436,9 @@ def create_app(
         "/api/v1/call-auction-one-price-limits",
         response_model=AuctionOnePriceLimitResponse,
         tags=["市场数据"],
-        summary="实时计算 09:25:50 主板一字涨跌停列表",
+        summary="实时计算 09:25:30 主板一字涨跌停列表",
         description=(
-            "选取一批已存储的沪深市场 09:25:50 快照，在读取时按已接受的主板百分之十涨跌停"
+            "选取一批已存储的沪深市场 09:25:30 快照，在读取时按已接受的主板百分之十涨跌停"
             "规则计算结果。不依赖夜间涨跌停批次，不访问行情提供方，不使用更晚的日线，也不写入数据。"
         ),
     )

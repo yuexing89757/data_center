@@ -118,18 +118,18 @@ and one waiting slot. Provider failure is 502, Raw/persistence failure is 503, a
 full queue is 429. The endpoint never accepts a board/date input, fills gaps, changes the formula,
 or adds a Worker/OS schedule.
 
-`GET /api/v1/call-auction-one-price-limits?trade_date=` selects the exact stored 09:25:50
+`GET /api/v1/call-auction-one-price-limits?trade_date=` selects the exact stored 09:25:30
 Asia/Shanghai snapshot and calculates SSE/SZSE mainboard limits at read time. Ordinary and ST
 stocks both use the accepted 10% rule, tick 0.01, `CN_MAINBOARD_2026_07_06` and algorithm `1.0.0`.
 Only complete `last_price=high_price=low_price=upper_limit/lower_limit` evidence enters the separate
 up/down lists. The response identifies `calculation_mode=realtime_read` and
-`price_limit_calculation_id=null`; the selected ingestion remains the source lineage. A ready 09:25:50
+`price_limit_calculation_id=null`; the selected ingestion remains the source lineage. A ready 09:25:30
 snapshot is the only market-data dependency, so the endpoint does not wait for the nightly
 price-limit batch. It does not fetch providers, write data or use later bars. Partial status and
 incomplete mainboard omissions remain visible; a valid empty list is HTTP 200, while no exact
-09:25:50 snapshot is HTTP 404. Each item exposes the stored `seal_amount`; under the accepted
-snapshot rule it is `bid1_price * bid1_volume` when ask-1 volume is missing or zero, so down-limit
-items normally return `null`. `observed_at` is rendered in Asia/Shanghai as
+09:25:30 snapshot is HTTP 404. Each item exposes the stored `seal_amount`; under the accepted
+snapshot rule it is `bid1_price * bid1_volume` when ask-1 through ask-3 volumes are each missing
+or zero, so down-limit items normally return `null`. `observed_at` is rendered in Asia/Shanghai as
 `YYYY-MM-DD HH:mm:ss`.
 
 `GET /api/v1/call-auction-indicative-details?code=688796&offset=0&limit=200` requires only one

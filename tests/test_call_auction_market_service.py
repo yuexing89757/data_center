@@ -336,16 +336,17 @@ def test_single_endpoint_complete_collection_succeeds() -> None:
 
 
 @pytest.mark.parametrize(
-    ("ask1_price", "ask1_volume", "expected_seal_amount"),
+    ("ask_volumes", "expected_seal_amount"),
     [
-        (None, None, Decimal("5602000.00")),
-        (Decimal("10.01"), 0, Decimal("5602000.00")),
-        (Decimal("10.01"), 100, None),
+        ((None, None, None), Decimal("5602000.00")),
+        ((0, 0, 0), Decimal("5602000.00")),
+        ((None, 100, None), None),
+        ((None, None, 100), None),
+        ((100, None, None), None),
     ],
 )
 def test_market_snapshot_preserves_five_levels_and_calculates_auction_seal_amount(
-    ask1_price: Decimal | None,
-    ask1_volume: int | None,
+    ask_volumes: tuple[int | None, int | None, int | None],
     expected_seal_amount: Decimal | None,
 ) -> None:
     bid_levels = (
@@ -354,9 +355,19 @@ def test_market_snapshot_preserves_five_levels_and_calculates_auction_seal_amoun
         *(OrderBookLevel(level, None, None) for level in range(3, 6)),
     )
     ask_levels = (
-        OrderBookLevel(1, ask1_price, ask1_volume),
-        OrderBookLevel(2, None, 13_300),
-        *(OrderBookLevel(level, None, None) for level in range(3, 6)),
+        *(
+            OrderBookLevel(
+                level,
+                (
+                    Decimal(f"10.0{level}")
+                    if ask_volumes == (0, 0, 0) or (level == 1 and volume is not None)
+                    else None
+                ),
+                volume,
+            )
+            for level, volume in enumerate(ask_volumes, start=1)
+        ),
+        *(OrderBookLevel(level, None, None) for level in range(4, 6)),
     )
     persistence = FakePersistence()
     provider_factory = FakeProviderFactory(
@@ -372,7 +383,7 @@ def test_market_snapshot_preserves_five_levels_and_calculates_auction_seal_amoun
 
     record = next(item for item in persistence.committed_records if item.symbol == "SSE:600000")
     assert record.bid_levels[1] == OrderBookLevel(2, None, 10_743_200)
-    assert record.ask_levels[1] == OrderBookLevel(2, None, 13_300)
+    assert tuple(level.volume for level in record.ask_levels[:3]) == ask_volumes
     assert record.seal_amount == expected_seal_amount
 
 
