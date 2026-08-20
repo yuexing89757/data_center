@@ -80,7 +80,7 @@ BlockingScheduler
 - `cron` 类型 → `CronTrigger(day_of_week, hour, minute, timezone)`
 - `interval` 类型 → `IntervalTrigger(hours=N, timezone)`
 
-## 定时任务目录（11 个 job）
+## 定时任务目录（12 个 job）
 
 任务定义在 `scheduling_catalog.py`。每个 job 有：`code`（APScheduler job id）、`display_name`、`workflow_code`、`trigger_type`、计划时间、`enabled`、`timeout_seconds`、`recovery_policy`。
 
@@ -90,11 +90,13 @@ BlockingScheduler
 |---|---|---|---|---|---|---|
 | 2 | `call-auction-market-series` | 沪深全市场开盘竞价序列快照 | `call_auction_market_series` | cron 周一至周五 | 09:15 | ✅ |
 | 3 | `call-auction-market-snapshot-daily` | 沪深全市场开盘竞价快照 | `call_auction_market_snapshot` | cron 周一至周五 | 09:25:30 | ✅ |
+| 4 | `board-index-883423-daily-bar` | 883423 板块日线收盘采集 | `board_index_daily_bar` | cron 周一至周五 | 15:30、16:30、17:30 | ✅ |
 | 4 | `daily-run` | 日 K 与基础数据更新 | `daily_market` | cron 周一至周五 | 20:00 | ✅ |
 | 5 | `deducted-profit-daily` | 扣非净利润增量同步 | `deducted_profit` | cron 每天 | 20:00 | ✅ |
 | 6 | `stock-daily-indicators-daily` | 股票每日指标更新 | `stock_daily_indicator` | cron 周一至周五 | 20:30 | ✅ |
 | 7 | `mainboard-price-limit-stock-pools-daily` | 沪深主板昨日涨跌停股票池 | `stock_pool` | cron 周一至周五 | 21:00 | ✅ |
 | 8 | `eod-quote-snapshot-daily` | 收盘五档快照 | `eod_quote_snapshot` | cron 周一至周五 | 21:10 | ✅ |
+| 9 | `close-price-new-highs-120d-daily` | 沪深120交易日收盘新高快照 | `close_price_new_highs_120d` | cron 周一至周五 | 21:30 | ✅ |
 | 9 | `today-limit-up-snapshot-daily` | 同日涨停不可变快照 | `today_limit_up_snapshot` | cron 周一至周五 | 22:00 | 默认关闭 |
 | 10 | `recover-stale-ingestion-runs` | 陈旧运行恢复 | `stale_run_recovery` | interval | 每 1 小时 | ✅ |
 | 11 | `pytdx-pool-refresh` | PYTDX 节点池刷新 | `pytdx_pool_refresh` | interval | 每 12 小时 | ✅ |
@@ -115,6 +117,7 @@ BlockingScheduler
 | `run_eod_quote_snapshot_job` | 对当日 ready 涨停池采集收盘五档快照（默认启用） |
 | `run_call_auction_market_snapshot_job` | 09:25:30 从一个 quote-capable endpoint 采集 SSE/SZSE `stock`、`listed` 全集的开盘竞价五档来源快照；卖一至卖三量分别为空或零时按买一价乘买一量计算封单额；BSE、ETF、可转债和指数不进入本任务 |
 | `run_call_auction_market_series_job` | 09:15 启动 32 轮 SSE/SZSE `stock`、`listed` 全集采集；每轮最多两个 endpoint 完整 attempt，不合并 partial |
+| `run_board_index_daily_bar_job` | 15:30、16:30、17:30 幂等采集 `THS:883423` 日线；每轮最多三次 Provider 短重试，后续时点补采尾部缺口 |
 | `run_pytdx_pool_refresh_job` | 有界探测候选节点能力；成功时原子发布，失败时保留 last-good |
 
 ## 自愈与可靠性（ADR-0016）
@@ -130,7 +133,7 @@ BlockingScheduler
 
 ## 配置边界
 
-执行时间、时区、采样节奏、misfire/timeout 和 interval 均由受控代码目录固定。`.env` 不含任务 hour/minute，只保留运行路径、管理端口和三个可选任务开关：
+执行时间、时区、采样节奏、misfire/timeout 和 interval 均由受控代码目录固定。`.env` 不含任务 hour/minute，只保留运行路径、管理端口和任务启停开关：
 
 | 环境变量 | 默认值 | 说明 |
 |---|---|---|
@@ -140,6 +143,8 @@ BlockingScheduler
 | `CALL_AUCTION_SNAPSHOT_ENABLED` | `true` | 只控制 09:25:30 沪深全市场开盘竞价来源采集 |
 | `CALL_AUCTION_MARKET_SERIES_ENABLED` | `true` | 只控制 09:15 全市场竞价序列任务 |
 | `TODAY_LIMIT_UP_SNAPSHOT_ENABLED` | `false` | 只控制 22:00 同日涨停快照；迁移和出站预检前保持关闭 |
+| `CLOSE_PRICE_NEW_HIGHS_120D_ENABLED` | `true` | 只控制 21:30 收盘新高物化任务 |
+| `BOARD_INDEX_DAILY_BAR_ENABLED` | `true` | 只控制 883423 板块日线收盘采集任务 |
 | `PYTDX_POOL_PATH` | `data/pytdx_pool.json` | 统一版本化能力节点池路径；生产使用持久化绝对路径 |
 
 ## 健康检查（`worker --check`）

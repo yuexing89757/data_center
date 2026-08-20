@@ -15,6 +15,7 @@ CALL_AUCTION_MARKET_SERIES_JOB_ID = "call-auction-market-series"
 TODAY_LIMIT_UP_SNAPSHOT_JOB_ID = "today-limit-up-snapshot-daily"
 PYTDX_POOL_REFRESH_JOB_ID = "pytdx-pool-refresh"
 CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID = "close-price-new-highs-120d-daily"
+BOARD_INDEX_DAILY_BAR_JOB_ID = "board-index-883423-daily-bar"
 SCHEDULER_TIMEZONE = "Asia/Shanghai"
 JOB_TIMEOUT_SECONDS = 21_600
 
@@ -40,7 +41,7 @@ class JobDefinition:
     timeout_seconds: int
     recovery_policy: str
     day_of_week: str | None = None
-    hour: int | None = None
+    hour: int | str | None = None
     minute: int | None = None
     second: int | None = None
     interval_hours: int | None = None
@@ -130,6 +131,12 @@ WORKFLOW_DEFINITIONS = (
         "沪深120交易日收盘新高快照",
         "在日 K 完成后构建版本化沪深120交易日收盘新高快照。",
         ("build_close_price_new_highs_120d_snapshot",),
+    ),
+    WorkflowDefinition(
+        "board_index_daily_bar",
+        "883423 板块日线收盘采集",
+        "收盘后采集固定同花顺板块 THS:883423 日线, 并补齐尾部缺口。",
+        ("collect_board_index_daily_bars",),
     ),
 )
 
@@ -271,6 +278,21 @@ def job_definitions(settings: SchedulerSettings) -> tuple[JobDefinition, ...]:
             "同日 daily_market 未终态时失败; 下一次调度或显式日期手工命令重试",
             day_of_week="mon-fri",
             hour=21,
+            minute=30,
+        ),
+        JobDefinition(
+            BOARD_INDEX_DAILY_BAR_JOB_ID,
+            "883423 板块日线收盘采集",
+            "在三个收盘后时点幂等采集 THS:883423 日线。",
+            "board_index_daily_bar",
+            "cron",
+            "周一至周五 15:30、16:30、17:30",
+            timezone,
+            settings.board_index_daily_bar_enabled,
+            timeout,
+            "每轮最多三次 Provider 短重试; 后续时点及下一交易日继续补采缺口",
+            day_of_week="mon-fri",
+            hour="15-17",
             minute=30,
         ),
         JobDefinition(

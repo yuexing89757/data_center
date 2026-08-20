@@ -1002,6 +1002,15 @@ where market = 'CN_A_SHARE'
                 statement, {"start_date": start_date, "end_date": end_date}
             ).scalar_one_or_none()
 
+    def latest_board_index_daily_bar_date(self, board_id: str) -> date | None:
+        statement = text("""
+select max(trade_date)
+from core.board_index_daily_bar
+where board_id = :board_id
+""")
+        with self._engine.connect() as connection:
+            return connection.execute(statement, {"board_id": board_id}).scalar_one_or_none()
+
     def latest_stock_daily_indicator_count_before(self, trade_date: date) -> int | None:
         statement = text("""
 select count(*)

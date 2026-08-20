@@ -86,10 +86,7 @@ def test_fastapi_preflight_checks_call_auction_market_snapshot_rpc() -> None:
     )
     assert "api_v1.query_board_index_bias_latest()" in PUBLISHED_FUNCTIONS
     assert "api_v1.query_close_price_new_highs_120d()" in PUBLISHED_FUNCTIONS
-    assert (
-        "api_v1.persist_board_index_daily_bars_live("
-        "uuid,uuid,timestamptz,text,text,text,bigint,integer,jsonb,jsonb)" in PUBLISHED_FUNCTIONS
-    )
+    assert not any("persist_board_index_daily_bars_live" in item for item in PUBLISHED_FUNCTIONS)
 
 
 def test_fastapi_preflight_and_docs_publish_realtime_auction_limits() -> None:
@@ -503,6 +500,21 @@ def test_live_board_index_persistence_is_narrow_and_fastapi_only() -> None:
     assert "from public,anon,authenticated" in migration
     assert "to market_data_api" in migration
     assert not re.search(r"(?im)^grant\s+(insert|update|delete|all)", migration)
+
+
+def test_board_index_worker_migration_removes_api_write_and_stale_gate() -> None:
+    migration = (
+        (MIGRATION_DIR / "20260820000100_board_index_daily_bar_worker_schedule.sql")
+        .read_text(encoding="utf-8")
+        .lower()
+    )
+
+    assert "'board_index_daily_bar'" in migration
+    assert "ready_count < 34" in migration
+    assert "expected_trade_date" not in migration
+    assert "drop function api_v1.persist_board_index_daily_bars_live" in migration
+    assert "from public, anon, authenticated, market_data_api" in migration
+    assert "grant execute on function api_v1.query_board_index_bias_latest" in migration
 
 
 def test_recent_daily_bars_rpc_is_bounded_and_fastapi_only() -> None:

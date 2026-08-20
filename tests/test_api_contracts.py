@@ -104,7 +104,6 @@ def test_fastapi_openapi_contract_matches_the_application() -> None:
             settings=settings,
             query_service=cast(PublicQueryService, object()),
             auction_indicative_service=cast(object, object()),  # type: ignore[arg-type]
-            board_index_bias_live_service=cast(object, object()),  # type: ignore[arg-type]
         ).openapi()
     )
 
@@ -118,7 +117,6 @@ def test_fastapi_docs_use_chinese_annotations_for_owned_contracts() -> None:
         settings=settings,
         query_service=cast(PublicQueryService, object()),
         auction_indicative_service=cast(object, object()),  # type: ignore[arg-type]
-        board_index_bias_live_service=cast(object, object()),  # type: ignore[arg-type]
     ).openapi()
 
     def contains_chinese(value: object) -> bool:
@@ -237,10 +235,9 @@ def test_board_index_bias_contract_is_fixed_bounded_and_no_input() -> None:
     assert response_schema["properties"]["algorithm_version"]["const"] == ("board_index_bias_v1")
     assert response_schema["properties"]["window_trading_days"]["const"] == 30
     assert response_schema["properties"]["close"]["type"] == "string"
-    assert response_schema["properties"]["data_origin"]["enum"] == ["database", "ths_live"]
-    assert response_schema["properties"]["persistence_status"]["enum"] == [
-        "persisted",
-        "queued",
-    ]
+    assert response_schema["properties"]["data_origin"]["const"] == "database"
+    assert response_schema["properties"]["persistence_status"]["const"] == "persisted"
     assert response_schema["properties"]["fetched_at"]["format"] == "date-time"
-    assert {"429", "502", "503"}.issubset(operation["responses"])
+    assert {"404", "503"}.issubset(operation["responses"])
+    assert "429" not in operation["responses"]
+    assert "502" not in operation["responses"]

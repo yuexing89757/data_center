@@ -36,6 +36,7 @@ class SchedulerSettings(BaseSettings):
     # Remains opt-in until the new migration and provider preflight are explicitly deployed.
     today_limit_up_snapshot_enabled: bool = False
     close_price_new_highs_120d_enabled: bool = True
+    board_index_daily_bar_enabled: bool = True
 
 
 class PytdxPoolSettings(BaseSettings):

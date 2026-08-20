@@ -19,7 +19,6 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from market_data_center.database_urls import sqlalchemy_url
 from market_data_center.domain import ClassificationType
-from market_data_center.providers.akshare_ths import AKShareTHSProvider, HTTPAKShareTHSClient
 from market_data_center.providers.eastmoney_auction import EastmoneyAuctionIndicativeProvider
 from market_data_center.public_api.auction_indicative_live import (
     AuctionIndicativeLiveBusy,
@@ -32,16 +31,6 @@ from market_data_center.public_api.auction_indicative_live import (
 from market_data_center.public_api.auction_indicative_write import (
     AuctionIndicativeApiPersistence,
     AuctionIndicativePersistenceQueue,
-)
-from market_data_center.public_api.board_index_bias_live import (
-    BoardIndexBiasLiveBusy,
-    BoardIndexBiasLivePersistence,
-    BoardIndexBiasLiveService,
-    BoardIndexBiasLiveUpstream,
-)
-from market_data_center.public_api.board_index_bias_write import (
-    BoardIndexApiPersistence,
-    BoardIndexPersistenceQueue,
 )
 from market_data_center.public_api.models import (
     AuctionIndicativeDetailResponse,
@@ -65,7 +54,6 @@ from market_data_center.public_api.models import (
 )
 from market_data_center.public_api.openapi_zh import localize_openapi
 from market_data_center.public_api.queries import (
-    BoardIndexBiasNotReady,
     PostgreSQLPublicQueryService,
     PublicQueryInvalid,
     PublicQueryNotFound,
@@ -85,13 +73,11 @@ def create_app(
     settings: ApiSettings | None = None,
     query_service: PublicQueryService | None = None,
     auction_indicative_service: LiveAuctionIndicativeService | None = None,
-    board_index_bias_live_service: BoardIndexBiasLiveService | None = None,
 ) -> FastAPI:
     configured = settings or ApiSettings()  # type: ignore[call-arg]
     owned_engine: Engine | None = None
     owned_write_engine: Engine | None = None
     owned_persistence_queue: AuctionIndicativePersistenceQueue | None = None
-    owned_board_persistence_queue: BoardIndexPersistenceQueue | None = None
     if query_service is None:
         owned_engine = create_engine(
             sqlalchemy_url(configured.resolved_database_url()),
@@ -103,7 +89,7 @@ def create_app(
         )
         query_service = PostgreSQLPublicQueryService(owned_engine)
 
-    if auction_indicative_service is None or board_index_bias_live_service is None:
+    if auction_indicative_service is None:
         if owned_engine is None:
             raise RuntimeError("live services must be injected with a query-service stub")
         # This connection does not force a read-only transaction because it invokes one
@@ -123,8 +109,6 @@ def create_app(
         yield
         if owned_persistence_queue is not None:
             owned_persistence_queue.shutdown()
-        if owned_board_persistence_queue is not None:
-            owned_board_persistence_queue.shutdown()
         if owned_engine is not None:
             owned_engine.dispose()
         if owned_write_engine is not None:
@@ -162,18 +146,6 @@ def create_app(
             minimum_interval_seconds=configured.fastapi_auction_live_minimum_interval_seconds,
         )
     app.state.auction_indicative_service = auction_indicative_service
-    if board_index_bias_live_service is None:
-        assert owned_write_engine is not None
-        raw_root = configured.fastapi_auction_raw_root
-        owned_board_persistence_queue = BoardIndexPersistenceQueue(
-            BoardIndexApiPersistence(owned_write_engine, LocalRawStore(raw_root), raw_root)
-        )
-        board_index_bias_live_service = BoardIndexBiasLiveService(
-            AKShareTHSProvider(HTTPAKShareTHSClient(timeout_seconds=5)),
-            owned_board_persistence_queue,
-        )
-    app.state.board_index_bias_live_service = board_index_bias_live_service
-
     _install_exception_handlers(app)
 
     @app.get(
@@ -410,27 +382,22 @@ def create_app(
         tags=["市场数据"],
         summary="查询同花顺 883423 板块最新五日线乖离指标",
         description=(
-            "优先使用数据库中有效的 THS:883423 日线；历史缺失、不足或过期时执行一次有界实时"
-            "获取，保存不可变原始数据并异步入库。返回当前五日简单移动平均乖离率、相对上一"
-            "有效交易日的变化方向，以及近三十个交易日有效样本的最高和最低乖离率。本接口"
-            "不接收参数，也不会回退到其他板块。"
+            "只读取数据库中最新已持久化的 THS:883423 日线。返回当前五日简单移动平均乖离率、"
+            "相对上一有效交易日的变化方向，以及近三十个交易日有效样本的最高和最低乖离率。"
+            "当天尚未入库时返回数据库最近交易日并明确 trade_date；历史少于34条时返回404。"
+            "本接口不接收参数，不访问行情提供方，也不写入数据。"
         ),
         responses={
             401: {"model": ErrorResponse},
-            429: {"model": ErrorResponse},
-            502: {"model": ErrorResponse},
+            404: {"model": ErrorResponse},
             503: {"model": ErrorResponse},
         },
     )
     def board_index_bias_latest(
         _: ApiKeyDependency,
         service: QueryServiceDependency,
-        live_service: BoardIndexBiasLiveServiceDependency,
     ) -> BoardIndexBiasResponse:
-        try:
-            return service.board_index_bias_latest()
-        except BoardIndexBiasNotReady:
-            return live_service.fetch_current()
+        return service.board_index_bias_latest()
 
     @app.get(
         "/api/v1/call-auction-one-price-limits",
@@ -511,10 +478,6 @@ def _auction_indicative_service(request: Request) -> LiveAuctionIndicativeServic
     return cast(LiveAuctionIndicativeService, request.app.state.auction_indicative_service)
 
 
-def _board_index_bias_live_service(request: Request) -> BoardIndexBiasLiveService:
-    return cast(BoardIndexBiasLiveService, request.app.state.board_index_bias_live_service)
-
-
 def _require_api_key(
     request: Request,
     provided: Annotated[str | None, Security(API_KEY_HEADER)],
@@ -529,9 +492,6 @@ QueryServiceDependency = Annotated[PublicQueryService, Depends(_query_service)]
 AuctionIndicativeServiceDependency = Annotated[
     LiveAuctionIndicativeService, Depends(_auction_indicative_service)
 ]
-BoardIndexBiasLiveServiceDependency = Annotated[
-    BoardIndexBiasLiveService, Depends(_board_index_bias_live_service)
-]
 ApiKeyDependency = Annotated[None, Depends(_require_api_key)]
 
 
@@ -544,20 +504,6 @@ def _auction_symbol_from_code(code: str) -> str:
 
 
 def _install_exception_handlers(app: FastAPI) -> None:
-    @app.exception_handler(BoardIndexBiasLiveBusy)
-    async def board_live_busy(_: Request, __: BoardIndexBiasLiveBusy) -> JSONResponse:
-        return _error_response(429, "rate_limited", "live board-index provider access is busy")
-
-    @app.exception_handler(BoardIndexBiasLiveUpstream)
-    async def board_live_upstream(_: Request, __: BoardIndexBiasLiveUpstream) -> JSONResponse:
-        return _error_response(502, "upstream_error", "external board-index provider failed")
-
-    @app.exception_handler(BoardIndexBiasLivePersistence)
-    async def board_live_persistence(_: Request, __: BoardIndexBiasLivePersistence) -> JSONResponse:
-        return _error_response(
-            503, "persistence_unavailable", "board-index source could not be saved"
-        )
-
     @app.exception_handler(AuctionIndicativeLiveInvalid)
     async def live_invalid(_: Request, __: AuctionIndicativeLiveInvalid) -> JSONResponse:
         return _error_response(422, "validation_error", "live auction request is invalid")

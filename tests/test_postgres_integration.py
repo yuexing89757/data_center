@@ -1,4 +1,3 @@
-import json
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import replace
@@ -3477,7 +3476,7 @@ def test_board_index_bias_rpc_requests_fallback_with_fewer_than_34_bars(
     assert captured.value.orig.sqlstate == "P0002"
 
 
-def test_board_index_bias_rpc_requests_fallback_when_latest_bar_is_stale(
+def test_board_index_bias_rpc_returns_latest_stored_date_when_current_date_is_missing(
     database_engine: Engine,
 ) -> None:
     start_date = date(2026, 6, 1)
@@ -3495,10 +3494,12 @@ def test_board_index_bias_rpc_requests_fallback_when_latest_bar_is_stale(
             {"trade_date": start_date + timedelta(days=34)},
         )
 
-    with pytest.raises(DBAPIError) as captured, database_engine.connect() as connection:
-        connection.execute(text("select api_v1.query_board_index_bias_latest()"))
+    with database_engine.connect() as connection:
+        payload = connection.execute(
+            text("select api_v1.query_board_index_bias_latest()")
+        ).scalar_one()
 
-    assert captured.value.orig.sqlstate == "P0002"
+    assert payload["trade_date"] == (start_date + timedelta(days=33)).isoformat()
 
 
 def test_board_index_bias_rpc_fails_when_no_board_bars_exist(database_engine: Engine) -> None:
@@ -3785,97 +3786,19 @@ where snapshot_id=:snapshot_id
     assert revised_payload["items"][0]["breakout_pct"] == 20.0
 
 
-def test_live_board_index_persistence_is_atomic_idempotent_and_fastapi_only(
+def test_live_board_index_persistence_rpc_is_removed(
     database_engine: Engine,
 ) -> None:
-    start_date = date(2026, 6, 1)
-    closes = [Decimal(index) for index in range(1, 36)]
-    _commit_board_bias_bars(database_engine, start_date, closes)
-    records = [
-        {
-            "board_id": "THS:883423",
-            "trade_date": (start_date + timedelta(days=index)).isoformat(),
-            "market": "CN_A_SHARE",
-            "open": str(close),
-            "high": str(close),
-            "low": str(close),
-            "close": str(close),
-            "volume": index,
-            "amount": str(close * index),
-            "source_code": "akshare_ths",
-        }
-        for index, close in enumerate(closes)
-    ]
-    first_ingestion_id = uuid4()
-    first_raw_id = uuid4()
-    second_ingestion_id = uuid4()
-    second_raw_id = uuid4()
-    call = text("""
-        select api_v1.persist_board_index_daily_bars_live(
-            :ingestion_id, :raw_id, :fetched_at, :input_hash, :object_path,
-            :content_sha256, :byte_size, :source_row_count,
-            cast(:source_years as jsonb), cast(:records as jsonb)
-        ) as payload
-    """)
-    common = {
-        "fetched_at": datetime(2026, 8, 15, 1, 2, 3, tzinfo=UTC),
-        "input_hash": "b" * 64,
-        "content_sha256": "a" * 64,
-        "byte_size": 1234,
-        "source_row_count": 1,
-        "source_years": json.dumps([2026]),
-        "records": json.dumps(records),
-    }
-    with database_engine.begin() as connection:
-        first = connection.execute(
-            call,
-            {
-                **common,
-                "ingestion_id": first_ingestion_id,
-                "raw_id": first_raw_id,
-                "object_path": (
-                    "akshare_ths/board_index_daily_bar/year=2026/month=08/day=15/"
-                    f"{first_raw_id}.jsonl"
-                ),
-            },
-        ).scalar_one()
-        second = connection.execute(
-            call,
-            {
-                **common,
-                "ingestion_id": second_ingestion_id,
-                "raw_id": second_raw_id,
-                "object_path": (
-                    "akshare_ths/board_index_daily_bar/year=2026/month=08/day=15/"
-                    f"{second_raw_id}.jsonl"
-                ),
-            },
-        ).scalar_one()
-        signature = (
-            "api_v1.persist_board_index_daily_bars_live("
-            "uuid,uuid,timestamptz,text,text,text,bigint,integer,jsonb,jsonb)"
+    with database_engine.connect() as connection:
+        function_oid = connection.scalar(
+            text(
+                "select to_regprocedure("
+                "'api_v1.persist_board_index_daily_bars_live("
+                "uuid,uuid,timestamptz,text,text,text,bigint,integer,jsonb,jsonb)')"
+            )
         )
-        privileges = connection.execute(
-            text(
-                "select has_function_privilege('market_data_api', :signature, 'EXECUTE'), "
-                "has_function_privilege('anon', :signature, 'EXECUTE')"
-            ),
-            {"signature": signature},
-        ).one()
-        persisted = connection.execute(
-            text(
-                "select count(*) from ingestion.ingestion_run "
-                "where request_params->>'input_hash'=:input_hash"
-            ),
-            {"input_hash": common["input_hash"]},
-        ).scalar_one()
 
-    assert first["outcome"] == "created"
-    assert second["outcome"] == "reused"
-    assert second["ingestion_id"] == str(first_ingestion_id)
-    assert second["raw_id"] == str(first_raw_id)
-    assert persisted == 1
-    assert tuple(privileges) == (True, False)
+    assert function_oid is None
 
 
 def test_derived_calculation_is_versioned_idempotent_and_revision_aware(

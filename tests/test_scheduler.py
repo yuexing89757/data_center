@@ -21,6 +21,7 @@ from market_data_center.scheduler import (
     prepare_locked_worker,
 )
 from market_data_center.scheduling_catalog import (
+    BOARD_INDEX_DAILY_BAR_JOB_ID,
     CALL_AUCTION_MARKET_SERIES_JOB_ID,
     CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID,
     CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID,
@@ -67,6 +68,9 @@ def test_scheduler_registers_persistent_single_instance_market_job(tmp_path: Pat
     closing_highs = scheduler.get_job(CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID)
     assert closing_highs is not None
     assert str(closing_highs.trigger) == ("cron[day_of_week='mon-fri', hour='21', minute='30']")
+    board_bars = scheduler.get_job(BOARD_INDEX_DAILY_BAR_JOB_ID)
+    assert board_bars is not None
+    assert str(board_bars.trigger) == ("cron[day_of_week='mon-fri', hour='15-17', minute='30']")
     assert store_path.parent.is_dir()
     assert scheduler.get_job("opening-auction-limit-up-quotes") is None
 
@@ -260,6 +264,109 @@ def test_closing_high_snapshot_can_only_be_enabled_or_disabled(tmp_path: Path) -
 
     assert scheduler.get_job(CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID) is None
     assert scheduler.get_job(DAILY_RUN_JOB_ID) is not None
+
+
+def test_board_index_daily_bar_job_can_only_be_enabled_or_disabled(tmp_path: Path) -> None:
+    scheduler = build_scheduler(
+        SchedulerSettings(
+            scheduler_store_path=tmp_path / "no_board_bars.sqlite",
+            board_index_daily_bar_enabled=False,
+            _env_file=None,
+        )
+    )
+
+    assert scheduler.get_job(BOARD_INDEX_DAILY_BAR_JOB_ID) is None
+    assert scheduler.get_job(DAILY_RUN_JOB_ID) is not None
+
+
+def test_board_index_daily_bar_runner_collects_missing_tail(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    fire_time = datetime(2026, 8, 20, 7, 30, tzinfo=UTC)
+    engine = SimpleNamespace(disposed=False)
+    engine.dispose = lambda: setattr(engine, "disposed", True)
+    captured: dict[str, object] = {}
+
+    class FakePersistence:
+        collected = False
+
+        def latest_trading_date(self, start_date, end_date):
+            captured["calendar_range"] = (start_date, end_date)
+            return date(2026, 8, 20)
+
+        def latest_board_index_daily_bar_date(self, board_id):
+            captured["latest_board"] = board_id
+            return date(2026, 8, 20) if self.collected else date(2026, 8, 19)
+
+    class FakeExecution:
+        def step(self, code, sequence, operation):
+            captured["step"] = (code, sequence)
+            return operation()
+
+        def succeed(self):
+            captured["succeeded"] = True
+
+        def fail(self, error):
+            captured["failed"] = type(error).__name__
+
+    class FakeProvider:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+    class FakePipeline:
+        def __init__(self, **kwargs):
+            captured["pipeline"] = kwargs
+
+        def ingest_board_index_daily_bars(self, board_id, start_date, end_date):
+            captured["ingest"] = (board_id, start_date, end_date)
+            persistence.collected = True
+            return object()
+
+    persistence = FakePersistence()
+    monkeypatch.setattr(
+        scheduler_module,
+        "WorkerSettings",
+        lambda: SimpleNamespace(
+            database_url=SimpleNamespace(get_secret_value=lambda: "unused"),
+            raw_data_root=tmp_path / "raw",
+        ),
+    )
+    monkeypatch.setattr(
+        scheduler_module, "SchedulerSettings", lambda: SchedulerSettings(_env_file=None)
+    )
+    monkeypatch.setattr(scheduler_module, "sqlalchemy_url", lambda value: value)
+    monkeypatch.setattr(scheduler_module, "create_engine", lambda *args, **kwargs: engine)
+    monkeypatch.setattr(scheduler_module, "PostgreSQLPersistence", lambda value: persistence)
+    monkeypatch.setattr(scheduler_module, "PostgreSQLOperationsPersistence", lambda value: object())
+    monkeypatch.setattr(
+        scheduler_module,
+        "WorkflowExecutionService",
+        lambda operations: SimpleNamespace(
+            start=lambda *args: captured.setdefault("workflow", args) and FakeExecution()
+        ),
+    )
+    monkeypatch.setattr(scheduler_module, "_scheduled_job_fire_time", lambda *args: fire_time)
+    monkeypatch.setattr(
+        scheduler_module, "create_board_index_provider", lambda code: FakeProvider()
+    )
+    monkeypatch.setattr(scheduler_module, "BoardIndexIngestionPipeline", FakePipeline)
+    monkeypatch.setattr(scheduler_module, "LocalRawStore", lambda root: ("raw", root))
+    monkeypatch.setattr(scheduler_module, "sleep", lambda seconds: None)
+
+    scheduler_module.run_board_index_daily_bar_job()
+
+    assert captured["latest_board"] == "THS:883423"
+    assert captured["ingest"] == (
+        "THS:883423",
+        date(2026, 8, 20),
+        date(2026, 8, 20),
+    )
+    assert captured["step"] == ("collect_board_index_daily_bars", 1)
+    assert captured["succeeded"] is True
+    assert engine.disposed is True
 
 
 def test_call_auction_market_series_runner_wires_isolated_dependencies(
@@ -532,6 +639,7 @@ def test_scheduler_health_requires_jobs_fresh_snapshot_and_no_stale_runs(tmp_pat
             STOCK_DAILY_INDICATOR_JOB_ID,
             STOCK_POOL_JOB_ID,
             CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID,
+            BOARD_INDEX_DAILY_BAR_JOB_ID,
         ),
     )
     settings = SchedulerSettings(

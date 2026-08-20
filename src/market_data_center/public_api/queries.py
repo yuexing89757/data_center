@@ -126,10 +126,6 @@ class PublicQueryNotFound(PublicQueryError):
     pass
 
 
-class BoardIndexBiasNotReady(PublicQueryNotFound):
-    """The fixed board cache explicitly requested live fallback via SQLSTATE P0002."""
-
-
 class PublicQueryTimeout(PublicQueryError):
     pass
 
@@ -285,10 +281,7 @@ class PostgreSQLPublicQueryService:
         return ClosePriceNewHighs120dResponse.model_validate(rows[0]["payload"])
 
     def board_index_bias_latest(self) -> BoardIndexBiasResponse:
-        try:
-            rows = self._execute(QUERY_BOARD_INDEX_BIAS_LATEST, {})
-        except PublicQueryNotFound as error:
-            raise BoardIndexBiasNotReady("board-index history requires live fallback") from error
+        rows = self._execute(QUERY_BOARD_INDEX_BIAS_LATEST, {})
         return BoardIndexBiasResponse.model_validate(rows[0]["payload"])
 
     def auction_one_price_limits(self, trade_date: date | None) -> AuctionOnePriceLimitResponse:

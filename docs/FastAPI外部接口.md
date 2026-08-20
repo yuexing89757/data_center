@@ -2,8 +2,8 @@
 
 The FastAPI process is an independent protocol boundary that connects directly to PostgreSQL. It
 does not require PostgREST or the Worker scheduler. Provider access and Raw capture exist only for
-the explicitly documented bounded single-symbol live-auction endpoint and the fixed THS:883423
-bias fallback. Its SQL is limited to explicitly granted bounded `api_v1` functions.
+the explicitly documented bounded single-symbol live-auction endpoint. The fixed THS:883423 bias
+endpoint is database-only. Its SQL is limited to explicitly granted bounded `api_v1` functions.
 
 ```dotenv
 FASTAPI_DATABASE_URL='postgresql+psycopg://<api-login>:<password>@<host>:5432/<database>'
@@ -98,25 +98,19 @@ that run, on weekends, or after an upstream failure, the endpoint continues to r
 ready immutable snapshot and exposes its `trade_date`; it never recalculates from `core.daily_bar` on
 the request path. If no ready snapshot has ever been published, the endpoint returns not found.
 
-`GET /api/v1/board-indexes/883423/bias` takes no parameters and first reads stored
-`THS:883423` daily bars. The database result is ready only with at least 34 rows and a latest bar
-matching the most recent expected `CN_A_SHARE` trading date. A ready hit returns
-`data_origin=database` and `persistence_status=persisted`. Only SQLSTATE `P0002` for missing,
-insufficient, or stale history triggers the fixed THS annual URL; other database failures never
-trigger provider access. The live request uses a five-second timeout, reads the current year, and
-reads the previous year only when fewer than 34 unique bars were obtained.
+`GET /api/v1/board-indexes/883423/bias` takes no parameters and only reads stored
+`THS:883423` daily bars through a bounded `api_v1` RPC. At least 34 rows are required; otherwise
+the endpoint returns 404. When today's bar is not yet stored, the endpoint returns the latest
+persisted board date and exposes that actual `trade_date` rather than failing or accessing THS.
+Successful responses always use `data_origin=database` and `persistence_status=persisted`.
 
 `moving_average_5` is the simple mean of the current close and four
 preceding available positive closes; `bias_5_pct=(close-moving_average_5)/moving_average_5*100`.
 The response compares the current value with the previous available board session as
 `up`/`down`/`flat`, and reports the highest and lowest valid BIAS5 values across the latest 30
-board sessions, uses the latest date for tied extrema, and returns Decimal strings. Before a live
-response is returned, exact source bytes are captured losslessly in immutable JSONL Raw. The
-response is marked `data_origin=ths_live`, `persistence_status=queued`, and the standard bars are
-registered asynchronously through a narrowly granted idempotent RPC. The queue has one running
-and one waiting slot. Provider failure is 502, Raw/persistence failure is 503, and a busy fetch or
-full queue is 429. The endpoint never accepts a board/date input, fills gaps, changes the formula,
-or adds a Worker/OS schedule.
+board sessions, uses the latest date for tied extrema, and returns Decimal strings. The endpoint
+never accepts a board/date input, fills gaps, changes the formula, accesses a Provider, writes Raw,
+or writes PostgreSQL. Worker collection and its retry status are independent of API requests.
 
 `GET /api/v1/call-auction-one-price-limits?trade_date=` selects the exact stored 09:25:30
 Asia/Shanghai snapshot and calculates SSE/SZSE mainboard limits at read time. Ordinary and ST

@@ -59,6 +59,12 @@ pytdx 还可从通达信 `T0002/hq_cache` 读取行业和概念完整快照，�
 完成的证明：任务还会检查 basis 当日 `daily_market`、`stock_daily_indicator` WorkflowRun
 均成功，并校验精确交易日、日 K、每日指标和 lineage；缺失时失败且不回退旧快照。
 
+固定板块 `THS:883423` 的日线由 Worker 在工作日 15:30、16:30、17:30 提供三个收盘后
+执行机会。每轮先比较统一交易日历的最近应有交易日和数据库最新板块日线：已覆盖则幂等
+跳过，有尾部缺口才通过 `akshare_ths` 标准 Pipeline 采集。每轮 Provider 失败最多短重试
+三次，成功即停止；当天最终仍失败时，下一交易日继续从最新已存日期补采。调度时间固定在
+代码目录，`.env` 只可用 `BOARD_INDEX_DAILY_BAR_ENABLED` 启用或停用。
+
 收盘五档任务默认启用，在工作日 21:10 运行，只读取当天最新
 `ready` 涨停池，保存原始 JSONL、Manifest、质量结果和标准快照。当天池缺失时失败，空池
 合法跳过；任务禁止把当前实时报价写成其他历史日期，也不会回退旧股票池。
@@ -94,6 +100,7 @@ SCHEDULER_STORE_PATH=/var/lib/market-data-center/scheduler/jobs.sqlite
 EOD_QUOTE_SNAPSHOT_ENABLED=true
 CALL_AUCTION_SNAPSHOT_ENABLED=true
 CALL_AUCTION_MARKET_SERIES_ENABLED=true
+BOARD_INDEX_DAILY_BAR_ENABLED=true
 ```
 
 ### 竞价序列诊断与保留

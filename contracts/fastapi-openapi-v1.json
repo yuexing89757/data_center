@@ -593,11 +593,8 @@
             "type": "string"
           },
           "data_origin": {
+            "const": "database",
             "description": "本次返回数据的来源。",
-            "enum": [
-              "database",
-              "ths_live"
-            ],
             "title": "Data Origin",
             "type": "string"
           },
@@ -673,11 +670,8 @@
             "title": "Moving Average 5"
           },
           "persistence_status": {
+            "const": "persisted",
             "description": "异步持久化状态。",
-            "enum": [
-              "persisted",
-              "queued"
-            ],
             "title": "Persistence Status",
             "type": "string"
           },
@@ -3568,7 +3562,7 @@
   "paths": {
     "/api/v1/board-indexes/883423/bias": {
       "get": {
-        "description": "优先使用数据库中有效的 THS:883423 日线；历史缺失、不足或过期时执行一次有界实时获取，保存不可变原始数据并异步入库。返回当前五日简单移动平均乖离率、相对上一有效交易日的变化方向，以及近三十个交易日有效样本的最高和最低乖离率。本接口不接收参数，也不会回退到其他板块。",
+        "description": "只读取数据库中最新已持久化的 THS:883423 日线。返回当前五日简单移动平均乖离率、相对上一有效交易日的变化方向，以及近三十个交易日有效样本的最高和最低乖离率。当天尚未入库时返回数据库最近交易日并明确 trade_date；历史少于34条时返回404。本接口不接收参数，不访问行情提供方，也不写入数据。",
         "operationId": "board_index_bias_latest_api_v1_board_indexes_883423_bias_get",
         "responses": {
           "200": {
@@ -3591,7 +3585,7 @@
             },
             "description": "Unauthorized"
           },
-          "429": {
+          "404": {
             "content": {
               "application/json": {
                 "schema": {
@@ -3599,17 +3593,7 @@
                 }
               }
             },
-            "description": "Too Many Requests"
-          },
-          "502": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Bad Gateway"
+            "description": "Not Found"
           },
           "503": {
             "content": {

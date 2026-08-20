@@ -170,6 +170,8 @@ market-data-center board-index-constituents
 ```
 
 The dedicated `akshare_ths` adapter is selected automatically for these commands.
+The Worker also collects `THS:883423` daily bars at the code-owned weekday slots 15:30, 16:30,
+and 17:30 with bounded retries and tail-gap recovery. The bias API reads only persisted data.
 THS exposes current constituents rather than trustworthy historical membership,
 so historical snapshots are accumulated by daily runs and can be replayed from
 immutable Raw data. See [ADR-0003](docs/adr/ADR-0003-同花顺动态板块指数.md) and
