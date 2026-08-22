@@ -3010,6 +3010,337 @@
         "title": "HealthResponse",
         "type": "object"
       },
+      "LatestStockDailyIndicatorItem": {
+        "additionalProperties": false,
+        "properties": {
+          "circulating_market_value": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "流通市值，单位为人民币元。",
+            "title": "Circulating Market Value"
+          },
+          "circulating_shares": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "流通股本，单位为股。",
+            "title": "Circulating Shares"
+          },
+          "close": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "收盘价。",
+            "title": "Close"
+          },
+          "code": {
+            "description": "不含交易所前缀的六位股票代码。",
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "dividend_yield_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "股息率，单位为百分比。",
+            "title": "Dividend Yield Pct"
+          },
+          "dividend_yield_ttm_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "滚动股息率，单位为百分比。",
+            "title": "Dividend Yield Ttm Pct"
+          },
+          "free_float_shares": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "自由流通股本，单位为股。",
+            "title": "Free Float Shares"
+          },
+          "free_float_turnover_rate_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "自由流通换手率，单位为百分比。",
+            "title": "Free Float Turnover Rate Pct"
+          },
+          "pb": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "市净率，倍数。",
+            "title": "Pb"
+          },
+          "pe": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "市盈率，倍数。",
+            "title": "Pe"
+          },
+          "pe_ttm": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "滚动市盈率，倍数。",
+            "title": "Pe Ttm"
+          },
+          "price_limit_status": {
+            "description": "数据源发布的当日价格涨跌停状态。",
+            "enum": [
+              "flat",
+              "rise",
+              "limit_up",
+              "one_price_limit_up",
+              "fall",
+              "limit_down",
+              "one_price_limit_down",
+              "unknown"
+            ],
+            "title": "Price Limit Status",
+            "type": "string"
+          },
+          "ps": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "市销率，倍数。",
+            "title": "Ps"
+          },
+          "ps_ttm": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "滚动市销率，倍数。",
+            "title": "Ps Ttm"
+          },
+          "symbol": {
+            "description": "带交易所前缀的标准证券代码。",
+            "title": "Symbol",
+            "type": "string"
+          },
+          "total_market_value": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "总市值，单位为人民币元。",
+            "title": "Total Market Value"
+          },
+          "total_shares": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "总股本，单位为股。",
+            "title": "Total Shares"
+          },
+          "trade_date": {
+            "description": "交易日。",
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "turnover_rate_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "换手率，单位为百分比。",
+            "title": "Turnover Rate Pct"
+          },
+          "volume_ratio": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "量比，无量纲。",
+            "title": "Volume Ratio"
+          }
+        },
+        "required": [
+          "symbol",
+          "code",
+          "trade_date",
+          "close",
+          "turnover_rate_pct",
+          "free_float_turnover_rate_pct",
+          "volume_ratio",
+          "pe",
+          "pe_ttm",
+          "pb",
+          "ps",
+          "ps_ttm",
+          "dividend_yield_pct",
+          "dividend_yield_ttm_pct",
+          "total_shares",
+          "circulating_shares",
+          "free_float_shares",
+          "total_market_value",
+          "circulating_market_value",
+          "price_limit_status"
+        ],
+        "title": "LatestStockDailyIndicatorItem",
+        "type": "object"
+      },
+      "LatestStockDailyIndicatorQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "codes": {
+            "description": "不含交易所前缀的六位股票代码集合，最多五百个。",
+            "items": {
+              "pattern": "^[0-9]{6}$",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Codes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "codes"
+        ],
+        "title": "LatestStockDailyIndicatorQuery",
+        "type": "object"
+      },
+      "LatestStockDailyIndicatorResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "found_count": {
+            "description": "查询到最新每日指标的股票数量。",
+            "maximum": 500.0,
+            "minimum": 0.0,
+            "title": "Found Count",
+            "type": "integer"
+          },
+          "items": {
+            "description": "返回的数据记录列表。",
+            "items": {
+              "$ref": "#/components/schemas/LatestStockDailyIndicatorItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "missing_codes": {
+            "description": "请求中未查询到数据的六位股票代码。",
+            "items": {
+              "pattern": "^[0-9]{6}$",
+              "type": "string"
+            },
+            "title": "Missing Codes",
+            "type": "array"
+          },
+          "requested_count": {
+            "description": "请求的股票代码数量。",
+            "maximum": 500.0,
+            "minimum": 1.0,
+            "title": "Requested Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "requested_count",
+          "found_count",
+          "missing_codes",
+          "items"
+        ],
+        "title": "LatestStockDailyIndicatorResponse",
+        "type": "object"
+      },
       "LimitUpPoolItem": {
         "additionalProperties": false,
         "properties": {
@@ -4555,6 +4886,73 @@
           }
         ],
         "summary": "按代码或名称搜索证券",
+        "tags": [
+          "市场数据"
+        ]
+      }
+    },
+    "/api/v1/stock-daily-indicators/latest/query": {
+      "post": {
+        "description": "按一至五百个六位股票代码，逐股票返回当前保留数据中的最新每日指标。交易所由证券事实解析；各股票结果不要求来自同一交易日，未知或无指标代码会明确列入 missing_codes。接口不触发采集、补齐或历史回退。",
+        "operationId": "latest_stock_daily_indicators_api_v1_stock_daily_indicators_latest_query_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LatestStockDailyIndicatorQuery"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LatestStockDailyIndicatorResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "批量查询股票最新每日指标",
         "tags": [
           "市场数据"
         ]

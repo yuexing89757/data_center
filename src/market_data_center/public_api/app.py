@@ -48,6 +48,8 @@ from market_data_center.public_api.models import (
     ErrorDetail,
     ErrorResponse,
     HealthResponse,
+    LatestStockDailyIndicatorQuery,
+    LatestStockDailyIndicatorResponse,
     LimitUpPoolResponse,
     SecuritySearchResponse,
     TopGainers20dResponse,
@@ -55,6 +57,7 @@ from market_data_center.public_api.models import (
 from market_data_center.public_api.openapi_zh import localize_openapi
 from market_data_center.public_api.queries import (
     PostgreSQLPublicQueryService,
+    PublicQueryAmbiguous,
     PublicQueryInvalid,
     PublicQueryNotFound,
     PublicQueryService,
@@ -219,6 +222,29 @@ def create_app(
         ] = 20,
     ) -> DailyBarResponse:
         return service.daily_bars(symbol, trade_date, limit)
+
+    @app.post(
+        "/api/v1/stock-daily-indicators/latest/query",
+        response_model=LatestStockDailyIndicatorResponse,
+        responses={
+            401: {"model": ErrorResponse},
+            422: {"model": ErrorResponse},
+            503: {"model": ErrorResponse},
+        },
+        tags=["市场数据"],
+        summary="批量查询股票最新每日指标",
+        description=(
+            "按一至五百个六位股票代码，逐股票返回当前保留数据中的最新每日指标。"
+            "交易所由证券事实解析；各股票结果不要求来自同一交易日，未知或无指标代码会明确"
+            "列入 missing_codes。接口不触发采集、补齐或历史回退。"
+        ),
+    )
+    def latest_stock_daily_indicators(
+        _: ApiKeyDependency,
+        service: QueryServiceDependency,
+        request: LatestStockDailyIndicatorQuery,
+    ) -> LatestStockDailyIndicatorResponse:
+        return service.latest_stock_daily_indicators(tuple(request.codes))
 
     @app.get(
         "/api/v1/classifications/{namespace}/{classification_type}/{classification_code}/members",
@@ -529,6 +555,10 @@ def _install_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(PublicQueryInvalid)
     async def invalid_query(_: Request, __: PublicQueryInvalid) -> JSONResponse:
         return _error_response(400, "invalid_query", "query parameters were rejected")
+
+    @app.exception_handler(PublicQueryAmbiguous)
+    async def ambiguous_query(_: Request, __: PublicQueryAmbiguous) -> JSONResponse:
+        return _error_response(422, "ambiguous_stock_code", "stock code is ambiguous")
 
     @app.exception_handler(PublicQueryNotFound)
     async def query_not_found(_: Request, __: PublicQueryNotFound) -> JSONResponse:

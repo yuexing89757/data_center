@@ -19,7 +19,8 @@ force read-only transactions and a five-second statement timeout.
 Stable v1 routes are security search (100 rows), recent unadjusted daily bars (5,000 rows),
 classification members (5,000 rows), the exact-date generic limit-up pool (5,000 rows), the
 versioned same-day limit-up snapshot (500 rows per page), and exact-date call-auction market
-snapshots and market-series sessions (500 requested six-digit codes). Business routes require
+snapshots and market-series sessions (500 requested six-digit codes), plus latest retained stock
+daily indicators (500 requested six-digit codes). Business routes require
 `X-API-Key`. `/healthz` is
 process-local and `/readyz` verifies a bounded database query. Prices and amounts remain decimal
 strings. Errors never return SQL, internal schema names, database addresses, or credentials.
@@ -44,6 +45,16 @@ stored unadjusted daily bars to return. The database resolves the code to one st
 Security facts; it does not guess an exchange from the code prefix. Items are newest first and
 never later than the cutoff. Missing or suspended sessions are not fabricated, so `count` may be
 less than `limit`. Unknown codes return 404 and ambiguous codes are rejected.
+
+`POST /api/v1/stock-daily-indicators/latest/query` accepts `codes` containing 1–500 six-digit
+stock codes. Duplicate codes are removed while preserving their first position. Security facts
+resolve each code to one standard symbol; the service never guesses an exchange from a prefix, and
+an ambiguous cross-exchange code returns 422. Each symbol independently selects the greatest
+retained `trade_date` in `stock_daily_indicator`, so items need not share a date. Unknown codes and
+known stocks without a retained indicator are returned in `missing_codes`; an all-missing query is
+still 200 with an empty `items` list. Items preserve request order and expose all provider-neutral
+daily indicator fields. Decimal values are strings, missing values remain `null`, and the route does
+not fetch providers, replay Raw data, fill dates, or expose source/ingestion fields.
 
 `GET /api/v1/daily-limit-up-list?trade_date=YYYY-MM-DD&version=&offset=0&limit=200`
 returns the immutable `today_limit_up` snapshot for the exact date. When `version` is omitted it

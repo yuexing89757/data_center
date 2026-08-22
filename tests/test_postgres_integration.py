@@ -45,6 +45,7 @@ from market_data_center.domain import (
     IngestionStatus,
     Market,
     OrderBookLevel,
+    PriceLimitStatus,
     ProviderCode,
     QualityResult,
     QualitySeverity,
@@ -56,6 +57,7 @@ from market_data_center.domain import (
     SecurityStatus,
     SecurityType,
     ShareCapitalRecord,
+    StockDailyIndicatorSnapshotRecord,
     TradeStatus,
     deducted_profit_revision_key,
 )
@@ -176,6 +178,7 @@ def test_migrations_apply_to_empty_database_and_are_idempotent(
         "query_securities",
         "query_daily_bars",
         "query_recent_daily_bars",
+        "query_latest_stock_daily_indicators",
         "query_adjusted_daily_bars",
         "query_market_snapshot",
         "query_classification_members_as_of",
@@ -201,6 +204,128 @@ def test_recent_daily_bars_rpc_permission_boundary(migrated_database_url: str) -
             "select has_function_privilege('authenticated', %s, 'execute')",
             (signature,),
         ).fetchone() == (False,)
+
+
+def test_latest_stock_daily_indicators_rpc_returns_each_symbol_latest_in_request_order(
+    database_engine: Engine,
+) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    securities = [
+        _security(),
+        SecurityRecord(
+            symbol="SZSE:000001",
+            code="000001",
+            exchange=Exchange.SZSE,
+            name="平安银行",
+            security_type=SecurityType.STOCK,
+            status=SecurityStatus.LISTED,
+            ipo_date=date(1991, 4, 3),
+            delisting_date=None,
+            source_code="baostock",
+        ),
+    ]
+    security_run = _running_run(DatasetCode.SECURITY)
+    persistence.create_ingestion_run(security_run)
+    persistence.commit_security_batch(
+        _completed_run(security_run, len(securities)),
+        _manifest(security_run.ingestion_id, "latest-indicator-securities", len(securities)),
+        _envelopes(security_run.ingestion_id, securities),
+    )
+
+    trading_dates = [date(2026, 8, 20), date(2026, 8, 21)]
+    calendar_run = _running_run(DatasetCode.TRADING_CALENDAR)
+    persistence.create_ingestion_run(calendar_run)
+    persistence.commit_trading_calendar_batch(
+        _completed_run(calendar_run, len(trading_dates)),
+        _manifest(calendar_run.ingestion_id, "latest-indicator-calendar", len(trading_dates)),
+        _envelopes(
+            calendar_run.ingestion_id,
+            [
+                CalculatedTradingDay(
+                    market=Market.CN_A_SHARE,
+                    trade_date=trade_date,
+                    is_trading_day=True,
+                    previous_trading_day=trading_dates[index - 1] if index else None,
+                    next_trading_day=(
+                        trading_dates[index + 1] if index + 1 < len(trading_dates) else None
+                    ),
+                    source_code="baostock",
+                )
+                for index, trade_date in enumerate(trading_dates)
+            ],
+        ),
+    )
+
+    indicator_run = _running_run(DatasetCode.STOCK_DAILY_INDICATOR, ProviderCode.TUSHARE)
+    persistence.create_ingestion_run(indicator_run)
+    indicators = [
+        StockDailyIndicatorSnapshotRecord(
+            symbol=symbol,
+            trade_date=trade_date,
+            market=Market.CN_A_SHARE,
+            close=close,
+            turnover_rate_pct=Decimal("1.25"),
+            free_float_turnover_rate_pct=None,
+            volume_ratio=None,
+            pe=None,
+            pe_ttm=None,
+            pb=None,
+            ps=None,
+            ps_ttm=None,
+            dividend_yield_pct=None,
+            dividend_yield_ttm_pct=None,
+            total_shares=10_000_000,
+            circulating_shares=8_000_000,
+            free_float_shares=7_000_000,
+            total_market_value=Decimal("100000000.0000"),
+            circulating_market_value=Decimal("80000000.0000"),
+            price_limit_status=PriceLimitStatus.RISE,
+            source_code="tushare",
+        )
+        for symbol, trade_date, close in (
+            ("SSE:600000", trading_dates[0], Decimal("10.0000")),
+            ("SSE:600000", trading_dates[1], Decimal("10.5000")),
+            ("SZSE:000001", trading_dates[0], Decimal("12.0000")),
+        )
+    ]
+    persistence.commit_stock_daily_indicator_batch(
+        _completed_run(indicator_run, len(indicators)),
+        _manifest(indicator_run.ingestion_id, "latest-indicators", len(indicators)),
+        [IngestionEnvelope(indicator_run.ingestion_id, item) for item in indicators],
+        [],
+    )
+
+    with database_engine.begin() as connection:
+        connection.execute(text("set local role market_data_api"))
+        payload = connection.execute(
+            text("select api_v1.query_latest_stock_daily_indicators(:codes)"),
+            {"codes": ["000001", "999999", "600000", "000001"]},
+        ).scalar_one()
+
+    assert payload["requested_count"] == 3
+    assert payload["found_count"] == 2
+    assert payload["missing_codes"] == ["999999"]
+    assert [item["code"] for item in payload["items"]] == ["000001", "600000"]
+    assert [item["trade_date"] for item in payload["items"]] == ["2026-08-20", "2026-08-21"]
+    assert [item["close"] for item in payload["items"]] == [12.0, 10.5]
+
+
+def test_latest_stock_daily_indicators_rpc_permission_boundary(
+    migrated_database_url: str,
+) -> None:
+    signature = "api_v1.query_latest_stock_daily_indicators(text[])"
+    with psycopg.connect(migrated_database_url) as connection:
+        privileges = connection.execute(
+            """
+            select
+                has_function_privilege('market_data_api', %s, 'execute'),
+                has_function_privilege('anon', %s, 'execute'),
+                has_function_privilege('authenticated', %s, 'execute')
+            """,
+            (signature, signature, signature),
+        ).fetchone()
+
+    assert privileges == (True, False, False)
 
 
 def test_pysnowball_auction_session_and_quote_are_valid_source_facts(

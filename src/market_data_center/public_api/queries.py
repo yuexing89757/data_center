@@ -20,6 +20,7 @@ from market_data_center.public_api.models import (
     ClosePriceNewHighs120dResponse,
     DailyBarResponse,
     DailyLimitUpListResponse,
+    LatestStockDailyIndicatorResponse,
     LimitUpPoolResponse,
     SecurityItem,
     TopGainers20dResponse,
@@ -37,6 +38,12 @@ select api_v1.query_recent_daily_bars(
     p_code => :code,
     p_trade_date => :trade_date,
     p_limit => :limit
+) as payload
+""")
+
+QUERY_LATEST_STOCK_DAILY_INDICATORS = text("""
+select api_v1.query_latest_stock_daily_indicators(
+    p_codes => :codes
 ) as payload
 """)
 
@@ -122,6 +129,10 @@ class PublicQueryInvalid(PublicQueryError):
     pass
 
 
+class PublicQueryAmbiguous(PublicQueryError):
+    pass
+
+
 class PublicQueryNotFound(PublicQueryError):
     pass
 
@@ -140,6 +151,10 @@ class PublicQueryService(Protocol):
     def search_securities(self, query: str, limit: int) -> tuple[SecurityItem, ...]: ...
 
     def daily_bars(self, code: str, trade_date: date, limit: int) -> DailyBarResponse: ...
+
+    def latest_stock_daily_indicators(
+        self, codes: tuple[str, ...]
+    ) -> LatestStockDailyIndicatorResponse: ...
 
     def classification_members(
         self,
@@ -200,6 +215,12 @@ class PostgreSQLPublicQueryService:
             {"code": code, "trade_date": trade_date, "limit": limit},
         )
         return DailyBarResponse.model_validate(rows[0]["payload"])
+
+    def latest_stock_daily_indicators(
+        self, codes: tuple[str, ...]
+    ) -> LatestStockDailyIndicatorResponse:
+        rows = self._execute(QUERY_LATEST_STOCK_DAILY_INDICATORS, {"codes": list(codes)})
+        return LatestStockDailyIndicatorResponse.model_validate(rows[0]["payload"])
 
     def classification_members(
         self,
@@ -336,6 +357,8 @@ def _raise_safe_query_error(error: DBAPIError) -> Never:
     )
     if sqlstate == "22023":
         raise PublicQueryInvalid("query parameters were rejected") from error
+    if sqlstate == "P0003":
+        raise PublicQueryAmbiguous("stock code is ambiguous across exchanges") from error
     if sqlstate == "P0002":
         raise PublicQueryNotFound("requested data was not found") from error
     if sqlstate == "57014":

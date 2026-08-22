@@ -193,6 +193,54 @@ class CallAuctionMarketSnapshotQuery(ApiModel):
         return list(dict.fromkeys(codes))
 
 
+class LatestStockDailyIndicatorQuery(ApiModel):
+    codes: list[SixDigitCode] = Field(min_length=1, max_length=500)
+
+    @field_validator("codes")
+    @classmethod
+    def deduplicate_codes(cls, codes: list[str]) -> list[str]:
+        return list(dict.fromkeys(codes))
+
+
+class LatestStockDailyIndicatorItem(ApiModel):
+    symbol: str
+    code: SixDigitCode
+    trade_date: date
+    close: Decimal | None
+    turnover_rate_pct: Decimal | None
+    free_float_turnover_rate_pct: Decimal | None
+    volume_ratio: Decimal | None
+    pe: Decimal | None
+    pe_ttm: Decimal | None
+    pb: Decimal | None
+    ps: Decimal | None
+    ps_ttm: Decimal | None
+    dividend_yield_pct: Decimal | None
+    dividend_yield_ttm_pct: Decimal | None
+    total_shares: int | None
+    circulating_shares: int | None
+    free_float_shares: int | None
+    total_market_value: Decimal | None
+    circulating_market_value: Decimal | None
+    price_limit_status: Literal[
+        "flat",
+        "rise",
+        "limit_up",
+        "one_price_limit_up",
+        "fall",
+        "limit_down",
+        "one_price_limit_down",
+        "unknown",
+    ]
+
+
+class LatestStockDailyIndicatorResponse(ApiModel):
+    requested_count: int = Field(ge=1, le=500)
+    found_count: int = Field(ge=0, le=500)
+    missing_codes: list[SixDigitCode]
+    items: list[LatestStockDailyIndicatorItem]
+
+
 class _CallAuctionMarketSnapshotBaseItem(ApiModel):
     symbol: str
     code: SixDigitCode

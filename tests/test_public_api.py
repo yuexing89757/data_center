@@ -31,6 +31,8 @@ from market_data_center.public_api.models import (
     DailyLimitUpListItem,
     DailyLimitUpListResponse,
     DailyLimitUpQualitySummary,
+    LatestStockDailyIndicatorItem,
+    LatestStockDailyIndicatorResponse,
     LimitUpPoolItem,
     LimitUpPoolOmissionReasons,
     LimitUpPoolResponse,
@@ -41,6 +43,7 @@ from market_data_center.public_api.models import (
 )
 from market_data_center.public_api.queries import (
     PostgreSQLPublicQueryService,
+    PublicQueryAmbiguous,
     PublicQueryNotFound,
     PublicQueryUnavailable,
     _raise_safe_query_error,
@@ -139,6 +142,8 @@ class FakeQueryService:
         self.classification_error: Exception | None = None
         self.security_calls: list[tuple[str, int]] = []
         self.daily_bar_calls: list[tuple[str, date, int]] = []
+        self.latest_stock_daily_indicator_calls: list[tuple[str, ...]] = []
+        self.latest_stock_daily_indicator_error: Exception | None = None
         self.limit_up_calls: list[tuple[date, int | None, int]] = []
         self.daily_limit_up_calls: list[tuple[date, int | None, int, int]] = []
         self.call_auction_market_snapshot_calls: list[tuple[date, tuple[str, ...]]] = []
@@ -195,6 +200,42 @@ class FakeQueryService:
                     trade_status=TradeStatus.TRADING,
                     is_st=False,
                 ),
+            ],
+        )
+
+    def latest_stock_daily_indicators(
+        self, codes: tuple[str, ...]
+    ) -> LatestStockDailyIndicatorResponse:
+        self.latest_stock_daily_indicator_calls.append(codes)
+        if self.latest_stock_daily_indicator_error is not None:
+            raise self.latest_stock_daily_indicator_error
+        return LatestStockDailyIndicatorResponse(
+            requested_count=2,
+            found_count=1,
+            missing_codes=["000001"],
+            items=[
+                LatestStockDailyIndicatorItem(
+                    symbol="SSE:600000",
+                    code="600000",
+                    trade_date=date(2026, 8, 21),
+                    close=Decimal("12.3400"),
+                    turnover_rate_pct=Decimal("1.2500000000"),
+                    free_float_turnover_rate_pct=Decimal("1.5000000000"),
+                    volume_ratio=Decimal("0.8800000000"),
+                    pe=Decimal("8.1000000000"),
+                    pe_ttm=None,
+                    pb=Decimal("1.2000000000"),
+                    ps=None,
+                    ps_ttm=None,
+                    dividend_yield_pct=Decimal("2.3000000000"),
+                    dividend_yield_ttm_pct=None,
+                    total_shares=10_000_000_000,
+                    circulating_shares=8_000_000_000,
+                    free_float_shares=7_000_000_000,
+                    total_market_value=Decimal("123400000000.0000"),
+                    circulating_market_value=Decimal("98720000000.0000"),
+                    price_limit_status="rise",
+                )
             ],
         )
 
@@ -759,6 +800,16 @@ def test_safe_query_error_logs_sqlstate_but_hides_detail(
     assert any("connection refused" in r.message for r in caplog.records)
 
 
+def test_safe_query_error_maps_ambiguous_stock_code() -> None:
+    orig = SimpleNamespace(sqlstate="P0003", args=("internal ambiguity detail",))
+    error = DBAPIError(statement=None, params=None, orig=orig)
+
+    with pytest.raises(PublicQueryAmbiguous) as exc_info:
+        _raise_safe_query_error(error)
+
+    assert "internal ambiguity detail" not in str(exc_info.value)
+
+
 def test_market_routes_require_the_api_key() -> None:
     client = _client(FakeQueryService())
 
@@ -824,6 +875,59 @@ def test_daily_bar_validation_does_not_call_the_service() -> None:
     assert invalid_symbol.status_code == 422
     assert missing_trade_date.status_code == 422
     assert service.daily_bar_calls == []
+
+
+def test_latest_stock_daily_indicators_deduplicate_and_keep_decimals() -> None:
+    service = FakeQueryService()
+
+    response = _client(service).post(
+        "/api/v1/stock-daily-indicators/latest/query",
+        json={"codes": ["600000", "000001", "600000"]},
+        headers=_headers(),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["requested_count"] == 2
+    assert body["found_count"] == 1
+    assert body["missing_codes"] == ["000001"]
+    assert body["items"][0]["trade_date"] == "2026-08-21"
+    assert body["items"][0]["close"] == "12.3400"
+    assert body["items"][0]["total_market_value"] == "123400000000.0000"
+    assert body["items"][0]["pe_ttm"] is None
+    assert service.latest_stock_daily_indicator_calls == [("600000", "000001")]
+
+
+@pytest.mark.parametrize(
+    "codes",
+    [[], ["60000"], ["60000A"], [f"{value:06d}" for value in range(501)]],
+)
+def test_latest_stock_daily_indicator_request_is_bounded(codes: list[str]) -> None:
+    service = FakeQueryService()
+
+    response = _client(service).post(
+        "/api/v1/stock-daily-indicators/latest/query",
+        json={"codes": codes},
+        headers=_headers(),
+    )
+
+    assert response.status_code == 422
+    assert service.latest_stock_daily_indicator_calls == []
+
+
+def test_latest_stock_daily_indicator_ambiguity_is_422() -> None:
+    service = FakeQueryService()
+    service.latest_stock_daily_indicator_error = PublicQueryAmbiguous("internal detail")
+
+    response = _client(service).post(
+        "/api/v1/stock-daily-indicators/latest/query",
+        json={"codes": ["600000"]},
+        headers=_headers(),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "ambiguous_stock_code"
+    assert "internal" not in response.text
 
 
 def test_classification_members_and_not_found_response() -> None:
@@ -896,6 +1000,7 @@ def test_openapi_only_contains_the_active_non_derived_routes() -> None:
 
     assert "/api/v1/securities" in schema["paths"]
     assert "/api/v1/daily-bars/{symbol}" in schema["paths"]
+    assert "/api/v1/stock-daily-indicators/latest/query" in schema["paths"]
     assert "/api/v1/limit-up-pool" in schema["paths"]
     assert "/api/v1/daily-limit-up-list" in schema["paths"]
     assert "/api/v1/call-auction-market-snapshots/query" in schema["paths"]

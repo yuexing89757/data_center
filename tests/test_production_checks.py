@@ -87,6 +87,24 @@ def test_fastapi_preflight_checks_call_auction_market_snapshot_rpc() -> None:
     assert "api_v1.query_board_index_bias_latest()" in PUBLISHED_FUNCTIONS
     assert "api_v1.query_close_price_new_highs_120d()" in PUBLISHED_FUNCTIONS
     assert not any("persist_board_index_daily_bars_live" in item for item in PUBLISHED_FUNCTIONS)
+    assert "api_v1.query_latest_stock_daily_indicators(text[])" in PUBLISHED_FUNCTIONS
+
+
+def test_latest_stock_daily_indicator_rpc_is_private_and_bounded() -> None:
+    migration = (
+        (MIGRATION_DIR / "20260822000100_query_latest_stock_daily_indicators.sql")
+        .read_text(encoding="utf-8")
+        .lower()
+    )
+
+    assert "create function api_v1.query_latest_stock_daily_indicators" in migration
+    assert "cardinality(p_codes) > 500" in migration
+    assert "set statement_timeout = '5s'" in migration
+    assert "security definer" in migration
+    assert "from public" in migration
+    assert "from anon" in migration
+    assert "from authenticated" in migration
+    assert "to market_data_api" in migration
 
 
 def test_fastapi_preflight_and_docs_publish_realtime_auction_limits() -> None:

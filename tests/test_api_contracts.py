@@ -182,6 +182,23 @@ def test_market_snapshot_item_contract_exposes_five_levels_and_seal_amount() -> 
     assert "seal_amount" in properties
 
 
+def test_latest_stock_daily_indicator_contract_is_bounded_and_decimal_safe() -> None:
+    fastapi = _load("fastapi-openapi-v1.json")
+    operation = fastapi["paths"]["/api/v1/stock-daily-indicators/latest/query"]["post"]
+    query_schema = fastapi["components"]["schemas"]["LatestStockDailyIndicatorQuery"]
+    response_schema = fastapi["components"]["schemas"]["LatestStockDailyIndicatorResponse"]
+    item_schema = fastapi["components"]["schemas"]["LatestStockDailyIndicatorItem"]
+
+    assert query_schema["properties"]["codes"]["minItems"] == 1
+    assert query_schema["properties"]["codes"]["maxItems"] == 500
+    assert query_schema["properties"]["codes"]["items"]["pattern"] == "^[0-9]{6}$"
+    assert response_schema["properties"]["requested_count"]["maximum"] == 500
+    assert response_schema["properties"]["found_count"]["maximum"] == 500
+    assert item_schema["properties"]["close"]["anyOf"][0]["type"] == "string"
+    assert item_schema["properties"]["total_market_value"]["anyOf"][0]["type"] == "string"
+    assert {"401", "422", "503"}.issubset(operation["responses"])
+
+
 def test_close_price_new_highs_contract_is_no_input_strict_and_bounded() -> None:
     postgrest = _load("postgrest-openapi-v1.json")
     agent = _load("agent-tools-v1.json")
