@@ -141,3 +141,11 @@ FastAPI通过`POST /api/v1/call-auction-market-series-snapshots/query`代理该R
 生产只通过打包发布和受保护migration上线，不手工触发采集。下一交易日live gate验证全市场
 序列任务的32轮实际时间、batch code、五档保存、每轮完整率、Raw/Manifest、数据库行数、存储
 增长和09:26任务成功。
+
+## 13. 指定批次读取
+
+`api_v1.query_call_auction_market_series_snapshots(p_trade_date,p_codes,p_batch_code)` 的
+`p_batch_code` 为可选六位 `HHMMSS`。RPC 仍先按既有规则选择指定交易日的单一 Session；传入
+批次时，仅在该 Session 内按 Round 的上海计划时间精确筛选，不跨 Session、不回退日期。合法但
+不存在的批次返回 `returned_rounds=0` 和空 `rounds`；不传批次时保持返回全部轮次的既有行为。
+FastAPI 请求字段名为 `batch_code`，PostgREST 参数名为 `p_batch_code`。

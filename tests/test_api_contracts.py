@@ -161,7 +161,8 @@ def test_fastapi_docs_use_chinese_annotations_for_owned_contracts() -> None:
 
 
 def test_auction_series_item_contract_exposes_batch_and_five_levels() -> None:
-    schema = _load("fastapi-openapi-v1.json")["components"]["schemas"][  # type: ignore[index]
+    fastapi = _load("fastapi-openapi-v1.json")
+    schema = fastapi["components"]["schemas"][  # type: ignore[index]
         "CallAuctionMarketSeriesSnapshotItem"
     ]
     properties = schema["properties"]
@@ -169,6 +170,26 @@ def test_auction_series_item_contract_exposes_batch_and_five_levels() -> None:
     assert properties["batch_code"]["pattern"] == "^[0-9]{6}$"
     assert properties["bid2_volume"]["anyOf"][0]["minimum"] == 0
     assert "ask5_price" in properties
+    query_schema = fastapi["components"]["schemas"][  # type: ignore[index]
+        "CallAuctionMarketSeriesSnapshotQuery"
+    ]
+    assert query_schema["properties"]["batch_code"]["anyOf"][0]["pattern"] == "^[0-9]{6}$"
+    assert "batch_code" not in query_schema["required"]
+
+    postgrest = _load("postgrest-openapi-v1.json")
+    request_schema = postgrest["components"]["requestBodies"][  # type: ignore[index]
+        "CallAuctionMarketSeriesSnapshots"
+    ]["content"]["application/json"]["schema"]
+    assert request_schema["properties"]["p_batch_code"]["pattern"] == "^[0-9]{6}$"
+    assert "p_batch_code" not in request_schema["required"]
+
+    agent = _load("agent-tools-v1.json")
+    tool = next(
+        item
+        for item in agent["tools"]  # type: ignore[union-attr]
+        if item["endpoint"] == "query_call_auction_market_series_snapshots"
+    )
+    assert tool["input_schema"]["properties"]["p_batch_code"]["pattern"] == "^[0-9]{6}$"
 
 
 def test_market_snapshot_item_contract_exposes_five_levels_and_seal_amount() -> None:

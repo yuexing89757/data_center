@@ -1950,7 +1950,7 @@ insert into realtime.call_auction_market_series_snapshot (
             text("""
 select has_function_privilege(
     'market_data_api',
-    'api_v1.query_call_auction_market_series_snapshots(date,text[])',
+    'api_v1.query_call_auction_market_series_snapshots(date,text[],text)',
     'execute'
 )
 """)
@@ -1966,7 +1966,23 @@ select has_table_privilege(
         payload = connection.scalar(
             text("""
 select api_v1.query_call_auction_market_series_snapshots(
-    :trade_date, array['600000','000001','600000']::text[]
+    :trade_date, array['600000','000001','600000']::text[], '091520'
+)
+"""),
+            {"trade_date": trade_date},
+        )
+        unfiltered_payload = connection.scalar(
+            text("""
+select api_v1.query_call_auction_market_series_snapshots(
+    :trade_date, array['600000']::text[]
+)
+"""),
+            {"trade_date": trade_date},
+        )
+        missing_batch_payload = connection.scalar(
+            text("""
+select api_v1.query_call_auction_market_series_snapshots(
+    :trade_date, array['600000']::text[], '091540'
 )
 """),
             {"trade_date": trade_date},
@@ -1993,16 +2009,19 @@ select api_v1.query_call_auction_market_series_snapshots(
     assert payload["session_id"] == str(succeeded_session_id)
     assert payload["session_status"] == "succeeded"
     assert payload["requested_count"] == 2
-    assert payload["returned_rounds"] == 2
-    assert [item["sample_seq"] for item in payload["rounds"]] == [0, 1]
+    assert payload["returned_rounds"] == 1
+    assert [item["sample_seq"] for item in payload["rounds"]] == [1]
     assert payload["rounds"][0]["missing_codes"] == ["000001"]
-    assert payload["rounds"][0]["items"][0]["last_price"] == 10.1000
+    assert payload["rounds"][0]["items"][0]["last_price"] == 10.2000
     assert payload["rounds"][0]["items"][0]["value_semantics"] == "auction_indicative"
-    assert payload["rounds"][0]["items"][0]["batch_code"] == "091500"
+    assert payload["rounds"][0]["items"][0]["batch_code"] == "091520"
     assert payload["rounds"][0]["items"][0]["bid2_price"] is None
     assert payload["rounds"][0]["items"][0]["bid2_volume"] == 10_743_200
     assert payload["rounds"][0]["items"][0]["ask2_volume"] == 13_300
-    assert payload["rounds"][1]["items"][0]["last_price"] == 10.2000
+    assert unfiltered_payload["returned_rounds"] == 2
+    assert [item["sample_seq"] for item in unfiltered_payload["rounds"]] == [0, 1]
+    assert missing_batch_payload["returned_rounds"] == 0
+    assert missing_batch_payload["rounds"] == []
     assert partial_payload["session_id"] == str(partial_session_id)
     assert partial_payload["session_status"] == "partial"
     assert partial_payload["rounds"][0]["items"][0]["last_price"] == 99.0000

@@ -1222,6 +1222,19 @@
       "CallAuctionMarketSeriesSnapshotQuery": {
         "additionalProperties": false,
         "properties": {
+          "batch_code": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "采集批次代码，格式为 HHMMSS。",
+            "title": "Batch Code"
+          },
           "codes": {
             "description": "不含交易所前缀的六位股票代码集合，最多五百个。",
             "items": {
@@ -4326,7 +4339,7 @@
     },
     "/api/v1/call-auction-market-series-snapshots/query": {
       "post": {
-        "description": "返回指定交易日最新成功采集会话的全部轮次；仅在没有成功会话时使用最新部分成功会话。轮次按计划采集时间正序排列，并分别报告未命中的六位代码。不同会话或日期的数据不会合并或替代。",
+        "description": "返回指定交易日最新成功采集会话的全部轮次；仅在没有成功会话时使用最新部分成功会话。轮次按计划采集时间正序排列，并分别报告未命中的六位代码。不同会话或日期的数据不会合并或替代。可选 batch_code 按六位 HHMMSS 精确筛选所选会话内的单个采集批次；不传时返回全部轮次。",
         "operationId": "call_auction_market_series_snapshots_api_v1_call_auction_market_series_snapshots_query_post",
         "requestBody": {
           "content": {

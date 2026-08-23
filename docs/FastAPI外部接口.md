@@ -87,11 +87,14 @@ compatibility and does not filter the request-time result. Codes beginning with 
 `0` and `3` route to SZSE; other codes are reported in `missing_codes`. Quantities are shares and
 cumulative amount is CNY. Total upstream failure returns 502 and never falls back to stored data.
 
-`POST /api/v1/call-auction-market-series-snapshots/query` accepts the same exact `trade_date` and
-1–500 six-digit `codes`. It selects the latest succeeded session for that date, or the latest
+`POST /api/v1/call-auction-market-series-snapshots/query` accepts the same exact `trade_date`,
+1–500 six-digit `codes`, and an optional six-digit `batch_code` in `HHMMSS` form. It selects the
+latest succeeded session for that date, or the latest
 partial session only when no succeeded session exists; sessions and dates are never merged or
 substituted. The response contains session status and all persisted rounds ordered by
-`sample_seq`. Every round reports its scheduled/collected times, status, selected provider-neutral
+`sample_seq`. When `batch_code` is provided, only the matching round inside that selected session
+is returned; a valid but absent batch returns an empty `rounds` list and does not select another
+session or date. Every round reports its scheduled/collected times, status, selected provider-neutral
 ingestion ID, returned facts and its own `missing_codes`, so partial coverage remains explicit.
 Every item includes `value_semantics`. Before 09:25 it is `auction_indicative`: `last_price` is
 bid-1 price, `cumulative_volume` is bid-1 shares and `cumulative_amount` is their exact product; if

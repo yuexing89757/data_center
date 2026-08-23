@@ -107,7 +107,7 @@
         "operationId": "queryCallAuctionMarketSeriesSnapshots",
         "summary": "Read one exact-date opening-auction market series session",
         "security": [{"bearerAuth": []}],
-        "requestBody": {"$ref": "#/components/requestBodies/CallAuctionMarketSnapshots"},
+        "requestBody": {"$ref": "#/components/requestBodies/CallAuctionMarketSeriesSnapshots"},
         "responses": {
           "200": {"description": "One succeeded or partial session with time-ordered rounds, batch codes, and bid/ask five-level price-volume facts"},
           "404": {"description": "No eligible session exists for the exact date"}
@@ -291,6 +291,27 @@
               "items": {"type": "string", "pattern": "^[0-9]{6}$"},
               "minItems": 1,
               "maxItems": 500
+            }
+          }
+        }}}
+      },
+      "CallAuctionMarketSeriesSnapshots": {
+        "required": true,
+        "content": {"application/json": {"schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["p_trade_date", "p_codes"],
+          "properties": {
+            "p_trade_date": {"$ref": "#/components/schemas/Date"},
+            "p_codes": {
+              "type": "array",
+              "items": {"type": "string", "pattern": "^[0-9]{6}$"},
+              "minItems": 1,
+              "maxItems": 500
+            },
+            "p_batch_code": {
+              "type": ["string", "null"],
+              "pattern": "^[0-9]{6}$"
             }
           }
         }}}

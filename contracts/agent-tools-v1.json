@@ -191,6 +191,10 @@
             "items": {"type": "string", "pattern": "^[0-9]{6}$"},
             "minItems": 1,
             "maxItems": 500
+          },
+          "p_batch_code": {
+            "type": ["string", "null"],
+            "pattern": "^[0-9]{6}$"
           }
         }
       }

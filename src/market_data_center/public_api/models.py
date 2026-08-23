@@ -330,7 +330,7 @@ class CallAuctionMarketSnapshotResponse(ApiModel):
 
 
 class CallAuctionMarketSeriesSnapshotQuery(CallAuctionMarketSnapshotQuery):
-    pass
+    batch_code: BatchCode | None = None
 
 
 class CallAuctionMarketSeriesSnapshotItem(_CallAuctionMarketSnapshotBaseItem):

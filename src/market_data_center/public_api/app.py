@@ -396,7 +396,8 @@ def create_app(
         description=(
             "返回指定交易日最新成功采集会话的全部轮次；仅在没有成功会话时使用最新部分成功"
             "会话。轮次按计划采集时间正序排列，并分别报告未命中的六位代码。不同会话或日期"
-            "的数据不会合并或替代。"
+            "的数据不会合并或替代。可选 batch_code 按六位 HHMMSS 精确筛选所选会话内的"
+            "单个采集批次；不传时返回全部轮次。"
         ),
     )
     def call_auction_market_series_snapshots(
@@ -405,7 +406,7 @@ def create_app(
         request: CallAuctionMarketSeriesSnapshotQuery,
     ) -> CallAuctionMarketSeriesSnapshotResponse:
         return service.call_auction_market_series_snapshots(
-            request.trade_date, tuple(request.codes)
+            request.trade_date, tuple(request.codes), request.batch_code
         )
 
     @app.get(

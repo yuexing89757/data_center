@@ -85,7 +85,8 @@ select api_v1.query_call_auction_market_snapshots(
 QUERY_CALL_AUCTION_MARKET_SERIES_SNAPSHOTS = text("""
 select api_v1.query_call_auction_market_series_snapshots(
     p_trade_date => :trade_date,
-    p_codes => :codes
+    p_codes => :codes,
+    p_batch_code => :batch_code
 ) as payload
 """)
 
@@ -178,7 +179,7 @@ class PublicQueryService(Protocol):
     ) -> CallAuctionMarketSnapshotResponse: ...
 
     def call_auction_market_series_snapshots(
-        self, trade_date: date, codes: tuple[str, ...]
+        self, trade_date: date, codes: tuple[str, ...], batch_code: str | None
     ) -> CallAuctionMarketSeriesSnapshotResponse: ...
 
     def top_gainers_20d(self, end_date: date | None, limit: int) -> TopGainers20dResponse: ...
@@ -283,11 +284,15 @@ class PostgreSQLPublicQueryService:
         return CallAuctionMarketSnapshotResponse.model_validate(rows[0]["payload"])
 
     def call_auction_market_series_snapshots(
-        self, trade_date: date, codes: tuple[str, ...]
+        self, trade_date: date, codes: tuple[str, ...], batch_code: str | None
     ) -> CallAuctionMarketSeriesSnapshotResponse:
         rows = self._execute(
             QUERY_CALL_AUCTION_MARKET_SERIES_SNAPSHOTS,
-            {"trade_date": trade_date, "codes": list(codes)},
+            {
+                "trade_date": trade_date,
+                "codes": list(codes),
+                "batch_code": batch_code,
+            },
         )
         if not rows:
             raise PublicQueryNotFound("call-auction market series snapshot was not found")

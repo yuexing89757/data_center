@@ -155,7 +155,9 @@ class FakeQueryService:
         self.limit_up_calls: list[tuple[date, int | None, int]] = []
         self.daily_limit_up_calls: list[tuple[date, int | None, int, int]] = []
         self.call_auction_market_snapshot_calls: list[tuple[date, tuple[str, ...]]] = []
-        self.call_auction_market_series_snapshot_calls: list[tuple[date, tuple[str, ...]]] = []
+        self.call_auction_market_series_snapshot_calls: list[
+            tuple[date, tuple[str, ...], str | None]
+        ] = []
         self.top_gainer_calls: list[tuple[date | None, int]] = []
         self.close_price_new_highs_120d_calls = 0
         self.board_index_bias_calls = 0
@@ -447,9 +449,9 @@ class FakeQueryService:
         )
 
     def call_auction_market_series_snapshots(
-        self, trade_date: date, codes: tuple[str, ...]
+        self, trade_date: date, codes: tuple[str, ...], batch_code: str | None
     ) -> object:
-        self.call_auction_market_series_snapshot_calls.append((trade_date, codes))
+        self.call_auction_market_series_snapshot_calls.append((trade_date, codes, batch_code))
         return {
             "trade_date": trade_date,
             "session_id": "11111111-1111-1111-1111-111111111111",
@@ -1276,7 +1278,11 @@ def test_call_auction_market_series_snapshots_return_rounds_in_one_session() -> 
 
     response = _client(service).post(
         "/api/v1/call-auction-market-series-snapshots/query",
-        json={"trade_date": "2026-08-14", "codes": ["600000", "000001", "600000"]},
+        json={
+            "trade_date": "2026-08-14",
+            "codes": ["600000", "000001", "600000"],
+            "batch_code": "091500",
+        },
         headers=_headers(),
     )
 
@@ -1337,7 +1343,22 @@ def test_call_auction_market_series_snapshots_return_rounds_in_one_session() -> 
         ],
     }
     assert service.call_auction_market_series_snapshot_calls == [
-        (date(2026, 8, 14), ("600000", "000001"))
+        (date(2026, 8, 14), ("600000", "000001"), "091500")
+    ]
+
+
+def test_call_auction_market_series_snapshots_keep_unfiltered_compatibility() -> None:
+    service = FakeQueryService()
+
+    response = _client(service).post(
+        "/api/v1/call-auction-market-series-snapshots/query",
+        json={"trade_date": "2026-08-14", "codes": ["600000"]},
+        headers=_headers(),
+    )
+
+    assert response.status_code == 200
+    assert service.call_auction_market_series_snapshot_calls == [
+        (date(2026, 8, 14), ("600000",), None)
     ]
 
 
@@ -1348,6 +1369,26 @@ def test_call_auction_market_series_snapshot_request_is_bounded(codes: list[str]
     response = _client(service).post(
         "/api/v1/call-auction-market-series-snapshots/query",
         json={"trade_date": "2026-08-14", "codes": codes},
+        headers=_headers(),
+    )
+
+    assert response.status_code == 422
+    assert service.call_auction_market_series_snapshot_calls == []
+
+
+@pytest.mark.parametrize("batch_code", ["09150", "09150A", "0915000"])
+def test_call_auction_market_series_snapshot_batch_code_is_six_digits(
+    batch_code: str,
+) -> None:
+    service = FakeQueryService()
+
+    response = _client(service).post(
+        "/api/v1/call-auction-market-series-snapshots/query",
+        json={
+            "trade_date": "2026-08-14",
+            "codes": ["600000"],
+            "batch_code": batch_code,
+        },
         headers=_headers(),
     )
 

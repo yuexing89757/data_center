@@ -60,6 +60,23 @@ def test_auction_series_rpc_qualifies_cte_payload_against_plpgsql_variable() -> 
     )
 
 
+def test_auction_series_batch_filter_migration_is_optional_bounded_and_private() -> None:
+    migration = (
+        (MIGRATION_DIR / "20260823000300_filter_call_auction_market_series_by_batch.sql")
+        .read_text(encoding="utf-8")
+        .lower()
+    )
+
+    assert "p_batch_code text default null" in migration
+    assert "p_batch_code !~ '^[0-9]{6}$'" in migration
+    assert "round.scheduled_at at time zone 'asia/shanghai'" in migration
+    assert "p_batch_code is null" in migration
+    assert "set statement_timeout = '5s'" in migration
+    assert "security definer" in migration
+    assert "from public, anon, authenticated" in migration
+    assert "to market_data_api" in migration
+
+
 def test_realtime_auction_one_price_limit_decision_is_documented() -> None:
     adr = (PROJECT_ROOT / "docs/adr/ADR-0039-09点26沪深主板一字涨跌停实时计算.md").read_text(
         encoding="utf-8"
@@ -79,7 +96,9 @@ def test_realtime_auction_one_price_limit_decision_is_documented() -> None:
 
 def test_fastapi_preflight_checks_call_auction_market_snapshot_rpc() -> None:
     assert "api_v1.query_call_auction_market_snapshots(date,text[])" in PUBLISHED_FUNCTIONS
-    assert "api_v1.query_call_auction_market_series_snapshots(date,text[])" in PUBLISHED_FUNCTIONS
+    assert (
+        "api_v1.query_call_auction_market_series_snapshots(date,text[],text)" in PUBLISHED_FUNCTIONS
+    )
     assert (
         "api_v1.query_call_auction_indicative_details(text,date,integer,integer)"
         in PUBLISHED_FUNCTIONS
