@@ -80,13 +80,12 @@ bid-1 price times bid-1 shares only when ask-1 volume is missing or zero; source
 and internal timestamps remain private.
 
 `POST /api/v1/realtime-quotes/latest/query` accepts 1–500 six-digit stock `codes` and
-`max_age_seconds` from 1 to 86,400 (default 15). It returns the latest persisted Tencent five-level
-snapshot only when both the Data Center observation time and the Tencent source timestamp satisfy
-that age bound. Unknown, missing, or stale codes are listed in `missing_codes`; six-digit codes that
-resolve to more than one exchange return 422. Quantities are shares and cumulative amount is CNY.
-The route calls only `api_v1.query_latest_stock_quotes`; it never contacts Tencent, writes Raw or
-PostgreSQL, or triggers collection. Operators collect a bounded batch explicitly with
-`market-data-center realtime-quotes --symbols ... --confirm-bounded-tencent-request`.
+`max_age_seconds` from 1 to 86,400 (default 15). On every request it directly performs bounded
+Tencent batch reads and returns that response without querying or writing PostgreSQL, saving Raw,
+creating an ingestion run, or triggering the Worker. `max_age_seconds` remains only for client
+compatibility and does not filter the request-time result. Codes beginning with `6` route to SSE;
+`0` and `3` route to SZSE; other codes are reported in `missing_codes`. Quantities are shares and
+cumulative amount is CNY. Total upstream failure returns 502 and never falls back to stored data.
 
 `POST /api/v1/call-auction-market-series-snapshots/query` accepts the same exact `trade_date` and
 1–500 six-digit `codes`. It selects the latest succeeded session for that date, or the latest

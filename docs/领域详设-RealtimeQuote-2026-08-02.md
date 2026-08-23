@@ -351,3 +351,15 @@ Asia/Shanghai 来源时间，以字段 35 第三段作为 CNY 累计成交额，
 `api_v1.query_latest_stock_quotes(text[],integer)` 和 FastAPI
 `POST /api/v1/realtime-quotes/latest/query`。RPC 同时检查数据中心观察时间与腾讯来源时间，
 陈旧行情进入 `missing_codes`，FastAPI 不在请求路径访问 Provider。
+
+## 14. FastAPI 请求时腾讯实时读取（2026-08-23）
+
+ADR-0045 / Issue #63 将 `POST /api/v1/realtime-quotes/latest/query` 改为请求时直接调用
+`TencentQuoteProvider`。该路径不查询数据库、不创建 IngestionRun、不保存 Raw、不写快照，
+也不回退任何历史数据；返回值因此是不可重放的临时上游响应，不进入派生计算。
+
+请求仍接受 1～500 个去重六位代码。`6` 开头映射 SSE，`0`/`3` 开头映射 SZSE，其他代码
+进入 `missing_codes`。`max_age_seconds` 只为兼容旧客户端保留，不参与实时结果过滤。全部支持
+代码的腾讯请求均失败时返回稳定 502；部分成功时按请求顺序返回成功项并明确缺失代码。
+`api_v1.query_latest_stock_quotes(text[],integer)` 通过 ordered migration 退役，PostgREST 和
+Agent 合同同步删除；历史空表和显式采集能力本次不做破坏性清理。

@@ -202,6 +202,7 @@ def _record(symbol: str, payload: str, observed_at: datetime) -> FiveLevelQuoteS
         bid_levels=bids,
         ask_levels=asks,
         source_code="tencent_quote",
+        name=fields[1].strip() or None,
     )
 
 

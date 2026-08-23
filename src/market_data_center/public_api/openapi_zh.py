@@ -92,7 +92,7 @@ FIELD_DESCRIPTIONS_ZH = {
     "member_count": "快照中的成员总数。",
     "members": "分类成员证券代码列表。",
     "message": "面向调用方的错误说明。",
-    "max_age_seconds": "快照和来源时间允许的最大时效，单位为秒。",
+    "max_age_seconds": "为兼容既有客户端保留的字段；腾讯请求时实时读取不使用该值筛选结果。",
     "missing_close": "因缺少收盘价而省略的记录数。",
     "missing_codes": "请求中未查询到数据的六位股票代码。",
     "missing_end_bar": "因缺少区间结束日行情而省略的记录数。",

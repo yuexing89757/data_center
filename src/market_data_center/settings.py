@@ -96,6 +96,7 @@ class ApiSettings(BaseSettings):
     fastapi_api_key: SecretStr = Field(min_length=32)
     fastapi_host: str = "127.0.0.1"
     fastapi_port: int = Field(default=8000, ge=1, le=65535)
+    fastapi_tencent_quote_deadline_seconds: float = Field(default=8.0, ge=1, le=15)
     fastapi_auction_live_timeout_seconds: float = Field(default=5.0, ge=1, le=8)
     fastapi_auction_live_max_attempts: int = Field(default=2, ge=1, le=2)
     fastapi_auction_live_cache_seconds: float = Field(default=3.0, ge=0, le=5)

@@ -57,6 +57,7 @@ class FiveLevelQuoteSnapshotRecord:
     bid_levels: tuple[OrderBookLevel, ...]
     ask_levels: tuple[OrderBookLevel, ...]
     source_code: str
+    name: str | None = None
 
     def __post_init__(self) -> None:
         if fullmatch(r"(?:SSE|SZSE|BSE):[0-9]{6}", self.symbol) is None:
@@ -68,6 +69,8 @@ class FiveLevelQuoteSnapshotRecord:
             raise ValueError("source_timestamp must be timezone-aware")
         if not self.source_code.strip():
             raise ValueError("source_code must not be blank")
+        if self.name is not None and not self.name.strip():
+            raise ValueError("quote name must not be blank when supplied")
 
         prices_and_amount = (
             self.last_price,

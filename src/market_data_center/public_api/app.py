@@ -66,6 +66,11 @@ from market_data_center.public_api.queries import (
     PublicQueryTimeout,
     PublicQueryUnavailable,
 )
+from market_data_center.public_api.tencent_quote_live import (
+    DirectTencentQuoteLiveService,
+    TencentQuoteLiveService,
+    TencentQuoteLiveUpstream,
+)
 from market_data_center.raw_store import LocalRawStore
 from market_data_center.settings import ApiSettings
 
@@ -78,6 +83,7 @@ def create_app(
     settings: ApiSettings | None = None,
     query_service: PublicQueryService | None = None,
     auction_indicative_service: LiveAuctionIndicativeService | None = None,
+    tencent_quote_live_service: TencentQuoteLiveService | None = None,
 ) -> FastAPI:
     configured = settings or ApiSettings()  # type: ignore[call-arg]
     owned_engine: Engine | None = None
@@ -151,6 +157,9 @@ def create_app(
             minimum_interval_seconds=configured.fastapi_auction_live_minimum_interval_seconds,
         )
     app.state.auction_indicative_service = auction_indicative_service
+    app.state.tencent_quote_live_service = (
+        tencent_quote_live_service or DirectTencentQuoteLiveService.from_settings(configured)
+    )
     _install_exception_handlers(app)
 
     @app.get(
@@ -259,17 +268,17 @@ def create_app(
         tags=["市场数据"],
         summary="批量查询股票最新五档行情快照",
         description=(
-            "按一至五百个六位股票代码返回数据库中仍满足最大时效的最新五档快照。"
-            "观察时间和腾讯来源时间必须同时满足时效；未知、缺失或陈旧代码列入"
-            "missing_codes。接口不访问行情提供方、不写库且不触发采集。"
+            "按一至五百个六位股票代码，在请求时有界访问腾讯批量行情并立即返回五档快照。"
+            "接口不查询或写入行情数据库，不保存 Raw，不创建采集批次，也不回退历史快照。"
+            "max_age_seconds 仅为兼容既有客户端保留，实时请求不使用该字段筛选结果。"
         ),
     )
     def latest_stock_quotes(
         _: ApiKeyDependency,
-        service: QueryServiceDependency,
+        service: TencentQuoteLiveServiceDependency,
         request: LatestStockQuoteQuery,
     ) -> LatestStockQuoteResponse:
-        return service.latest_stock_quotes(tuple(request.codes), request.max_age_seconds)
+        return service.fetch_current(tuple(request.codes), request.max_age_seconds)
 
     @app.get(
         "/api/v1/classifications/{namespace}/{classification_type}/{classification_code}/members",
@@ -529,6 +538,10 @@ def _auction_indicative_service(request: Request) -> LiveAuctionIndicativeServic
     return cast(LiveAuctionIndicativeService, request.app.state.auction_indicative_service)
 
 
+def _tencent_quote_live_service(request: Request) -> TencentQuoteLiveService:
+    return cast(TencentQuoteLiveService, request.app.state.tencent_quote_live_service)
+
+
 def _require_api_key(
     request: Request,
     provided: Annotated[str | None, Security(API_KEY_HEADER)],
@@ -543,6 +556,9 @@ QueryServiceDependency = Annotated[PublicQueryService, Depends(_query_service)]
 AuctionIndicativeServiceDependency = Annotated[
     LiveAuctionIndicativeService, Depends(_auction_indicative_service)
 ]
+TencentQuoteLiveServiceDependency = Annotated[
+    TencentQuoteLiveService, Depends(_tencent_quote_live_service)
+]
 ApiKeyDependency = Annotated[None, Depends(_require_api_key)]
 
 
@@ -555,6 +571,10 @@ def _auction_symbol_from_code(code: str) -> str:
 
 
 def _install_exception_handlers(app: FastAPI) -> None:
+    @app.exception_handler(TencentQuoteLiveUpstream)
+    async def tencent_quote_upstream(_: Request, __: TencentQuoteLiveUpstream) -> JSONResponse:
+        return _error_response(502, "upstream_error", "Tencent quote provider request failed")
+
     @app.exception_handler(AuctionIndicativeLiveInvalid)
     async def live_invalid(_: Request, __: AuctionIndicativeLiveInvalid) -> JSONResponse:
         return _error_response(422, "validation_error", "live auction request is invalid")

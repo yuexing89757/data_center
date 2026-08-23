@@ -88,7 +88,7 @@ def test_fastapi_preflight_checks_call_auction_market_snapshot_rpc() -> None:
     assert "api_v1.query_close_price_new_highs_120d()" in PUBLISHED_FUNCTIONS
     assert not any("persist_board_index_daily_bars_live" in item for item in PUBLISHED_FUNCTIONS)
     assert "api_v1.query_latest_stock_daily_indicators(text[])" in PUBLISHED_FUNCTIONS
-    assert "api_v1.query_latest_stock_quotes(text[],integer)" in PUBLISHED_FUNCTIONS
+    assert "api_v1.query_latest_stock_quotes(text[],integer)" not in PUBLISHED_FUNCTIONS
 
 
 def test_latest_stock_daily_indicator_rpc_is_private_and_bounded() -> None:

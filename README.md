@@ -169,8 +169,10 @@ market-data-center realtime-quotes --symbols SSE:601003 SSE:600123 \
 
 The command converts lot quantities to shares, stores immutable Raw plus append-only normalized
 facts, and does not register a schedule. Authenticated consumers call
-`POST /api/v1/realtime-quotes/latest/query`; both observation and Tencent source timestamps must
-satisfy the requested freshness bound. See [ADR-0044](docs/adr/ADR-0044-腾讯批量实时五档Provider与只读契约.md).
+`POST /api/v1/realtime-quotes/latest/query` now performs a bounded request-time Tencent read and
+does not query or write the quote database, save Raw, or trigger collection. The retained
+`max_age_seconds` field is compatibility-only. See
+[ADR-0045](docs/adr/ADR-0045-腾讯实时五档API请求时直连且不落库.md).
 
 The third-party dynamic board index `THS:883423` is isolated from Security and
 ordinary Daily Bar facts. Synchronize its explicit directory before bars and

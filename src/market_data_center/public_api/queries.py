@@ -21,7 +21,6 @@ from market_data_center.public_api.models import (
     DailyBarResponse,
     DailyLimitUpListResponse,
     LatestStockDailyIndicatorResponse,
-    LatestStockQuoteResponse,
     LimitUpPoolResponse,
     SecurityItem,
     TopGainers20dResponse,
@@ -45,13 +44,6 @@ select api_v1.query_recent_daily_bars(
 QUERY_LATEST_STOCK_DAILY_INDICATORS = text("""
 select api_v1.query_latest_stock_daily_indicators(
     p_codes => :codes
-) as payload
-""")
-
-QUERY_LATEST_STOCK_QUOTES = text("""
-select api_v1.query_latest_stock_quotes(
-    p_codes => :codes,
-    p_max_age_seconds => :max_age_seconds
 ) as payload
 """)
 
@@ -164,10 +156,6 @@ class PublicQueryService(Protocol):
         self, codes: tuple[str, ...]
     ) -> LatestStockDailyIndicatorResponse: ...
 
-    def latest_stock_quotes(
-        self, codes: tuple[str, ...], max_age_seconds: int
-    ) -> LatestStockQuoteResponse: ...
-
     def classification_members(
         self,
         namespace: str,
@@ -233,15 +221,6 @@ class PostgreSQLPublicQueryService:
     ) -> LatestStockDailyIndicatorResponse:
         rows = self._execute(QUERY_LATEST_STOCK_DAILY_INDICATORS, {"codes": list(codes)})
         return LatestStockDailyIndicatorResponse.model_validate(rows[0]["payload"])
-
-    def latest_stock_quotes(
-        self, codes: tuple[str, ...], max_age_seconds: int
-    ) -> LatestStockQuoteResponse:
-        rows = self._execute(
-            QUERY_LATEST_STOCK_QUOTES,
-            {"codes": list(codes), "max_age_seconds": max_age_seconds},
-        )
-        return LatestStockQuoteResponse.model_validate(rows[0]["payload"])
 
     def classification_members(
         self,

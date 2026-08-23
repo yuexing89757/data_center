@@ -3530,7 +3530,7 @@
           },
           "max_age_seconds": {
             "default": 15,
-            "description": "快照和来源时间允许的最大时效，单位为秒。",
+            "description": "为兼容既有客户端保留的字段；腾讯请求时实时读取不使用该值筛选结果。",
             "maximum": 86400.0,
             "minimum": 1.0,
             "title": "Max Age Seconds",
@@ -3563,7 +3563,7 @@
             "type": "array"
           },
           "max_age_seconds": {
-            "description": "快照和来源时间允许的最大时效，单位为秒。",
+            "description": "为兼容既有客户端保留的字段；腾讯请求时实时读取不使用该值筛选结果。",
             "maximum": 86400.0,
             "minimum": 1.0,
             "title": "Max Age Seconds",
@@ -5109,7 +5109,7 @@
     },
     "/api/v1/realtime-quotes/latest/query": {
       "post": {
-        "description": "按一至五百个六位股票代码返回数据库中仍满足最大时效的最新五档快照。观察时间和腾讯来源时间必须同时满足时效；未知、缺失或陈旧代码列入missing_codes。接口不访问行情提供方、不写库且不触发采集。",
+        "description": "按一至五百个六位股票代码，在请求时有界访问腾讯批量行情并立即返回五档快照。接口不查询或写入行情数据库，不保存 Raw，不创建采集批次，也不回退历史快照。max_age_seconds 仅为兼容既有客户端保留，实时请求不使用该字段筛选结果。",
         "operationId": "latest_stock_quotes_api_v1_realtime_quotes_latest_query_post",
         "requestBody": {
           "content": {

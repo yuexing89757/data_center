@@ -51,6 +51,10 @@ from market_data_center.public_api.queries import (
     PublicQueryUnavailable,
     _raise_safe_query_error,
 )
+from market_data_center.public_api.tencent_quote_live import (
+    TencentQuoteLiveService,
+    TencentQuoteLiveUpstream,
+)
 from market_data_center.settings import ApiSettings
 
 API_KEY = "test-api-key-00000000000000000000"
@@ -768,7 +772,25 @@ def _auction_indicative_response(
     )
 
 
-def _client(service: FakeQueryService) -> TestClient:
+class FakeTencentQuoteLiveService:
+    def __init__(self) -> None:
+        self.calls: list[tuple[tuple[str, ...], int]] = []
+        self.error: Exception | None = None
+
+    def fetch_current(
+        self, codes: tuple[str, ...], max_age_seconds: int
+    ) -> LatestStockQuoteResponse:
+        self.calls.append((codes, max_age_seconds))
+        if self.error is not None:
+            raise self.error
+        return FakeQueryService().latest_stock_quotes(codes, max_age_seconds)
+
+
+def _client(
+    service: FakeQueryService,
+    *,
+    quote_service: TencentQuoteLiveService | None = None,
+) -> TestClient:
     settings = ApiSettings(
         fastapi_database_url=SecretStr("unused"),
         fastapi_api_key=SecretStr(API_KEY),
@@ -778,6 +800,7 @@ def _client(service: FakeQueryService) -> TestClient:
             settings=settings,
             query_service=service,
             auction_indicative_service=FakeLiveAuctionService(service),  # type: ignore[arg-type]
+            tencent_quote_live_service=quote_service or FakeTencentQuoteLiveService(),
         )
     )
 
@@ -1019,9 +1042,10 @@ def test_limit_up_pool_returns_exact_decimal_market_cap_and_revision() -> None:
     }
 
 
-def test_latest_stock_quotes_is_key_protected_bounded_and_database_only() -> None:
+def test_latest_stock_quotes_is_key_protected_bounded_and_provider_direct() -> None:
     service = FakeQueryService()
-    client = _client(service)
+    quote_service = FakeTencentQuoteLiveService()
+    client = _client(service, quote_service=quote_service)
 
     unauthorized = client.post(
         "/api/v1/realtime-quotes/latest/query",
@@ -1035,7 +1059,8 @@ def test_latest_stock_quotes_is_key_protected_bounded_and_database_only() -> Non
 
     assert unauthorized.status_code == 401
     assert response.status_code == 200
-    assert service.latest_stock_quote_calls == [(("601003", "600123"), 30)]
+    assert quote_service.calls == [(("601003", "600123"), 30)]
+    assert service.latest_stock_quote_calls == []
     body = response.json()
     assert body["missing_codes"] == ["600123"]
     assert body["items"][0]["cumulative_volume_shares"] == 9_920_300
@@ -1052,6 +1077,28 @@ def test_latest_stock_quotes_is_key_protected_bounded_and_database_only() -> Non
         headers=_headers(),
     )
     assert invalid.status_code == 422
+
+
+def test_latest_stock_quotes_maps_tencent_failure_without_database_fallback() -> None:
+    service = FakeQueryService()
+    quote_service = FakeTencentQuoteLiveService()
+    quote_service.error = TencentQuoteLiveUpstream("private upstream detail")
+    client = _client(service, quote_service=quote_service)
+
+    response = client.post(
+        "/api/v1/realtime-quotes/latest/query",
+        json={"codes": ["601003"]},
+        headers=_headers(),
+    )
+
+    assert response.status_code == 502
+    assert response.json() == {
+        "error": {
+            "code": "upstream_error",
+            "message": "Tencent quote provider request failed",
+        }
+    }
+    assert service.latest_stock_quote_calls == []
 
 
 def test_limit_up_pool_is_api_key_protected_and_bounded() -> None:

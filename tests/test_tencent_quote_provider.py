@@ -39,6 +39,7 @@ def test_tencent_quote_maps_gbk_batch_without_float_or_display_amount() -> None:
     assert fetched.schema_version == "tencent_quote.qt_gtimg.v1"
     assert fetched.raw_rows[0]["payload"] == ROW
     quote = fetched.records[0]
+    assert quote.name == "柳钢股份"
     assert quote.last_price == Decimal("3.58")
     assert quote.cumulative_volume == 9_920_300
     assert quote.cumulative_amount == Decimal("35356540")
