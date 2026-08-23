@@ -50,6 +50,8 @@ from market_data_center.public_api.models import (
     HealthResponse,
     LatestStockDailyIndicatorQuery,
     LatestStockDailyIndicatorResponse,
+    LatestStockQuoteQuery,
+    LatestStockQuoteResponse,
     LimitUpPoolResponse,
     SecuritySearchResponse,
     TopGainers20dResponse,
@@ -245,6 +247,29 @@ def create_app(
         request: LatestStockDailyIndicatorQuery,
     ) -> LatestStockDailyIndicatorResponse:
         return service.latest_stock_daily_indicators(tuple(request.codes))
+
+    @app.post(
+        "/api/v1/realtime-quotes/latest/query",
+        response_model=LatestStockQuoteResponse,
+        responses={
+            401: {"model": ErrorResponse},
+            422: {"model": ErrorResponse},
+            503: {"model": ErrorResponse},
+        },
+        tags=["市场数据"],
+        summary="批量查询股票最新五档行情快照",
+        description=(
+            "按一至五百个六位股票代码返回数据库中仍满足最大时效的最新五档快照。"
+            "观察时间和腾讯来源时间必须同时满足时效；未知、缺失或陈旧代码列入"
+            "missing_codes。接口不访问行情提供方、不写库且不触发采集。"
+        ),
+    )
+    def latest_stock_quotes(
+        _: ApiKeyDependency,
+        service: QueryServiceDependency,
+        request: LatestStockQuoteQuery,
+    ) -> LatestStockQuoteResponse:
+        return service.latest_stock_quotes(tuple(request.codes), request.max_age_seconds)
 
     @app.get(
         "/api/v1/classifications/{namespace}/{classification_type}/{classification_code}/members",

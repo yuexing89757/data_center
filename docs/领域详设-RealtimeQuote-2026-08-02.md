@@ -339,3 +339,15 @@ GitHub Issue
   → 小范围生产观察
   → 再决定扩大标的和采样频率
 ```
+
+## 13. 腾讯批量 Provider 与最新批量查询（2026-08-23）
+
+ADR-0044 / Issue #62 新增 `tencent_quote`。该 Adapter 严格解码 GBK，以字段 30 作为
+Asia/Shanghai 来源时间，以字段 35 第三段作为 CNY 累计成交额，并把所有“手”转换为“股”。
+未验证的下标 29 和尾部字段只保留在 Raw，不进入领域 Record。
+
+显式命令每次接收 1～500 个唯一 SSE/SZSE 标准 symbol，每个腾讯请求最多 50 只，不注册
+持续任务。事实追加写入 `realtime.stock_quote_snapshot`；公共读取通过
+`api_v1.query_latest_stock_quotes(text[],integer)` 和 FastAPI
+`POST /api/v1/realtime-quotes/latest/query`。RPC 同时检查数据中心观察时间与腾讯来源时间，
+陈旧行情进入 `missing_codes`，FastAPI 不在请求路径访问 Provider。

@@ -3341,6 +3341,262 @@
         "title": "LatestStockDailyIndicatorResponse",
         "type": "object"
       },
+      "LatestStockQuoteItem": {
+        "additionalProperties": false,
+        "properties": {
+          "ask_levels": {
+            "description": "卖一至卖五盘口，按档位升序排列。",
+            "items": {
+              "$ref": "#/components/schemas/StockQuoteLevel"
+            },
+            "maxItems": 5,
+            "minItems": 5,
+            "title": "Ask Levels",
+            "type": "array"
+          },
+          "bid_levels": {
+            "description": "买一至买五盘口，按档位升序排列。",
+            "items": {
+              "$ref": "#/components/schemas/StockQuoteLevel"
+            },
+            "maxItems": 5,
+            "minItems": 5,
+            "title": "Bid Levels",
+            "type": "array"
+          },
+          "code": {
+            "description": "不含交易所前缀的六位股票代码。",
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "cumulative_amount_cny": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "截至快照时点的累计成交金额，单位为人民币元。",
+            "title": "Cumulative Amount Cny"
+          },
+          "cumulative_volume_shares": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "截至快照时点的累计成交量，单位为股。",
+            "title": "Cumulative Volume Shares"
+          },
+          "high": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "最高价。",
+            "title": "High"
+          },
+          "last_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "快照时点价格；竞价阶段按既定口径取值。",
+            "title": "Last Price"
+          },
+          "low": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "最低价。",
+            "title": "Low"
+          },
+          "name": {
+            "description": "证券或板块名称。",
+            "title": "Name",
+            "type": "string"
+          },
+          "observed_at": {
+            "description": "行情观察时间，按上海时区格式化。",
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "open": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "开盘价。",
+            "title": "Open"
+          },
+          "previous_close": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "上一交易日收盘价。",
+            "title": "Previous Close"
+          },
+          "quote_status": {
+            "description": "来源行情状态。",
+            "enum": [
+              "trading",
+              "suspended",
+              "closed",
+              "unknown"
+            ],
+            "title": "Quote Status",
+            "type": "string"
+          },
+          "source_timestamp": {
+            "description": "腾讯来源标注的行情时间。",
+            "format": "date-time",
+            "title": "Source Timestamp",
+            "type": "string"
+          },
+          "symbol": {
+            "description": "带交易所前缀的标准证券代码。",
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "code",
+          "name",
+          "observed_at",
+          "source_timestamp",
+          "quote_status",
+          "last_price",
+          "previous_close",
+          "open",
+          "high",
+          "low",
+          "cumulative_amount_cny",
+          "bid_levels",
+          "ask_levels"
+        ],
+        "title": "LatestStockQuoteItem",
+        "type": "object"
+      },
+      "LatestStockQuoteQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "codes": {
+            "description": "不含交易所前缀的六位股票代码集合，最多五百个。",
+            "items": {
+              "pattern": "^[0-9]{6}$",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Codes",
+            "type": "array"
+          },
+          "max_age_seconds": {
+            "default": 15,
+            "description": "快照和来源时间允许的最大时效，单位为秒。",
+            "maximum": 86400.0,
+            "minimum": 1.0,
+            "title": "Max Age Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "codes"
+        ],
+        "title": "LatestStockQuoteQuery",
+        "type": "object"
+      },
+      "LatestStockQuoteResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "found_count": {
+            "description": "查询到最新每日指标的股票数量。",
+            "maximum": 500.0,
+            "minimum": 0.0,
+            "title": "Found Count",
+            "type": "integer"
+          },
+          "items": {
+            "description": "返回的数据记录列表。",
+            "items": {
+              "$ref": "#/components/schemas/LatestStockQuoteItem"
+            },
+            "maxItems": 500,
+            "title": "Items",
+            "type": "array"
+          },
+          "max_age_seconds": {
+            "description": "快照和来源时间允许的最大时效，单位为秒。",
+            "maximum": 86400.0,
+            "minimum": 1.0,
+            "title": "Max Age Seconds",
+            "type": "integer"
+          },
+          "missing_codes": {
+            "description": "请求中未查询到数据的六位股票代码。",
+            "items": {
+              "pattern": "^[0-9]{6}$",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "title": "Missing Codes",
+            "type": "array"
+          },
+          "requested_count": {
+            "description": "请求的股票代码数量。",
+            "maximum": 500.0,
+            "minimum": 0.0,
+            "title": "Requested Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "max_age_seconds",
+          "requested_count",
+          "found_count",
+          "missing_codes",
+          "items"
+        ],
+        "title": "LatestStockQuoteResponse",
+        "type": "object"
+      },
       "LimitUpPoolItem": {
         "additionalProperties": false,
         "properties": {
@@ -3637,6 +3893,50 @@
         ],
         "title": "SecurityType",
         "type": "string"
+      },
+      "StockQuoteLevel": {
+        "additionalProperties": false,
+        "properties": {
+          "level": {
+            "description": "盘口档位序号。",
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Level",
+            "type": "integer"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "盘口档位价格。",
+            "title": "Price"
+          },
+          "volume_shares": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "盘口档位数量，单位为股。",
+            "title": "Volume Shares"
+          }
+        },
+        "required": [
+          "level",
+          "price"
+        ],
+        "title": "StockQuoteLevel",
+        "type": "object"
       },
       "TopGainer20dItem": {
         "additionalProperties": false,
@@ -4802,6 +5102,73 @@
           }
         ],
         "summary": "查询指定交易日的主板涨停池",
+        "tags": [
+          "市场数据"
+        ]
+      }
+    },
+    "/api/v1/realtime-quotes/latest/query": {
+      "post": {
+        "description": "按一至五百个六位股票代码返回数据库中仍满足最大时效的最新五档快照。观察时间和腾讯来源时间必须同时满足时效；未知、缺失或陈旧代码列入missing_codes。接口不访问行情提供方、不写库且不触发采集。",
+        "operationId": "latest_stock_quotes_api_v1_realtime_quotes_latest_query_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LatestStockQuoteQuery"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LatestStockQuoteResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "批量查询股票最新五档行情快照",
         "tags": [
           "市场数据"
         ]

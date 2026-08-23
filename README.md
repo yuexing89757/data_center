@@ -159,6 +159,19 @@ executes bounded PostgreSQL `api_v1` functions directly; consumers never receive
 addresses, source payload field names, Raw objects, or secrets. Only contract-defined immutable
 lineage identifiers are exposed where required for reproducibility.
 
+Tencent five-level quotes use an explicit, bounded ingestion command and are never fetched by an
+API request:
+
+```bash
+market-data-center realtime-quotes --symbols SSE:601003 SSE:600123 \
+  --confirm-bounded-tencent-request
+```
+
+The command converts lot quantities to shares, stores immutable Raw plus append-only normalized
+facts, and does not register a schedule. Authenticated consumers call
+`POST /api/v1/realtime-quotes/latest/query`; both observation and Tencent source timestamps must
+satisfy the requested freshness bound. See [ADR-0044](docs/adr/ADR-0044-腾讯批量实时五档Provider与只读契约.md).
+
 The third-party dynamic board index `THS:883423` is isolated from Security and
 ordinary Daily Bar facts. Synchronize its explicit directory before bars and
 today's complete constituent snapshot:

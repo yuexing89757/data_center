@@ -22,6 +22,7 @@ EXPECTED_ENDPOINTS = {
     "query_call_auction_market_series_snapshots",
     "query_board_index_bias_latest",
     "query_close_price_new_highs_120d",
+    "query_latest_stock_quotes",
 }
 
 

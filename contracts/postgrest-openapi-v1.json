@@ -114,6 +114,18 @@
         }
       }
     },
+    "/rpc/query_latest_stock_quotes": {
+      "post": {
+        "operationId": "queryLatestStockQuotes",
+        "summary": "Read bounded fresh persisted stock five-level quotes",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {"$ref": "#/components/requestBodies/LatestStockQuotes"},
+        "responses": {
+          "200": {"description": "Fresh latest quotes and explicit missing or stale codes"},
+          "422": {"description": "Invalid or ambiguous stock-code request"}
+        }
+      }
+    },
     "/rpc/query_close_price_new_highs_120d": {
       "post": {
         "operationId": "queryClosePriceNewHighs120d",
@@ -291,6 +303,28 @@
               "items": {"type": "string", "pattern": "^[0-9]{6}$"},
               "minItems": 1,
               "maxItems": 500
+            }
+          }
+        }}}
+      },
+      "LatestStockQuotes": {
+        "required": true,
+        "content": {"application/json": {"schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["p_codes"],
+          "properties": {
+            "p_codes": {
+              "type": "array",
+              "items": {"type": "string", "pattern": "^[0-9]{6}$"},
+              "minItems": 1,
+              "maxItems": 500
+            },
+            "p_max_age_seconds": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 86400,
+              "default": 15
             }
           }
         }}}

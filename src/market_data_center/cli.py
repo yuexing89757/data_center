@@ -123,6 +123,29 @@ def main() -> None:
         )
         return
 
+    if args.dataset == "realtime-quotes":
+        if not args.confirm_bounded_tencent_request:
+            raise SystemExit(
+                "operator confirmation is required; this command is disabled by default"
+            )
+        from market_data_center.persistence.realtime_quote_postgres import (
+            PostgreSQLRealtimeQuotePersistence,
+        )
+        from market_data_center.providers.tencent_quote import TencentQuoteProvider
+        from market_data_center.realtime_quote_service import collect_tencent_realtime_quotes
+
+        quote_run = collect_tencent_realtime_quotes(
+            PostgreSQLRealtimeQuotePersistence(engine),
+            raw_store,
+            tuple(args.symbols),
+            provider=TencentQuoteProvider(),
+        )
+        print(
+            f"five_level_quote {quote_run.status.value} "
+            f"provider={quote_run.provider_code.value} ingestion_id={quote_run.ingestion_id}"
+        )
+        return
+
     if args.dataset == "auction-quotes-preflight":
         trade_date = date.fromisoformat(args.trade_date)
         repository = PostgreSQLAuctionPersistence(engine)
@@ -1059,6 +1082,22 @@ def _parser() -> ArgumentParser:
         "--confirm-current-day-single-symbol",
         action="store_true",
         help="explicitly allow one bounded provider request; no schedule is registered",
+    )
+
+    realtime_quotes = subparsers.add_parser(
+        "realtime-quotes",
+        help="explicitly collect a bounded Tencent batch of persisted five-level quotes",
+    )
+    realtime_quotes.add_argument(
+        "--symbols",
+        nargs="+",
+        required=True,
+        help="one to 500 unique standard symbols such as SSE:600000 SZSE:000001",
+    )
+    realtime_quotes.add_argument(
+        "--confirm-bounded-tencent-request",
+        action="store_true",
+        help="explicitly allow bounded Tencent requests; no schedule is registered",
     )
 
     catalog = subparsers.add_parser(

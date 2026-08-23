@@ -18,6 +18,7 @@ class ProviderCode(StrEnum):
     PYTDX_HQ = "pytdx_hq"
     PYSNOWBALL = "pysnowball"
     EASTMONEY = "eastmoney"
+    TENCENT_QUOTE = "tencent_quote"
 
 
 class DatasetCode(StrEnum):

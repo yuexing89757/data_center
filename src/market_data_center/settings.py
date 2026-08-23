@@ -57,6 +57,15 @@ class PytdxHqSettings(BaseSettings):
     pytdx_hq_max_retries: int = Field(default=1, ge=0, le=1)
 
 
+class TencentQuoteSettings(BaseSettings):
+    """Bounded Tencent batch quote request settings."""
+
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    tencent_quote_timeout_seconds: float = Field(default=3.0, gt=0, le=10)
+    tencent_quote_batch_size: int = Field(default=50, ge=1, le=50)
+
+
 class PytdxDailyBarSettings(BaseSettings):
     """Bounded local and remote unadjusted Daily Bar settings."""
 

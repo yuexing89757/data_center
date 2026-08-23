@@ -90,6 +90,21 @@ def test_auction_preflight_uses_code_owned_thirty_second_cadence() -> None:
     assert args.cadence_seconds == 30
 
 
+def test_realtime_quote_command_requires_explicit_symbols_and_confirmation_flag() -> None:
+    args = _parser().parse_args(
+        [
+            "realtime-quotes",
+            "--symbols",
+            "SSE:601003",
+            "SZSE:000001",
+            "--confirm-bounded-tencent-request",
+        ]
+    )
+
+    assert args.symbols == ["SSE:601003", "SZSE:000001"]
+    assert args.confirm_bounded_tencent_request is True
+
+
 @pytest.mark.parametrize(
     ("value", "expected"),
     [

@@ -33,10 +33,13 @@ from market_data_center.public_api.models import (
     DailyLimitUpQualitySummary,
     LatestStockDailyIndicatorItem,
     LatestStockDailyIndicatorResponse,
+    LatestStockQuoteItem,
+    LatestStockQuoteResponse,
     LimitUpPoolItem,
     LimitUpPoolOmissionReasons,
     LimitUpPoolResponse,
     SecurityItem,
+    StockQuoteLevel,
     TopGainer20dItem,
     TopGainer20dOmissions,
     TopGainers20dResponse,
@@ -144,6 +147,7 @@ class FakeQueryService:
         self.daily_bar_calls: list[tuple[str, date, int]] = []
         self.latest_stock_daily_indicator_calls: list[tuple[str, ...]] = []
         self.latest_stock_daily_indicator_error: Exception | None = None
+        self.latest_stock_quote_calls: list[tuple[tuple[str, ...], int]] = []
         self.limit_up_calls: list[tuple[date, int | None, int]] = []
         self.daily_limit_up_calls: list[tuple[date, int | None, int, int]] = []
         self.call_auction_market_snapshot_calls: list[tuple[date, tuple[str, ...]]] = []
@@ -261,6 +265,44 @@ class FakeQueryService:
             member_count=2,
             returned_count=2,
             members=["SSE:600000", "SZSE:000001"],
+        )
+
+    def latest_stock_quotes(
+        self, codes: tuple[str, ...], max_age_seconds: int
+    ) -> LatestStockQuoteResponse:
+        self.latest_stock_quote_calls.append((codes, max_age_seconds))
+        levels = [
+            StockQuoteLevel(
+                level=level,
+                price=Decimal("3.58") if level == 1 else None,
+                volume_shares=57_100 if level == 1 else None,
+            )
+            for level in range(1, 6)
+        ]
+        return LatestStockQuoteResponse(
+            max_age_seconds=max_age_seconds,
+            requested_count=2,
+            found_count=1,
+            missing_codes=["600123"],
+            items=[
+                LatestStockQuoteItem(
+                    symbol="SSE:601003",
+                    code="601003",
+                    name="柳钢股份",
+                    observed_at=datetime(2026, 8, 21, 8, 15, tzinfo=UTC),
+                    source_timestamp=datetime.fromisoformat("2026-08-21T16:14:41+08:00"),
+                    quote_status="trading",
+                    last_price=Decimal("3.58"),
+                    previous_close=Decimal("3.60"),
+                    open=Decimal("3.58"),
+                    high=Decimal("3.60"),
+                    low=Decimal("3.54"),
+                    cumulative_volume_shares=9_920_300,
+                    cumulative_amount_cny=Decimal("35356540"),
+                    bid_levels=levels,
+                    ask_levels=levels,
+                )
+            ],
         )
 
     def limit_up_pool(
@@ -977,6 +1019,41 @@ def test_limit_up_pool_returns_exact_decimal_market_cap_and_revision() -> None:
     }
 
 
+def test_latest_stock_quotes_is_key_protected_bounded_and_database_only() -> None:
+    service = FakeQueryService()
+    client = _client(service)
+
+    unauthorized = client.post(
+        "/api/v1/realtime-quotes/latest/query",
+        json={"codes": ["601003"]},
+    )
+    response = client.post(
+        "/api/v1/realtime-quotes/latest/query",
+        json={"codes": ["601003", "600123"], "max_age_seconds": 30},
+        headers=_headers(),
+    )
+
+    assert unauthorized.status_code == 401
+    assert response.status_code == 200
+    assert service.latest_stock_quote_calls == [(("601003", "600123"), 30)]
+    body = response.json()
+    assert body["missing_codes"] == ["600123"]
+    assert body["items"][0]["cumulative_volume_shares"] == 9_920_300
+    assert body["items"][0]["cumulative_amount_cny"] == "35356540"
+    assert body["items"][0]["bid_levels"][0] == {
+        "level": 1,
+        "price": "3.58",
+        "volume_shares": 57_100,
+    }
+
+    invalid = client.post(
+        "/api/v1/realtime-quotes/latest/query",
+        json={"codes": ["601003"], "max_age_seconds": 0},
+        headers=_headers(),
+    )
+    assert invalid.status_code == 422
+
+
 def test_limit_up_pool_is_api_key_protected_and_bounded() -> None:
     service = FakeQueryService()
     client = _client(service)
@@ -1001,6 +1078,7 @@ def test_openapi_only_contains_the_active_non_derived_routes() -> None:
     assert "/api/v1/securities" in schema["paths"]
     assert "/api/v1/daily-bars/{symbol}" in schema["paths"]
     assert "/api/v1/stock-daily-indicators/latest/query" in schema["paths"]
+    assert "/api/v1/realtime-quotes/latest/query" in schema["paths"]
     assert "/api/v1/limit-up-pool" in schema["paths"]
     assert "/api/v1/daily-limit-up-list" in schema["paths"]
     assert "/api/v1/call-auction-market-snapshots/query" in schema["paths"]

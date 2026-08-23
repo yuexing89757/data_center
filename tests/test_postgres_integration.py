@@ -179,6 +179,7 @@ def test_migrations_apply_to_empty_database_and_are_idempotent(
         "query_daily_bars",
         "query_recent_daily_bars",
         "query_latest_stock_daily_indicators",
+        "query_latest_stock_quotes",
         "query_adjusted_daily_bars",
         "query_market_snapshot",
         "query_classification_members_as_of",
@@ -187,6 +188,78 @@ def test_migrations_apply_to_empty_database_and_are_idempotent(
         "query_limit_up_pool",
         "query_auction_quotes",
     }.issubset({row[1] for row in first_snapshot["routines"]})
+
+
+def test_latest_stock_quotes_rpc_returns_only_fresh_persisted_quotes(
+    database_engine: Engine,
+) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    _commit_security_prerequisite(persistence)
+    ingestion_id = uuid4()
+    raw_id = uuid4()
+    with database_engine.begin() as connection:
+        connection.execute(
+            text("""insert into ingestion.ingestion_run (
+                ingestion_id,provider_code,dataset_code,status,requested_at,started_at,finished_at,
+                request_params,fetched_rows,accepted_rows,rejected_rows
+            ) values (
+                :ingestion,'tencent_quote','five_level_quote','succeeded',now(),now(),now(),
+                '{}'::jsonb,1,1,0
+            )"""),
+            {"ingestion": ingestion_id},
+        )
+        connection.execute(
+            text("""insert into ingestion.raw_manifest (
+                raw_id,ingestion_id,storage_backend,object_path,file_format,content_sha256,
+                byte_size,row_count,schema_version
+            ) values (
+                :raw,:ingestion,'local',:path,'jsonl',:sha,1,1,'tencent_quote.qt_gtimg.v1'
+            )"""),
+            {
+                "raw": raw_id,
+                "ingestion": ingestion_id,
+                "path": f"tencent_quote/five_level_quote/{ingestion_id}.jsonl",
+                "sha": "a" * 64,
+            },
+        )
+        connection.execute(
+            text("""insert into realtime.stock_quote_snapshot (
+                ingestion_id,raw_id,symbol,observed_at,source_timestamp,quote_status,
+                last_price,previous_close,open,high,low,cumulative_volume,cumulative_amount,
+                bid1_price,bid1_volume,ask1_price,ask1_volume,source_code
+            ) values (
+                :ingestion,:raw,'SSE:600000',now(),now(),'trading',
+                10.00,9.90,9.95,10.10,9.90,10000,100000,
+                10.00,1000,10.01,2000,'tencent_quote'
+            )"""),
+            {"ingestion": ingestion_id, "raw": raw_id},
+        )
+        payload = connection.scalar(
+            text("select api_v1.query_latest_stock_quotes(:codes,15)"),
+            {"codes": ["600000", "000001"]},
+        )
+
+    assert payload["requested_count"] == 2
+    assert payload["found_count"] == 1
+    assert payload["missing_codes"] == ["000001"]
+    assert payload["items"][0]["symbol"] == "SSE:600000"
+    assert payload["items"][0]["cumulative_volume_shares"] == 10000
+    assert payload["items"][0]["bid_levels"][0]["volume_shares"] == 1000
+
+    signature = "api_v1.query_latest_stock_quotes(text[],integer)"
+    with database_engine.connect() as connection:
+        assert connection.scalar(
+            text("select has_function_privilege('market_data_api',:signature,'execute')"),
+            {"signature": signature},
+        )
+        assert connection.scalar(
+            text("select has_function_privilege('authenticated',:signature,'execute')"),
+            {"signature": signature},
+        )
+        assert not connection.scalar(
+            text("select has_function_privilege('anon',:signature,'execute')"),
+            {"signature": signature},
+        )
 
 
 def test_recent_daily_bars_rpc_permission_boundary(migrated_database_url: str) -> None:

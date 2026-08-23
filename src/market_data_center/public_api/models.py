@@ -202,6 +202,48 @@ class LatestStockDailyIndicatorQuery(ApiModel):
         return list(dict.fromkeys(codes))
 
 
+class LatestStockQuoteQuery(ApiModel):
+    codes: list[SixDigitCode] = Field(min_length=1, max_length=500)
+    max_age_seconds: int = Field(default=15, ge=1, le=86400)
+
+    @field_validator("codes")
+    @classmethod
+    def deduplicate_quote_codes(cls, codes: list[str]) -> list[str]:
+        return list(dict.fromkeys(codes))
+
+
+class StockQuoteLevel(ApiModel):
+    level: int = Field(ge=1, le=5)
+    price: Decimal | None
+    volume_shares: int | None = Field(default=None, ge=0)
+
+
+class LatestStockQuoteItem(ApiModel):
+    symbol: str
+    code: SixDigitCode
+    name: str
+    observed_at: datetime
+    source_timestamp: datetime
+    quote_status: Literal["trading", "suspended", "closed", "unknown"]
+    last_price: Decimal | None
+    previous_close: Decimal | None
+    open: Decimal | None
+    high: Decimal | None
+    low: Decimal | None
+    cumulative_volume_shares: int | None = Field(default=None, ge=0)
+    cumulative_amount_cny: Decimal | None
+    bid_levels: list[StockQuoteLevel] = Field(min_length=5, max_length=5)
+    ask_levels: list[StockQuoteLevel] = Field(min_length=5, max_length=5)
+
+
+class LatestStockQuoteResponse(ApiModel):
+    max_age_seconds: int = Field(ge=1, le=86400)
+    requested_count: int = Field(ge=0, le=500)
+    found_count: int = Field(ge=0, le=500)
+    missing_codes: list[SixDigitCode] = Field(max_length=500)
+    items: list[LatestStockQuoteItem] = Field(max_length=500)
+
+
 class LatestStockDailyIndicatorItem(ApiModel):
     symbol: str
     code: SixDigitCode
