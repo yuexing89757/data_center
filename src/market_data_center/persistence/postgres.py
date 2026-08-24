@@ -59,6 +59,7 @@ from market_data_center.domain.records import (
 )
 from market_data_center.domain.shareholder_count import ShareholderCountRecord
 from market_data_center.domain.stock_daily_indicator import StockDailyIndicatorSnapshotRecord
+from market_data_center.domain.trading_billboard import TradingBillboardRecord
 from market_data_center.shareholder_count_batch import PreparedShareholderCountBatch
 from market_data_center.shareholder_count_service import ShareholderCountBackfillTarget
 
@@ -913,6 +914,25 @@ order by symbol
             targets = tuple(target for target in targets if target.symbol > resume_after_symbol)
         return targets
 
+    def known_stock_symbols_for_date(self, symbols: Collection[str], trade_date: date) -> set[str]:
+        if not symbols:
+            return set()
+        statement = text("""
+select symbol
+from core.security
+where symbol in :symbols
+  and security_type = 'stock'
+  and (ipo_date is null or ipo_date <= :trade_date)
+  and (delisting_date is null or delisting_date >= :trade_date)
+""").bindparams(bindparam("symbols", expanding=True))
+        with self._engine.connect() as connection:
+            return set(
+                connection.execute(
+                    statement,
+                    {"symbols": list(symbols), "trade_date": trade_date},
+                ).scalars()
+            )
+
     def known_board_ids(self, board_ids: Collection[str]) -> set[str]:
         if not board_ids:
             return set()
@@ -1704,6 +1724,23 @@ where board_id = :board_id and trade_date = :trade_date
             if quality_results:
                 connection.execute(INSERT_QUALITY_RESULT, self._quality_parameters(quality_results))
             connection.execute(UPDATE_INGESTION_RUN, self._run_update_parameters(run))
+
+    def commit_trading_billboard_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest | None,
+        records: Sequence[TradingBillboardRecord],
+        quality_results: Sequence[QualityResult],
+    ) -> None:
+        if manifest is not None:
+            raise ValueError("trading billboard replay must reuse the original Raw manifest")
+        from market_data_center.persistence.trading_billboard_postgres import (
+            PostgreSQLTradingBillboardPersistence,
+        )
+
+        PostgreSQLTradingBillboardPersistence(self._engine).commit_replay(
+            run, quality_results, records
+        )
 
     @staticmethod
     def _run_update_parameters(run: IngestionRun) -> dict[str, object]:

@@ -17,6 +17,7 @@ TODAY_LIMIT_UP_SNAPSHOT_JOB_ID = "today-limit-up-snapshot-daily"
 PYTDX_POOL_REFRESH_JOB_ID = "pytdx-pool-refresh"
 CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID = "close-price-new-highs-120d-daily"
 BOARD_INDEX_DAILY_BAR_JOB_ID = "board-index-883423-daily-bar"
+TRADING_BILLBOARD_JOB_ID = "trading-billboard-daily"
 SCHEDULER_TIMEZONE = "Asia/Shanghai"
 JOB_TIMEOUT_SECONDS = 21_600
 
@@ -150,6 +151,12 @@ WORKFLOW_DEFINITIONS = (
         "883423 板块日线收盘采集",
         "收盘后采集固定同花顺板块 THS:883423 日线, 并补齐尾部缺口。",
         ("collect_board_index_daily_bars",),
+    ),
+    WorkflowDefinition(
+        "trading_billboard_daily",
+        "股票龙虎榜采集",
+        "采集东方财富每日上榜证券汇总及买入/卖出前五席位。",
+        ("collect_trading_billboard",),
     ),
 )
 
@@ -320,6 +327,21 @@ def job_definitions(settings: SchedulerSettings) -> tuple[JobDefinition, ...]:
             "每轮最多三次 Provider 短重试; 后续时点及下一交易日继续补采缺口",
             day_of_week="mon-fri",
             hour="15-17",
+            minute=30,
+        ),
+        JobDefinition(
+            TRADING_BILLBOARD_JOB_ID,
+            "股票龙虎榜采集",
+            "采集东方财富每日上榜证券汇总及买入/卖出前五席位。",
+            "trading_billboard_daily",
+            "cron",
+            "周一至周五 20:30",
+            timezone,
+            settings.trading_billboard_enabled,
+            timeout,
+            "非交易日正常跳过; 失败保持显式缺口, 由下一次调度或显式日期命令重试",
+            day_of_week="mon-fri",
+            hour=20,
             minute=30,
         ),
         JobDefinition(

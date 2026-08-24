@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import date
 from secrets import compare_digest
-from typing import Annotated, cast
+from typing import Annotated, Literal, cast
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Path, Query, Request, Security
@@ -55,6 +55,8 @@ from market_data_center.public_api.models import (
     LimitUpPoolResponse,
     SecuritySearchResponse,
     TopGainers20dResponse,
+    TradingBillboardPageResponse,
+    TradingBillboardSeatPageResponse,
 )
 from market_data_center.public_api.openapi_zh import localize_openapi
 from market_data_center.public_api.queries import (
@@ -233,6 +235,89 @@ def create_app(
         ] = 20,
     ) -> DailyBarResponse:
         return service.daily_bars(symbol, trade_date, limit)
+
+    @app.get(
+        "/api/v1/trading-billboard/by-date",
+        response_model=TradingBillboardPageResponse,
+        responses={
+            401: {"model": ErrorResponse},
+            422: {"model": ErrorResponse},
+            503: {"model": ErrorResponse},
+        },
+        tags=["市场数据"],
+        summary="按交易日查询龙虎榜证券与前五席位",
+        description="按指定交易日精确查询龙虎榜汇总及买入、卖出前五席位，不回退其他日期。",
+    )
+    def trading_billboard_by_date(
+        _: ApiKeyDependency,
+        service: QueryServiceDependency,
+        trade_date: Annotated[date, Query()],
+        limit: Annotated[int, Query(ge=1, le=500)] = 100,
+        offset: Annotated[int, Query(ge=0, le=10000)] = 0,
+    ) -> TradingBillboardPageResponse:
+        return service.trading_billboard_by_date(trade_date, limit, offset)
+
+    @app.get(
+        "/api/v1/trading-billboard/by-symbol/{code}",
+        response_model=TradingBillboardPageResponse,
+        responses={
+            401: {"model": ErrorResponse},
+            404: {"model": ErrorResponse},
+            422: {"model": ErrorResponse},
+            503: {"model": ErrorResponse},
+        },
+        tags=["市场数据"],
+        summary="按股票代码查询龙虎榜历史",
+        description="先通过公开证券查询解析六位股票代码，再查询最长三百六十六日的龙虎榜历史。",
+    )
+    def trading_billboard_by_symbol(
+        _: ApiKeyDependency,
+        service: QueryServiceDependency,
+        code: Annotated[str, Path(pattern=STOCK_CODE_PATTERN)],
+        start_date: Annotated[date, Query()],
+        end_date: Annotated[date, Query()],
+        limit: Annotated[int, Query(ge=1, le=500)] = 100,
+        offset: Annotated[int, Query(ge=0, le=10000)] = 0,
+    ) -> TradingBillboardPageResponse:
+        _require_bounded_date_range(start_date, end_date)
+        return service.trading_billboard_by_code(code, start_date, end_date, limit, offset)
+
+    @app.get(
+        "/api/v1/trading-billboard/seats",
+        response_model=TradingBillboardSeatPageResponse,
+        responses={
+            401: {"model": ErrorResponse},
+            422: {"model": ErrorResponse},
+            503: {"model": ErrorResponse},
+        },
+        tags=["市场数据"],
+        summary="查询营业部席位龙虎榜记录",
+        description="按席位代码或席位名称精确查询，可选买入或卖出方向；两个席位参数必须且只能提供一个。",
+    )
+    def trading_billboard_by_seat(
+        _: ApiKeyDependency,
+        service: QueryServiceDependency,
+        start_date: Annotated[date, Query()],
+        end_date: Annotated[date, Query()],
+        seat_code: Annotated[str | None, Query(max_length=100)] = None,
+        seat_name: Annotated[str | None, Query(max_length=300)] = None,
+        side: Annotated[Literal["buy", "sell"] | None, Query()] = None,
+        limit: Annotated[int, Query(ge=1, le=500)] = 100,
+        offset: Annotated[int, Query(ge=0, le=10000)] = 0,
+    ) -> TradingBillboardSeatPageResponse:
+        _require_bounded_date_range(start_date, end_date)
+        normalized_code = seat_code.strip() if seat_code is not None else None
+        normalized_name = seat_name.strip() if seat_name is not None else None
+        if (normalized_code is None) == (normalized_name is None) or not (
+            normalized_code or normalized_name
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="exactly one non-blank seat_code or seat_name is required",
+            )
+        return service.trading_billboard_by_seat(
+            normalized_code, normalized_name, start_date, end_date, side, limit, offset
+        )
 
     @app.post(
         "/api/v1/stock-daily-indicators/latest/query",
@@ -569,6 +654,14 @@ def _auction_symbol_from_code(code: str) -> str:
     if code.startswith(("0", "3")):
         return f"SZSE:{code}"
     raise HTTPException(status_code=422, detail="code is not a supported SSE/SZSE stock")
+
+
+def _require_bounded_date_range(start_date: date, end_date: date) -> None:
+    if start_date > end_date or (end_date - start_date).days > 365:
+        raise HTTPException(
+            status_code=422,
+            detail="date range must be ordered and contain at most 366 calendar days",
+        )
 
 
 def _install_exception_handlers(app: FastAPI) -> None:

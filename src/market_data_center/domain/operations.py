@@ -36,6 +36,7 @@ class WorkflowCode(StrEnum):
     BOARD_INDEX_DAILY_BAR = "board_index_daily_bar"
     SHAREHOLDER_COUNT_DAILY = "shareholder_count_daily"
     SHAREHOLDER_COUNT_BACKFILL = "shareholder_count_backfill"
+    TRADING_BILLBOARD_DAILY = "trading_billboard_daily"
 
 
 @dataclass(frozen=True, slots=True)

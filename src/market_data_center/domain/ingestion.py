@@ -43,6 +43,7 @@ class DatasetCode(StrEnum):
     TODAY_LIMIT_UP_SOURCE = "today_limit_up_source"
     CONVERTIBLE_BOND = "convertible_bond"
     CONVERTIBLE_BOND_DAILY_BAR = "convertible_bond_daily_bar"
+    TRADING_BILLBOARD = "trading_billboard"
 
 
 class IngestionStatus(StrEnum):

@@ -52,6 +52,13 @@ pytdx 还可从通达信 `T0002/hq_cache` 读取行业和概念完整快照，�
 20:30 执行 Tushare 每日指标，并每小时恢复超时停留在 `running` 的采集批次。单线程执行器
 保证任务不重叠，PostgreSQL advisory lock 保证同一时刻只有一个 Scheduler 实例持有主锁。
 
+龙虎榜任务在受控目录中固定为周一至周五 20:30，但默认
+`TRADING_BILLBOARD_ENABLED=false`，生产环境必须在东财来源权利审查留档后才可启用。显式手工采集为
+`market-data-center trading-billboard-collect --trade-date YYYY-MM-DD --confirm-eastmoney-source-terms-reviewed`；
+回填使用 `--start-date/--end-date` 且最长 366 个自然日。任务只采每日上榜证券汇总与买入/卖出前五
+席位，Raw 路径按 `eastmoney/trading_billboard/YYYY/MM/DD/<ingestion_id>.jsonl` 分区，schema 为
+`eastmoney.trading_billboard.v1`。非交易日以零行成功结束；失败不跨日期、不切换来源拼批次。
+
 每天 20:00（包括周末）执行扣非净利润增量同步。该任务按披露变化发现受影响证券，不按
 交易日触发，也不进行全市场历史回填；详见 ADR-0020。
 
@@ -115,6 +122,7 @@ SCHEDULER_STORE_PATH=/var/lib/market-data-center/scheduler/jobs.sqlite
 EOD_QUOTE_SNAPSHOT_ENABLED=true
 CALL_AUCTION_SNAPSHOT_ENABLED=true
 CALL_AUCTION_MARKET_SERIES_ENABLED=true
+TRADING_BILLBOARD_ENABLED=false
 BOARD_INDEX_DAILY_BAR_ENABLED=true
 SHAREHOLDER_COUNT_DAILY_ENABLED=false
 ```

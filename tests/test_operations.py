@@ -31,6 +31,10 @@ from market_data_center.shareholder_count_batch import ShareholderCountSyncSumma
 NOW = datetime(2026, 8, 2, 10, tzinfo=UTC)
 
 
+def test_trading_billboard_daily_is_a_distinct_workflow_identity() -> None:
+    assert WorkflowCode("trading_billboard_daily") is WorkflowCode.TRADING_BILLBOARD_DAILY
+
+
 class MemoryOperationsPersistence:
     def __init__(self) -> None:
         self.finished_jobs: list[JobExecution] = []
@@ -125,6 +129,7 @@ def test_job_catalog_is_stable_and_references_defined_workflows() -> None:
     assert workflows["board_index_daily_bar"].step_codes == ("collect_board_index_daily_bars",)
     assert workflows["shareholder_count_daily"].step_codes == ("shareholder_count_daily",)
     assert workflows["shareholder_count_backfill"].step_codes == ("shareholder_count_backfill",)
+    assert workflows["trading_billboard_daily"].step_codes == ("collect_trading_billboard",)
     assert all(job.timezone == "Asia/Shanghai" for job in jobs)
     assert {workflow.value for workflow in WorkflowCode} == set(workflows)
 
@@ -160,6 +165,11 @@ def test_job_catalog_owns_all_fixed_schedules() -> None:
     assert jobs["board-index-883423-daily-bar"].hour == "15-17"
     assert jobs["board-index-883423-daily-bar"].minute == 30
     assert jobs["board-index-883423-daily-bar"].enabled is True
+    assert (
+        jobs["trading-billboard-daily"].hour,
+        jobs["trading-billboard-daily"].minute,
+    ) == (20, 30)
+    assert jobs["trading-billboard-daily"].enabled is False
     assert (
         jobs["call-auction-market-snapshot-daily"].hour,
         jobs["call-auction-market-snapshot-daily"].minute,

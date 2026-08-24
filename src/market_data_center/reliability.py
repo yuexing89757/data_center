@@ -59,11 +59,19 @@ from market_data_center.domain.stock_daily_indicator import (
     StockDailyIndicatorSnapshotRecord,
     validate_stock_daily_indicators,
 )
+from market_data_center.domain.trading_billboard import (
+    TradingBillboardFinding,
+    TradingBillboardRecord,
+    validate_trading_billboards,
+)
 from market_data_center.domain.validation import validate_daily_bars
 from market_data_center.providers.akshare import normalize_akshare_raw
 from market_data_center.providers.akshare_ths import normalize_akshare_ths_raw
 from market_data_center.providers.baostock import normalize_baostock_raw
 from market_data_center.providers.contracts import ProviderError, ProviderRecord
+from market_data_center.providers.eastmoney_trading_billboard import (
+    normalize_eastmoney_trading_billboard_raw,
+)
 from market_data_center.providers.pytdx import normalize_pytdx_raw
 from market_data_center.providers.tushare import normalize_tushare_raw
 from market_data_center.raw_store import LocalRawStore, RawIntegrityError
@@ -125,6 +133,10 @@ class ReliabilityPersistence(Protocol):
     ) -> Sequence[ReplaySource]: ...
 
     def known_symbols(self, symbols: Collection[str]) -> set[str]: ...
+
+    def known_stock_symbols_for_date(
+        self, symbols: Collection[str], trade_date: date
+    ) -> set[str]: ...
 
     def known_trading_dates(self, dates: Collection[date]) -> set[date]: ...
 
@@ -233,6 +245,14 @@ class ReliabilityPersistence(Protocol):
         quality_results: Sequence[QualityResult],
     ) -> None: ...
 
+    def commit_trading_billboard_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest | None,
+        records: Sequence[TradingBillboardRecord],
+        quality_results: Sequence[QualityResult],
+    ) -> None: ...
+
     def stale_ingestion_run_ids(self, stale_before: datetime) -> Sequence[UUID]: ...
 
     def recover_stale_ingestion_runs(
@@ -251,7 +271,39 @@ _NORMALIZERS: Mapping[ProviderCode, Normalizer] = {
     ProviderCode.BAOSTOCK: normalize_baostock_raw,
     ProviderCode.PYTDX: normalize_pytdx_raw,
     ProviderCode.TUSHARE: normalize_tushare_raw,
+    ProviderCode.EASTMONEY: lambda dataset, schema, rows, params: (
+        _normalize_eastmoney_trading_billboard_replay(schema, rows, params)
+        if dataset is DatasetCode.TRADING_BILLBOARD
+        else _unsupported_eastmoney_replay(dataset)
+    ),
 }
+
+
+def _unsupported_eastmoney_replay(dataset: DatasetCode) -> tuple[ProviderRecord, ...]:
+    raise ProviderError(f"Eastmoney Raw replay is unsupported for {dataset.value}")
+
+
+def _normalize_eastmoney_trading_billboard_replay(
+    schema: str,
+    rows: Sequence[Mapping[str, str]],
+    request_params: Mapping[str, object],
+) -> tuple[ProviderRecord, ...]:
+    requested_value = request_params.get("trade_date")
+    if not isinstance(requested_value, str):
+        raise ProviderError("Eastmoney trading billboard replay request trade_date is missing")
+    try:
+        requested_date = date.fromisoformat(requested_value)
+    except ValueError as error:
+        raise ProviderError(
+            "Eastmoney trading billboard replay request trade_date is invalid"
+        ) from error
+    records = normalize_eastmoney_trading_billboard_raw(rows, schema)
+    if any(record.trade_date != requested_date for record in records):
+        raise ProviderError(
+            "Eastmoney trading billboard Raw date does not match request trade_date"
+        )
+    return records
+
 
 CALL_AUCTION_MARKET_REPLAY_DISABLED = (
     "Raw replay is disabled for call_auction_market_snapshot until exact "
@@ -320,6 +372,59 @@ class RawReplayService:
         *,
         dry_run: bool,
     ) -> ReplaySummary:
+        if source.dataset_code is DatasetCode.TRADING_BILLBOARD:
+            billboard_records = cast(tuple[TradingBillboardRecord, ...], records)
+            billboard_trade_date = (
+                billboard_records[0].trade_date
+                if billboard_records
+                else date.fromisoformat(cast(str, source.request_params["trade_date"]))
+            )
+            billboard_validation = validate_trading_billboards(
+                billboard_records,
+                known_symbols=self._persistence.known_stock_symbols_for_date(
+                    {record.symbol for record in billboard_records},
+                    billboard_trade_date,
+                ),
+                known_trading_dates=self._persistence.known_trading_dates(
+                    {record.trade_date for record in billboard_records}
+                ),
+            )
+            billboard_rejected_count = (
+                len(billboard_records) if billboard_validation.findings else 0
+            )
+            billboard_accepted_count = (
+                0 if billboard_validation.findings else len(billboard_validation.accepted)
+            )
+            billboard_completed = self._completed(
+                run,
+                len(billboard_records),
+                billboard_accepted_count,
+                billboard_rejected_count,
+            )
+            billboard_quality = self._trading_billboard_quality(
+                billboard_completed, billboard_validation.findings
+            )
+            if billboard_completed is not None:
+                if billboard_validation.findings:
+                    self._persistence.commit_rejected_batch(
+                        billboard_completed, None, billboard_quality
+                    )
+                else:
+                    self._persistence.commit_trading_billboard_batch(
+                        billboard_completed,
+                        None,
+                        billboard_validation.accepted,
+                        billboard_quality,
+                    )
+            return self._summary(
+                source,
+                billboard_completed,
+                dry_run,
+                len(billboard_records),
+                billboard_accepted_count,
+                billboard_rejected_count,
+            )
+
         if source.dataset_code is DatasetCode.SECURITY:
             security_records = cast(tuple[SecurityRecord, ...], records)
             completed = self._completed(run, len(records), len(records), 0)
@@ -732,6 +837,27 @@ class RawReplayService:
                 quality_result_id=self._uuid_factory(),
                 ingestion_id=run.ingestion_id,
                 dataset_code=run.dataset_code,
+                rule_code=finding.rule_code,
+                severity=QualitySeverity.ERROR,
+                status=QualityStatus.FAILED,
+                message=finding.message,
+                natural_key=finding.natural_key,
+            )
+            for finding in findings
+        )
+
+    def _trading_billboard_quality(
+        self,
+        run: IngestionRun | None,
+        findings: Sequence[TradingBillboardFinding],
+    ) -> tuple[QualityResult, ...]:
+        if run is None:
+            return ()
+        return tuple(
+            QualityResult(
+                quality_result_id=self._uuid_factory(),
+                ingestion_id=run.ingestion_id,
+                dataset_code=DatasetCode.TRADING_BILLBOARD,
                 rule_code=finding.rule_code,
                 severity=QualitySeverity.ERROR,
                 status=QualityStatus.FAILED,

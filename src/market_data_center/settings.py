@@ -39,6 +39,8 @@ class SchedulerSettings(BaseSettings):
     close_price_new_highs_120d_enabled: bool = True
     board_index_daily_bar_enabled: bool = True
     shareholder_count_daily_enabled: bool = False
+    # Opt-in until source-rights and protected deployment review are complete.
+    trading_billboard_enabled: bool = False
 
 
 class PytdxPoolSettings(BaseSettings):

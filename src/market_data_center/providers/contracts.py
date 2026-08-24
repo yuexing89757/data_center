@@ -21,6 +21,7 @@ from market_data_center.domain.records import (
 from market_data_center.domain.shareholder_count import ShareholderCountRecord
 from market_data_center.domain.stock_daily_indicator import StockDailyIndicatorSnapshotRecord
 from market_data_center.domain.today_limit_up import LimitUpSourceRecord
+from market_data_center.domain.trading_billboard import TradingBillboardRecord
 
 type ProviderRecord = (
     CallAuctionIndicativeDetailRecord
@@ -36,6 +37,7 @@ type ProviderRecord = (
     | FiveLevelQuoteSnapshotRecord
     | ConvertibleBondRecord
     | LimitUpSourceRecord
+    | TradingBillboardRecord
 )
 type RawRow = Mapping[str, str]
 
@@ -46,6 +48,16 @@ class ProviderError(RuntimeError):
 
 class ProviderRequestUnavailable(ProviderError):
     """The provider is healthy but cannot serve this specific dataset request."""
+
+
+class TradingBillboardProvider(Protocol):
+    """Dedicated capability for one complete trading-day billboard aggregate batch."""
+
+    source_code: str
+
+    def fetch_trading_billboard(
+        self, trade_date: date
+    ) -> "ProviderBatch[TradingBillboardRecord]": ...
 
 
 class MarketDataProvider(Protocol):

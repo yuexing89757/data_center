@@ -149,6 +149,11 @@ class FakeQueryService:
         self.classification_error: Exception | None = None
         self.security_calls: list[tuple[str, int]] = []
         self.daily_bar_calls: list[tuple[str, date, int]] = []
+        self.trading_billboard_date_calls: list[tuple[date, int, int]] = []
+        self.trading_billboard_code_calls: list[tuple[str, date, date, int, int]] = []
+        self.trading_billboard_seat_calls: list[
+            tuple[str | None, str | None, date, date, str | None, int, int]
+        ] = []
         self.latest_stock_daily_indicator_calls: list[tuple[str, ...]] = []
         self.latest_stock_daily_indicator_error: Exception | None = None
         self.latest_stock_quote_calls: list[tuple[tuple[str, ...], int]] = []
@@ -211,6 +216,62 @@ class FakeQueryService:
                     is_st=False,
                 ),
             ],
+        )
+
+    def trading_billboard_by_date(
+        self, trade_date: date, limit: int, offset: int
+    ) -> api_models.TradingBillboardPageResponse:
+        self.trading_billboard_date_calls.append((trade_date, limit, offset))
+        return _trading_billboard_page(limit=limit, offset=offset)
+
+    def trading_billboard_by_code(
+        self, code: str, start_date: date, end_date: date, limit: int, offset: int
+    ) -> api_models.TradingBillboardPageResponse:
+        self.trading_billboard_code_calls.append((code, start_date, end_date, limit, offset))
+        return _trading_billboard_page(limit=limit, offset=offset)
+
+    def trading_billboard_by_seat(
+        self,
+        seat_code: str | None,
+        seat_name: str | None,
+        start_date: date,
+        end_date: date,
+        side: str | None,
+        limit: int,
+        offset: int,
+    ) -> api_models.TradingBillboardSeatPageResponse:
+        self.trading_billboard_seat_calls.append(
+            (seat_code, seat_name, start_date, end_date, side, limit, offset)
+        )
+        return api_models.TradingBillboardSeatPageResponse(
+            items=[
+                api_models.TradingBillboardSeatOccurrenceItem(
+                    symbol="SSE:600000",
+                    trade_date=date(2026, 8, 17),
+                    source_event_id="event-1",
+                    side="buy",
+                    rank=1,
+                    seat_code="A123",
+                    seat_name="机构专用",
+                    buy_amount=Decimal("100.00"),
+                    sell_amount=Decimal("10.00"),
+                    net_amount=Decimal("90.00"),
+                    buy_to_market_pct=Decimal("1.25"),
+                    sell_to_market_pct=Decimal("0.125"),
+                    reason_code="R1",
+                    reason_text="日涨幅偏离值达到7%",
+                    summary_buy_amount=Decimal("500.00"),
+                    summary_sell_amount=Decimal("300.00"),
+                    summary_net_amount=Decimal("200.00"),
+                    summary_deal_amount=Decimal("800.00"),
+                    source_code="eastmoney",
+                )
+            ],
+            returned_count=1,
+            total_count=1,
+            has_more=False,
+            limit=limit,
+            offset=offset,
         )
 
     def latest_stock_daily_indicators(
@@ -811,6 +872,55 @@ def _headers() -> dict[str, str]:
     return {"X-API-Key": API_KEY}
 
 
+def _trading_billboard_page(
+    *, limit: int = 100, offset: int = 0
+) -> api_models.TradingBillboardPageResponse:
+    seat = api_models.TradingBillboardSeatItem(
+        symbol="SSE:600000",
+        trade_date=date(2026, 8, 17),
+        source_event_id="event-1",
+        side="buy",
+        rank=1,
+        seat_code="A123",
+        seat_name="机构专用",
+        buy_amount=Decimal("100.00"),
+        sell_amount=Decimal("10.00"),
+        net_amount=Decimal("90.00"),
+        buy_to_market_pct=Decimal("1.25"),
+        sell_to_market_pct=Decimal("0.125"),
+    )
+    return api_models.TradingBillboardPageResponse(
+        items=[
+            api_models.TradingBillboardItem(
+                symbol="SSE:600000",
+                trade_date=date(2026, 8, 17),
+                source_event_id="event-1",
+                reason_code="R1",
+                reason_text="日涨幅偏离值达到7%",
+                close_price=Decimal("12.3400"),
+                change_rate_pct=Decimal("7.12"),
+                turnover_rate_pct=Decimal("3.45"),
+                market_amount=Decimal("1000.00"),
+                buy_amount=Decimal("500.00"),
+                sell_amount=Decimal("300.00"),
+                net_amount=Decimal("200.00"),
+                deal_amount=Decimal("800.00"),
+                deal_to_market_pct=Decimal("80.00"),
+                net_to_market_pct=Decimal("20.00"),
+                free_float_market_value=Decimal("5000.00"),
+                source_code="eastmoney",
+                buy_seats=[seat],
+                sell_seats=[],
+            )
+        ],
+        returned_count=1,
+        total_count=1,
+        has_more=False,
+        limit=limit,
+        offset=offset,
+    )
+
+
 def test_api_settings_never_fall_back_to_worker_database_url(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -942,6 +1052,127 @@ def test_daily_bar_validation_does_not_call_the_service() -> None:
     assert invalid_symbol.status_code == 422
     assert missing_trade_date.status_code == 422
     assert service.daily_bar_calls == []
+
+
+def test_trading_billboard_routes_return_decimal_strings_and_forward_bounds() -> None:
+    service = FakeQueryService()
+    client = _client(service)
+
+    by_date = client.get(
+        "/api/v1/trading-billboard/by-date",
+        params={"trade_date": "2026-08-17", "limit": 10, "offset": 2},
+        headers=_headers(),
+    )
+    by_symbol = client.get(
+        "/api/v1/trading-billboard/by-symbol/600000",
+        params={"start_date": "2026-01-01", "end_date": "2026-08-17"},
+        headers=_headers(),
+    )
+    by_seat = client.get(
+        "/api/v1/trading-billboard/seats",
+        params={
+            "seat_name": " 机构专用 ",
+            "start_date": "2026-01-01",
+            "end_date": "2026-08-17",
+            "side": "buy",
+        },
+        headers=_headers(),
+    )
+
+    assert by_date.status_code == 200
+    assert by_date.json()["items"][0]["close_price"] == "12.3400"
+    assert by_date.json()["items"][0]["buy_seats"][0]["buy_amount"] == "100.00"
+    assert service.trading_billboard_date_calls == [(date(2026, 8, 17), 10, 2)]
+    assert by_symbol.status_code == 200
+    assert service.trading_billboard_code_calls == [
+        ("600000", date(2026, 1, 1), date(2026, 8, 17), 100, 0)
+    ]
+    assert by_seat.status_code == 200
+    assert by_seat.json()["items"][0]["summary_net_amount"] == "200.00"
+    assert service.trading_billboard_seat_calls == [
+        (None, "机构专用", date(2026, 1, 1), date(2026, 8, 17), "buy", 100, 0)
+    ]
+
+
+@pytest.mark.parametrize(
+    ("path", "params"),
+    [
+        (
+            "/api/v1/trading-billboard/by-symbol/600000",
+            {"start_date": "2025-01-01", "end_date": "2026-08-17"},
+        ),
+        (
+            "/api/v1/trading-billboard/seats",
+            {"start_date": "2026-01-01", "end_date": "2026-08-17"},
+        ),
+        (
+            "/api/v1/trading-billboard/seats",
+            {
+                "seat_code": "A123",
+                "seat_name": "机构专用",
+                "start_date": "2026-01-01",
+                "end_date": "2026-08-17",
+            },
+        ),
+    ],
+)
+def test_trading_billboard_route_validation_is_422_without_query(
+    path: str, params: dict[str, str]
+) -> None:
+    service = FakeQueryService()
+
+    response = _client(service).get(path, params=params, headers=_headers())
+
+    assert response.status_code == 422
+    assert service.trading_billboard_code_calls == []
+    assert service.trading_billboard_seat_calls == []
+
+
+def test_trading_billboard_routes_require_api_key() -> None:
+    response = _client(FakeQueryService()).get(
+        "/api/v1/trading-billboard/by-date", params={"trade_date": "2026-08-17"}
+    )
+
+    assert response.status_code == 401
+
+
+def test_trading_billboard_code_query_resolves_public_security_before_rpc(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = PostgreSQLPublicQueryService(object())  # type: ignore[arg-type]
+    security = SecurityItem(
+        symbol="SSE:600000",
+        code="600000",
+        exchange=Exchange.SSE,
+        current_name="浦发银行",
+        security_type=SecurityType.STOCK,
+        status=SecurityStatus.LISTED,
+        ipo_date=date(1999, 11, 10),
+        delisting_date=None,
+    )
+    calls: list[tuple[str, dict[str, object], int | None]] = []
+
+    monkeypatch.setattr(service, "search_securities", lambda query, limit: (security,))
+
+    def execute(
+        statement: object,
+        parameters: dict[str, object],
+        *,
+        statement_timeout_ms: int | None = None,
+    ) -> list[dict[str, object]]:
+        calls.append((str(statement), parameters, statement_timeout_ms))
+        return [{"payload": _trading_billboard_page().model_dump(mode="json")}]
+
+    monkeypatch.setattr(service, "_execute", execute)
+
+    result = service.trading_billboard_by_code(
+        "600000", date(2026, 1, 1), date(2026, 8, 17), 100, 0
+    )
+
+    assert result.total_count == 1
+    assert "query_trading_billboard_by_symbol" in calls[0][0]
+    assert calls[0][1]["symbol"] == "SSE:600000"
+    assert calls[0][2] == 5_000
 
 
 def test_latest_stock_daily_indicators_deduplicate_and_keep_decimals() -> None:

@@ -111,6 +111,7 @@ class TradingBillboardSide(StrEnum):
     BUY = "buy"
     SELL = "sell"
 
+
 @dataclass(frozen=True, slots=True)
 class TradingBillboardSeatRecord:
     source_event_id: str
@@ -126,6 +127,7 @@ class TradingBillboardSeatRecord:
     buy_to_market_pct: Decimal | None
     sell_to_market_pct: Decimal | None
     source_code: str = "eastmoney"
+
 
 @dataclass(frozen=True, slots=True)
 class TradingBillboardRecord:
@@ -161,6 +163,7 @@ Add the enum values and extend `ProviderRecord` with `TradingBillboardRecord`. D
 ```python
 class TradingBillboardProvider(Protocol):
     source_code: str
+
     def fetch_trading_billboard(
         self, trade_date: date
     ) -> "ProviderBatch[TradingBillboardRecord]": ...

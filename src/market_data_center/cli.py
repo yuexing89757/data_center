@@ -41,6 +41,9 @@ from market_data_center.persistence.auction_postgres import PostgreSQLAuctionPer
 from market_data_center.persistence.close_price_new_highs_postgres import (
     PostgreSQLClosePriceNewHighsPersistence,
 )
+from market_data_center.persistence.trading_billboard_postgres import (
+    PostgreSQLTradingBillboardPersistence,
+)
 from market_data_center.pipeline import BoardIndexIngestionPipeline, IngestionPipeline
 from market_data_center.providers import (
     ManagedMarketDataProvider,
@@ -48,6 +51,7 @@ from market_data_center.providers import (
     ProviderRouter,
     ProviderRoutingError,
     RoutedResult,
+    TradingBillboardProvider,
     available_board_index_provider_codes,
     available_provider_codes,
     create_board_index_provider,
@@ -66,6 +70,11 @@ from market_data_center.shareholder_count_service import (
     ShareholderCountService,
 )
 from market_data_center.stock_pool_service import StockPoolService
+from market_data_center.trading_billboard_service import (
+    TradingBillboardBackfillSummary,
+    TradingBillboardCollectionSummary,
+    TradingBillboardService,
+)
 
 AUTO_PROVIDER_CODE = "auto"
 DEFAULT_BOARD_INDEX_PROVIDER_CODE = "akshare_ths"
@@ -88,6 +97,12 @@ class StockDailyIndicatorWorkflowResult:
     deleted_rows: int
 
 
+class _TradingBillboardBackfillStopped(RuntimeError):
+    def __init__(self, summary: TradingBillboardBackfillSummary) -> None:
+        super().__init__("trading billboard backfill stopped at the first failed date")
+        self.summary = summary
+
+
 def main() -> None:
     args = _parser().parse_args()
     if args.dataset == "worker":
@@ -101,6 +116,9 @@ def main() -> None:
             today=datetime.now(SHANGHAI_TIME_ZONE).date(),
             interactive=stdin.isatty(),
         )
+    if args.dataset == "trading-billboard-collect":
+        _run_trading_billboard_command(args)
+        return
     settings = WorkerSettings()  # type: ignore[call-arg]
     engine = create_engine(
         sqlalchemy_url(settings.database_url.get_secret_value()), pool_pre_ping=True
@@ -1105,6 +1123,91 @@ def _execute(args: Namespace, pipeline: IngestionPipeline) -> IngestionRun:
     return pipeline.ingest_daily_bars(args.source_symbol, start_date, end_date)
 
 
+def _validate_trading_billboard_args(
+    args: Namespace,
+) -> tuple[date | None, date | None, date | None]:
+    if not args.confirm_eastmoney_source_terms_reviewed:
+        raise ValueError("Eastmoney source terms review confirmation is required")
+    exact = date.fromisoformat(args.trade_date) if args.trade_date else None
+    start = date.fromisoformat(args.start_date) if args.start_date else None
+    end = date.fromisoformat(args.end_date) if args.end_date else None
+    if exact is not None:
+        if start is not None or end is not None:
+            raise ValueError("--trade-date cannot combine with a date range")
+        return exact, None, None
+    if start is None or end is None:
+        raise ValueError("--start-date and --end-date must both be provided")
+    if start > end:
+        raise ValueError("start_date must not follow end_date")
+    if (end - start).days > 365:
+        raise ValueError("trading billboard range is bounded to 366 calendar days")
+    return None, start, end
+
+
+def _run_trading_billboard_command(args: Namespace) -> None:
+    exact, start, end = _validate_trading_billboard_args(args)
+    settings = WorkerSettings()  # type: ignore[call-arg]
+    engine = create_engine(
+        sqlalchemy_url(settings.database_url.get_secret_value()), pool_pre_ping=True
+    )
+    try:
+        execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
+            WorkflowCode.TRADING_BILLBOARD_DAILY,
+            datetime.now(UTC).replace(second=0, microsecond=0),
+            TriggerSource.MANUAL,
+        )
+        service = TradingBillboardService(
+            persistence=PostgreSQLTradingBillboardPersistence(engine),
+            raw_store=LocalRawStore(settings.raw_data_root),
+            provider=_eastmoney_trading_billboard_provider(),
+        )
+        try:
+            result: TradingBillboardCollectionSummary | TradingBillboardBackfillSummary
+            if exact is not None:
+                result = execution.step(
+                    "collect_trading_billboard", 1, lambda: service.collect(exact)
+                )
+            else:
+                if start is None or end is None:  # pragma: no cover - validator invariant
+                    raise AssertionError("validated trading billboard range is missing")
+
+                def collect_range() -> TradingBillboardBackfillSummary:
+                    summary = service.backfill(start, end)
+                    if summary.failed_date is not None:
+                        raise _TradingBillboardBackfillStopped(summary)
+                    return summary
+
+                result = execution.step("collect_trading_billboard", 1, collect_range)
+        except BaseException as error:
+            execution.fail(error)
+            payload: object = (
+                asdict(error.summary)
+                if isinstance(error, _TradingBillboardBackfillStopped)
+                else {
+                    "status": "failed",
+                    "operation": "trading-billboard-collect",
+                    "error_type": type(error).__name__,
+                }
+            )
+            print(
+                dumps(payload, ensure_ascii=False, sort_keys=True, default=str),
+                file=stderr,
+            )
+            raise SystemExit(1) from None
+        execution.succeed()
+        print(dumps(asdict(result), ensure_ascii=False, sort_keys=True, default=str))
+    finally:
+        engine.dispose()
+
+
+def _eastmoney_trading_billboard_provider() -> TradingBillboardProvider:
+    from market_data_center.providers.eastmoney_trading_billboard import (
+        EastmoneyTradingBillboardProvider,
+    )
+
+    return EastmoneyTradingBillboardProvider()
+
+
 def _parser() -> ArgumentParser:
     parser = ArgumentParser(prog="market-data-center")
     parser.add_argument(
@@ -1118,6 +1221,20 @@ def _parser() -> ArgumentParser:
         help="automatic routing or an explicit data provider (default: auto)",
     )
     subparsers = parser.add_subparsers(dest="dataset", required=True)
+    billboard = subparsers.add_parser(
+        "trading-billboard-collect",
+        help="collect exact-day Eastmoney A-share trading billboard facts",
+    )
+    billboard_mode = billboard.add_mutually_exclusive_group(required=True)
+    billboard_mode.add_argument("--trade-date", help="one exact date YYYY-MM-DD")
+    billboard_mode.add_argument("--start-date", help="bounded range start YYYY-MM-DD")
+    billboard.add_argument("--end-date", help="bounded range end YYYY-MM-DD")
+    billboard.add_argument(
+        "--confirm-eastmoney-source-terms-reviewed",
+        action="store_true",
+        required=True,
+        help="confirm source-rights review before this explicit collection command",
+    )
     subparsers.add_parser("security", help="synchronize the security master")
 
     calendar = subparsers.add_parser("trading-calendar", help="synchronize natural-day calendar")

@@ -130,6 +130,16 @@ from market_data_center.domain.stock_pool import (
     StockPoolMember,
     StockPoolSnapshot,
 )
+from market_data_center.domain.trading_billboard import (
+    TradingBillboardFinding,
+    TradingBillboardRecord,
+    TradingBillboardSeatRecord,
+    TradingBillboardSide,
+    TradingBillboardValidationResult,
+    trading_billboard_content_hash,
+    trading_billboard_natural_key,
+    validate_trading_billboards,
+)
 from market_data_center.domain.validation import (
     ValidationFinding,
     ValidationRule,
@@ -221,6 +231,11 @@ __all__ = [
     "StockPoolMember",
     "StockPoolSnapshot",
     "TradeStatus",
+    "TradingBillboardFinding",
+    "TradingBillboardRecord",
+    "TradingBillboardSeatRecord",
+    "TradingBillboardSide",
+    "TradingBillboardValidationResult",
     "TradingDayRecord",
     "ValidationFinding",
     "ValidationRule",
@@ -236,6 +251,8 @@ __all__ = [
     "shareholder_count_revision_key",
     "stock_daily_indicator_natural_key",
     "stock_daily_indicator_natural_key_json",
+    "trading_billboard_content_hash",
+    "trading_billboard_natural_key",
     "validate_board_index_constituent_snapshot",
     "validate_board_index_daily_bars",
     "validate_capital",
@@ -247,4 +264,5 @@ __all__ = [
     "validate_realtime_quotes",
     "validate_shareholder_counts",
     "validate_stock_daily_indicators",
+    "validate_trading_billboards",
 ]

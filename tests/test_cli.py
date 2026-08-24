@@ -12,6 +12,7 @@ from market_data_center.cli import (
     AUTO_PROVIDER_CODE,
     _one_month_before,
     _parser,
+    _validate_trading_billboard_args,
     run_daily_workflow,
     run_stock_daily_indicator_workflow,
 )
@@ -43,6 +44,92 @@ def test_cli_still_accepts_an_explicit_provider() -> None:
     args = _parser().parse_args(["--provider", "pytdx", "security"])
 
     assert args.provider == "pytdx"
+
+
+def test_trading_billboard_cli_accepts_exact_date_or_complete_range() -> None:
+    exact = _parser().parse_args(
+        [
+            "trading-billboard-collect",
+            "--trade-date",
+            "2026-08-17",
+            "--confirm-eastmoney-source-terms-reviewed",
+        ]
+    )
+    ranged = _parser().parse_args(
+        [
+            "trading-billboard-collect",
+            "--start-date",
+            "2026-08-01",
+            "--end-date",
+            "2026-08-17",
+            "--confirm-eastmoney-source-terms-reviewed",
+        ]
+    )
+
+    assert _validate_trading_billboard_args(exact) == (
+        date(2026, 8, 17),
+        None,
+        None,
+    )
+    assert _validate_trading_billboard_args(ranged) == (
+        None,
+        date(2026, 8, 1),
+        date(2026, 8, 17),
+    )
+
+
+def test_trading_billboard_cli_rejects_missing_confirmation_or_mixed_dates() -> None:
+    with pytest.raises(SystemExit):
+        _parser().parse_args(["trading-billboard-collect", "--trade-date", "2026-08-17"])
+    with pytest.raises(SystemExit):
+        _parser().parse_args(
+            [
+                "trading-billboard-collect",
+                "--trade-date",
+                "2026-08-17",
+                "--start-date",
+                "2026-08-01",
+                "--confirm-eastmoney-source-terms-reviewed",
+            ]
+        )
+    mixed = _parser().parse_args(
+        [
+            "trading-billboard-collect",
+            "--trade-date",
+            "2026-08-17",
+            "--end-date",
+            "2026-08-18",
+            "--confirm-eastmoney-source-terms-reviewed",
+        ]
+    )
+    with pytest.raises(ValueError, match="cannot combine"):
+        _validate_trading_billboard_args(mixed)
+
+
+def test_trading_billboard_cli_rejects_incomplete_or_unbounded_range() -> None:
+    incomplete = _parser().parse_args(
+        [
+            "trading-billboard-collect",
+            "--start-date",
+            "2026-08-01",
+            "--confirm-eastmoney-source-terms-reviewed",
+        ]
+    )
+    unbounded = _parser().parse_args(
+        [
+            "trading-billboard-collect",
+            "--start-date",
+            "2025-08-17",
+            "--end-date",
+            "2026-08-18",
+            "--confirm-eastmoney-source-terms-reviewed",
+        ]
+    )
+
+    with pytest.raises(ValueError, match="both"):
+        _validate_trading_billboard_args(incomplete)
+    with pytest.raises(ValueError, match="366"):
+        _validate_trading_billboard_args(unbounded)
 
 
 def test_stock_daily_indicator_bulk_parses_one_trade_date() -> None:

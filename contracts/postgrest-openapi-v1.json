@@ -114,6 +114,33 @@
         }
       }
     },
+    "/rpc/query_trading_billboard_by_date": {
+      "post": {
+        "operationId": "queryTradingBillboardByDate",
+        "summary": "Read one exact-date trading billboard with top-five seats",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {"$ref": "#/components/requestBodies/TradingBillboardByDate"},
+        "responses": {"200": {"description": "Bounded exact-date entries and seats"}}
+      }
+    },
+    "/rpc/query_trading_billboard_by_symbol": {
+      "post": {
+        "operationId": "queryTradingBillboardBySymbol",
+        "summary": "Read bounded trading billboard history for one standard symbol",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {"$ref": "#/components/requestBodies/TradingBillboardBySymbol"},
+        "responses": {"200": {"description": "Bounded symbol history and seats"}}
+      }
+    },
+    "/rpc/query_trading_billboard_by_seat": {
+      "post": {
+        "operationId": "queryTradingBillboardBySeat",
+        "summary": "Read exact seat occurrences with parent billboard totals",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {"$ref": "#/components/requestBodies/TradingBillboardBySeat"},
+        "responses": {"200": {"description": "Bounded exact seat occurrences"}}
+      }
+    },
     "/rpc/query_close_price_new_highs_120d": {
       "post": {
         "operationId": "queryClosePriceNewHighs120d",
@@ -437,6 +464,55 @@
               "pattern": "^[0-9]{6}$"
             }
           }
+        }}}
+      },
+      "TradingBillboardByDate": {
+        "required": true,
+        "content": {"application/json": {"schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["p_trade_date"],
+          "properties": {
+            "p_trade_date": {"$ref": "#/components/schemas/Date"},
+            "p_limit": {"type": "integer", "minimum": 1, "maximum": 500, "default": 100},
+            "p_offset": {"type": "integer", "minimum": 0, "maximum": 10000, "default": 0}
+          }
+        }}}
+      },
+      "TradingBillboardBySymbol": {
+        "required": true,
+        "content": {"application/json": {"schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["p_symbol", "p_start_date", "p_end_date"],
+          "properties": {
+            "p_symbol": {"$ref": "#/components/schemas/StandardSymbol"},
+            "p_start_date": {"$ref": "#/components/schemas/Date"},
+            "p_end_date": {"$ref": "#/components/schemas/Date"},
+            "p_limit": {"type": "integer", "minimum": 1, "maximum": 500, "default": 100},
+            "p_offset": {"type": "integer", "minimum": 0, "maximum": 10000, "default": 0}
+          }
+        }}}
+      },
+      "TradingBillboardBySeat": {
+        "required": true,
+        "content": {"application/json": {"schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["p_start_date", "p_end_date"],
+          "properties": {
+            "p_seat_code": {"type": ["string", "null"], "minLength": 1},
+            "p_seat_name": {"type": ["string", "null"], "minLength": 1},
+            "p_start_date": {"$ref": "#/components/schemas/Date"},
+            "p_end_date": {"$ref": "#/components/schemas/Date"},
+            "p_side": {"type": ["string", "null"], "enum": ["buy", "sell", null]},
+            "p_limit": {"type": "integer", "minimum": 1, "maximum": 500, "default": 100},
+            "p_offset": {"type": "integer", "minimum": 0, "maximum": 10000, "default": 0}
+          },
+          "oneOf": [
+            {"required": ["p_seat_code"], "not": {"required": ["p_seat_name"]}},
+            {"required": ["p_seat_name"], "not": {"required": ["p_seat_code"]}}
+          ]
         }}}
       }
     }
