@@ -11,6 +11,10 @@ from market_data_center.providers.contracts import (
     ProviderBatch,
     ProviderError,
     ProviderRequestUnavailable,
+    TradingBillboardProvider,
+)
+from market_data_center.providers.eastmoney_trading_billboard import (
+    EastmoneyTradingBillboardProvider,
 )
 from market_data_center.providers.pytdx import PytdxProvider
 from market_data_center.providers.registry import (
@@ -34,6 +38,7 @@ __all__ = [
     "AKShareTHSProvider",
     "BaoStockProvider",
     "BoardIndexProvider",
+    "EastmoneyTradingBillboardProvider",
     "ManagedBoardIndexProvider",
     "ManagedMarketDataProvider",
     "MarketDataProvider",
@@ -45,6 +50,7 @@ __all__ = [
     "PytdxProvider",
     "RoutedResult",
     "RoutingAttempt",
+    "TradingBillboardProvider",
     "TushareProvider",
     "available_board_index_provider_codes",
     "available_provider_codes",
