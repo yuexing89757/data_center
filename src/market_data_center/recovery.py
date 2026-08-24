@@ -57,6 +57,7 @@ COUNT_QUERIES = {
     "security": "select count(*) from core.security",
     "security_name_history": "select count(*) from core.security_name_history",
     "share_capital": "select count(*) from capital.share_capital",
+    "shareholder_count": "select count(*) from core.shareholder_count",
     "stock_daily_indicator": "select count(*) from core.stock_daily_indicator",
     "stock_pool_calculation_quality": ("select count(*) from stock_pool.calculation_quality"),
     "stock_pool_member": "select count(*) from stock_pool.member",
@@ -132,6 +133,8 @@ def capture_database_snapshot(database_url: str) -> DatabaseSnapshot:
                 select ingestion_id from core.stock_daily_indicator
                 union all
                 select ingestion_id from core.deducted_profit
+                union all
+                select ingestion_id from core.shareholder_count
                 union all
                 select ingestion_id from capital.share_capital
                 union all
