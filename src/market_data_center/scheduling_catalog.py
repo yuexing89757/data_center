@@ -138,6 +138,12 @@ WORKFLOW_DEFINITIONS = (
         "收盘后采集固定同花顺板块 THS:883423 日线, 并补齐尾部缺口。",
         ("collect_board_index_daily_bars",),
     ),
+    WorkflowDefinition(
+        "trading_billboard_daily",
+        "股票龙虎榜采集",
+        "采集东方财富每日上榜证券汇总及买入/卖出前五席位。",
+        ("collect_trading_billboard",),
+    ),
 )
 
 

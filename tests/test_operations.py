@@ -30,6 +30,10 @@ from market_data_center.settings import PytdxPoolSettings, SchedulerSettings
 NOW = datetime(2026, 8, 2, 10, tzinfo=UTC)
 
 
+def test_trading_billboard_daily_is_a_distinct_workflow_identity() -> None:
+    assert WorkflowCode("trading_billboard_daily") is WorkflowCode.TRADING_BILLBOARD_DAILY
+
+
 class MemoryOperationsPersistence:
     def __init__(self) -> None:
         self.finished_jobs: list[JobExecution] = []
