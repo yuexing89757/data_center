@@ -33,6 +33,7 @@ class DatasetCode(StrEnum):
     BOARD_INDEX_CONSTITUENT_SNAPSHOT = "board_index_constituent_snapshot"
     STOCK_DAILY_INDICATOR = "stock_daily_indicator"
     DEDUCTED_PROFIT = "deducted_profit"
+    SHAREHOLDER_COUNT = "shareholder_count"
     FIVE_LEVEL_QUOTE = "five_level_quote"
     EOD_QUOTE_SNAPSHOT = "eod_quote_snapshot"
     CALL_AUCTION_SNAPSHOT = "call_auction_snapshot"
