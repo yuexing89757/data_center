@@ -41,7 +41,7 @@
 ### Task 1: Establish accepted governance artifacts
 
 **Files:**
-- Create: `docs/adr/ADR-0046-股东人数点时事实与Tushare采集.md`
+- Create: `docs/adr/ADR-0047-股东人数点时事实与Tushare采集.md`
 - Create: `docs/领域详设-ShareholderCount-2026-08-24.md`
 - Modify: `docs/adr/README.md`
 
@@ -62,7 +62,7 @@ Expected: one issue URL. Record its numeric suffix in the ADR `关联 Issue` lin
 The ADR header is:
 
 ~~~markdown
-# ADR-0046：股东人数点时事实与 Tushare 采集
+# ADR-0047：股东人数点时事实与 Tushare 采集
 - 状态：Accepted
 - 日期：2026-08-24
 - 关联 Issue：使用 Step 1 返回 URL 的实际数字编号
@@ -75,9 +75,9 @@ Copy every approved decision: append-only key, both time axes, backfill limitati
 - [ ] **Step 3: Verify and commit**
 
 ~~~powershell
-rg -n "状态：Accepted|关联 Issue|shareholder_count|stk_holdernumber|first_observed_at|3000|21:00|FastAPI" docs/adr/ADR-0046-股东人数点时事实与Tushare采集.md docs/领域详设-ShareholderCount-2026-08-24.md
-rg -n "ADR-0046" docs/adr/README.md
-git add docs/adr/ADR-0046-股东人数点时事实与Tushare采集.md docs/领域详设-ShareholderCount-2026-08-24.md docs/adr/README.md
+rg -n "状态：Accepted|关联 Issue|shareholder_count|stk_holdernumber|first_observed_at|3000|21:00|FastAPI" docs/adr/ADR-0047-股东人数点时事实与Tushare采集.md docs/领域详设-ShareholderCount-2026-08-24.md
+rg -n "ADR-0047" docs/adr/README.md
+git add docs/adr/ADR-0047-股东人数点时事实与Tushare采集.md docs/领域详设-ShareholderCount-2026-08-24.md docs/adr/README.md
 git commit -m "docs: accept shareholder count domain"
 ~~~
 
@@ -109,8 +109,9 @@ def test_revision_is_deterministic_and_zero_is_rejected() -> None:
     record = ShareholderCountRecord(**values, revision_key=revision, source_code="tushare")
     assert validate_shareholder_counts((record,), known_symbols={record.symbol}) == (record,)
     with pytest.raises(ValueError, match="positive"):
-        validate_shareholder_counts((replace(record, shareholder_count=0),),
-                                    known_symbols={record.symbol})
+        validate_shareholder_counts(
+            (replace(record, shareholder_count=0),), known_symbols={record.symbol}
+        )
 ~~~
 
 Add separate assertions for date inversion, unknown symbol, non-Tushare source, hash mismatch, and duplicate natural key.
@@ -133,16 +134,27 @@ class ShareholderCountRecord:
     revision_key: str
     source_code: str
 
+
 def shareholder_count_revision_key(
-    *, symbol: str, statistics_date: date, announcement_date: date,
+    *,
+    symbol: str,
+    statistics_date: date,
+    announcement_date: date,
     shareholder_count: int,
 ) -> str:
-    values = (symbol, statistics_date.isoformat(), announcement_date.isoformat(),
-              str(shareholder_count))
+    values = (
+        symbol,
+        statistics_date.isoformat(),
+        announcement_date.isoformat(),
+        str(shareholder_count),
+    )
     return sha256("\x1f".join(values).encode()).hexdigest()
 
+
 def validate_shareholder_counts(
-    records: tuple[ShareholderCountRecord, ...], *, known_symbols: set[str],
+    records: tuple[ShareholderCountRecord, ...],
+    *,
+    known_symbols: set[str],
 ) -> tuple[ShareholderCountRecord, ...]:
     seen: set[tuple[str, date, str]] = set()
     for record in records:
@@ -174,8 +186,12 @@ The validator enforces every invariant listed in Step 1. Export names; add enum 
 ~~~python
 class ShareholderCountProvider(Protocol):
     source_code: str
+
     def fetch_shareholder_counts(
-        self, source_symbol: str | None, start_date: date, end_date: date,
+        self,
+        source_symbol: str | None,
+        start_date: date,
+        end_date: date,
     ) -> ProviderBatch[ShareholderCountRecord]:
         raise NotImplementedError
 ~~~
@@ -208,7 +224,8 @@ Test mapping of `920000.BJ`, empty success, replay equality, missing/blank/`1.5`
 
 ~~~python
 batch = TushareProvider(client).fetch_shareholder_counts(
-    "BSE:920000", date(2026, 8, 1), date(2026, 8, 24))
+    "BSE:920000", date(2026, 8, 1), date(2026, 8, 24)
+)
 assert batch.request_params == {
     "source_symbol": "920000.BJ",
     "start_date": "20260801",
@@ -231,6 +248,7 @@ Expected: missing method/settings/schema branch failures.
 ~~~python
 SHAREHOLDER_COUNT_FIELDS = ("ts_code", "ann_date", "end_date", "holder_num")
 SHAREHOLDER_COUNT_RESPONSE_LIMIT = 3_000
+
 
 def _strict_positive_integer(value: str | None, field_name: str) -> int:
     if value is None or not value.strip() or not value.strip().isdigit():
@@ -287,6 +305,7 @@ class PreparedShareholderCountBatch:
     manifest: RawManifest | None
     records: tuple[IngestionEnvelope[ShareholderCountRecord], ...]
     quality_results: tuple[QualityResult, ...] = ()
+
 
 @dataclass(frozen=True, slots=True)
 class ShareholderCountSyncSummary:
@@ -551,7 +570,7 @@ The integration command uses only disposable `TEST_DATABASE_URL`; if unset, repo
 
 ~~~powershell
 rg -n "Windows Task Scheduler|cron" docs src scripts
-rg -n "TUSHARE_TOKEN|DATABASE_URL" contracts docs/领域详设-ShareholderCount-2026-08-24.md docs/adr/ADR-0046-股东人数点时事实与Tushare采集.md
+rg -n "TUSHARE_TOKEN|DATABASE_URL" contracts docs/领域详设-ShareholderCount-2026-08-24.md docs/adr/ADR-0047-股东人数点时事实与Tushare采集.md
 git status --short
 git add contracts/postgrest-openapi-v1.json contracts/agent-tools-v1.json tests/test_api_contracts.py docs/领域模型总纲-DomainModelOverview-2026-07-24.md docs/数据库导航.md docs/Worker日常采集与调度.md docs/Tushare-2000积分接口清单-2026-08-02.md
 git commit -m "docs: publish shareholder count contracts"

@@ -220,6 +220,66 @@
         "additionalProperties": false,
         "properties": {}
       }
+    },
+    {
+      "name": "market_shareholder_counts_as_of",
+      "description": "Read strict point-in-time latest shareholder counts known and announced by an as-of date.",
+      "endpoint": "query_shareholder_counts_as_of",
+      "read_only": true,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["p_as_of_date"],
+        "properties": {
+          "p_as_of_date": {"type": "string", "format": "date"},
+          "p_symbols": {
+            "type": ["array", "null"],
+            "items": {"type": "string", "pattern": "^(SSE|SZSE|BSE):[0-9]{6}$"},
+            "maxItems": 500
+          },
+          "p_limit": {"type": "integer", "minimum": 1, "maximum": 2000, "default": 500}
+        }
+      }
+    },
+    {
+      "name": "market_shareholder_count_history_as_of",
+      "description": "Read strict point-in-time shareholder-count history for one symbol and statistics-date range.",
+      "endpoint": "query_shareholder_count_history_as_of",
+      "read_only": true,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "p_symbol",
+          "p_as_of_date",
+          "p_start_statistics_date",
+          "p_end_statistics_date"
+        ],
+        "properties": {
+          "p_symbol": {"type": "string", "pattern": "^(SSE|SZSE|BSE):[0-9]{6}$"},
+          "p_as_of_date": {"type": "string", "format": "date"},
+          "p_start_statistics_date": {"type": "string", "format": "date"},
+          "p_end_statistics_date": {"type": "string", "format": "date"},
+          "p_limit": {"type": "integer", "minimum": 1, "maximum": 2000, "default": 500}
+        }
+      }
+    },
+    {
+      "name": "market_shareholder_count_history_latest",
+      "description": "Read current-known shareholder-count history for one symbol; this is not a strict no-future-data view.",
+      "endpoint": "query_shareholder_count_history_latest",
+      "read_only": true,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["p_symbol", "p_start_statistics_date", "p_end_statistics_date"],
+        "properties": {
+          "p_symbol": {"type": "string", "pattern": "^(SSE|SZSE|BSE):[0-9]{6}$"},
+          "p_start_statistics_date": {"type": "string", "format": "date"},
+          "p_end_statistics_date": {"type": "string", "format": "date"},
+          "p_limit": {"type": "integer", "minimum": 1, "maximum": 2000, "default": 500}
+        }
+      }
     }
   ]
 }

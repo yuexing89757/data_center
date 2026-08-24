@@ -55,6 +55,21 @@ pytdx 还可从通达信 `T0002/hq_cache` 读取行业和概念完整快照，�
 每天 20:00（包括周末）执行扣非净利润增量同步。该任务按披露变化发现受影响证券，不按
 交易日触发，也不进行全市场历史回填；详见 ADR-0020。
 
+股东人数增量任务登记为每天 21:00（包括周末）运行，读取截至当天最近 30 个自然日的
+Tushare 公告窗口；`SHAREHOLDER_COUNT_DAILY_ENABLED=false` 为默认值，只有运维显式启用后
+Worker 才注册该任务。接口命中 3000 行上限时按公告日期递归拆分，单日全市场仍满额时改为
+逐证券查询；一次日增量的全部请求批次在同一事务发布，任何分支失败都不写入部分事实。
+该调度只做滚动增量，不自动启动全历史回填。
+
+全历史回填是单独的受控命令，按包含已退市股票的标准 symbol 排序逐证券提交，可用
+`--resume-after-symbol` 从已完成证券之后继续。交互运行会打印范围并要求输入确认；无人值守
+必须显式给出 `--yes`。以下命令只展示调用方式，不代表已对生产环境执行：
+
+```bash
+uv run market-data-center shareholder-count-daily --as-of-date 2026-08-24 --provider tushare
+uv run market-data-center shareholder-count-backfill --cutoff-date 2026-08-24 --yes --provider tushare
+```
+
 周一至周五 21:00 构建沪深主板昨日涨停与昨日跌停两份不可变股票池。触发时间不是依赖
 完成的证明：任务还会检查 basis 当日 `daily_market`、`stock_daily_indicator` WorkflowRun
 均成功，并校验精确交易日、日 K、每日指标和 lineage；缺失时失败且不回退旧快照。
@@ -101,6 +116,7 @@ EOD_QUOTE_SNAPSHOT_ENABLED=true
 CALL_AUCTION_SNAPSHOT_ENABLED=true
 CALL_AUCTION_MARKET_SERIES_ENABLED=true
 BOARD_INDEX_DAILY_BAR_ENABLED=true
+SHAREHOLDER_COUNT_DAILY_ENABLED=false
 ```
 
 ### 竞价序列诊断与保留

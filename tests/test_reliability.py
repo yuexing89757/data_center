@@ -26,6 +26,7 @@ from market_data_center.domain import (
     RawFileFormat,
     RawManifest,
     SecurityRecord,
+    ShareholderCountRecord,
 )
 from market_data_center.domain.ingestion import ReplaySource
 from market_data_center.providers.contracts import ProviderError
@@ -37,6 +38,7 @@ from market_data_center.reliability import (
     compare_daily_bar_sources,
     recover_stale_runs,
 )
+from market_data_center.shareholder_count_batch import PreparedShareholderCountBatch
 
 NOW = datetime(2026, 7, 29, 8, tzinfo=UTC)
 SOURCE_RUN_ID = UUID("74b11082-4ec0-4ae4-826f-a80a96cb9985")
@@ -80,6 +82,7 @@ class StubReliabilityPersistence:
                 Sequence[QualityResult],
             ]
         ] = []
+        self.shareholder_count_commits: list[Sequence[PreparedShareholderCountBatch]] = []
         self.classification_catalog_commits: list[
             tuple[
                 IngestionRun,
@@ -161,6 +164,11 @@ class StubReliabilityPersistence:
         quality_results: Sequence[QualityResult],
     ) -> None:
         self.capital_commits.append((run, manifest, records, quality_results))
+
+    def commit_shareholder_count_batches(
+        self, batches: Sequence[PreparedShareholderCountBatch]
+    ) -> None:
+        self.shareholder_count_commits.append(batches)
 
     def known_classification_snapshots(
         self, keys: Collection[tuple[str, ClassificationType, str, date]]
@@ -395,6 +403,46 @@ def test_raw_replay_normalizes_and_commits_capital_facts(tmp_path: Path) -> None
     assert replay_manifest is None
     assert findings == ()
     assert envelopes[0].record.symbol == "SSE:600000"
+
+
+def test_raw_replay_normalizes_and_commits_shareholder_count_without_new_manifest(
+    tmp_path: Path,
+) -> None:
+    store = LocalRawStore(tmp_path)
+    source = _source(
+        store,
+        provider=ProviderCode.TUSHARE,
+        dataset=DatasetCode.SHAREHOLDER_COUNT,
+        schema_version="tushare.shareholder_count.v1",
+        rows=[
+            {
+                "ts_code": "600000.SH",
+                "ann_date": "20260820",
+                "end_date": "20260630",
+                "holder_num": "12001",
+            }
+        ],
+        request_params={
+            "source_symbol": "600000.SH",
+            "start_date": "20260801",
+            "end_date": "20260824",
+        },
+    )
+    persistence = StubReliabilityPersistence(source)
+
+    summary = RawReplayService(
+        raw_store=store,
+        persistence=persistence,  # type: ignore[arg-type]
+        clock=lambda: NOW,
+        uuid_factory=lambda: REPLAY_RUN_ID,
+    ).replay(SOURCE_RUN_ID)
+
+    assert summary.accepted_rows == 1
+    batch = persistence.shareholder_count_commits[0][0]
+    assert batch.manifest is None
+    assert batch.run.replayed_from_raw_id == RAW_ID
+    assert isinstance(batch.records[0].record, ShareholderCountRecord)
+    assert batch.records[0].record.shareholder_count == 12001
 
 
 def test_raw_replay_normalizes_and_commits_classification_catalog(

@@ -5470,6 +5470,230 @@ def _insert_existing_call_auction_final(
     return ingestion_id
 
 
+def test_shareholder_count_rpcs_preserve_strict_knowledge_and_latest_revision_semantics(
+    database_engine: Engine,
+) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    _commit_security_prerequisite(persistence)
+    run = _running_run(DatasetCode.SHAREHOLDER_COUNT, ProviderCode.TUSHARE)
+    persistence.create_ingestion_run(run)
+    rows = [
+        {
+            "symbol": SYMBOL,
+            "statistics_date": date(2026, 3, 31),
+            "announcement_date": date(2026, 4, 20),
+            "shareholder_count": 1_000,
+            "revision_key": "1" * 64,
+            "observed_at": datetime(2026, 4, 20, 3, tzinfo=UTC),
+        },
+        {
+            "symbol": SYMBOL,
+            "statistics_date": date(2026, 6, 30),
+            "announcement_date": date(2026, 7, 20),
+            "shareholder_count": 900,
+            "revision_key": "2" * 64,
+            "observed_at": datetime(2026, 7, 20, 3, tzinfo=UTC),
+        },
+        {
+            "symbol": SYMBOL,
+            "statistics_date": date(2026, 6, 30),
+            "announcement_date": date(2026, 7, 25),
+            "shareholder_count": 850,
+            "revision_key": "3" * 64,
+            "observed_at": datetime(2026, 8, 10, 3, tzinfo=UTC),
+        },
+        {
+            "symbol": SYMBOL,
+            "statistics_date": date(2026, 9, 30),
+            "announcement_date": date(2026, 10, 20),
+            "shareholder_count": 800,
+            "revision_key": "4" * 64,
+            "observed_at": datetime(2026, 10, 20, 3, tzinfo=UTC),
+        },
+    ]
+    with database_engine.begin() as connection:
+        connection.execute(
+            text("""
+insert into core.shareholder_count (
+ symbol,statistics_date,announcement_date,shareholder_count,revision_key,
+ source_code,ingestion_id,first_observed_at
+) values (
+ :symbol,:statistics_date,:announcement_date,:shareholder_count,:revision_key,
+ 'tushare',:ingestion_id,:observed_at
+)
+"""),
+            [{**row, "ingestion_id": run.ingestion_id} for row in rows],
+        )
+
+    with database_engine.connect() as connection:
+        strict_history = (
+            connection.execute(
+                text("""
+select * from api_v1.query_shareholder_count_history_as_of(
+ :symbol,:as_of,:start_date,:end_date,:limit
+)
+"""),
+                {
+                    "symbol": SYMBOL,
+                    "as_of": date(2026, 7, 31),
+                    "start_date": date(2026, 1, 1),
+                    "end_date": date(2026, 12, 31),
+                    "limit": 500,
+                },
+            )
+            .mappings()
+            .all()
+        )
+        latest_history = (
+            connection.execute(
+                text("""
+select * from api_v1.query_shareholder_count_history_latest(
+ :symbol,:start_date,:end_date,:limit
+)
+"""),
+                {
+                    "symbol": SYMBOL,
+                    "start_date": date(2026, 1, 1),
+                    "end_date": date(2026, 12, 31),
+                    "limit": 500,
+                },
+            )
+            .mappings()
+            .all()
+        )
+        cross_section = (
+            connection.execute(
+                text("""
+select * from api_v1.query_shareholder_counts_as_of(
+ :as_of,cast(:symbols as text[]),:limit
+)
+"""),
+                {"as_of": date(2026, 7, 31), "symbols": None, "limit": 500},
+            )
+            .mappings()
+            .all()
+        )
+        empty_cross_section = connection.execute(
+            text("""
+select * from api_v1.query_shareholder_counts_as_of(
+ :as_of,cast(:symbols as text[]),:limit
+)
+"""),
+            {"as_of": date(2026, 7, 31), "symbols": [], "limit": 500},
+        ).all()
+        narrowed = (
+            connection.execute(
+                text("""
+select * from api_v1.query_shareholder_count_history_latest(
+ :symbol,:start_date,:end_date,:limit
+)
+"""),
+                {
+                    "symbol": SYMBOL,
+                    "start_date": date(2026, 6, 30),
+                    "end_date": date(2026, 6, 30),
+                    "limit": 500,
+                },
+            )
+            .mappings()
+            .all()
+        )
+        clamped = connection.execute(
+            text("""
+select * from api_v1.query_shareholder_count_history_latest(
+ :symbol,:start_date,:end_date,:limit
+)
+"""),
+            {
+                "symbol": SYMBOL,
+                "start_date": date(2026, 1, 1),
+                "end_date": date(2026, 12, 31),
+                "limit": 0,
+            },
+        ).all()
+
+    assert [row["shareholder_count"] for row in strict_history] == [1_000, 900]
+    assert strict_history[0]["previous_shareholder_count"] is None
+    assert strict_history[1]["previous_statistics_date"] == date(2026, 3, 31)
+    assert strict_history[1]["change_count"] == -100
+    assert strict_history[1]["change_ratio"] == Decimal("-0.1")
+    assert [row["shareholder_count"] for row in latest_history] == [1_000, 850, 800]
+    assert cross_section[0]["shareholder_count"] == 900
+    assert cross_section[0]["previous_shareholder_count"] == 1_000
+    assert empty_cross_section == []
+    assert narrowed[0]["previous_statistics_date"] is None
+    assert narrowed[0]["change_count"] is None
+    assert len(clamped) == 1
+
+
+def test_shareholder_count_rpc_bounds_and_append_only_permissions(
+    migrated_database_url: str,
+) -> None:
+    signatures = (
+        "api_v1.query_shareholder_counts_as_of(date,text[],integer)",
+        "api_v1.query_shareholder_count_history_as_of(text,date,date,date,integer)",
+        "api_v1.query_shareholder_count_history_latest(text,date,date,integer)",
+    )
+    with psycopg.connect(migrated_database_url) as connection:
+        for signature in signatures:
+            assert connection.execute(
+                """
+select
+ has_function_privilege('anon', %s, 'execute'),
+ has_function_privilege('authenticated', %s, 'execute'),
+ has_function_privilege('market_data_api', %s, 'execute')
+""",
+                (signature, signature, signature),
+            ).fetchone() == (True, True, True)
+        assert connection.execute(
+            """
+select
+ has_table_privilege('market_data_worker','core.shareholder_count','select'),
+ has_table_privilege('market_data_worker','core.shareholder_count','insert'),
+ has_table_privilege('market_data_worker','core.shareholder_count','update'),
+ has_table_privilege('market_data_worker','core.shareholder_count','delete')
+"""
+        ).fetchone() == (True, True, False, False)
+        assert connection.execute(
+            """
+select grantee, privilege_type
+from information_schema.role_table_grants
+where table_schema='core' and table_name='shareholder_count'
+order by grantee, privilege_type
+"""
+        ).fetchall() == [("market_data_worker", "INSERT"), ("market_data_worker", "SELECT")]
+
+    engine = create_engine(_sqlalchemy_url(migrated_database_url))
+    try:
+        with pytest.raises(DBAPIError), engine.begin() as connection:
+            connection.execute(
+                text("""
+select * from api_v1.query_shareholder_counts_as_of(
+ :as_of,cast(:symbols as text[]),500
+)
+"""),
+                {
+                    "as_of": date(2026, 8, 24),
+                    "symbols": [f"SSE:{index:06d}" for index in range(501)],
+                },
+            )
+        with pytest.raises(DBAPIError), engine.begin() as connection:
+            connection.execute(
+                text("""
+select * from api_v1.query_shareholder_count_history_latest(
+ :symbol,:start_date,:end_date,500
+)
+"""),
+                {
+                    "symbol": SYMBOL,
+                    "start_date": date(2026, 8, 2),
+                    "end_date": date(2026, 8, 1),
+                },
+            )
+    finally:
+        engine.dispose()
+
+
 @contextmanager
 def _temporary_database_url(admin_url: str) -> Iterator[str]:
     database_name = f"market_data_center_test_{uuid4().hex}"

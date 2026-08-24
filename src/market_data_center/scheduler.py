@@ -43,7 +43,7 @@ from market_data_center.persistence.close_price_new_highs_postgres import (
 from market_data_center.persistence.operations_postgres import PostgreSQLOperationsPersistence
 from market_data_center.persistence.stock_pool_postgres import PostgreSQLStockPoolPersistence
 from market_data_center.pipeline import BoardIndexIngestionPipeline, IngestionPipeline
-from market_data_center.providers import create_board_index_provider
+from market_data_center.providers import create_board_index_provider, create_provider
 from market_data_center.providers.contracts import ProviderError
 from market_data_center.providers.pytdx_hq import PytdxHqProvider
 from market_data_center.providers.pytdx_pool import (
@@ -65,6 +65,7 @@ from market_data_center.scheduling_catalog import (
     EOD_QUOTE_SNAPSHOT_JOB_ID,
     PYTDX_POOL_REFRESH_JOB_ID,
     SCHEDULER_TIMEZONE,
+    SHAREHOLDER_COUNT_DAILY_JOB_ID,
     STALE_RUN_RECOVERY_JOB_ID,
     STOCK_DAILY_INDICATOR_JOB_ID,
     STOCK_POOL_JOB_ID,
@@ -79,6 +80,7 @@ from market_data_center.settings import (
     SchedulerSettings,
     WorkerSettings,
 )
+from market_data_center.shareholder_count_service import ShareholderCountService
 from market_data_center.stock_pool_service import StockPoolService
 
 SCHEDULER_LOCK_KEY = "market-data-center:scheduler"
@@ -429,6 +431,49 @@ def run_deducted_profit_job() -> None:
         engine.dispose()
 
 
+def run_shareholder_count_daily_job() -> None:
+    """Synchronize the rolling shareholder-count disclosure window inside the Worker."""
+    settings = WorkerSettings()  # type: ignore[call-arg]
+    scheduling = SchedulerSettings()
+    engine = create_engine(
+        sqlalchemy_url(settings.database_url.get_secret_value()), pool_pre_ping=True
+    )
+    scheduled_for = _scheduled_job_fire_time(
+        SHAREHOLDER_COUNT_DAILY_JOB_ID,
+        scheduling,
+        weekdays_only=False,
+    )
+    as_of_date = datetime.now(ZoneInfo(SCHEDULER_TIMEZONE)).date()
+    try:
+        persistence = PostgreSQLPersistence(engine)
+        execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
+            WorkflowCode.SHAREHOLDER_COUNT_DAILY,
+            scheduled_for,
+            TriggerSource.SCHEDULED,
+        )
+        try:
+            with create_provider("tushare") as provider:
+                service = ShareholderCountService(
+                    IngestionPipeline(
+                        provider=provider,
+                        persistence=persistence,
+                        raw_store=LocalRawStore(settings.raw_data_root),
+                    ),
+                    persistence,
+                )
+                execution.step(
+                    "shareholder_count_daily",
+                    1,
+                    lambda: service.sync_daily(as_of_date),
+                )
+        except BaseException as error:
+            execution.fail(error)
+            raise
+        execution.succeed()
+    finally:
+        engine.dispose()
+
+
 def run_stock_pool_job() -> None:
     """Build exact next-trading-day main-board limit-up/down pools."""
     settings = WorkerSettings()  # type: ignore[call-arg]
@@ -667,6 +712,7 @@ def build_scheduler(settings: SchedulerSettings | None = None) -> BlockingSchedu
         STOCK_DAILY_INDICATOR_JOB_ID: run_stock_daily_indicator_job,
         STALE_RUN_RECOVERY_JOB_ID: run_stale_recovery_job,
         DEDUCTED_PROFIT_JOB_ID: run_deducted_profit_job,
+        SHAREHOLDER_COUNT_DAILY_JOB_ID: run_shareholder_count_daily_job,
         STOCK_POOL_JOB_ID: run_stock_pool_job,
         EOD_QUOTE_SNAPSHOT_JOB_ID: run_eod_quote_snapshot_job,
         CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID: run_call_auction_market_snapshot_job,

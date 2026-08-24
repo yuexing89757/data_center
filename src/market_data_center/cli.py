@@ -1,13 +1,13 @@
 """Manual phase-one ingestion commands."""
 
-from argparse import ArgumentParser, Namespace
+from argparse import SUPPRESS, ArgumentParser, Namespace
 from calendar import monthrange
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime, timedelta
 from functools import partial
 from json import dumps
-from sys import stderr
+from sys import stderr, stdin
 from time import monotonic
 from typing import cast
 from uuid import UUID
@@ -60,6 +60,11 @@ from market_data_center.reliability import (
     recover_stale_runs,
 )
 from market_data_center.settings import WorkerSettings
+from market_data_center.shareholder_count_batch import ShareholderCountSyncSummary
+from market_data_center.shareholder_count_service import (
+    ShareholderCountBackfillTarget,
+    ShareholderCountService,
+)
 from market_data_center.stock_pool_service import StockPoolService
 
 AUTO_PROVIDER_CODE = "auto"
@@ -90,12 +95,45 @@ def main() -> None:
 
         run_worker(check=args.check)
         return
+    if args.dataset in {"shareholder-count-daily", "shareholder-count-backfill"}:
+        _validate_shareholder_count_command(
+            args,
+            today=datetime.now(SHANGHAI_TIME_ZONE).date(),
+            interactive=stdin.isatty(),
+        )
     settings = WorkerSettings()  # type: ignore[call-arg]
     engine = create_engine(
         sqlalchemy_url(settings.database_url.get_secret_value()), pool_pre_ping=True
     )
     persistence = PostgreSQLPersistence(engine)
     raw_store = LocalRawStore(settings.raw_data_root)
+
+    if args.dataset in {"shareholder-count-daily", "shareholder-count-backfill"}:
+        workflow_code = (
+            WorkflowCode.SHAREHOLDER_COUNT_DAILY
+            if args.dataset == "shareholder-count-daily"
+            else WorkflowCode.SHAREHOLDER_COUNT_BACKFILL
+        )
+        execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
+            workflow_code,
+            datetime.now(UTC).replace(second=0, microsecond=0),
+            TriggerSource.MANUAL,
+        )
+        try:
+            shareholder_summary = run_shareholder_count_workflow(
+                args,
+                persistence,
+                raw_store,
+                today=datetime.now(SHANGHAI_TIME_ZONE).date(),
+                interactive=stdin.isatty(),
+                execution=execution,
+            )
+        except BaseException as error:
+            execution.fail(error)
+            raise
+        execution.succeed()
+        print(dumps(asdict(shareholder_summary), sort_keys=True))
+        return
 
     if args.dataset == "call-auction-indicative-detail":
         if not args.confirm_current_day_single_symbol:
@@ -447,6 +485,91 @@ def _run_reliability_command(
         end_date=end_date,
     )
     print(dumps(report.as_json(), ensure_ascii=False, sort_keys=True))
+
+
+def _validate_shareholder_count_command(
+    args: Namespace,
+    *,
+    today: date,
+    interactive: bool,
+) -> None:
+    if args.provider != "tushare":
+        raise SystemExit(f"{args.dataset} requires --provider tushare")
+    if args.dataset == "shareholder-count-daily":
+        if args.as_of_date is not None and date.fromisoformat(args.as_of_date) > today:
+            raise SystemExit("shareholder-count daily as-of date must not be in the future")
+        return
+    cutoff_date = date.fromisoformat(args.cutoff_date)
+    if cutoff_date > today:
+        raise SystemExit("shareholder-count backfill cutoff must not be in the future")
+    if not args.yes and not interactive:
+        raise SystemExit("shareholder-count backfill requires --yes in non-interactive mode")
+
+
+def run_shareholder_count_workflow(
+    args: Namespace,
+    persistence: PostgreSQLPersistence,
+    raw_store: LocalRawStore,
+    *,
+    today: date | None = None,
+    interactive: bool | None = None,
+    execution: WorkflowExecution | None = None,
+) -> ShareholderCountSyncSummary:
+    current_date = today or datetime.now(SHANGHAI_TIME_ZONE).date()
+    is_interactive = stdin.isatty() if interactive is None else interactive
+    _validate_shareholder_count_command(
+        args,
+        today=current_date,
+        interactive=is_interactive,
+    )
+    targets: tuple[ShareholderCountBackfillTarget, ...] = ()
+    cutoff_date: date | None = None
+    if args.dataset == "shareholder-count-backfill":
+        cutoff_date = date.fromisoformat(args.cutoff_date)
+        requested_symbols = set(args.symbols) if args.symbols else None
+        targets = persistence.shareholder_count_backfill_targets(
+            requested_symbols,
+            args.resume_after_symbol,
+        )
+        earliest = min((target.start_date for target in targets), default=None)
+        print(
+            "shareholder-count-backfill "
+            f"targets={len(targets)} "
+            f"estimated_minimum_requests={len(targets)} "
+            f"range={earliest.isoformat() if earliest else 'empty'}..{cutoff_date.isoformat()}"
+        )
+        if not args.yes:
+            confirmation = input("Type yes to start controlled shareholder-count backfill: ")
+            if confirmation.strip().lower() != "yes":
+                raise SystemExit("shareholder-count backfill cancelled")
+
+    with create_provider("tushare") as provider:
+        service = ShareholderCountService(
+            IngestionPipeline(
+                provider=provider,
+                raw_store=raw_store,
+                persistence=persistence,
+            ),
+            persistence,
+        )
+
+        def synchronize() -> ShareholderCountSyncSummary:
+            if args.dataset == "shareholder-count-daily":
+                as_of_date = (
+                    date.fromisoformat(args.as_of_date) if args.as_of_date else current_date
+                )
+                return service.sync_daily(as_of_date)
+            assert cutoff_date is not None
+            return service.backfill_targets(cutoff_date, targets)
+
+        if execution is None:
+            return synchronize()
+        job_code = (
+            "shareholder_count_daily"
+            if args.dataset == "shareholder-count-daily"
+            else "shareholder_count_backfill"
+        )
+        return execution.step(job_code, 1, synchronize)
 
 
 def _run_explicit(
@@ -1225,6 +1348,45 @@ def _parser() -> ArgumentParser:
     deducted_profit.add_argument(
         "--as-of-date",
         help="YYYY-MM-DD disclosure discovery date; defaults to Asia/Shanghai today",
+    )
+
+    shareholder_daily = subparsers.add_parser(
+        "shareholder-count-daily",
+        help="synchronize the rolling 30-day Tushare shareholder-count window",
+    )
+    shareholder_daily.add_argument(
+        "--as-of-date",
+        help="inclusive YYYY-MM-DD; defaults to the current Asia/Shanghai date",
+    )
+    shareholder_daily.add_argument(
+        "--provider",
+        choices=(AUTO_PROVIDER_CODE, *available_provider_codes()),
+        default=SUPPRESS,
+    )
+
+    shareholder_backfill = subparsers.add_parser(
+        "shareholder-count-backfill",
+        help="run an explicitly confirmed, sequential Tushare full-history backfill",
+    )
+    shareholder_backfill.add_argument("--cutoff-date", required=True, help="inclusive YYYY-MM-DD")
+    shareholder_backfill.add_argument(
+        "--symbols",
+        nargs="+",
+        help="optional standard-symbol subset; defaults to every known A-share stock",
+    )
+    shareholder_backfill.add_argument(
+        "--resume-after-symbol",
+        help="resume strictly after this standard symbol in deterministic order",
+    )
+    shareholder_backfill.add_argument(
+        "--yes",
+        action="store_true",
+        help="confirm non-interactive controlled full-history execution",
+    )
+    shareholder_backfill.add_argument(
+        "--provider",
+        choices=(AUTO_PROVIDER_CODE, *available_provider_codes()),
+        default=SUPPRESS,
     )
 
     stock_pools = subparsers.add_parser(

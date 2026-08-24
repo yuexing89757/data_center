@@ -40,6 +40,7 @@ EXPECTED_TABLES = {
     ("core", "deducted_profit"),
     ("core", "security"),
     ("core", "security_name_history"),
+    ("core", "shareholder_count"),
     ("core", "stock_daily_indicator"),
     ("core", "trading_calendar"),
     ("derived", "adjusted_daily_bar"),

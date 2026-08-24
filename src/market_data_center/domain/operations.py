@@ -34,6 +34,8 @@ class WorkflowCode(StrEnum):
     TODAY_LIMIT_UP_SNAPSHOT = "today_limit_up_snapshot"
     CLOSE_PRICE_NEW_HIGHS_120D = "close_price_new_highs_120d"
     BOARD_INDEX_DAILY_BAR = "board_index_daily_bar"
+    SHAREHOLDER_COUNT_DAILY = "shareholder_count_daily"
+    SHAREHOLDER_COUNT_BACKFILL = "shareholder_count_backfill"
 
 
 @dataclass(frozen=True, slots=True)

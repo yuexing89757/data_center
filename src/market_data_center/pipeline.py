@@ -54,6 +54,10 @@ from market_data_center.domain.records import (
     IngestionEnvelope,
     SecurityRecord,
 )
+from market_data_center.domain.shareholder_count import (
+    ShareholderCountRecord,
+    validate_shareholder_counts,
+)
 from market_data_center.domain.stock_daily_indicator import (
     StockDailyIndicatorSnapshotRecord,
     validate_stock_daily_indicators,
@@ -67,8 +71,10 @@ from market_data_center.providers.contracts import (
     ProviderBatch,
     ProviderError,
     ProviderRecord,
+    ShareholderCountProvider,
 )
 from market_data_center.raw_store import LocalRawStore, StoredRawObject
+from market_data_center.shareholder_count_batch import PreparedShareholderCountBatch
 
 
 class PipelinePersistence(Protocol):
@@ -113,6 +119,17 @@ class PipelinePersistence(Protocol):
     ) -> None: ...
 
     def commit_daily_bar_batches(self, batches: Sequence[PreparedDailyBarBatch]) -> None: ...
+
+    def commit_shareholder_count_batches(
+        self, batches: Sequence[PreparedShareholderCountBatch]
+    ) -> None: ...
+
+    def abort_shareholder_count_batches(
+        self,
+        batches: Sequence[PreparedShareholderCountBatch],
+        *,
+        error_type: str,
+    ) -> None: ...
 
     def commit_stock_daily_indicator_batch(
         self,
@@ -395,6 +412,64 @@ class IngestionPipeline:
                 raise
             except Exception as error:
                 self._record_failure(run, error)
+                raise
+
+    def prepare_shareholder_count_request(
+        self,
+        source_symbol: str | None,
+        start_date: date,
+        end_date: date,
+    ) -> PreparedShareholderCountBatch:
+        """Capture and validate one actual Tushare request without publishing its facts."""
+        params = {
+            "source_symbol": source_symbol,
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+        }
+        target = source_symbol or "all"
+        task_key = (
+            f"{self._provider.source_code}:shareholder_count:{target}:{start_date}:{end_date}"
+        )
+        with self._persistence.task_lock(task_key):
+            run = self._start_run(DatasetCode.SHAREHOLDER_COUNT, params)
+            manifest: RawManifest | None = None
+            fetched_rows = 0
+            try:
+                provider = cast(ShareholderCountProvider, self._provider)
+                batch = provider.fetch_shareholder_counts(source_symbol, start_date, end_date)
+                fetched_rows = len(batch.raw_rows)
+                manifest, normalized = self._stage_batch(run, batch)
+                if any(not isinstance(record, ShareholderCountRecord) for record in normalized):
+                    raise ProviderError(
+                        "shareholder-count request normalized to an unexpected record"
+                    )
+                records = normalized
+                validated = validate_shareholder_counts(
+                    records,
+                    known_symbols=self._persistence.known_symbols(
+                        {record.symbol for record in records}
+                    ),
+                )
+                completed = self._completed_run(run, fetched_rows, len(validated), 0)
+                return PreparedShareholderCountBatch(
+                    run=completed,
+                    manifest=manifest,
+                    records=tuple(self._envelopes(run.ingestion_id, validated)),
+                )
+            except _RecordedProviderError:
+                raise
+            except Exception as error:
+                if manifest is None:
+                    self._record_failure(run, error)
+                else:
+                    prepared = PreparedShareholderCountBatch(
+                        run=self._completed_run(run, fetched_rows, fetched_rows, 0),
+                        manifest=manifest,
+                        records=(),
+                    )
+                    self._persistence.abort_shareholder_count_batches(
+                        (prepared,), error_type=type(error).__name__
+                    )
                 raise
 
     def ingest_convertible_bonds(self) -> IngestionRun:
@@ -831,6 +906,7 @@ class IngestionPipeline:
         | ClassificationRecord
         | StockDailyIndicatorSnapshotRecord
         | DeductedProfitRecord
+        | ShareholderCountRecord
         | ConvertibleBondRecord
     ](ingestion_id: UUID, records: Sequence[RecordT]) -> tuple[IngestionEnvelope[RecordT], ...]:
         return tuple(IngestionEnvelope(ingestion_id, record) for record in records)

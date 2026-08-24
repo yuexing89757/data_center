@@ -51,6 +51,10 @@ from market_data_center.domain.records import (
     SecurityRecord,
     TradingDayRecord,
 )
+from market_data_center.domain.shareholder_count import (
+    ShareholderCountRecord,
+    validate_shareholder_counts,
+)
 from market_data_center.domain.stock_daily_indicator import (
     StockDailyIndicatorSnapshotRecord,
     validate_stock_daily_indicators,
@@ -63,6 +67,7 @@ from market_data_center.providers.contracts import ProviderError, ProviderRecord
 from market_data_center.providers.pytdx import normalize_pytdx_raw
 from market_data_center.providers.tushare import normalize_tushare_raw
 from market_data_center.raw_store import LocalRawStore, RawIntegrityError
+from market_data_center.shareholder_count_batch import PreparedShareholderCountBatch
 
 
 @dataclass(frozen=True, slots=True)
@@ -164,6 +169,10 @@ class ReliabilityPersistence(Protocol):
         run: IngestionRun,
         manifest: RawManifest | None,
         records: Sequence[IngestionEnvelope[DeductedProfitRecord]],
+    ) -> None: ...
+
+    def commit_shareholder_count_batches(
+        self, batches: Sequence[PreparedShareholderCountBatch]
     ) -> None: ...
 
     def commit_capital_batch(
@@ -445,6 +454,41 @@ class RawReplayService:
                     self._envelopes(completed.ingestion_id, validated),
                 )
             return self._summary(source, completed, dry_run, len(profit_records), len(validated), 0)
+
+        if source.dataset_code is DatasetCode.SHAREHOLDER_COUNT:
+            shareholder_records = cast(tuple[ShareholderCountRecord, ...], records)
+            validated_shareholder_records = validate_shareholder_counts(
+                shareholder_records,
+                known_symbols=self._persistence.known_symbols(
+                    {record.symbol for record in shareholder_records}
+                ),
+            )
+            completed = self._completed(
+                run,
+                len(shareholder_records),
+                len(validated_shareholder_records),
+                0,
+            )
+            if completed is not None:
+                self._persistence.commit_shareholder_count_batches(
+                    (
+                        PreparedShareholderCountBatch(
+                            run=completed,
+                            manifest=None,
+                            records=self._envelopes(
+                                completed.ingestion_id, validated_shareholder_records
+                            ),
+                        ),
+                    )
+                )
+            return self._summary(
+                source,
+                completed,
+                dry_run,
+                len(shareholder_records),
+                len(validated_shareholder_records),
+                0,
+            )
 
         if source.dataset_code is DatasetCode.CLASSIFICATION_CATALOG:
             if len(records) != 1 or not isinstance(records[0], ClassificationCatalogSnapshotRecord):
@@ -751,6 +795,7 @@ class RawReplayService:
         | BoardIndexProviderRecord
         | StockDailyIndicatorSnapshotRecord
         | DeductedProfitRecord
+        | ShareholderCountRecord
     ](ingestion_id: UUID, records: Sequence[RecordT]) -> tuple[IngestionEnvelope[RecordT], ...]:
         return tuple(IngestionEnvelope(ingestion_id, record) for record in records)
 

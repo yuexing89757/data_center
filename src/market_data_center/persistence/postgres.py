@@ -2,10 +2,11 @@
 
 from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import date, datetime
 from json import dumps
 from typing import cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import Connection, Engine, RowMapping, bindparam, text
 
@@ -33,8 +34,11 @@ from market_data_center.domain.entities import CalculatedTradingDay
 from market_data_center.domain.ingestion import (
     DatasetCode,
     IngestionRun,
+    IngestionStatus,
     ProviderCode,
     QualityResult,
+    QualitySeverity,
+    QualityStatus,
     RawFileFormat,
     RawManifest,
     ReplaySource,
@@ -53,7 +57,10 @@ from market_data_center.domain.records import (
     SecurityRecord,
     ShareCapitalRecord,
 )
+from market_data_center.domain.shareholder_count import ShareholderCountRecord
 from market_data_center.domain.stock_daily_indicator import StockDailyIndicatorSnapshotRecord
+from market_data_center.shareholder_count_batch import PreparedShareholderCountBatch
+from market_data_center.shareholder_count_service import ShareholderCountBackfillTarget
 
 INSERT_INGESTION_RUN = text("""
 insert into ingestion.ingestion_run (
@@ -266,6 +273,17 @@ insert into core.deducted_profit (
  :revision_key, :source_code, :ingestion_id
 )
 on conflict (symbol, report_period, revision_key) do nothing
+""")
+
+INSERT_SHAREHOLDER_COUNT = text("""
+insert into core.shareholder_count (
+    symbol, statistics_date, announcement_date, shareholder_count,
+    revision_key, source_code, ingestion_id
+) values (
+    :symbol, :statistics_date, :announcement_date, :shareholder_count,
+    :revision_key, :source_code, :ingestion_id
+)
+on conflict (symbol, statistics_date, revision_key) do nothing
 """)
 
 UPSERT_SHARE_CAPITAL = text("""
@@ -855,6 +873,46 @@ returning ingestion_id
         with self._engine.connect() as connection:
             return set(connection.execute(statement, {"symbols": list(symbols)}).scalars())
 
+    def shareholder_count_backfill_targets(
+        self,
+        symbols: Collection[str] | None,
+        resume_after_symbol: str | None,
+    ) -> tuple[ShareholderCountBackfillTarget, ...]:
+        requested = None if symbols is None else set(symbols)
+        statement = text("""
+select symbol, coalesce(ipo_date, date '1990-12-19') as start_date
+from core.security
+where security_type = 'stock'
+  and exchange in ('SSE', 'SZSE', 'BSE')
+  and (:all_symbols or symbol in :symbols)
+order by symbol
+""").bindparams(bindparam("symbols", expanding=True))
+        parameters = {
+            "all_symbols": requested is None,
+            "symbols": sorted(requested or {""}),
+        }
+        with self._engine.connect() as connection:
+            rows = connection.execute(statement, parameters).mappings().all()
+        targets = tuple(
+            ShareholderCountBackfillTarget(
+                symbol=str(row["symbol"]),
+                start_date=cast(date, row["start_date"]),
+            )
+            for row in rows
+        )
+        found = {target.symbol for target in targets}
+        if requested is not None:
+            missing = requested - found
+            if missing:
+                raise ValueError(
+                    "unknown shareholder-count backfill symbols: " + ", ".join(sorted(missing))
+                )
+        if resume_after_symbol is not None:
+            if resume_after_symbol not in found:
+                raise ValueError("resume-after shareholder-count symbol is not in target set")
+            targets = tuple(target for target in targets if target.symbol > resume_after_symbol)
+        return targets
+
     def known_board_ids(self, board_ids: Collection[str]) -> set[str]:
         if not board_ids:
             return set()
@@ -1203,6 +1261,80 @@ where market = 'CN_A_SHARE'
                     ],
                 )
             connection.execute(UPDATE_INGESTION_RUN, self._run_update_parameters(run))
+
+    def commit_shareholder_count_batches(
+        self, batches: Sequence[PreparedShareholderCountBatch]
+    ) -> None:
+        """Atomically publish validated facts while retaining request-level lineage."""
+        if not batches:
+            return
+        self._preflight_shareholder_count_batches(batches)
+        manifests = [batch.manifest for batch in batches if batch.manifest is not None]
+        quality_results = [result for batch in batches for result in batch.quality_results]
+        records = [record for batch in batches for record in batch.records]
+        with self._engine.begin() as connection:
+            if manifests:
+                connection.execute(
+                    INSERT_RAW_MANIFEST,
+                    [self._manifest_parameters(manifest) for manifest in manifests],
+                )
+            if quality_results:
+                connection.execute(INSERT_QUALITY_RESULT, self._quality_parameters(quality_results))
+            if records:
+                connection.execute(
+                    INSERT_SHAREHOLDER_COUNT,
+                    self._shareholder_count_envelope_parameters(records),
+                )
+            connection.execute(
+                UPDATE_INGESTION_RUN,
+                [self._run_update_parameters(batch.run) for batch in batches],
+            )
+
+    def abort_shareholder_count_batches(
+        self,
+        batches: Sequence[PreparedShareholderCountBatch],
+        *,
+        error_type: str,
+    ) -> None:
+        """Retain prepared Raw objects and fail all runs without publishing facts."""
+        if not batches:
+            return
+        self._preflight_shareholder_count_batches(batches)
+        failed_runs = [
+            replace(
+                batch.run,
+                status=IngestionStatus.FAILED,
+                accepted_rows=0,
+                rejected_rows=batch.run.fetched_rows,
+                error_summary=f"{error_type}: shareholder-count batch aborted",
+            )
+            for batch in batches
+        ]
+        quality_results = [
+            QualityResult(
+                quality_result_id=uuid4(),
+                ingestion_id=run.ingestion_id,
+                dataset_code=DatasetCode.SHAREHOLDER_COUNT,
+                rule_code="shareholder_count.batch_aborted",
+                severity=QualitySeverity.ERROR,
+                status=QualityStatus.FAILED,
+                message="Shareholder-count aggregate publication was aborted",
+                details={"error_type": error_type},
+            )
+            for run in failed_runs
+        ]
+        manifests = [batch.manifest for batch in batches if batch.manifest is not None]
+        with self._engine.begin() as connection:
+            if manifests:
+                connection.execute(
+                    INSERT_RAW_MANIFEST,
+                    [self._manifest_parameters(manifest) for manifest in manifests],
+                )
+            connection.execute(INSERT_QUALITY_RESULT, self._quality_parameters(quality_results))
+            connection.execute(
+                UPDATE_INGESTION_RUN,
+                [self._run_update_parameters(run) for run in failed_runs],
+            )
 
     def commit_capital_batch(
         self,
@@ -1598,6 +1730,58 @@ where board_id = :board_id and trade_date = :trade_date
             "row_count": manifest.row_count,
             "schema_version": manifest.schema_version,
         }
+
+    @classmethod
+    def _preflight_shareholder_count_batches(
+        cls, batches: Sequence[PreparedShareholderCountBatch]
+    ) -> None:
+        run_ids = [batch.run.ingestion_id for batch in batches]
+        if len(run_ids) != len(set(run_ids)):
+            raise ValueError("Shareholder-count commit contains duplicate ingestion IDs")
+        natural_keys: set[tuple[str, date, str]] = set()
+        for batch in batches:
+            run = batch.run
+            if run.dataset_code is not DatasetCode.SHAREHOLDER_COUNT:
+                raise ValueError("Shareholder-count batch has an unexpected dataset")
+            if run.provider_code is not ProviderCode.TUSHARE:
+                raise ValueError("Shareholder-count batch has an unexpected provider")
+            if batch.manifest is None:
+                if run.replayed_from_raw_id is None:
+                    raise ValueError("Live shareholder-count batch requires a Raw manifest")
+            else:
+                if batch.manifest.ingestion_id != run.ingestion_id:
+                    raise ValueError("Raw manifest does not match its shareholder-count run")
+                if run.replayed_from_raw_id is not None:
+                    raise ValueError("Shareholder-count replay must not copy a Raw manifest")
+            cls._ensure_envelope_ids(batch.records, run.ingestion_id)
+            if any(result.ingestion_id != run.ingestion_id for result in batch.quality_results):
+                raise ValueError("Quality result does not match its shareholder-count run")
+            for envelope in batch.records:
+                key = (
+                    envelope.record.symbol,
+                    envelope.record.statistics_date,
+                    envelope.record.revision_key,
+                )
+                if key in natural_keys:
+                    raise ValueError("Shareholder-count commit contains duplicate natural keys")
+                natural_keys.add(key)
+
+    @staticmethod
+    def _shareholder_count_envelope_parameters(
+        records: Iterable[IngestionEnvelope[ShareholderCountRecord]],
+    ) -> list[dict[str, object]]:
+        return [
+            {
+                "symbol": envelope.record.symbol,
+                "statistics_date": envelope.record.statistics_date,
+                "announcement_date": envelope.record.announcement_date,
+                "shareholder_count": envelope.record.shareholder_count,
+                "revision_key": envelope.record.revision_key,
+                "source_code": envelope.record.source_code,
+                "ingestion_id": envelope.ingestion_id,
+            }
+            for envelope in records
+        ]
 
     @classmethod
     def _insert_manifest(cls, connection: Connection, manifest: RawManifest | None) -> None:
@@ -2074,6 +2258,7 @@ where board_id = :board_id and trade_date = :trade_date
         | BoardIndexProviderRecord
         | StockDailyIndicatorSnapshotRecord
         | DeductedProfitRecord
+        | ShareholderCountRecord
         | ConvertibleBondRecord
     ](records: Iterable[IngestionEnvelope[RecordT]], ingestion_id: UUID) -> None:
         if any(envelope.ingestion_id != ingestion_id for envelope in records):

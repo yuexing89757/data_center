@@ -1,4 +1,5 @@
 from argparse import Namespace
+from contextlib import nullcontext
 from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
@@ -57,6 +58,132 @@ def test_stock_daily_indicator_bulk_parses_one_trade_date() -> None:
 
     assert args.provider == "tushare"
     assert args.trade_date == "2026-07-31"
+
+
+def test_shareholder_count_commands_parse_controlled_daily_and_backfill_inputs() -> None:
+    daily = _parser().parse_args(
+        [
+            "shareholder-count-daily",
+            "--as-of-date",
+            "2026-08-24",
+            "--provider",
+            "tushare",
+        ]
+    )
+    backfill = _parser().parse_args(
+        [
+            "shareholder-count-backfill",
+            "--cutoff-date",
+            "2026-08-24",
+            "--symbols",
+            "SSE:600000",
+            "BSE:920000",
+            "--resume-after-symbol",
+            "SSE:600000",
+            "--yes",
+            "--provider",
+            "tushare",
+        ]
+    )
+
+    assert daily.provider == "tushare"
+    assert daily.as_of_date == "2026-08-24"
+    assert backfill.symbols == ["SSE:600000", "BSE:920000"]
+    assert backfill.resume_after_symbol == "SSE:600000"
+    assert backfill.yes is True
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["shareholder-count-daily", "--provider", "akshare"],
+        [
+            "shareholder-count-backfill",
+            "--cutoff-date",
+            "2026-08-25",
+            "--yes",
+            "--provider",
+            "tushare",
+        ],
+        [
+            "shareholder-count-backfill",
+            "--cutoff-date",
+            "2026-08-24",
+            "--provider",
+            "tushare",
+        ],
+    ],
+)
+def test_shareholder_count_invalid_commands_fail_before_provider_creation(
+    argv: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    provider_calls = 0
+
+    def fail_provider_creation(provider_code: str):
+        nonlocal provider_calls
+        provider_calls += 1
+        raise AssertionError(provider_code)
+
+    monkeypatch.setattr(cli, "create_provider", fail_provider_creation)
+    args = _parser().parse_args(argv)
+
+    with pytest.raises(SystemExit):
+        cli.run_shareholder_count_workflow(
+            args,
+            cast(PostgreSQLPersistence, object()),
+            cast(LocalRawStore, object()),
+            today=date(2026, 8, 24),
+            interactive=False,
+        )
+
+    assert provider_calls == 0
+
+
+def test_shareholder_count_backfill_preview_includes_minimum_request_estimate(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    targets = (
+        cli.ShareholderCountBackfillTarget("BSE:920000", date(2020, 1, 1)),
+        cli.ShareholderCountBackfillTarget("SSE:600000", date(1999, 11, 10)),
+    )
+
+    class FakePersistence:
+        def shareholder_count_backfill_targets(self, symbols, resume_after_symbol):
+            return targets
+
+    class FakeService:
+        def __init__(self, pipeline, persistence) -> None:
+            pass
+
+        def backfill_targets(self, cutoff_date, requested_targets):
+            assert requested_targets == targets
+            return cli.ShareholderCountSyncSummary(2, 0, 0, 0)
+
+    monkeypatch.setattr(cli, "create_provider", lambda provider: nullcontext(object()))
+    monkeypatch.setattr(cli, "ShareholderCountService", FakeService)
+    args = _parser().parse_args(
+        [
+            "shareholder-count-backfill",
+            "--cutoff-date",
+            "2026-08-24",
+            "--yes",
+            "--provider",
+            "tushare",
+        ]
+    )
+
+    cli.run_shareholder_count_workflow(
+        args,
+        cast(PostgreSQLPersistence, FakePersistence()),
+        cast(LocalRawStore, object()),
+        today=date(2026, 8, 24),
+        interactive=False,
+    )
+
+    output = capsys.readouterr().out
+    assert "targets=2" in output
+    assert "estimated_minimum_requests=2" in output
 
 
 def test_stock_pool_commands_require_exact_dates_and_known_pool_codes() -> None:

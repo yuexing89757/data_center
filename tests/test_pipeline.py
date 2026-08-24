@@ -34,6 +34,7 @@ from market_data_center.domain import (
     SecurityStatus,
     SecurityType,
     ShareCapitalRecord,
+    ShareholderCountRecord,
     StockDailyIndicatorSnapshotRecord,
     TradeStatus,
     TradingDayRecord,
@@ -114,6 +115,27 @@ def _stock_daily_indicator() -> StockDailyIndicatorSnapshotRecord:
         circulating_market_value=Decimal("84000000"),
         price_limit_status=PriceLimitStatus.RISE,
         source_code="baostock",
+    )
+
+
+def _shareholder_count() -> ShareholderCountRecord:
+    from market_data_center.domain import shareholder_count_revision_key
+
+    statistics_date = date(2026, 6, 30)
+    announcement_date = date(2026, 7, 28)
+    count = 12_001
+    return ShareholderCountRecord(
+        symbol="SSE:600000",
+        statistics_date=statistics_date,
+        announcement_date=announcement_date,
+        shareholder_count=count,
+        revision_key=shareholder_count_revision_key(
+            symbol="SSE:600000",
+            statistics_date=statistics_date,
+            announcement_date=announcement_date,
+            shareholder_count=count,
+        ),
+        source_code="tushare",
     )
 
 
@@ -243,6 +265,28 @@ class StubProvider:
             raw_rows=[{"代码": "600000"}],
             request_params={},
             schema_version="classification-members.v1",
+        )
+
+
+class StubShareholderCountProvider(StubProvider):
+    source_code = "tushare"
+
+    def fetch_shareholder_counts(
+        self, source_symbol: str | None, start_date: date, end_date: date
+    ) -> ProviderBatch[ShareholderCountRecord]:
+        record = _shareholder_count()
+        return ProviderBatch(
+            records=[record],
+            raw_rows=[
+                {
+                    "ts_code": "600000.SH",
+                    "ann_date": "20260728",
+                    "end_date": "20260630",
+                    "holder_num": "12001",
+                }
+            ],
+            request_params={"source_symbol": source_symbol},
+            schema_version="tushare.shareholder_count.v1",
         )
 
 
@@ -701,6 +745,30 @@ def test_daily_bar_can_be_prepared_without_committing_facts(tmp_path: Path) -> N
     assert prepared.records[0].record.symbol == "SSE:600000"
     assert persistence.daily_commits == []
     assert len(persistence.created) == 1
+
+
+def test_shareholder_count_request_is_prepared_with_raw_without_core_commit(
+    tmp_path: Path,
+) -> None:
+    persistence = StubPersistence()
+    pipeline = IngestionPipeline(
+        provider=StubShareholderCountProvider(),
+        raw_store=LocalRawStore(tmp_path),
+        persistence=persistence,
+        clock=lambda: datetime(2026, 7, 28, 8, tzinfo=UTC),
+        uuid_factory=uuid4,
+    )
+
+    prepared = pipeline.prepare_shareholder_count_request(
+        "SSE:600000", date(2026, 7, 1), date(2026, 7, 28)
+    )
+
+    assert prepared.run.status is IngestionStatus.SUCCEEDED
+    assert prepared.run.dataset_code is DatasetCode.SHAREHOLDER_COUNT
+    assert prepared.manifest is not None
+    assert tmp_path.joinpath(*prepared.manifest.object_path.split("/")).exists()
+    assert prepared.records[0].record == _shareholder_count()
+    assert persistence.created[0].request_params["source_symbol"] == "SSE:600000"
 
 
 def test_provider_failure_marks_run_failed_without_leaking_message(tmp_path: Path) -> None:

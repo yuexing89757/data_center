@@ -18,6 +18,7 @@ ADR 记录已经接受的架构决策。其优先级低于项目宪法，高于�
 
 ## 当前 ADR
 
+- `ADR-0047-股东人数点时事实与Tushare采集.md`：新增 ShareholderCount 追加式点时事实，以 Tushare `stk_holdernumber` 受控回填并由 Worker 每日增量采集，区分严格 as-of 与 current-known 查询。
 - `ADR-0046-东方财富股票龙虎榜采集与只读契约.md`：新增独立 TradingBillboard 领域，以东方财富采集 A 股每日上榜汇总和买卖前五席位，提供按日期、股票和席位的有界只读契约。
 - `ADR-0045-腾讯实时五档API请求时直连且不落库.md`：实时五档 FastAPI 在请求时有界直连腾讯且不落库；仅对该接口替代 ADR-0044 的持久化读取边界。
 - `ADR-0044-腾讯批量实时五档Provider与只读契约.md`：其 Provider 字段、单位、Raw replay 与显式采集决定继续有效；持久化 FastAPI 读取边界已由 ADR-0045 替代。
