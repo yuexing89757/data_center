@@ -9,7 +9,7 @@
 
 新增独立的 `TradingBillboard` 领域，采集并保存 A 股每日龙虎榜上榜证券汇总，以及每条
 上榜记录对应的买入前五和卖出前五席位明细。事实必须可追溯到东方财富响应、采集批次和
-不可变 Raw 对象，并支持按准确交易日、按股票与日期范围进行有界读取。
+不可变 Raw 对象，并支持按准确交易日、按股票与日期范围、按席位与日期范围进行有界读取。
 
 首期只接受 `SSE`、`SZSE`、`BSE` 股票，不采集可转债。首期不保存或计算游资身份映射、
 营业部排行、席位成功率、上榜后收益、东财文本“解读”、交易建议或其他主观/衍生标签。
@@ -189,7 +189,9 @@ Manifest 记录 SHA-256、字节数、来源行数、请求交易日和三个来
 - `entry(trade_date, symbol, entry_id)`；
 - `entry(symbol, trade_date desc, entry_id)`；
 - `seat(entry_id, side, rank)`；
-- `seat(symbol, trade_date desc)`。
+- `seat(symbol, trade_date desc)`；
+- `seat(seat_code, trade_date desc, entry_id, side) where seat_code is not null`；
+- `seat(seat_name, trade_date desc, entry_id, side)`。
 
 同一日期回补创建新的采集批次和 Raw。内容哈希未变化时返回幂等结果；内容修订时在一个事务内
 更新汇总、替换该汇总的席位并把最新事实指向新 `ingestion_id`。旧来源版本由不可变 Raw 和采集
@@ -236,7 +238,7 @@ APScheduler 触发，执行前检查统一交易日历；非交易日正常跳�
 
 ## 公开读取契约
 
-新增两个只读、`SECURITY INVOKER`、5 秒 statement timeout 的 `api_v1` RPC：
+新增三个只读、`SECURITY INVOKER`、5 秒 statement timeout 的 `api_v1` RPC：
 
 ```text
 api_v1.query_trading_billboard_by_date(
@@ -252,19 +254,38 @@ api_v1.query_trading_billboard_by_symbol(
     p_limit default 100,
     p_offset default 0
 )
+
+api_v1.query_trading_billboard_by_seat(
+    p_seat_code,
+    p_seat_name,
+    p_start_date,
+    p_end_date,
+    p_side default null,
+    p_limit default 100,
+    p_offset default 0
+)
 ```
 
 日期查询只读取准确日期，不回退到更早日期。股票查询要求标准股票代码，起止日期闭区间且跨度
-不超过 366 个自然日。`limit` 必须为 1 至 500，offset 必须非负并受实现规定的最大值限制。
-结果按 `trade_date desc, symbol, entry_id` 稳定排序。
+不超过 366 个自然日。席位查询要求 `p_seat_code` 与 `p_seat_name` 必须且只能提供一个非空值；
+代码和名称均使用精确匹配，不提供模糊搜索。`p_side` 只接受 `buy`、`sell` 或 `null`，其中
+`null` 表示两个方向。无可靠代码的“机构专用”等席位通过精确名称查询。
+
+所有日期范围查询的跨度均不超过 366 个自然日。`limit` 必须为 1 至 500，`offset` 必须为
+0 至 10,000。按日期和股票查询的结果按
+`trade_date desc, symbol, entry_id` 稳定排序；按席位查询的结果按
+`trade_date desc, symbol, entry_id, side, rank` 稳定排序。
 
 每条结果包含汇总字段，以及按 `rank` 排序的 `buy_seats`、`sell_seats` JSON 数组。席位数组中的
-每项显式返回 `symbol` 和 `trade_date`。无事实时返回空集合，不触发实时东方财富请求。
+每项显式返回 `symbol` 和 `trade_date`。席位查询返回扁平的席位上榜记录，并组合所属汇总的
+股票、交易日、上榜原因、汇总买卖金额和来源事件标识。无事实时返回空集合，不触发实时
+东方财富请求。
 
 外部 FastAPI 只调用上述 `api_v1` RPC，不访问内部 schema，并提供：
 
 - 按准确交易日查询；
-- 按六位股票代码和日期范围查询。
+- 按六位股票代码和日期范围查询；
+- `GET /api/v1/trading-billboard/seats`，按精确席位代码或名称、日期范围和可选买卖方向查询。
 
 迁移和代码必须同步更新 `contracts/postgrest-openapi-v1.json`、
 `contracts/agent-tools-v1.json` 和 `contracts/fastapi-openapi-v1.json`。
@@ -290,7 +311,8 @@ api_v1.query_trading_billboard_by_symbol(
 - 相同内容幂等、来源修订、组合外键和事务回滚；
 - 未知证券、非交易日、证券生命周期和金额恒等式；
 - 空库迁移、RLS/GRANT、Worker 最小权限和消费者不可见内部表；
-- 两个 RPC 的日期范围、分页、稳定排序、空集合、权限和超时；
+- 三个 RPC 的日期范围、分页、稳定排序、空集合、权限和超时；
+- 席位代码/名称参数互斥、空白拒绝、精确名称、无代码“机构专用”和可选买卖方向；
 - FastAPI、PostgREST 和 Agent 三份契约同步。
 
 ### Worker 与生产检查
