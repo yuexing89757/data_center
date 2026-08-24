@@ -127,6 +127,46 @@ def test_latest_stock_daily_indicator_rpc_is_private_and_bounded() -> None:
     assert "to market_data_api" in migration
 
 
+def test_shareholder_count_migration_is_append_only_bitemporal_and_bounded() -> None:
+    migration = (MIGRATION_DIR / "20260824000100_create_shareholder_count.sql").read_text(
+        encoding="utf-8"
+    )
+    normalized = migration.lower()
+
+    assert "create table core.shareholder_count" in normalized
+    assert "primary key (symbol, statistics_date, revision_key)" in normalized
+    assert "statistics_date <= announcement_date" in normalized
+    assert "shareholder_count > 0" in normalized
+    assert "source_code = 'tushare'" in normalized
+    assert "first_observed_at timestamptz not null default now()" in normalized
+    assert "grant select, insert on core.shareholder_count to market_data_worker" in normalized
+    assert "grant update" not in normalized
+    assert "grant delete" not in normalized
+    for function_name in (
+        "query_shareholder_counts_as_of",
+        "query_shareholder_count_history_as_of",
+        "query_shareholder_count_history_latest",
+    ):
+        assert f"function api_v1.{function_name}" in normalized
+    assert normalized.count("language plpgsql") == 3
+    assert normalized.count("stable") >= 3
+    assert normalized.count("security definer") == 3
+    assert normalized.count("set statement_timeout = '5s'") == 3
+    assert "errcode = '22023'" in normalized
+    assert "cardinality" in normalized
+    assert "greatest(1, least(coalesce(p_limit, 500), 2000))" in normalized
+    assert "first_observed_at <" in normalized
+    assert "at time zone 'asia/shanghai'" in normalized
+    assert "row_number() over" in normalized
+    assert "lag(" in normalized
+    assert "return query" in normalized
+    assert "from public" in normalized
+    assert "to anon" in normalized
+    assert "to authenticated" in normalized
+    assert "to market_data_api" in normalized
+    assert not re.search(r"(?im)^grant\s+(update|delete|all).*core\.shareholder_count", normalized)
+
+
 def test_fastapi_preflight_and_docs_publish_realtime_auction_limits() -> None:
     assert "api_v1.query_auction_one_price_limits(date)" in PUBLISHED_FUNCTIONS
 
