@@ -6116,6 +6116,7 @@ def test_trading_billboard_seat_composite_parent_key_is_enforced(
                     "ingestion_id": ingestion_id,
                 },
             )
+
         with pytest.raises(IntegrityError), connection.begin_nested():
             connection.execute(
                 text("""
@@ -6134,6 +6135,33 @@ def test_trading_billboard_seat_composite_parent_key_is_enforced(
                     "ingestion_id": ingestion_id,
                 },
             )
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "select api_v1.query_trading_billboard_by_date(:day, null, 0)",
+        "select api_v1.query_trading_billboard_by_date(:day, 100, null)",
+        "select api_v1.query_trading_billboard_by_symbol(:symbol, :day, :day, null, 0)",
+        "select api_v1.query_trading_billboard_by_symbol(:symbol, :day, :day, 100, null)",
+        "select api_v1.query_trading_billboard_by_seat("
+        "null, '机构专用', :day, :day, null, null, 0)",
+        "select api_v1.query_trading_billboard_by_seat("
+        "null, '机构专用', :day, :day, null, 100, null)",
+    ],
+)
+def test_trading_billboard_rpcs_reject_null_pagination(
+    database_engine: Engine, statement: str
+) -> None:
+    with database_engine.connect() as connection:
+        connection.execute(text("set local role market_data_api"))
+        with pytest.raises(DBAPIError) as invalid:
+            connection.execute(
+                text(statement),
+                {"day": TRADE_DATE, "symbol": SYMBOL},
+            )
+
+    assert getattr(invalid.value.orig, "sqlstate", None) == "22023"
 
 
 def test_trading_billboard_persistence_is_idempotent_and_revision_is_atomic(
@@ -6286,6 +6314,31 @@ def test_trading_billboard_persistence_is_idempotent_and_revision_is_atomic(
     assert after_failure.ingestion_id == revision_id
     assert after_failure.content_hash == trading_billboard_content_hash(revised)
     assert broken_run_count == 0
+
+
+def test_replay_stock_lookup_enforces_type_and_lifecycle(database_engine: Engine) -> None:
+    _prepare_api_data(database_engine)
+    persistence = PostgreSQLPersistence(database_engine)
+
+    assert persistence.known_stock_symbols_for_date({SYMBOL}, TRADE_DATE) == {SYMBOL}
+
+    with database_engine.begin() as connection:
+        connection.execute(
+            text("update core.security set ipo_date=:future_date where symbol=:symbol"),
+            {"future_date": TRADE_DATE + timedelta(days=1), "symbol": SYMBOL},
+        )
+    assert persistence.known_stock_symbols_for_date({SYMBOL}, TRADE_DATE) == set()
+
+    with database_engine.begin() as connection:
+        connection.execute(
+            text("""
+                update core.security
+                set ipo_date=null, security_type='index'
+                where symbol=:symbol
+            """),
+            {"symbol": SYMBOL},
+        )
+    assert persistence.known_stock_symbols_for_date({SYMBOL}, TRADE_DATE) == set()
 
 
 def _envelopes[

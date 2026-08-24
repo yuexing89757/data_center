@@ -816,3 +816,12 @@ def test_active_release_files_do_not_reference_legacy_pytdx_settings() -> None:
     release_text = "\n".join(path.read_text(encoding="utf-8") for path in files if path.is_file())
 
     assert all(setting not in release_text for setting in legacy_settings)
+
+
+def test_trading_billboard_rpcs_reject_null_pagination_bounds() -> None:
+    migration = (
+        PROJECT_ROOT / "supabase/migrations/20260824000200_create_trading_billboard.sql"
+    ).read_text(encoding="utf-8")
+
+    assert migration.count("p_limit is null") == 3
+    assert migration.count("p_offset is null") == 3

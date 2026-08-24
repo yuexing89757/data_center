@@ -175,6 +175,42 @@ def test_validation_rejects_conflicting_source_key() -> None:
     assert result.findings[0].rule_code.endswith("conflicting_source_key")
 
 
+def test_validation_rejects_identical_duplicate_source_key() -> None:
+    record = _record()
+
+    result = _validate(record, record)
+
+    assert result.accepted == ()
+    assert result.rejected_rows == 2
+    assert result.findings[0].rule_code.endswith("duplicate_source_key")
+
+
+@pytest.mark.parametrize(
+    "record",
+    [
+        _record(
+            buy_amount=Decimal("60.002"),
+            sell_amount=Decimal("40.002"),
+            net_amount=Decimal("20.000"),
+            deal_amount=Decimal("100.005"),
+        ),
+        _record(
+            buy_amount=Decimal("40.000"),
+            sell_amount=Decimal("60.004"),
+            net_amount=Decimal("-20.005"),
+            deal_amount=Decimal("100.004"),
+        ),
+    ],
+)
+def test_validation_matches_postgres_half_away_from_zero_rounding(
+    record: TradingBillboardRecord,
+) -> None:
+    result = _validate(record)
+
+    assert result.accepted == ()
+    assert result.findings[0].rule_code.endswith(("invalid_deal_amount", "invalid_net_amount"))
+
+
 def test_validation_rejects_conflicting_semantic_key() -> None:
     record = _record()
     conflict = replace(record, source_event_id="100396304")

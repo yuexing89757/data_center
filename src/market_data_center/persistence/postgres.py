@@ -856,6 +856,25 @@ returning ingestion_id
         with self._engine.connect() as connection:
             return set(connection.execute(statement, {"symbols": list(symbols)}).scalars())
 
+    def known_stock_symbols_for_date(self, symbols: Collection[str], trade_date: date) -> set[str]:
+        if not symbols:
+            return set()
+        statement = text("""
+select symbol
+from core.security
+where symbol in :symbols
+  and security_type = 'stock'
+  and (ipo_date is null or ipo_date <= :trade_date)
+  and (delisting_date is null or delisting_date >= :trade_date)
+""").bindparams(bindparam("symbols", expanding=True))
+        with self._engine.connect() as connection:
+            return set(
+                connection.execute(
+                    statement,
+                    {"symbols": list(symbols), "trade_date": trade_date},
+                ).scalars()
+            )
+
     def known_board_ids(self, board_ids: Collection[str]) -> set[str]:
         if not board_ids:
             return set()

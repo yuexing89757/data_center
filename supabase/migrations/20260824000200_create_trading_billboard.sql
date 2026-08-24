@@ -193,8 +193,8 @@ declare
     total_count integer;
 begin
     if p_trade_date is null
-       or p_limit < 1 or p_limit > 500
-       or p_offset < 0 or p_offset > 10000 then
+       or p_limit is null or p_limit < 1 or p_limit > 500
+       or p_offset is null or p_offset < 0 or p_offset > 10000 then
         raise exception 'invalid trading billboard date query boundary'
             using errcode = '22023';
     end if;
@@ -296,8 +296,8 @@ begin
     if p_symbol is null or p_symbol !~ '^(SSE|SZSE|BSE):[0-9]{6}$'
        or p_start_date is null or p_end_date is null
        or p_start_date > p_end_date or p_end_date - p_start_date > 365
-       or p_limit < 1 or p_limit > 500
-       or p_offset < 0 or p_offset > 10000 then
+       or p_limit is null or p_limit < 1 or p_limit > 500
+       or p_offset is null or p_offset < 0 or p_offset > 10000 then
         raise exception 'invalid trading billboard symbol query boundary'
             using errcode = '22023';
     end if;
@@ -398,8 +398,8 @@ begin
        or p_start_date is null or p_end_date is null
        or p_start_date > p_end_date or p_end_date - p_start_date > 365
        or (p_side is not null and p_side not in ('buy', 'sell'))
-       or p_limit < 1 or p_limit > 500
-       or p_offset < 0 or p_offset > 10000 then
+       or p_limit is null or p_limit < 1 or p_limit > 500
+       or p_offset is null or p_offset < 0 or p_offset > 10000 then
         raise exception 'invalid trading billboard seat query boundary'
             using errcode = '22023';
     end if;

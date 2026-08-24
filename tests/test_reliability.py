@@ -111,6 +111,8 @@ class StubReliabilityPersistence:
         ] = []
         self.stale_ids = [UUID("948c4e5b-97a1-4706-a1de-09c14670108a")]
         self.recovery_args: tuple[datetime, datetime, str] | None = None
+        self.trading_billboard_stock_queries: list[tuple[set[str], date]] = []
+        self.trading_billboard_known_symbols: set[str] | None = None
 
     def create_ingestion_run(self, run: IngestionRun) -> None:
         self.created.append(run)
@@ -126,6 +128,15 @@ class StubReliabilityPersistence:
 
     def known_symbols(self, symbols: Collection[str]) -> set[str]:
         return set(symbols)
+
+    def known_stock_symbols_for_date(self, symbols: Collection[str], trade_date: date) -> set[str]:
+        symbol_set = set(symbols)
+        self.trading_billboard_stock_queries.append((symbol_set, trade_date))
+        return (
+            symbol_set
+            if self.trading_billboard_known_symbols is None
+            else self.trading_billboard_known_symbols & symbol_set
+        )
 
     def known_trading_dates(self, dates: Collection[date]) -> set[date]:
         return set(dates)
@@ -458,6 +469,31 @@ def test_trading_billboard_raw_replay_reuses_v1_without_http_or_new_manifest(
     assert findings == ()
     assert records[0].symbol == "SSE:600000"
     assert records[0].buy_seats[0].seat_code is None
+    assert persistence.trading_billboard_stock_queries == [({"SSE:600000"}, date(2026, 7, 29))]
+
+
+def test_trading_billboard_replay_rejects_raw_date_mismatching_request(tmp_path: Path) -> None:
+    store = LocalRawStore(tmp_path)
+    source = _trading_billboard_source(store, request_date="2026-07-28")
+    persistence = StubReliabilityPersistence(source)
+
+    with pytest.raises(ProviderError, match="request trade_date"):
+        RawReplayService(raw_store=store, persistence=persistence).replay(SOURCE_RUN_ID)
+
+    assert persistence.trading_billboard_commits == []
+
+
+def test_trading_billboard_replay_rejects_non_stock_or_inactive_symbol(tmp_path: Path) -> None:
+    store = LocalRawStore(tmp_path)
+    source = _trading_billboard_source(store, request_date="2026-07-29")
+    persistence = StubReliabilityPersistence(source)
+    persistence.trading_billboard_known_symbols = set()
+
+    replay = RawReplayService(raw_store=store, persistence=persistence).replay(SOURCE_RUN_ID)
+
+    assert replay.status == "failed"
+    assert persistence.trading_billboard_commits == []
+    assert len(persistence.rejected_commits) == 1
 
 
 def test_raw_replay_normalizes_and_commits_capital_facts(tmp_path: Path) -> None:
@@ -710,6 +746,51 @@ def test_cross_source_comparison_reports_differences_without_writes(tmp_path: Pa
     assert changed_fields["close"] == {"akshare": "10.60", "baostock": "10.50"}
     assert persistence.created == []
     assert persistence.daily_commits == []
+
+
+def _trading_billboard_source(store: LocalRawStore, *, request_date: str) -> ReplaySource:
+    common = {
+        "TRADE_ID": "replay-event",
+        "SECUCODE": "600000.SH",
+        "TRADE_DATE": "2026-07-29 00:00:00",
+    }
+    summary = {
+        **common,
+        "CHANGE_TYPE": "106001",
+        "EXPLANATION": "测试原因",
+        "BILLBOARD_BUY_AMT": "600",
+        "BILLBOARD_SELL_AMT": "400",
+        "BILLBOARD_NET_AMT": "200",
+        "BILLBOARD_DEAL_AMT": "1000",
+    }
+    seat = {
+        **common,
+        "OPERATEDEPT_NAME": "机构专用",
+        "BUY": "120",
+        "SELL": "20",
+        "NET": "100",
+    }
+    rows = [
+        {
+            "record_kind": kind,
+            "source_page": "1",
+            "source_index": "0",
+            "payload_json": dumps(payload, ensure_ascii=False, sort_keys=True),
+        }
+        for kind, payload in (
+            ("summary", summary),
+            ("buy_seat", seat),
+            ("sell_seat", seat),
+        )
+    ]
+    return _source(
+        store,
+        provider=ProviderCode.EASTMONEY,
+        dataset=DatasetCode.TRADING_BILLBOARD,
+        schema_version="eastmoney.trading_billboard.v1",
+        rows=rows,
+        request_params={"trade_date": request_date},
+    )
 
 
 def _source(

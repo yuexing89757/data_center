@@ -129,6 +129,10 @@ class ReliabilityPersistence(Protocol):
 
     def known_symbols(self, symbols: Collection[str]) -> set[str]: ...
 
+    def known_stock_symbols_for_date(
+        self, symbols: Collection[str], trade_date: date
+    ) -> set[str]: ...
+
     def known_trading_dates(self, dates: Collection[date]) -> set[date]: ...
 
     def known_board_ids(self, board_ids: Collection[str]) -> set[str]: ...
@@ -258,8 +262,8 @@ _NORMALIZERS: Mapping[ProviderCode, Normalizer] = {
     ProviderCode.BAOSTOCK: normalize_baostock_raw,
     ProviderCode.PYTDX: normalize_pytdx_raw,
     ProviderCode.TUSHARE: normalize_tushare_raw,
-    ProviderCode.EASTMONEY: lambda dataset, schema, rows, _params: (
-        normalize_eastmoney_trading_billboard_raw(rows, schema)
+    ProviderCode.EASTMONEY: lambda dataset, schema, rows, params: (
+        _normalize_eastmoney_trading_billboard_replay(schema, rows, params)
         if dataset is DatasetCode.TRADING_BILLBOARD
         else _unsupported_eastmoney_replay(dataset)
     ),
@@ -268,6 +272,28 @@ _NORMALIZERS: Mapping[ProviderCode, Normalizer] = {
 
 def _unsupported_eastmoney_replay(dataset: DatasetCode) -> tuple[ProviderRecord, ...]:
     raise ProviderError(f"Eastmoney Raw replay is unsupported for {dataset.value}")
+
+
+def _normalize_eastmoney_trading_billboard_replay(
+    schema: str,
+    rows: Sequence[Mapping[str, str]],
+    request_params: Mapping[str, object],
+) -> tuple[ProviderRecord, ...]:
+    requested_value = request_params.get("trade_date")
+    if not isinstance(requested_value, str):
+        raise ProviderError("Eastmoney trading billboard replay request trade_date is missing")
+    try:
+        requested_date = date.fromisoformat(requested_value)
+    except ValueError as error:
+        raise ProviderError(
+            "Eastmoney trading billboard replay request trade_date is invalid"
+        ) from error
+    records = normalize_eastmoney_trading_billboard_raw(rows, schema)
+    if any(record.trade_date != requested_date for record in records):
+        raise ProviderError(
+            "Eastmoney trading billboard Raw date does not match request trade_date"
+        )
+    return records
 
 
 CALL_AUCTION_MARKET_REPLAY_DISABLED = (
@@ -339,10 +365,16 @@ class RawReplayService:
     ) -> ReplaySummary:
         if source.dataset_code is DatasetCode.TRADING_BILLBOARD:
             billboard_records = cast(tuple[TradingBillboardRecord, ...], records)
+            billboard_trade_date = (
+                billboard_records[0].trade_date
+                if billboard_records
+                else date.fromisoformat(cast(str, source.request_params["trade_date"]))
+            )
             billboard_validation = validate_trading_billboards(
                 billboard_records,
-                known_symbols=self._persistence.known_symbols(
-                    {record.symbol for record in billboard_records}
+                known_symbols=self._persistence.known_stock_symbols_for_date(
+                    {record.symbol for record in billboard_records},
+                    billboard_trade_date,
                 ),
                 known_trading_dates=self._persistence.known_trading_dates(
                     {record.trade_date for record in billboard_records}

@@ -4,7 +4,7 @@ import json
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from enum import StrEnum
 from hashlib import sha256
 
@@ -150,6 +150,11 @@ def validate_trading_billboards(
     conflicting_source_keys = {
         key for key, group in source_groups.items() if any(item != group[0] for item in group[1:])
     }
+    duplicate_source_keys = {
+        key
+        for key, group in source_groups.items()
+        if len(group) > 1 and key not in conflicting_source_keys
+    }
     conflicting_semantic_keys = {
         key
         for key, group in semantic_groups.items()
@@ -169,6 +174,16 @@ def validate_trading_billboards(
                 _finding(
                     "conflicting_source_key",
                     "batch contains conflicting facts for one source event",
+                    natural_key,
+                )
+            )
+            continue
+        if source_key in duplicate_source_keys:
+            rejected_rows += len(group)
+            findings.append(
+                _finding(
+                    "duplicate_source_key",
+                    "batch contains duplicate facts for one source event",
                     natural_key,
                 )
             )
@@ -261,7 +276,9 @@ def _require_nonnegative(*values: Decimal | None) -> None:
 
 
 def _equal_at_cent(left: Decimal, right: Decimal) -> bool:
-    return left.quantize(_CENT) == right.quantize(_CENT)
+    return left.quantize(_CENT, rounding=ROUND_HALF_UP) == right.quantize(
+        _CENT, rounding=ROUND_HALF_UP
+    )
 
 
 def _decimal_text(value: Decimal | None) -> str | None:
