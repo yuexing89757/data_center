@@ -238,7 +238,8 @@ APScheduler 触发，执行前检查统一交易日历；非交易日正常跳�
 
 ## 公开读取契约
 
-新增三个只读、`SECURITY INVOKER`、5 秒 statement timeout 的 `api_v1` RPC：
+新增三个锁定 `search_path` 的只读 `SECURITY DEFINER`、5 秒 statement timeout 的
+`api_v1` RPC。API 角色只有函数执行权，没有内部表读取权：
 
 ```text
 api_v1.query_trading_billboard_by_date(

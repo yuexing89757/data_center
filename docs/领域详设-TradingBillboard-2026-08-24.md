@@ -235,7 +235,8 @@ Operations 记录汇总数、买席位数、卖席位数、过滤非股票数、
 
 ## 10. `api_v1` 读取契约
 
-三个 RPC 都是 `SECURITY INVOKER`，使用 5 秒 statement timeout，只读取数据库且不触发采集。
+三个 RPC 都是锁定 `search_path` 的只读 `SECURITY DEFINER`，使用 5 秒 statement timeout，只向
+API 角色授予函数执行权，不授予内部表读取权；RPC 只读取数据库且不触发采集。
 
 ### 10.1 按准确交易日
 
