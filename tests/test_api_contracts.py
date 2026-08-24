@@ -22,6 +22,9 @@ EXPECTED_ENDPOINTS = {
     "query_call_auction_market_series_snapshots",
     "query_board_index_bias_latest",
     "query_close_price_new_highs_120d",
+    "query_trading_billboard_by_date",
+    "query_trading_billboard_by_symbol",
+    "query_trading_billboard_by_seat",
 }
 
 
@@ -218,6 +221,41 @@ def test_latest_stock_daily_indicator_contract_is_bounded_and_decimal_safe() -> 
     assert item_schema["properties"]["close"]["anyOf"][0]["type"] == "string"
     assert item_schema["properties"]["total_market_value"]["anyOf"][0]["type"] == "string"
     assert {"401", "422", "503"}.issubset(operation["responses"])
+
+
+def test_trading_billboard_contracts_are_bounded_exact_and_decimal_safe() -> None:
+    postgrest = _load("postgrest-openapi-v1.json")
+    agent = _load("agent-tools-v1.json")
+    fastapi = _load("fastapi-openapi-v1.json")
+
+    for endpoint in (
+        "query_trading_billboard_by_date",
+        "query_trading_billboard_by_symbol",
+        "query_trading_billboard_by_seat",
+    ):
+        assert f"/rpc/{endpoint}" in postgrest["paths"]
+        assert any(tool["endpoint"] == endpoint for tool in agent["tools"])
+
+    paths = fastapi["paths"]
+    assert "/api/v1/trading-billboard/by-date" in paths
+    assert "/api/v1/trading-billboard/by-symbol/{code}" in paths
+    seat_operation = paths["/api/v1/trading-billboard/seats"]["get"]
+    parameters = {item["name"]: item["schema"] for item in seat_operation["parameters"]}
+    assert parameters["limit"]["maximum"] == 500
+    assert parameters["offset"]["maximum"] == 10000
+    assert parameters["side"]["anyOf"][0]["enum"] == ["buy", "sell"]
+    assert "只能提供一个" in seat_operation["description"]
+
+    item = fastapi["components"]["schemas"]["TradingBillboardItem"]
+    assert item["properties"]["close_price"]["anyOf"][0]["type"] == "string"
+    assert "buy_seats" in item["properties"]
+    occurrence = fastapi["components"]["schemas"]["TradingBillboardSeatOccurrenceItem"]
+    assert occurrence["properties"]["summary_net_amount"]["type"] == "string"
+
+    serialized = dumps([postgrest, agent, fastapi], ensure_ascii=False).lower()
+    assert "billboard.entry" not in serialized
+    assert "billboard.seat" not in serialized
+    assert "payload_json" not in serialized
 
 
 def test_close_price_new_highs_contract_is_no_input_strict_and_bounded() -> None:

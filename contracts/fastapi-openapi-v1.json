@@ -4147,6 +4147,622 @@
         "title": "TradeStatus",
         "type": "string"
       },
+      "TradingBillboardItem": {
+        "additionalProperties": false,
+        "properties": {
+          "buy_amount": {
+            "description": "买入金额，单位为人民币元。",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Buy Amount",
+            "type": "string"
+          },
+          "buy_seats": {
+            "description": "买入金额前五席位明细。",
+            "items": {
+              "$ref": "#/components/schemas/TradingBillboardSeatItem"
+            },
+            "title": "Buy Seats",
+            "type": "array"
+          },
+          "change_rate_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "涨跌幅，单位为百分比。",
+            "title": "Change Rate Pct"
+          },
+          "close_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "当日收盘价。",
+            "title": "Close Price"
+          },
+          "deal_amount": {
+            "description": "龙虎榜成交金额，单位为人民币元。",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Deal Amount",
+            "type": "string"
+          },
+          "deal_to_market_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "龙虎榜成交金额占当日市场成交额的比例，单位为百分比。",
+            "title": "Deal To Market Pct"
+          },
+          "free_float_market_value": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "自由流通市值，单位为人民币元。",
+            "title": "Free Float Market Value"
+          },
+          "market_amount": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "证券当日市场成交额，单位为人民币元。",
+            "title": "Market Amount"
+          },
+          "net_amount": {
+            "description": "净买入金额，单位为人民币元。",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Net Amount",
+            "type": "string"
+          },
+          "net_to_market_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "净买入金额占当日市场成交额的比例，单位为百分比。",
+            "title": "Net To Market Pct"
+          },
+          "reason_code": {
+            "description": "上榜原因代码。",
+            "title": "Reason Code",
+            "type": "string"
+          },
+          "reason_text": {
+            "description": "上榜原因说明。",
+            "title": "Reason Text",
+            "type": "string"
+          },
+          "sell_amount": {
+            "description": "卖出金额，单位为人民币元。",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Sell Amount",
+            "type": "string"
+          },
+          "sell_seats": {
+            "description": "卖出金额前五席位明细。",
+            "items": {
+              "$ref": "#/components/schemas/TradingBillboardSeatItem"
+            },
+            "title": "Sell Seats",
+            "type": "array"
+          },
+          "source_code": {
+            "const": "eastmoney",
+            "description": "数据来源代码；龙虎榜接口固定为 eastmoney。",
+            "title": "Source Code",
+            "type": "string"
+          },
+          "source_event_id": {
+            "description": "数据源龙虎榜事件标识。",
+            "title": "Source Event Id",
+            "type": "string"
+          },
+          "symbol": {
+            "description": "带交易所前缀的标准证券代码。",
+            "title": "Symbol",
+            "type": "string"
+          },
+          "trade_date": {
+            "description": "交易日。",
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "turnover_rate_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "换手率，单位为百分比。",
+            "title": "Turnover Rate Pct"
+          }
+        },
+        "required": [
+          "symbol",
+          "trade_date",
+          "source_event_id",
+          "reason_code",
+          "reason_text",
+          "close_price",
+          "change_rate_pct",
+          "turnover_rate_pct",
+          "market_amount",
+          "buy_amount",
+          "sell_amount",
+          "net_amount",
+          "deal_amount",
+          "deal_to_market_pct",
+          "net_to_market_pct",
+          "free_float_market_value",
+          "source_code",
+          "buy_seats",
+          "sell_seats"
+        ],
+        "title": "TradingBillboardItem",
+        "type": "object"
+      },
+      "TradingBillboardPageResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "has_more": {
+            "description": "是否还有未返回的记录。",
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "items": {
+            "description": "返回的数据记录列表。",
+            "items": {
+              "$ref": "#/components/schemas/TradingBillboardItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "description": "最多返回的记录数。",
+            "maximum": 500.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "description": "从结果集起点跳过的记录数。",
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Offset",
+            "type": "integer"
+          },
+          "returned_count": {
+            "description": "本次实际返回的记录数。",
+            "minimum": 0.0,
+            "title": "Returned Count",
+            "type": "integer"
+          },
+          "total_count": {
+            "description": "符合查询条件的记录总数。",
+            "minimum": 0.0,
+            "title": "Total Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "returned_count",
+          "total_count",
+          "has_more",
+          "limit",
+          "offset"
+        ],
+        "title": "TradingBillboardPageResponse",
+        "type": "object"
+      },
+      "TradingBillboardSeatItem": {
+        "additionalProperties": false,
+        "properties": {
+          "buy_amount": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "买入金额，单位为人民币元。",
+            "title": "Buy Amount"
+          },
+          "buy_to_market_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "席位买入金额占当日市场成交额的比例，单位为百分比。",
+            "title": "Buy To Market Pct"
+          },
+          "net_amount": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "净买入金额，单位为人民币元。",
+            "title": "Net Amount"
+          },
+          "rank": {
+            "description": "席位在买入或卖出方向中的名次。",
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Rank",
+            "type": "integer"
+          },
+          "seat_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "数据源提供的营业部席位代码。",
+            "title": "Seat Code"
+          },
+          "seat_name": {
+            "description": "数据源提供的营业部席位名称。",
+            "title": "Seat Name",
+            "type": "string"
+          },
+          "sell_amount": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "卖出金额，单位为人民币元。",
+            "title": "Sell Amount"
+          },
+          "sell_to_market_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "席位卖出金额占当日市场成交额的比例，单位为百分比。",
+            "title": "Sell To Market Pct"
+          },
+          "side": {
+            "description": "席位方向，buy 表示买入，sell 表示卖出。",
+            "enum": [
+              "buy",
+              "sell"
+            ],
+            "title": "Side",
+            "type": "string"
+          },
+          "source_event_id": {
+            "description": "数据源龙虎榜事件标识。",
+            "title": "Source Event Id",
+            "type": "string"
+          },
+          "symbol": {
+            "description": "带交易所前缀的标准证券代码。",
+            "title": "Symbol",
+            "type": "string"
+          },
+          "trade_date": {
+            "description": "交易日。",
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "trade_date",
+          "source_event_id",
+          "side",
+          "rank",
+          "seat_code",
+          "seat_name",
+          "buy_amount",
+          "sell_amount",
+          "net_amount",
+          "buy_to_market_pct",
+          "sell_to_market_pct"
+        ],
+        "title": "TradingBillboardSeatItem",
+        "type": "object"
+      },
+      "TradingBillboardSeatOccurrenceItem": {
+        "additionalProperties": false,
+        "properties": {
+          "buy_amount": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "买入金额，单位为人民币元。",
+            "title": "Buy Amount"
+          },
+          "buy_to_market_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "席位买入金额占当日市场成交额的比例，单位为百分比。",
+            "title": "Buy To Market Pct"
+          },
+          "net_amount": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "净买入金额，单位为人民币元。",
+            "title": "Net Amount"
+          },
+          "rank": {
+            "description": "席位在买入或卖出方向中的名次。",
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Rank",
+            "type": "integer"
+          },
+          "reason_code": {
+            "description": "上榜原因代码。",
+            "title": "Reason Code",
+            "type": "string"
+          },
+          "reason_text": {
+            "description": "上榜原因说明。",
+            "title": "Reason Text",
+            "type": "string"
+          },
+          "seat_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "数据源提供的营业部席位代码。",
+            "title": "Seat Code"
+          },
+          "seat_name": {
+            "description": "数据源提供的营业部席位名称。",
+            "title": "Seat Name",
+            "type": "string"
+          },
+          "sell_amount": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "卖出金额，单位为人民币元。",
+            "title": "Sell Amount"
+          },
+          "sell_to_market_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "席位卖出金额占当日市场成交额的比例，单位为百分比。",
+            "title": "Sell To Market Pct"
+          },
+          "side": {
+            "description": "席位方向，buy 表示买入，sell 表示卖出。",
+            "enum": [
+              "buy",
+              "sell"
+            ],
+            "title": "Side",
+            "type": "string"
+          },
+          "source_code": {
+            "const": "eastmoney",
+            "description": "数据来源代码；龙虎榜接口固定为 eastmoney。",
+            "title": "Source Code",
+            "type": "string"
+          },
+          "source_event_id": {
+            "description": "数据源龙虎榜事件标识。",
+            "title": "Source Event Id",
+            "type": "string"
+          },
+          "summary_buy_amount": {
+            "description": "所属证券上榜汇总的买入金额，单位为人民币元。",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Summary Buy Amount",
+            "type": "string"
+          },
+          "summary_deal_amount": {
+            "description": "所属证券上榜汇总的成交金额，单位为人民币元。",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Summary Deal Amount",
+            "type": "string"
+          },
+          "summary_net_amount": {
+            "description": "所属证券上榜汇总的净买入金额，单位为人民币元。",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Summary Net Amount",
+            "type": "string"
+          },
+          "summary_sell_amount": {
+            "description": "所属证券上榜汇总的卖出金额，单位为人民币元。",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Summary Sell Amount",
+            "type": "string"
+          },
+          "symbol": {
+            "description": "带交易所前缀的标准证券代码。",
+            "title": "Symbol",
+            "type": "string"
+          },
+          "trade_date": {
+            "description": "交易日。",
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "trade_date",
+          "source_event_id",
+          "side",
+          "rank",
+          "seat_code",
+          "seat_name",
+          "buy_amount",
+          "sell_amount",
+          "net_amount",
+          "buy_to_market_pct",
+          "sell_to_market_pct",
+          "reason_code",
+          "reason_text",
+          "summary_buy_amount",
+          "summary_sell_amount",
+          "summary_net_amount",
+          "summary_deal_amount",
+          "source_code"
+        ],
+        "title": "TradingBillboardSeatOccurrenceItem",
+        "type": "object"
+      },
+      "TradingBillboardSeatPageResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "has_more": {
+            "description": "是否还有未返回的记录。",
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "items": {
+            "description": "返回的数据记录列表。",
+            "items": {
+              "$ref": "#/components/schemas/TradingBillboardSeatOccurrenceItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "description": "最多返回的记录数。",
+            "maximum": 500.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "description": "从结果集起点跳过的记录数。",
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Offset",
+            "type": "integer"
+          },
+          "returned_count": {
+            "description": "本次实际返回的记录数。",
+            "minimum": 0.0,
+            "title": "Returned Count",
+            "type": "integer"
+          },
+          "total_count": {
+            "description": "符合查询条件的记录总数。",
+            "minimum": 0.0,
+            "title": "Total Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "returned_count",
+          "total_count",
+          "has_more",
+          "limit",
+          "offset"
+        ],
+        "title": "TradingBillboardSeatPageResponse",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -5403,6 +6019,394 @@
           }
         ],
         "summary": "查询最近二十个交易日涨幅榜",
+        "tags": [
+          "市场数据"
+        ]
+      }
+    },
+    "/api/v1/trading-billboard/by-date": {
+      "get": {
+        "description": "按指定交易日精确查询龙虎榜汇总及买入、卖出前五席位，不回退其他日期。",
+        "operationId": "trading_billboard_by_date_api_v1_trading_billboard_by_date_get",
+        "parameters": [
+          {
+            "description": "交易日。",
+            "in": "query",
+            "name": "trade_date",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "Trade Date",
+              "type": "string"
+            }
+          },
+          {
+            "description": "最多返回的记录数。",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "从结果集起点跳过的记录数。",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 10000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TradingBillboardPageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "按交易日查询龙虎榜证券与前五席位",
+        "tags": [
+          "市场数据"
+        ]
+      }
+    },
+    "/api/v1/trading-billboard/by-symbol/{code}": {
+      "get": {
+        "description": "先通过公开证券查询解析六位股票代码，再查询最长三百六十六日的龙虎榜历史。",
+        "operationId": "trading_billboard_by_symbol_api_v1_trading_billboard_by_symbol__code__get",
+        "parameters": [
+          {
+            "description": "不含交易所前缀的六位股票代码。",
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9]{6}$",
+              "title": "Code",
+              "type": "string"
+            }
+          },
+          {
+            "description": "查询开始日期，包含当日。",
+            "in": "query",
+            "name": "start_date",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "Start Date",
+              "type": "string"
+            }
+          },
+          {
+            "description": "查询结束日期，包含当日。",
+            "in": "query",
+            "name": "end_date",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "End Date",
+              "type": "string"
+            }
+          },
+          {
+            "description": "最多返回的记录数。",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "从结果集起点跳过的记录数。",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 10000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TradingBillboardPageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "按股票代码查询龙虎榜历史",
+        "tags": [
+          "市场数据"
+        ]
+      }
+    },
+    "/api/v1/trading-billboard/seats": {
+      "get": {
+        "description": "按席位代码或席位名称精确查询，可选买入或卖出方向；两个席位参数必须且只能提供一个。",
+        "operationId": "trading_billboard_by_seat_api_v1_trading_billboard_seats_get",
+        "parameters": [
+          {
+            "description": "查询开始日期，包含当日。",
+            "in": "query",
+            "name": "start_date",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "Start Date",
+              "type": "string"
+            }
+          },
+          {
+            "description": "查询结束日期，包含当日。",
+            "in": "query",
+            "name": "end_date",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "End Date",
+              "type": "string"
+            }
+          },
+          {
+            "description": "数据源提供的营业部席位代码。",
+            "in": "query",
+            "name": "seat_code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Seat Code"
+            }
+          },
+          {
+            "description": "数据源提供的营业部席位名称。",
+            "in": "query",
+            "name": "seat_name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 300,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Seat Name"
+            }
+          },
+          {
+            "description": "席位方向，buy 表示买入，sell 表示卖出。",
+            "in": "query",
+            "name": "side",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "buy",
+                    "sell"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Side"
+            }
+          },
+          {
+            "description": "最多返回的记录数。",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "从结果集起点跳过的记录数。",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 10000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TradingBillboardSeatPageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "查询营业部席位龙虎榜记录",
         "tags": [
           "市场数据"
         ]

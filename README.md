@@ -133,6 +133,19 @@ batch code and bid/ask levels 1–5; a missing price with positive volume is pre
 fact. The retired limit-up-pool auction collector is not registered by the Worker, while its
 historical workflow and stored facts remain readable.
 
+Eastmoney trading-billboard collection is opt-in and remains disabled until source-rights review
+is recorded (`TRADING_BILLBOARD_ENABLED=false`). The explicit command requires
+`--confirm-eastmoney-source-terms-reviewed`; the Worker catalog slot is fixed at weekdays 20:30
+Asia/Shanghai. It captures only daily listed-security summaries and buy/sell top-five seat details,
+writes immutable JSONL Raw (`eastmoney.trading_billboard.v1`) before normalization, and does not
+derive investor identities or trading judgments.
+
+Authenticated reads are `GET /api/v1/trading-billboard/by-date`,
+`GET /api/v1/trading-billboard/by-symbol/{code}`, and
+`GET /api/v1/trading-billboard/seats`. Date queries never fall back or fetch live data; ranges are
+limited to 366 calendar days, pages to 500 records, and offsets to 10,000. Seat lookup accepts
+exactly one exact `seat_code` or trimmed exact `seat_name`, with optional `side=buy|sell`.
+
 Daily Bar bulk ingestion keeps one provider/Raw/ingestion lineage unit per security while writing
 validated facts in bounded PostgreSQL transactions. Configure `DAILY_BAR_WRITE_BATCH_SIZE`
 (default 100, range 1..500); see `docs/DailyBar批量写入与性能基线-2026-08-11.md`.

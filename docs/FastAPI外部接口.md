@@ -25,6 +25,14 @@ daily indicators (500 requested six-digit codes). Business routes require
 process-local and `/readyz` verifies a bounded database query. Prices and amounts remain decimal
 strings. Errors never return SQL, internal schema names, database addresses, or credentials.
 
+龙虎榜提供三个数据库只读路由：`GET /api/v1/trading-billboard/by-date?trade_date=` 精确查询
+某日汇总及买卖前五席位；`GET /api/v1/trading-billboard/by-symbol/{code}?start_date=&end_date=`
+先通过 `api_v1.query_securities` 将六位股票代码唯一解析为标准 symbol；
+`GET /api/v1/trading-billboard/seats?seat_code=...` 或 `seat_name=...` 返回带所属证券、日期、
+上榜原因和汇总金额的平铺席位记录，可选 `side=buy|sell`。席位代码和名称必须且只能提供一个，
+去除首尾空白后做精确匹配。日期区间最长 366 个自然日，`limit` 为 1..500，`offset` 为
+0..10000。所有数值为 Decimal 字符串；接口不回退日期、不访问东财、不触发采集或 Raw 重放。
+
 Keep the application on `127.0.0.1`. Public authentication, HTTPS/domain, reverse proxy, firewall,
 rate limits, request-log retention, and API-key rotation are separate deployment decisions. See
 `Standalone-PostgreSQL-FastAPI-Linux.md` for Linux gates.
