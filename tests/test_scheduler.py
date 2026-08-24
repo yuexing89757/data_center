@@ -32,6 +32,7 @@ from market_data_center.scheduling_catalog import (
     STALE_RUN_RECOVERY_JOB_ID,
     STOCK_DAILY_INDICATOR_JOB_ID,
     STOCK_POOL_JOB_ID,
+    TRADING_BILLBOARD_JOB_ID,
 )
 from market_data_center.settings import SchedulerSettings
 
@@ -85,6 +86,28 @@ def test_scheduler_registers_twelve_hour_pytdx_pool_refresh(tmp_path: Path) -> N
     assert str(refresh.trigger) == "interval[12:00:00]"
     assert refresh.max_instances == 1
     assert refresh.coalesce
+
+
+def test_trading_billboard_schedule_is_opt_in_and_fixed_at_2030(tmp_path: Path) -> None:
+    disabled = build_scheduler(
+        SchedulerSettings(
+            scheduler_store_path=tmp_path / "billboard-disabled.sqlite",
+            _env_file=None,
+        )
+    )
+    enabled = build_scheduler(
+        SchedulerSettings(
+            scheduler_store_path=tmp_path / "billboard-enabled.sqlite",
+            trading_billboard_enabled=True,
+            _env_file=None,
+        )
+    )
+
+    assert disabled.get_job(TRADING_BILLBOARD_JOB_ID) is None
+    job = enabled.get_job(TRADING_BILLBOARD_JOB_ID)
+    assert job is not None
+    assert str(job.trigger) == "cron[day_of_week='mon-fri', hour='20', minute='30']"
+    assert job.max_instances == 1
 
 
 def test_legacy_time_environment_cannot_change_registered_jobs(monkeypatch, tmp_path: Path) -> None:

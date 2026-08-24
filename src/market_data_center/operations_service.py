@@ -22,6 +22,10 @@ from market_data_center.domain.stock_pool import StockPoolBuildSummary
 from market_data_center.persistence.operations_postgres import PostgreSQLOperationsPersistence
 from market_data_center.persistence.today_limit_up_postgres import TodayLimitUpFillSummary
 from market_data_center.providers.pytdx_pool import PytdxPoolRefreshResult
+from market_data_center.trading_billboard_service import (
+    TradingBillboardBackfillSummary,
+    TradingBillboardCollectionSummary,
+)
 
 T = TypeVar("T")
 
@@ -115,6 +119,21 @@ def safe_error_summary(error: BaseException) -> str:
 
 
 def _result_statistics(result: object) -> tuple[int, int, int, ExecutionStatus]:
+    if isinstance(result, TradingBillboardCollectionSummary):
+        return (
+            result.fetched_rows,
+            result.accepted_entries + result.accepted_seats,
+            result.filtered_rows,
+            ExecutionStatus.SUCCEEDED,
+        )
+    if isinstance(result, TradingBillboardBackfillSummary):
+        fetched = sum(item.fetched_rows for item in result.results)
+        accepted = sum(item.accepted_entries + item.accepted_seats for item in result.results)
+        rejected = sum(item.filtered_rows for item in result.results)
+        status = (
+            ExecutionStatus.FAILED if result.failed_date is not None else ExecutionStatus.SUCCEEDED
+        )
+        return fetched, accepted, rejected, status
     if isinstance(result, DailyBarBulkSummary):
         status = {
             "succeeded": ExecutionStatus.SUCCEEDED,

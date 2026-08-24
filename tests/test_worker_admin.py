@@ -93,6 +93,8 @@ def test_admin_page_distinguishes_persistence_from_worker_liveness(tmp_path: Pat
     assert "Worker</span><strong>未运行</strong>" in page
     assert "日 K 与基础数据更新" in page
     assert "周一至周五 20:00 (Asia/Shanghai)" in page
+    assert "股票龙虎榜采集" in page
+    assert "停用" in page
     assert "已持久化" in page
     assert "job_state" not in page
     assert str(store_path) not in page

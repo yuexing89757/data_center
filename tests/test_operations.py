@@ -126,6 +126,7 @@ def test_job_catalog_is_stable_and_references_defined_workflows() -> None:
         "build_close_price_new_highs_120d_snapshot",
     )
     assert workflows["board_index_daily_bar"].step_codes == ("collect_board_index_daily_bars",)
+    assert workflows["trading_billboard_daily"].step_codes == ("collect_trading_billboard",)
     assert all(job.timezone == "Asia/Shanghai" for job in jobs)
     assert {workflow.value for workflow in WorkflowCode} == set(workflows)
 
@@ -161,6 +162,11 @@ def test_job_catalog_owns_all_fixed_schedules() -> None:
     assert jobs["board-index-883423-daily-bar"].hour == "15-17"
     assert jobs["board-index-883423-daily-bar"].minute == 30
     assert jobs["board-index-883423-daily-bar"].enabled is True
+    assert (
+        jobs["trading-billboard-daily"].hour,
+        jobs["trading-billboard-daily"].minute,
+    ) == (20, 30)
+    assert jobs["trading-billboard-daily"].enabled is False
     assert (
         jobs["call-auction-market-snapshot-daily"].hour,
         jobs["call-auction-market-snapshot-daily"].minute,

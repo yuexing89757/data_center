@@ -37,6 +37,8 @@ class SchedulerSettings(BaseSettings):
     today_limit_up_snapshot_enabled: bool = False
     close_price_new_highs_120d_enabled: bool = True
     board_index_daily_bar_enabled: bool = True
+    # Opt-in until source-rights and protected deployment review are complete.
+    trading_billboard_enabled: bool = False
 
 
 class PytdxPoolSettings(BaseSettings):
