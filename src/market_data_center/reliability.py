@@ -55,11 +55,19 @@ from market_data_center.domain.stock_daily_indicator import (
     StockDailyIndicatorSnapshotRecord,
     validate_stock_daily_indicators,
 )
+from market_data_center.domain.trading_billboard import (
+    TradingBillboardFinding,
+    TradingBillboardRecord,
+    validate_trading_billboards,
+)
 from market_data_center.domain.validation import validate_daily_bars
 from market_data_center.providers.akshare import normalize_akshare_raw
 from market_data_center.providers.akshare_ths import normalize_akshare_ths_raw
 from market_data_center.providers.baostock import normalize_baostock_raw
 from market_data_center.providers.contracts import ProviderError, ProviderRecord
+from market_data_center.providers.eastmoney_trading_billboard import (
+    normalize_eastmoney_trading_billboard_raw,
+)
 from market_data_center.providers.pytdx import normalize_pytdx_raw
 from market_data_center.providers.tushare import normalize_tushare_raw
 from market_data_center.raw_store import LocalRawStore, RawIntegrityError
@@ -224,6 +232,14 @@ class ReliabilityPersistence(Protocol):
         quality_results: Sequence[QualityResult],
     ) -> None: ...
 
+    def commit_trading_billboard_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest | None,
+        records: Sequence[TradingBillboardRecord],
+        quality_results: Sequence[QualityResult],
+    ) -> None: ...
+
     def stale_ingestion_run_ids(self, stale_before: datetime) -> Sequence[UUID]: ...
 
     def recover_stale_ingestion_runs(
@@ -242,7 +258,17 @@ _NORMALIZERS: Mapping[ProviderCode, Normalizer] = {
     ProviderCode.BAOSTOCK: normalize_baostock_raw,
     ProviderCode.PYTDX: normalize_pytdx_raw,
     ProviderCode.TUSHARE: normalize_tushare_raw,
+    ProviderCode.EASTMONEY: lambda dataset, schema, rows, _params: (
+        normalize_eastmoney_trading_billboard_raw(rows, schema)
+        if dataset is DatasetCode.TRADING_BILLBOARD
+        else _unsupported_eastmoney_replay(dataset)
+    ),
 }
+
+
+def _unsupported_eastmoney_replay(dataset: DatasetCode) -> tuple[ProviderRecord, ...]:
+    raise ProviderError(f"Eastmoney Raw replay is unsupported for {dataset.value}")
+
 
 CALL_AUCTION_MARKET_REPLAY_DISABLED = (
     "Raw replay is disabled for call_auction_market_snapshot until exact "
@@ -311,6 +337,53 @@ class RawReplayService:
         *,
         dry_run: bool,
     ) -> ReplaySummary:
+        if source.dataset_code is DatasetCode.TRADING_BILLBOARD:
+            billboard_records = cast(tuple[TradingBillboardRecord, ...], records)
+            billboard_validation = validate_trading_billboards(
+                billboard_records,
+                known_symbols=self._persistence.known_symbols(
+                    {record.symbol for record in billboard_records}
+                ),
+                known_trading_dates=self._persistence.known_trading_dates(
+                    {record.trade_date for record in billboard_records}
+                ),
+            )
+            billboard_rejected_count = (
+                len(billboard_records) if billboard_validation.findings else 0
+            )
+            billboard_accepted_count = (
+                0 if billboard_validation.findings else len(billboard_validation.accepted)
+            )
+            billboard_completed = self._completed(
+                run,
+                len(billboard_records),
+                billboard_accepted_count,
+                billboard_rejected_count,
+            )
+            billboard_quality = self._trading_billboard_quality(
+                billboard_completed, billboard_validation.findings
+            )
+            if billboard_completed is not None:
+                if billboard_validation.findings:
+                    self._persistence.commit_rejected_batch(
+                        billboard_completed, None, billboard_quality
+                    )
+                else:
+                    self._persistence.commit_trading_billboard_batch(
+                        billboard_completed,
+                        None,
+                        billboard_validation.accepted,
+                        billboard_quality,
+                    )
+            return self._summary(
+                source,
+                billboard_completed,
+                dry_run,
+                len(billboard_records),
+                billboard_accepted_count,
+                billboard_rejected_count,
+            )
+
         if source.dataset_code is DatasetCode.SECURITY:
             security_records = cast(tuple[SecurityRecord, ...], records)
             completed = self._completed(run, len(records), len(records), 0)
@@ -688,6 +761,27 @@ class RawReplayService:
                 quality_result_id=self._uuid_factory(),
                 ingestion_id=run.ingestion_id,
                 dataset_code=run.dataset_code,
+                rule_code=finding.rule_code,
+                severity=QualitySeverity.ERROR,
+                status=QualityStatus.FAILED,
+                message=finding.message,
+                natural_key=finding.natural_key,
+            )
+            for finding in findings
+        )
+
+    def _trading_billboard_quality(
+        self,
+        run: IngestionRun | None,
+        findings: Sequence[TradingBillboardFinding],
+    ) -> tuple[QualityResult, ...]:
+        if run is None:
+            return ()
+        return tuple(
+            QualityResult(
+                quality_result_id=self._uuid_factory(),
+                ingestion_id=run.ingestion_id,
+                dataset_code=DatasetCode.TRADING_BILLBOARD,
                 rule_code=finding.rule_code,
                 severity=QualitySeverity.ERROR,
                 status=QualityStatus.FAILED,

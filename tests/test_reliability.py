@@ -1,6 +1,7 @@
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
+from json import dumps
 from pathlib import Path
 from uuid import UUID
 
@@ -26,6 +27,7 @@ from market_data_center.domain import (
     RawFileFormat,
     RawManifest,
     SecurityRecord,
+    TradingBillboardRecord,
 )
 from market_data_center.domain.ingestion import ReplaySource
 from market_data_center.providers.contracts import ProviderError
@@ -98,6 +100,14 @@ class StubReliabilityPersistence:
         ] = []
         self.rejected_commits: list[
             tuple[IngestionRun, RawManifest | None, Sequence[QualityResult]]
+        ] = []
+        self.trading_billboard_commits: list[
+            tuple[
+                IngestionRun,
+                RawManifest | None,
+                Sequence[TradingBillboardRecord],
+                Sequence[QualityResult],
+            ]
         ] = []
         self.stale_ids = [UUID("948c4e5b-97a1-4706-a1de-09c14670108a")]
         self.recovery_args: tuple[datetime, datetime, str] | None = None
@@ -218,6 +228,15 @@ class StubReliabilityPersistence:
         quality_results: Sequence[QualityResult],
     ) -> None:
         self.rejected_commits.append((run, manifest, quality_results))
+
+    def commit_trading_billboard_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest | None,
+        records: Sequence[TradingBillboardRecord],
+        quality_results: Sequence[QualityResult],
+    ) -> None:
+        self.trading_billboard_commits.append((run, manifest, records, quality_results))
 
     def stale_ingestion_run_ids(self, stale_before: datetime) -> Sequence[UUID]:
         return self.stale_ids
@@ -358,6 +377,87 @@ def test_raw_replay_dry_run_validates_without_database_writes(tmp_path: Path) ->
     assert summary.replay_ingestion_id is None
     assert persistence.created == []
     assert persistence.security_commits == []
+
+
+def test_trading_billboard_raw_replay_reuses_v1_without_http_or_new_manifest(
+    tmp_path: Path,
+) -> None:
+    store = LocalRawStore(tmp_path)
+    summary = {
+        "TRADE_ID": "replay-event",
+        "SECUCODE": "600000.SH",
+        "TRADE_DATE": "2026-07-29 00:00:00",
+        "CHANGE_TYPE": "106001",
+        "EXPLANATION": "测试原因",
+        "CLOSE_PRICE": "10.5",
+        "CHANGE_RATE": "9.9",
+        "TURNOVERRATE": "12.5",
+        "ACCUM_AMOUNT": "10000",
+        "BILLBOARD_BUY_AMT": "600",
+        "BILLBOARD_SELL_AMT": "400",
+        "BILLBOARD_NET_AMT": "200",
+        "BILLBOARD_DEAL_AMT": "1000",
+        "DEAL_AMOUNT_RATIO": "10",
+        "DEAL_NET_RATIO": "2",
+        "FREE_MARKET_CAP": "50000",
+    }
+    seat = {
+        "TRADE_ID": "replay-event",
+        "SECUCODE": "600000.SH",
+        "TRADE_DATE": "2026-07-29 00:00:00",
+        "OPERATEDEPT_CODE": "0",
+        "OPERATEDEPT_NAME": "机构专用",
+        "BUY": "120",
+        "SELL": "20",
+        "NET": "100",
+        "TOTAL_BUYRIO": "1.2",
+        "TOTAL_SELLRIO": "0.2",
+    }
+    rows = [
+        {
+            "record_kind": "summary",
+            "source_page": "1",
+            "source_index": "0",
+            "payload_json": dumps(summary, ensure_ascii=False, sort_keys=True),
+        },
+        {
+            "record_kind": "buy_seat",
+            "source_page": "1",
+            "source_index": "0",
+            "payload_json": dumps(seat, ensure_ascii=False, sort_keys=True),
+        },
+        {
+            "record_kind": "sell_seat",
+            "source_page": "1",
+            "source_index": "0",
+            "payload_json": dumps(seat, ensure_ascii=False, sort_keys=True),
+        },
+    ]
+    source = _source(
+        store,
+        provider=ProviderCode.EASTMONEY,
+        dataset=DatasetCode.TRADING_BILLBOARD,
+        schema_version="eastmoney.trading_billboard.v1",
+        rows=rows,
+        request_params={"trade_date": "2026-07-29"},
+    )
+    persistence = StubReliabilityPersistence(source)
+
+    replay = RawReplayService(
+        raw_store=store,
+        persistence=persistence,
+        clock=lambda: NOW,
+        uuid_factory=lambda: REPLAY_RUN_ID,
+    ).replay(SOURCE_RUN_ID)
+
+    assert replay.status == "succeeded"
+    assert persistence.created[0].replayed_from_raw_id == RAW_ID
+    completed, replay_manifest, records, findings = persistence.trading_billboard_commits[0]
+    assert completed.ingestion_id == REPLAY_RUN_ID
+    assert replay_manifest is None
+    assert findings == ()
+    assert records[0].symbol == "SSE:600000"
+    assert records[0].buy_seats[0].seat_code is None
 
 
 def test_raw_replay_normalizes_and_commits_capital_facts(tmp_path: Path) -> None:

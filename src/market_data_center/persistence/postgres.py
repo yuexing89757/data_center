@@ -54,6 +54,7 @@ from market_data_center.domain.records import (
     ShareCapitalRecord,
 )
 from market_data_center.domain.stock_daily_indicator import StockDailyIndicatorSnapshotRecord
+from market_data_center.domain.trading_billboard import TradingBillboardRecord
 
 INSERT_INGESTION_RUN = text("""
 insert into ingestion.ingestion_run (
@@ -1572,6 +1573,23 @@ where board_id = :board_id and trade_date = :trade_date
             if quality_results:
                 connection.execute(INSERT_QUALITY_RESULT, self._quality_parameters(quality_results))
             connection.execute(UPDATE_INGESTION_RUN, self._run_update_parameters(run))
+
+    def commit_trading_billboard_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest | None,
+        records: Sequence[TradingBillboardRecord],
+        quality_results: Sequence[QualityResult],
+    ) -> None:
+        if manifest is not None:
+            raise ValueError("trading billboard replay must reuse the original Raw manifest")
+        from market_data_center.persistence.trading_billboard_postgres import (
+            PostgreSQLTradingBillboardPersistence,
+        )
+
+        PostgreSQLTradingBillboardPersistence(self._engine).commit_replay(
+            run, quality_results, records
+        )
 
     @staticmethod
     def _run_update_parameters(run: IngestionRun) -> dict[str, object]:
