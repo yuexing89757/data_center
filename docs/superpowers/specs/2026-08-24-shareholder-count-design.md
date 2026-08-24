@@ -132,8 +132,9 @@ tushare.shareholder_count.v1
 生产回填仍属于单独的受控外部操作，设计或部署本身不自动执行。
 
 回填从 `core.security` 按标准 symbol 升序枚举沪、深、北全部 A 股，包括已退市证券。命令要求
-显式 `--cutoff-date` 且不得晚于当前上海自然日；每只证券的完整历史区间从其 `list_date` 开始，到
-该 cutoff date 结束。请求以“证券 + 公告日期区间”切片，使用截断防护递归缩小区间。每只证券形成
+显式 `--cutoff-date` 且不得晚于当前上海自然日；每只证券的完整历史区间从其标准 `ipo_date` 开始，
+`ipo_date` 缺失时保守使用 `1990-12-19`，到该 cutoff date 结束。请求以“证券 + 公告日期区间”切片，
+使用截断防护递归缩小区间。每只证券形成
 独立 IngestionRun；一个受控
 `shareholder_count_backfill` Workflow 汇总全局状态。单证券只有在其全部请求、Raw 保存、标准化、
 校验和 Core 事务写入成功后才标记成功。
@@ -158,9 +159,11 @@ Schedule:      每天 21:00 Asia/Shanghai
 正常路径按公告日期区间获取全市场记录；截断时缩小日期区间，必要时切换逐证券查询。该 Workflow
 的一次执行只使用 Tushare。
 
-一次每日执行是一个原子采集单元：先完成全部请求、Raw manifest、标准化和整批自然键校验，再在
-单一数据库事务中写入 Core。任一切片失败则整个 IngestionRun 失败，不写部分标准事实；已保存
-Raw 保留用于诊断和重放。原子性只覆盖当次增量执行，不跨越历史回填的不同证券。
+一次每日执行是一个原子采集单元。每个实际来源请求各有一个 IngestionRun 和 Raw manifest，以保持
+单 Raw 重放边界；全部请求完成后再做整批自然键校验，并在单一数据库事务中插入全部 manifest、
+发布全部 Core 事实和终结这些 IngestionRun。任一切片失败时，已准备的请求运行统一失败且不发布
+任何标准事实；已保存 Raw 仍登记 manifest 供诊断和重放。原子性只覆盖当次增量执行，不跨越历史
+回填的不同证券。
 
 滚动 30 日窗口不能证明发现了更早公告日期的后来修订，因此另提供显式“全历史重新核验”CLI。
 它复用受控回填流程，不自动定时执行，也不因每日任务成功而宣称全历史无遗漏。
@@ -255,8 +258,9 @@ change_ratio
 history RPC 的 `previous_*` 和 change 计算，使响应只依赖显式请求范围。调用方若需要范围首条记录
 的前值，必须扩大起始日期。
 
-RPC 使用 `language sql stable security definer`、固定 `search_path` 和 5 秒 statement timeout，
-撤销 public 默认执行权，只授予现有 PostgREST 只读角色。公开响应不包含 `ingestion_id`、
+RPC 使用 `language plpgsql stable security definer`，只以 `RAISE EXCEPTION` 实现证券数量和日期范围
+参数门禁，返回数据仍由一条只读 `RETURN QUERY` SQL 产生。函数固定 `search_path` 和 5 秒 statement
+timeout，撤销 public 默认执行权，只授予现有 PostgREST 只读角色。公开响应不包含 `ingestion_id`、
 `source_code`、`revision_key` 或 `first_observed_at`。
 
 Migration 同步 `contracts/postgrest-openapi-v1.json` 和 `contracts/agent-tools-v1.json`。首版不增加
