@@ -18,6 +18,7 @@ def test_optional_scheduled_tasks_default_enabled() -> None:
     assert settings.call_auction_snapshot_enabled is True
     assert settings.call_auction_market_series_enabled is True
     assert settings.close_price_new_highs_120d_enabled is True
+    assert settings.shareholder_count_daily_enabled is False
 
 
 def test_optional_scheduled_tasks_can_be_disabled_by_environment(monkeypatch) -> None:

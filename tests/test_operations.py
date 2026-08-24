@@ -123,6 +123,8 @@ def test_job_catalog_is_stable_and_references_defined_workflows() -> None:
         "build_close_price_new_highs_120d_snapshot",
     )
     assert workflows["board_index_daily_bar"].step_codes == ("collect_board_index_daily_bars",)
+    assert workflows["shareholder_count_daily"].step_codes == ("shareholder_count_daily",)
+    assert workflows["shareholder_count_backfill"].step_codes == ("shareholder_count_backfill",)
     assert all(job.timezone == "Asia/Shanghai" for job in jobs)
     assert {workflow.value for workflow in WorkflowCode} == set(workflows)
 
@@ -173,6 +175,12 @@ def test_job_catalog_owns_all_fixed_schedules() -> None:
     assert jobs["pytdx-pool-refresh"].interval_hours == 12
     assert all(job.timezone == "Asia/Shanghai" for job in jobs.values())
     assert all(job.timeout_seconds == 21_600 for job in jobs.values())
+    shareholder_count = jobs["shareholder-count-daily"]
+    assert shareholder_count.workflow_code == "shareholder_count_daily"
+    assert shareholder_count.day_of_week is None
+    assert (shareholder_count.hour, shareholder_count.minute) == (21, 0)
+    assert shareholder_count.timezone == "Asia/Shanghai"
+    assert shareholder_count.enabled is False
 
 
 def test_catalog_registers_twelve_hour_pytdx_pool_refresh() -> None:

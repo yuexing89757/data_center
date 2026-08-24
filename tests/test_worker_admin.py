@@ -99,6 +99,7 @@ def test_admin_page_distinguishes_persistence_from_worker_liveness(tmp_path: Pat
     assert "must-not-be-read" not in page
     assert "立即执行" not in page
     assert "删除" not in page
+    assert "股东人数每日增量同步" in page
 
 
 def test_admin_http_is_loopback_read_only_and_sets_security_headers(tmp_path: Path) -> None:

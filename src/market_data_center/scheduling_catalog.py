@@ -8,6 +8,7 @@ DAILY_RUN_JOB_ID = "daily-run"
 STOCK_DAILY_INDICATOR_JOB_ID = "stock-daily-indicators-daily"
 STALE_RUN_RECOVERY_JOB_ID = "recover-stale-ingestion-runs"
 DEDUCTED_PROFIT_JOB_ID = "deducted-profit-daily"
+SHAREHOLDER_COUNT_DAILY_JOB_ID = "shareholder-count-daily"
 STOCK_POOL_JOB_ID = "mainboard-price-limit-stock-pools-daily"
 EOD_QUOTE_SNAPSHOT_JOB_ID = "eod-quote-snapshot-daily"
 CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID = "call-auction-market-snapshot-daily"
@@ -214,6 +215,20 @@ def job_definitions(settings: SchedulerSettings) -> tuple[JobDefinition, ...]:
             timeout,
             "启动及每小时恢复超过 60 分钟的 running 记录",
             hour=20,
+            minute=0,
+        ),
+        JobDefinition(
+            SHAREHOLDER_COUNT_DAILY_JOB_ID,
+            "股东人数每日增量同步",
+            "按滚动三十日公告窗口同步 Tushare 股东人数点时事实。",
+            "shareholder_count_daily",
+            "cron",
+            "每天 21:00",
+            timezone,
+            settings.shareholder_count_daily_enabled,
+            timeout,
+            "失败保持显式缺口; 下一日窗口重扫或手工命令重试",
+            hour=21,
             minute=0,
         ),
         JobDefinition(

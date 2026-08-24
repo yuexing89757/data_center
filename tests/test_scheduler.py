@@ -29,6 +29,7 @@ from market_data_center.scheduling_catalog import (
     DEDUCTED_PROFIT_JOB_ID,
     EOD_QUOTE_SNAPSHOT_JOB_ID,
     PYTDX_POOL_REFRESH_JOB_ID,
+    SHAREHOLDER_COUNT_DAILY_JOB_ID,
     STALE_RUN_RECOVERY_JOB_ID,
     STOCK_DAILY_INDICATOR_JOB_ID,
     STOCK_POOL_JOB_ID,
@@ -73,6 +74,110 @@ def test_scheduler_registers_persistent_single_instance_market_job(tmp_path: Pat
     assert str(board_bars.trigger) == ("cron[day_of_week='mon-fri', hour='15-17', minute='30']")
     assert store_path.parent.is_dir()
     assert scheduler.get_job("opening-auction-limit-up-quotes") is None
+    assert scheduler.get_job(SHAREHOLDER_COUNT_DAILY_JOB_ID) is None
+
+
+def test_shareholder_count_daily_job_is_opt_in_and_runs_at_nine_pm(tmp_path: Path) -> None:
+    scheduler = build_scheduler(
+        SchedulerSettings(
+            scheduler_store_path=tmp_path / "shareholder-count.sqlite",
+            shareholder_count_daily_enabled=True,
+            _env_file=None,
+        )
+    )
+
+    job = scheduler.get_job(SHAREHOLDER_COUNT_DAILY_JOB_ID)
+    assert job is not None
+    assert str(job.trigger) == "cron[hour='21', minute='0']"
+    assert job.max_instances == 1
+
+
+def test_shareholder_count_daily_runner_wires_tushare_pipeline_and_operations(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    fire_time = datetime(2026, 8, 24, 13, tzinfo=UTC)
+    engine = SimpleNamespace(disposed=False)
+    engine.dispose = lambda: setattr(engine, "disposed", True)
+    captured: dict[str, object] = {}
+
+    class FakeExecution:
+        def step(self, code, sequence, operation):
+            captured["step"] = (code, sequence)
+            return operation()
+
+        def succeed(self):
+            captured["succeeded"] = True
+
+        def fail(self, error):
+            captured["failed"] = type(error).__name__
+
+    class FakeProvider:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+    class FakeService:
+        def __init__(self, pipeline, persistence):
+            captured["service"] = (pipeline, persistence)
+
+        def sync_daily(self, as_of_date):
+            captured["as_of_date"] = as_of_date
+            return object()
+
+    class FakePipeline:
+        def __init__(self, **kwargs):
+            captured["pipeline"] = kwargs
+
+    monkeypatch.setattr(
+        scheduler_module,
+        "WorkerSettings",
+        lambda: SimpleNamespace(
+            database_url=SimpleNamespace(get_secret_value=lambda: "unused"),
+            raw_data_root=tmp_path / "raw",
+        ),
+    )
+    monkeypatch.setattr(
+        scheduler_module, "SchedulerSettings", lambda: SchedulerSettings(_env_file=None)
+    )
+    monkeypatch.setattr(scheduler_module, "sqlalchemy_url", lambda value: value)
+    monkeypatch.setattr(scheduler_module, "create_engine", lambda *args, **kwargs: engine)
+    monkeypatch.setattr(scheduler_module, "PostgreSQLPersistence", lambda value: "facts")
+    monkeypatch.setattr(
+        scheduler_module, "PostgreSQLOperationsPersistence", lambda value: "operations"
+    )
+    monkeypatch.setattr(
+        scheduler_module,
+        "WorkflowExecutionService",
+        lambda operations: SimpleNamespace(
+            start=lambda *args: captured.setdefault("workflow", args) and FakeExecution()
+        ),
+    )
+    monkeypatch.setattr(
+        scheduler_module, "_scheduled_job_fire_time", lambda *args, **kwargs: fire_time
+    )
+    monkeypatch.setattr(scheduler_module, "create_provider", lambda code: FakeProvider())
+    monkeypatch.setattr(scheduler_module, "IngestionPipeline", FakePipeline)
+    monkeypatch.setattr(scheduler_module, "ShareholderCountService", FakeService)
+    monkeypatch.setattr(scheduler_module, "LocalRawStore", lambda root: ("raw", root))
+    monkeypatch.setattr(
+        scheduler_module,
+        "datetime",
+        SimpleNamespace(now=lambda zone: datetime(2026, 8, 24, 21, tzinfo=zone)),
+    )
+
+    scheduler_module.run_shareholder_count_daily_job()
+
+    assert captured["workflow"] == (
+        scheduler_module.WorkflowCode.SHAREHOLDER_COUNT_DAILY,
+        fire_time,
+        scheduler_module.TriggerSource.SCHEDULED,
+    )
+    assert captured["step"] == ("shareholder_count_daily", 1)
+    assert captured["as_of_date"] == date(2026, 8, 24)
+    assert captured["succeeded"] is True
+    assert engine.disposed is True
 
 
 def test_scheduler_registers_twelve_hour_pytdx_pool_refresh(tmp_path: Path) -> None:
