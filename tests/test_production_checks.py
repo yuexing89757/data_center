@@ -153,7 +153,7 @@ def test_shareholder_count_migration_is_append_only_bitemporal_and_bounded() -> 
     assert normalized.count("security definer") == 3
     assert normalized.count("set statement_timeout = '5s'") == 3
     assert "errcode = '22023'" in normalized
-    assert "cardinality" in normalized
+    assert "cardinality(p_symbols) > 500" in normalized
     assert "greatest(1, least(coalesce(p_limit, 500), 2000))" in normalized
     assert "first_observed_at <" in normalized
     assert "at time zone 'asia/shanghai'" in normalized

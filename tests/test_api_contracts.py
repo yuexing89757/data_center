@@ -22,6 +22,9 @@ EXPECTED_ENDPOINTS = {
     "query_call_auction_market_series_snapshots",
     "query_board_index_bias_latest",
     "query_close_price_new_highs_120d",
+    "query_shareholder_counts_as_of",
+    "query_shareholder_count_history_as_of",
+    "query_shareholder_count_history_latest",
 }
 
 
@@ -66,6 +69,79 @@ def test_agent_tools_are_bounded_strict_and_read_only() -> None:
             limit = properties["p_limit"]
             assert isinstance(limit, dict)
             assert int(limit["maximum"]) <= 5000
+
+
+def test_shareholder_count_contracts_are_strict_bounded_and_decimal_safe() -> None:
+    postgrest = _load("postgrest-openapi-v1.json")
+    agent = _load("agent-tools-v1.json")
+    fastapi = _load("fastapi-openapi-v1.json")
+    endpoints = {
+        "query_shareholder_counts_as_of",
+        "query_shareholder_count_history_as_of",
+        "query_shareholder_count_history_latest",
+    }
+
+    request_bodies = postgrest["components"]["requestBodies"]  # type: ignore[index]
+    cross_section = request_bodies["ShareholderCountsAsOf"]["content"][  # type: ignore[index]
+        "application/json"
+    ]["schema"]
+    assert cross_section["properties"]["p_symbols"]["maxItems"] == 500
+
+    for body_name in (
+        "ShareholderCountsAsOf",
+        "ShareholderCountHistoryAsOf",
+        "ShareholderCountHistoryLatest",
+    ):
+        schema = request_bodies[body_name]["content"]["application/json"]["schema"]  # type: ignore[index]
+        assert schema["properties"]["p_limit"]["maximum"] == 2000
+        for name, value in schema["properties"].items():
+            if name == "p_symbol":
+                assert value["$ref"] == "#/components/schemas/StandardSymbol"
+            if "date" in name:
+                assert value["$ref"] == "#/components/schemas/Date"
+
+    item = postgrest["components"]["schemas"]["ShareholderCountItem"]  # type: ignore[index]
+    properties = item["properties"]
+    for name in (
+        "previous_statistics_date",
+        "previous_shareholder_count",
+        "change_count",
+        "change_ratio",
+    ):
+        assert "null" in properties[name]["type"]
+    assert "minimum" not in properties["change_count"]
+    assert properties["change_ratio"]["type"] == ["number", "null"]
+
+    strict_descriptions = " ".join(
+        postgrest["paths"][f"/rpc/{endpoint}"]["post"]["summary"]  # type: ignore[index]
+        for endpoint in endpoints
+        if endpoint.endswith("as_of")
+    ).lower()
+    latest_description = postgrest["paths"][  # type: ignore[index]
+        "/rpc/query_shareholder_count_history_latest"
+    ]["post"]["summary"].lower()
+    assert "strict" in strict_descriptions
+    assert "current-known" in latest_description
+
+    tools = {
+        tool["endpoint"]: tool
+        for tool in agent["tools"]  # type: ignore[union-attr]
+        if tool["endpoint"] in endpoints
+    }
+    assert set(tools) == endpoints
+    for endpoint, tool in tools.items():
+        properties = tool["input_schema"]["properties"]
+        assert properties["p_limit"]["maximum"] == 2000
+        if "p_symbol" in properties:
+            assert properties["p_symbol"]["pattern"] == "^(SSE|SZSE|BSE):[0-9]{6}$"
+        for name, value in properties.items():
+            if "date" in name:
+                assert value["format"] == "date"
+        expected_word = "current-known" if endpoint.endswith("latest") else "strict"
+        assert expected_word in tool["description"].lower()
+
+    fastapi_contract = dumps(fastapi)
+    assert all(endpoint not in fastapi_contract for endpoint in endpoints)
 
 
 def test_public_contracts_do_not_name_internal_schemas_or_contain_secrets() -> None:

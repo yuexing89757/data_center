@@ -135,6 +135,54 @@
           "404": {"description": "THS 883423 history is missing, shorter than 34 sessions, or stale"}
         }
       }
+    },
+    "/rpc/query_shareholder_counts_as_of": {
+      "post": {
+        "operationId": "queryShareholderCountsAsOf",
+        "summary": "Read strict point-in-time latest shareholder counts",
+        "requestBody": {"$ref": "#/components/requestBodies/ShareholderCountsAsOf"},
+        "responses": {
+          "200": {
+            "description": "Bounded latest shareholder-count facts strictly visible at the requested knowledge date",
+            "content": {"application/json": {"schema": {
+              "type": "array",
+              "items": {"$ref": "#/components/schemas/ShareholderCountItem"}
+            }}}
+          }
+        }
+      }
+    },
+    "/rpc/query_shareholder_count_history_as_of": {
+      "post": {
+        "operationId": "queryShareholderCountHistoryAsOf",
+        "summary": "Read strict point-in-time shareholder-count history",
+        "requestBody": {"$ref": "#/components/requestBodies/ShareholderCountHistoryAsOf"},
+        "responses": {
+          "200": {
+            "description": "Bounded shareholder-count history strictly visible at the requested knowledge date",
+            "content": {"application/json": {"schema": {
+              "type": "array",
+              "items": {"$ref": "#/components/schemas/ShareholderCountItem"}
+            }}}
+          }
+        }
+      }
+    },
+    "/rpc/query_shareholder_count_history_latest": {
+      "post": {
+        "operationId": "queryShareholderCountHistoryLatest",
+        "summary": "Read current-known shareholder-count history; not a strict no-future-data view",
+        "requestBody": {"$ref": "#/components/requestBodies/ShareholderCountHistoryLatest"},
+        "responses": {
+          "200": {
+            "description": "Bounded current-known shareholder-count history",
+            "content": {"application/json": {"schema": {
+              "type": "array",
+              "items": {"$ref": "#/components/schemas/ShareholderCountItem"}
+            }}}
+          }
+        }
+      }
     }
   },
   "components": {
@@ -150,7 +198,31 @@
       },
       "Date": {"type": "string", "format": "date"},
       "Limit5000": {"type": "integer", "minimum": 1, "maximum": 5000, "default": 1000},
-      "CalculationId": {"type": ["string", "null"], "format": "uuid"}
+      "CalculationId": {"type": ["string", "null"], "format": "uuid"},
+      "ShareholderCountItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "symbol",
+          "statistics_date",
+          "announcement_date",
+          "shareholder_count",
+          "previous_statistics_date",
+          "previous_shareholder_count",
+          "change_count",
+          "change_ratio"
+        ],
+        "properties": {
+          "symbol": {"$ref": "#/components/schemas/StandardSymbol"},
+          "statistics_date": {"$ref": "#/components/schemas/Date"},
+          "announcement_date": {"$ref": "#/components/schemas/Date"},
+          "shareholder_count": {"type": "integer", "format": "int64", "minimum": 1},
+          "previous_statistics_date": {"type": ["string", "null"], "format": "date"},
+          "previous_shareholder_count": {"type": ["integer", "null"], "format": "int64", "minimum": 1},
+          "change_count": {"type": ["integer", "null"], "format": "int64"},
+          "change_ratio": {"type": ["number", "null"]}
+        }
+      }
     },
     "requestBodies": {
       "SecuritySearch": {
@@ -238,6 +310,57 @@
               "items": {"$ref": "#/components/schemas/StandardSymbol"},
               "maxItems": 500
             },
+            "p_limit": {"type": "integer", "minimum": 1, "maximum": 2000, "default": 500}
+          }
+        }}}
+      },
+      "ShareholderCountsAsOf": {
+        "required": true,
+        "content": {"application/json": {"schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["p_as_of_date"],
+          "properties": {
+            "p_as_of_date": {"$ref": "#/components/schemas/Date"},
+            "p_symbols": {
+              "type": ["array", "null"],
+              "items": {"$ref": "#/components/schemas/StandardSymbol"},
+              "maxItems": 500
+            },
+            "p_limit": {"type": "integer", "minimum": 1, "maximum": 2000, "default": 500}
+          }
+        }}}
+      },
+      "ShareholderCountHistoryAsOf": {
+        "required": true,
+        "content": {"application/json": {"schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "p_symbol",
+            "p_as_of_date",
+            "p_start_statistics_date",
+            "p_end_statistics_date"
+          ],
+          "properties": {
+            "p_symbol": {"$ref": "#/components/schemas/StandardSymbol"},
+            "p_as_of_date": {"$ref": "#/components/schemas/Date"},
+            "p_start_statistics_date": {"$ref": "#/components/schemas/Date"},
+            "p_end_statistics_date": {"$ref": "#/components/schemas/Date"},
+            "p_limit": {"type": "integer", "minimum": 1, "maximum": 2000, "default": 500}
+          }
+        }}}
+      },
+      "ShareholderCountHistoryLatest": {
+        "required": true,
+        "content": {"application/json": {"schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["p_symbol", "p_start_statistics_date", "p_end_statistics_date"],
+          "properties": {
+            "p_symbol": {"$ref": "#/components/schemas/StandardSymbol"},
+            "p_start_statistics_date": {"$ref": "#/components/schemas/Date"},
+            "p_end_statistics_date": {"$ref": "#/components/schemas/Date"},
             "p_limit": {"type": "integer", "minimum": 1, "maximum": 2000, "default": 500}
           }
         }}}

@@ -535,6 +535,7 @@ def run_shareholder_count_workflow(
         print(
             "shareholder-count-backfill "
             f"targets={len(targets)} "
+            f"estimated_minimum_requests={len(targets)} "
             f"range={earliest.isoformat() if earliest else 'empty'}..{cutoff_date.isoformat()}"
         )
         if not args.yes:

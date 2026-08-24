@@ -96,9 +96,7 @@ begin
         raise exception 'p_as_of_date is required' using errcode = '22023';
     end if;
     if p_symbols is not null and (
-        cardinality(array(
-            select distinct input.symbol from unnest(p_symbols) as input(symbol)
-        )) > 500
+        cardinality(p_symbols) > 500
         or exists (
             select 1 from unnest(p_symbols) as input(symbol) where input.symbol is null
         )
