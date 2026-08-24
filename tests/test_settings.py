@@ -1,10 +1,12 @@
 from pathlib import Path
 
-from pydantic import SecretStr
+import pytest
+from pydantic import SecretStr, ValidationError
 
 from market_data_center.settings import (
     PytdxPoolSettings,
     SchedulerSettings,
+    TushareSettings,
     WorkerSettings,
 )
 
@@ -75,3 +77,19 @@ def test_worker_daily_bar_write_batch_size_is_bounded() -> None:
     settings = WorkerSettings(database_url=SecretStr("unused"), _env_file=None)
 
     assert settings.daily_bar_write_batch_size == 100
+
+
+def test_tushare_shareholder_count_rate_limit_has_safe_default() -> None:
+    settings = TushareSettings(tushare_token=SecretStr("unused"), _env_file=None)
+
+    assert settings.tushare_shareholder_count_max_calls_per_minute == 180
+
+
+@pytest.mark.parametrize("value", [0, 201])
+def test_tushare_shareholder_count_rate_limit_is_bounded(value: int) -> None:
+    with pytest.raises(ValidationError):
+        TushareSettings(
+            tushare_token=SecretStr("unused"),
+            tushare_shareholder_count_max_calls_per_minute=value,
+            _env_file=None,
+        )

@@ -6,6 +6,7 @@ from contextlib import AbstractContextManager
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 from functools import partial
+from time import sleep
 from types import TracebackType
 from typing import Protocol, Self
 from urllib.error import HTTPError, URLError
@@ -34,6 +35,10 @@ from market_data_center.domain.records import (
     SecurityType,
     TradeStatus,
     TradingDayRecord,
+)
+from market_data_center.domain.shareholder_count import (
+    ShareholderCountRecord,
+    shareholder_count_revision_key,
 )
 from market_data_center.domain.stock_daily_indicator import (
     PriceLimitStatus,
@@ -100,6 +105,8 @@ DEDUCTED_PROFIT_FIELDS = (
     "q_dtprofit",
     "update_flag",
 )
+SHAREHOLDER_COUNT_FIELDS = ("ts_code", "ann_date", "end_date", "holder_num")
+SHAREHOLDER_COUNT_RESPONSE_LIMIT = 3_000
 CB_BASIC_FIELDS = (
     "ts_code",
     "bond_id",
@@ -210,18 +217,37 @@ class TushareHttpClient:
 class TushareProvider(AbstractContextManager["TushareProvider"]):
     source_code = "tushare"
 
-    def __init__(self, client: TushareClient) -> None:
+    def __init__(
+        self,
+        client: TushareClient,
+        *,
+        shareholder_count_request_interval_seconds: float = 0,
+        sleeper: Callable[[float], None] = sleep,
+    ) -> None:
+        if shareholder_count_request_interval_seconds < 0:
+            raise ValueError("shareholder-count request interval must not be negative")
         self._client = client
+        self._shareholder_count_request_interval_seconds = (
+            shareholder_count_request_interval_seconds
+        )
+        self._shareholder_count_request_started = False
+        self._sleeper = sleeper
 
     @classmethod
     def default(cls) -> Self:
         try:
-            token = TushareSettings().tushare_token.get_secret_value().strip()  # type: ignore[call-arg]
+            settings = TushareSettings()  # type: ignore[call-arg]
+            token = settings.tushare_token.get_secret_value().strip()
         except ValidationError as error:
             raise ProviderError("TUSHARE_TOKEN is required for the Tushare provider") from error
         if not token:
             raise ProviderError("TUSHARE_TOKEN is required for the Tushare provider")
-        return cls(TushareHttpClient(token))
+        return cls(
+            TushareHttpClient(token),
+            shareholder_count_request_interval_seconds=(
+                60 / settings.tushare_shareholder_count_max_calls_per_minute
+            ),
+        )
 
     def __enter__(self) -> Self:
         return self
@@ -414,6 +440,48 @@ class TushareProvider(AbstractContextManager["TushareProvider"]):
             ],
         )
 
+    def fetch_shareholder_counts(
+        self, source_symbol: str | None, start_date: date, end_date: date
+    ) -> ProviderBatch[ShareholderCountRecord]:
+        _ensure_date_range(start_date, end_date)
+        ts_code = _source_symbol(source_symbol) if source_symbol is not None else None
+        params = {
+            "start_date": start_date.strftime("%Y%m%d"),
+            "end_date": end_date.strftime("%Y%m%d"),
+        }
+        if ts_code is not None:
+            params = {"ts_code": ts_code, **params}
+        if self._shareholder_count_request_started:
+            self._sleeper(self._shareholder_count_request_interval_seconds)
+        self._shareholder_count_request_started = True
+        result: Sequence[Mapping[str, object]] = _provider_call(
+            "stk_holdernumber",
+            lambda: self._client.query(
+                "stk_holdernumber",
+                params=params,
+                fields=SHAREHOLDER_COUNT_FIELDS,
+            ),
+        )
+        rows = _rows(result, SHAREHOLDER_COUNT_FIELDS, "stk_holdernumber")
+        rows.sort(
+            key=lambda row: (
+                row["ts_code"],
+                row["end_date"],
+                row["ann_date"],
+                row["holder_num"],
+            )
+        )
+        return ProviderBatch(
+            raw_rows=rows,
+            request_params={
+                "source_symbol": ts_code,
+                "start_date": params["start_date"],
+                "end_date": params["end_date"],
+            },
+            schema_version="tushare.shareholder_count.v1",
+            record_factory=lambda: [_map_shareholder_count(row) for row in rows],
+        )
+
     def fetch_convertible_bonds(self) -> ProviderBatch[ConvertibleBondRecord]:
         result = _provider_call(
             "cb_basic",
@@ -476,6 +544,7 @@ def normalize_tushare_raw(
         DatasetCode.DAILY_BAR: "tushare.daily_bar.v1",
         DatasetCode.STOCK_DAILY_INDICATOR: "tushare.stock_daily_indicator.v1",
         DatasetCode.DEDUCTED_PROFIT: "tushare.deducted_profit.v1",
+        DatasetCode.SHAREHOLDER_COUNT: "tushare.shareholder_count.v1",
         DatasetCode.CONVERTIBLE_BOND: "tushare.convertible_bond.v1",
         DatasetCode.CONVERTIBLE_BOND_DAILY_BAR: "tushare.convertible_bond_daily_bar.v1",
     }.get(dataset_code)
@@ -503,6 +572,19 @@ def normalize_tushare_raw(
             for row in raw_rows
             if row.get("row_type") == "fina_indicator"
             and (row["ts_code"], row["end_date"]) in disclosures
+        )
+    if dataset_code is DatasetCode.SHAREHOLDER_COUNT:
+        return tuple(
+            _map_shareholder_count(row)
+            for row in sorted(
+                raw_rows,
+                key=lambda row: (
+                    row["ts_code"],
+                    row["end_date"],
+                    row["ann_date"],
+                    row["holder_num"],
+                ),
+            )
         )
     if dataset_code is DatasetCode.CONVERTIBLE_BOND:
         return tuple(_map_cb_basic(row) for row in raw_rows)
@@ -771,6 +853,26 @@ def _map_deducted_profit(
     )
 
 
+def _map_shareholder_count(row: Mapping[str, str]) -> ShareholderCountRecord:
+    _, _, symbol = _normalize_symbol(row["ts_code"])
+    statistics_date = _parse_date(row["end_date"])
+    announcement_date = _parse_date(row["ann_date"])
+    shareholder_count = _strict_positive_integer(row.get("holder_num"), "holder_num")
+    return ShareholderCountRecord(
+        symbol=symbol,
+        statistics_date=statistics_date,
+        announcement_date=announcement_date,
+        shareholder_count=shareholder_count,
+        revision_key=shareholder_count_revision_key(
+            symbol=symbol,
+            statistics_date=statistics_date,
+            announcement_date=announcement_date,
+            shareholder_count=shareholder_count,
+        ),
+        source_code="tushare",
+    )
+
+
 def _source_symbol(value: str) -> str:
     exchange, code, _ = _normalize_symbol(value)
     suffix = {Exchange.SSE: "SH", Exchange.SZSE: "SZ", Exchange.BSE: "BJ"}[exchange]
@@ -826,6 +928,15 @@ def _optional_int(value: str | None) -> int | None:
         return int(float(value))
     except ValueError as error:
         raise ProviderError(f"invalid Tushare integer: {value}") from error
+
+
+def _strict_positive_integer(value: str | None, field_name: str) -> int:
+    if value is None or not value.strip() or not value.strip().isdigit():
+        raise ProviderError(f"invalid Tushare integer: {field_name}")
+    result = int(value)
+    if result <= 0:
+        raise ProviderError(f"Tushare {field_name} must be positive")
+    return result
 
 
 def _decimal(value: str | None) -> Decimal | None:

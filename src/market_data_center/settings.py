@@ -21,6 +21,7 @@ class TushareSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     tushare_token: SecretStr
+    tushare_shareholder_count_max_calls_per_minute: int = Field(default=180, ge=1, le=200)
 
 
 class SchedulerSettings(BaseSettings):
