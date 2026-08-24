@@ -41,7 +41,7 @@
 ### Task 1: Establish accepted governance artifacts
 
 **Files:**
-- Create: `docs/adr/ADR-0046-股东人数点时事实与Tushare采集.md`
+- Create: `docs/adr/ADR-0047-股东人数点时事实与Tushare采集.md`
 - Create: `docs/领域详设-ShareholderCount-2026-08-24.md`
 - Modify: `docs/adr/README.md`
 
@@ -62,7 +62,7 @@ Expected: one issue URL. Record its numeric suffix in the ADR `关联 Issue` lin
 The ADR header is:
 
 ~~~markdown
-# ADR-0046：股东人数点时事实与 Tushare 采集
+# ADR-0047：股东人数点时事实与 Tushare 采集
 - 状态：Accepted
 - 日期：2026-08-24
 - 关联 Issue：使用 Step 1 返回 URL 的实际数字编号
@@ -75,9 +75,9 @@ Copy every approved decision: append-only key, both time axes, backfill limitati
 - [ ] **Step 3: Verify and commit**
 
 ~~~powershell
-rg -n "状态：Accepted|关联 Issue|shareholder_count|stk_holdernumber|first_observed_at|3000|21:00|FastAPI" docs/adr/ADR-0046-股东人数点时事实与Tushare采集.md docs/领域详设-ShareholderCount-2026-08-24.md
-rg -n "ADR-0046" docs/adr/README.md
-git add docs/adr/ADR-0046-股东人数点时事实与Tushare采集.md docs/领域详设-ShareholderCount-2026-08-24.md docs/adr/README.md
+rg -n "状态：Accepted|关联 Issue|shareholder_count|stk_holdernumber|first_observed_at|3000|21:00|FastAPI" docs/adr/ADR-0047-股东人数点时事实与Tushare采集.md docs/领域详设-ShareholderCount-2026-08-24.md
+rg -n "ADR-0047" docs/adr/README.md
+git add docs/adr/ADR-0047-股东人数点时事实与Tushare采集.md docs/领域详设-ShareholderCount-2026-08-24.md docs/adr/README.md
 git commit -m "docs: accept shareholder count domain"
 ~~~
 
@@ -570,7 +570,7 @@ The integration command uses only disposable `TEST_DATABASE_URL`; if unset, repo
 
 ~~~powershell
 rg -n "Windows Task Scheduler|cron" docs src scripts
-rg -n "TUSHARE_TOKEN|DATABASE_URL" contracts docs/领域详设-ShareholderCount-2026-08-24.md docs/adr/ADR-0046-股东人数点时事实与Tushare采集.md
+rg -n "TUSHARE_TOKEN|DATABASE_URL" contracts docs/领域详设-ShareholderCount-2026-08-24.md docs/adr/ADR-0047-股东人数点时事实与Tushare采集.md
 git status --short
 git add contracts/postgrest-openapi-v1.json contracts/agent-tools-v1.json tests/test_api_contracts.py docs/领域模型总纲-DomainModelOverview-2026-07-24.md docs/数据库导航.md docs/Worker日常采集与调度.md docs/Tushare-2000积分接口清单-2026-08-02.md
 git commit -m "docs: publish shareholder count contracts"

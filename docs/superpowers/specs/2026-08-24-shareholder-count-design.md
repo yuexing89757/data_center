@@ -2,7 +2,7 @@
 
 - 状态：设计已确认，待建立 GitHub Issue 与 Accepted ADR
 - 日期：2026-08-24
-- 计划 ADR：ADR-0046
+- 计划 ADR：ADR-0047
 - 来源接口：[Tushare `stk_holdernumber`](https://tushare.pro/document/2?doc_id=166)
 
 ## 目标与非目标
@@ -17,7 +17,7 @@ Provider，支持受控全历史回填和 Worker 每日增量采集。查询契�
 估值快照，不进入 StockDailyIndicator。首版不增加 FastAPI 路由、MCP、第二 Provider 或操作
 系统级计划任务。
 
-按照项目宪法，实施前必须先建立 GitHub Issue、接受 ADR-0046，并新增领域详设、SQL migration
+按照项目宪法，实施前必须先建立 GitHub Issue、接受 ADR-0047，并新增领域详设、SQL migration
 和测试。本文不授权生产回填、迁移或其他外部写操作。
 
 ## 领域边界与依赖
@@ -318,7 +318,7 @@ uv run pytest -m integration  # 仅隔离 TEST_DATABASE_URL
 
 ## 文档、上线与回退
 
-设计批准后的实施文档包括 Accepted `ADR-0046-股东人数点时事实与Tushare采集.md`、
+设计批准后的实施文档包括 Accepted `ADR-0047-股东人数点时事实与Tushare采集.md`、
 `领域详设-ShareholderCount-2026-08-24.md`，并更新领域模型总纲、数据库导航、Worker 日常采集与
 调度说明、Tushare 权限快照及 ADR 索引。不得把未部署能力写成当前已实现事实。
 
