@@ -24,6 +24,38 @@ VIEW_COUNT = cast(Any, SMOKE_CHECKS["_view_count"])
 PUBLISHED_FUNCTIONS = cast(tuple[str, ...], FASTAPI_CHECKS["PUBLISHED_FUNCTIONS"])
 
 
+def test_trading_billboard_migration_is_bounded_private_and_read_only() -> None:
+    migration = (
+        (MIGRATION_DIR / "20260824000200_create_trading_billboard.sql")
+        .read_text(encoding="utf-8")
+        .lower()
+    )
+
+    assert "create schema if not exists billboard" in migration
+    assert "create table billboard.entry" in migration
+    assert "create table billboard.seat" in migration
+    assert "'trading_billboard'" in migration
+    assert "'trading_billboard_daily'" in migration
+    assert "enable row level security" in migration
+    assert "content_hash ~ '^[0-9a-f]{64}$'" in migration
+    assert "foreign key (entry_id, source_code, source_event_id, symbol, trade_date)" in migration
+    assert "query_trading_billboard_by_date" in migration
+    assert "query_trading_billboard_by_symbol" in migration
+    assert "query_trading_billboard_by_seat" in migration
+    assert migration.count("security definer") == 3
+    assert migration.count("set statement_timeout = '5s'") == 3
+    assert migration.count("using errcode = '22023'") >= 3
+    assert "p_limit > 500" in migration
+    assert "p_offset > 10000" in migration
+    assert "p_end_date - p_start_date > 365" in migration
+    assert "from public, anon, authenticated" in migration
+    assert "to market_data_api" in migration
+    assert "grant select, insert, update on billboard.entry" in migration
+    assert "grant select, insert, delete on billboard.seat" in migration
+    assert "grant delete on billboard.entry" not in migration
+    assert all(token not in migration for token in ("schtasks", "crontab", "oncalendar"))
+
+
 def test_auction_series_five_level_migration_is_bounded_and_preserves_history() -> None:
     migration = (
         (MIGRATION_DIR / "20260818000100_enrich_call_auction_market_series.sql")

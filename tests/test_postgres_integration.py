@@ -5883,6 +5883,252 @@ def _prepare_query_contract_data(engine: Engine) -> UUID:
     return summary.calculation_id
 
 
+def test_trading_billboard_constraints_and_bounded_rpcs(database_engine: Engine) -> None:
+    _prepare_api_data(database_engine)
+    ingestion_id = uuid4()
+    entry_id = uuid4()
+    with database_engine.begin() as connection:
+        connection.execute(
+            text("""
+                insert into ingestion.ingestion_run (
+                    ingestion_id, provider_code, dataset_code, status,
+                    requested_at, started_at, finished_at,
+                    fetched_rows, accepted_rows, rejected_rows
+                ) values (
+                    :ingestion_id, 'eastmoney', 'trading_billboard', 'succeeded',
+                    now(), now(), now(), 11, 1, 0
+                )
+            """),
+            {"ingestion_id": ingestion_id},
+        )
+        connection.execute(
+            text("""
+                insert into billboard.entry (
+                    entry_id, symbol, trade_date, source_event_id,
+                    reason_code, reason_text, close_price, change_rate_pct,
+                    turnover_rate_pct, market_amount, buy_amount, sell_amount,
+                    net_amount, deal_amount, deal_to_market_pct,
+                    net_to_market_pct, free_float_market_value,
+                    source_code, ingestion_id, content_hash
+                ) values (
+                    :entry_id, :symbol, :trade_date, 'event-1',
+                    '106001', '测试上榜原因', 10.50, 9.9,
+                    12.5, 10000, 600, 400,
+                    200, 1000, 10, 2, 50000,
+                    'eastmoney', :ingestion_id, :content_hash
+                )
+            """),
+            {
+                "entry_id": entry_id,
+                "symbol": SYMBOL,
+                "trade_date": TRADE_DATE,
+                "ingestion_id": ingestion_id,
+                "content_hash": "a" * 64,
+            },
+        )
+        for side in ("buy", "sell"):
+            for rank in range(1, 6):
+                connection.execute(
+                    text("""
+                        insert into billboard.seat (
+                            entry_id, source_code, source_event_id, symbol, trade_date,
+                            side, rank, seat_code, seat_name,
+                            buy_amount, sell_amount, net_amount,
+                            buy_to_market_pct, sell_to_market_pct, ingestion_id
+                        ) values (
+                            :entry_id, 'eastmoney', 'event-1', :symbol, :trade_date,
+                            :side, :rank, :seat_code, :seat_name,
+                            120, 20, 100, 1.2, 0.2, :ingestion_id
+                        )
+                    """),
+                    {
+                        "entry_id": entry_id,
+                        "symbol": SYMBOL,
+                        "trade_date": TRADE_DATE,
+                        "side": side,
+                        "rank": rank,
+                        "seat_code": "80000001" if rank == 1 else None,
+                        "seat_name": "测试营业部" if rank == 1 else "机构专用",
+                        "ingestion_id": ingestion_id,
+                    },
+                )
+
+    with database_engine.connect() as connection:
+        connection.execute(text("set local role market_data_api"))
+        by_date = cast(
+            Mapping[str, object],
+            connection.scalar(
+                text("select api_v1.query_trading_billboard_by_date(:day, 100, 0)"),
+                {"day": TRADE_DATE},
+            ),
+        )
+        no_fallback = cast(
+            Mapping[str, object],
+            connection.scalar(
+                text("select api_v1.query_trading_billboard_by_date(:day, 100, 0)"),
+                {"day": TRADE_DATE + timedelta(days=1)},
+            ),
+        )
+        by_symbol = cast(
+            Mapping[str, object],
+            connection.scalar(
+                text("""
+                    select api_v1.query_trading_billboard_by_symbol(
+                        :symbol, :start_date, :end_date, 100, 0
+                    )
+                """),
+                {"symbol": SYMBOL, "start_date": TRADE_DATE, "end_date": TRADE_DATE},
+            ),
+        )
+        by_code = cast(
+            Mapping[str, object],
+            connection.scalar(
+                text("""
+                    select api_v1.query_trading_billboard_by_seat(
+                        '80000001', null, :start_date, :end_date, null, 100, 0
+                    )
+                """),
+                {"start_date": TRADE_DATE, "end_date": TRADE_DATE},
+            ),
+        )
+        by_name = cast(
+            Mapping[str, object],
+            connection.scalar(
+                text("""
+                    select api_v1.query_trading_billboard_by_seat(
+                        null, '机构专用', :start_date, :end_date, 'buy', 100, 0
+                    )
+                """),
+                {"start_date": TRADE_DATE, "end_date": TRADE_DATE},
+            ),
+        )
+
+        assert by_date["total_count"] == 1
+        assert len(cast(list[object], by_date["items"])) == 1
+        assert no_fallback["items"] == []
+        assert by_symbol["total_count"] == 1
+        assert by_code["total_count"] == 2
+        assert by_name["total_count"] == 4
+        assert connection.scalar(
+            text("""
+                select has_function_privilege(
+                    'market_data_api',
+                    'api_v1.query_trading_billboard_by_seat(text,text,date,date,text,integer,integer)',
+                    'execute'
+                )
+            """)
+        )
+        assert not connection.scalar(
+            text("select has_table_privilege('market_data_api', 'billboard.entry', 'select')")
+        )
+        with pytest.raises(DBAPIError), connection.begin_nested():
+            connection.execute(text("select * from billboard.entry"))
+        with pytest.raises(DBAPIError) as invalid:
+            connection.execute(
+                text("""
+                    select api_v1.query_trading_billboard_by_seat(
+                        '80000001', '机构专用', :start_date, :end_date, null, 100, 0
+                    )
+                """),
+                {"start_date": TRADE_DATE, "end_date": TRADE_DATE},
+            )
+        assert getattr(invalid.value.orig, "sqlstate", None) == "22023"
+
+
+def test_trading_billboard_seat_composite_parent_key_is_enforced(
+    database_engine: Engine,
+) -> None:
+    _prepare_api_data(database_engine)
+    ingestion_id = uuid4()
+    entry_id = uuid4()
+    with database_engine.begin() as connection:
+        connection.execute(
+            text("""
+                insert into ingestion.ingestion_run (
+                    ingestion_id, provider_code, dataset_code, status,
+                    requested_at, started_at, finished_at
+                ) values (
+                    :ingestion_id, 'eastmoney', 'trading_billboard', 'succeeded',
+                    now(), now(), now()
+                )
+            """),
+            {"ingestion_id": ingestion_id},
+        )
+        connection.execute(
+            text("""
+                insert into billboard.entry (
+                    entry_id, symbol, trade_date, source_event_id,
+                    reason_code, reason_text, buy_amount, sell_amount,
+                    net_amount, deal_amount, source_code, ingestion_id, content_hash
+                ) values (
+                    :entry_id, :symbol, :trade_date, 'event-parent',
+                    '106001', '测试上榜原因', 60, 40,
+                    20, 100, 'eastmoney', :ingestion_id, :content_hash
+                )
+            """),
+            {
+                "entry_id": entry_id,
+                "symbol": SYMBOL,
+                "trade_date": TRADE_DATE,
+                "ingestion_id": ingestion_id,
+                "content_hash": "b" * 64,
+            },
+        )
+        connection.execute(
+            text("""
+                insert into billboard.seat (
+                    entry_id, source_code, source_event_id, symbol, trade_date,
+                    side, rank, seat_name, ingestion_id
+                ) values (
+                    :entry_id, 'eastmoney', 'event-parent', :symbol, :trade_date,
+                    'buy', 1, '测试营业部', :ingestion_id
+                )
+            """),
+            {
+                "entry_id": entry_id,
+                "symbol": SYMBOL,
+                "trade_date": TRADE_DATE,
+                "ingestion_id": ingestion_id,
+            },
+        )
+        with pytest.raises(IntegrityError), connection.begin_nested():
+            connection.execute(
+                text("""
+                    insert into billboard.seat (
+                        entry_id, source_code, source_event_id, symbol, trade_date,
+                        side, rank, seat_name, ingestion_id
+                    ) values (
+                        :entry_id, 'eastmoney', 'event-parent', :symbol, :trade_date,
+                        'buy', 1, '重复名次营业部', :ingestion_id
+                    )
+                """),
+                {
+                    "entry_id": entry_id,
+                    "symbol": SYMBOL,
+                    "trade_date": TRADE_DATE,
+                    "ingestion_id": ingestion_id,
+                },
+            )
+        with pytest.raises(IntegrityError), connection.begin_nested():
+            connection.execute(
+                text("""
+                        insert into billboard.seat (
+                            entry_id, source_code, source_event_id, symbol, trade_date,
+                            side, rank, seat_name, ingestion_id
+                        ) values (
+                            :entry_id, 'eastmoney', 'wrong-event', :symbol, :trade_date,
+                            'buy', 1, '测试营业部', :ingestion_id
+                        )
+                    """),
+                {
+                    "entry_id": entry_id,
+                    "symbol": SYMBOL,
+                    "trade_date": TRADE_DATE,
+                    "ingestion_id": ingestion_id,
+                },
+            )
+
+
 def _envelopes[
     RecordT: SecurityRecord
     | CalculatedTradingDay
