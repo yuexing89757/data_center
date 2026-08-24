@@ -1,9 +1,9 @@
 # 领域详设：TradingBillboard 股票龙虎榜 v0
 
-> 状态：Proposed，禁止实施
+> 状态：有效，待实施
 > 日期：2026-08-24
 > 关联 Issue：#65
-> 上级决策：`adr/ADR-0046-东方财富股票龙虎榜采集与只读契约.md`（Proposed）
+> 上级决策：`adr/ADR-0046-东方财富股票龙虎榜采集与只读契约.md`（Accepted）
 
 ## 1. 领域职责
 
@@ -312,5 +312,5 @@ PostgreSQL 测试只使用隔离 disposable `TEST_DATABASE_URL`，不得指向�
 完成来源条款、相关交易信息权利和公开 API 暴露范围审阅。未完成时只允许 mocked 测试和受控
 只读验证，不注册启用生产任务。
 
-本详设和 ADR-0046 当前均为 Proposed。只有 Issue #65 保持有效、ADR-0046 由项目所有者改为
-Accepted、本详设转为有效，并完成 ordered migration 与测试后，才能开始实现和生产发布流程。
+Issue #65、Accepted ADR-0046 和本有效详设共同约束实现。只有完成实施计划、ordered migration、
+测试和来源授权审阅后，才能进入生产发布流程。

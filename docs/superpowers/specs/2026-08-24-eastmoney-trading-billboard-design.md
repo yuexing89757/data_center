@@ -1,9 +1,9 @@
 # 东方财富股票龙虎榜采集领域设计
 
-- 状态：设计已确认，待项目治理审批
+- 状态：设计已确认，治理审批已完成，待实施
 - 日期：2026-08-24
 - 数据来源：东方财富
-- 治理状态：尚未创建 GitHub Issue 或 Accepted ADR，不得据此直接实施
+- 治理状态：GitHub Issue #65、Accepted ADR-0046 和有效领域详设已建立
 
 ## 目标与非目标
 
@@ -343,13 +343,12 @@ uv run pytest -m integration  # 仅隔离的 disposable PostgreSQL
 
 ## 治理与实施门禁
 
-本文件记录已确认的设计，不是 Accepted ADR。根据项目宪法，实施前必须依次完成：
+本文件记录 Issue #65 和 Accepted ADR-0046 的设计依据。治理前置步骤已经完成：
 
-1. 创建 GitHub Issue，记录范围、来源授权前提、契约和验收标准；
-2. 创建并由项目所有者接受新的 TradingBillboard ADR；
-3. 将本设计整理为当前领域详设并与 Accepted ADR 对齐；
-4. 编写有序 SQL migration 和测试；
-5. 按测试驱动方式实施 Provider、Domain、Service、Persistence、Worker 和公开契约；
-6. 通过完整本地门禁和隔离 PostgreSQL 集成测试后再申请生产启用。
+1. GitHub Issue #65 已记录范围、来源授权前提、契约和验收标准；
+2. ADR-0046 已由项目所有者接受；
+3. `领域详设-TradingBillboard-2026-08-24.md` 已转为有效。
 
-在 GitHub Issue、Accepted ADR 和数据授权审阅完成前，不得实现或启用生产采集。
+实施必须先形成详细计划，再按测试驱动方式完成 ordered migration、Provider、Domain、Service、
+Persistence、Worker 和公开契约。完整本地门禁、隔离 PostgreSQL 集成测试和数据授权审阅完成前，
+不得启用生产采集。
