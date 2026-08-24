@@ -24,6 +24,8 @@ from market_data_center.public_api.models import (
     LimitUpPoolResponse,
     SecurityItem,
     TopGainers20dResponse,
+    TradingBillboardPageResponse,
+    TradingBillboardSeatPageResponse,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -38,6 +40,27 @@ select api_v1.query_recent_daily_bars(
     p_code => :code,
     p_trade_date => :trade_date,
     p_limit => :limit
+) as payload
+""")
+
+QUERY_TRADING_BILLBOARD_BY_DATE = text("""
+select api_v1.query_trading_billboard_by_date(
+    p_trade_date => :trade_date, p_limit => :limit, p_offset => :offset
+) as payload
+""")
+
+QUERY_TRADING_BILLBOARD_BY_SYMBOL = text("""
+select api_v1.query_trading_billboard_by_symbol(
+    p_symbol => :symbol, p_start_date => :start_date, p_end_date => :end_date,
+    p_limit => :limit, p_offset => :offset
+) as payload
+""")
+
+QUERY_TRADING_BILLBOARD_BY_SEAT = text("""
+select api_v1.query_trading_billboard_by_seat(
+    p_seat_code => :seat_code, p_seat_name => :seat_name,
+    p_start_date => :start_date, p_end_date => :end_date, p_side => :side,
+    p_limit => :limit, p_offset => :offset
 ) as payload
 """)
 
@@ -153,6 +176,25 @@ class PublicQueryService(Protocol):
 
     def daily_bars(self, code: str, trade_date: date, limit: int) -> DailyBarResponse: ...
 
+    def trading_billboard_by_date(
+        self, trade_date: date, limit: int, offset: int
+    ) -> TradingBillboardPageResponse: ...
+
+    def trading_billboard_by_code(
+        self, code: str, start_date: date, end_date: date, limit: int, offset: int
+    ) -> TradingBillboardPageResponse: ...
+
+    def trading_billboard_by_seat(
+        self,
+        seat_code: str | None,
+        seat_name: str | None,
+        start_date: date,
+        end_date: date,
+        side: str | None,
+        limit: int,
+        offset: int,
+    ) -> TradingBillboardSeatPageResponse: ...
+
     def latest_stock_daily_indicators(
         self, codes: tuple[str, ...]
     ) -> LatestStockDailyIndicatorResponse: ...
@@ -216,6 +258,66 @@ class PostgreSQLPublicQueryService:
             {"code": code, "trade_date": trade_date, "limit": limit},
         )
         return DailyBarResponse.model_validate(rows[0]["payload"])
+
+    def trading_billboard_by_date(
+        self, trade_date: date, limit: int, offset: int
+    ) -> TradingBillboardPageResponse:
+        rows = self._execute(
+            QUERY_TRADING_BILLBOARD_BY_DATE,
+            {"trade_date": trade_date, "limit": limit, "offset": offset},
+            statement_timeout_ms=5_000,
+        )
+        return TradingBillboardPageResponse.model_validate(rows[0]["payload"])
+
+    def trading_billboard_by_code(
+        self, code: str, start_date: date, end_date: date, limit: int, offset: int
+    ) -> TradingBillboardPageResponse:
+        matches = tuple(
+            item
+            for item in self.search_securities(code, 100)
+            if item.code == code and item.security_type.value == "stock"
+        )
+        if not matches:
+            raise PublicQueryNotFound("stock code was not found")
+        if len(matches) != 1:
+            raise PublicQueryAmbiguous("stock code is ambiguous across exchanges")
+        rows = self._execute(
+            QUERY_TRADING_BILLBOARD_BY_SYMBOL,
+            {
+                "symbol": matches[0].symbol,
+                "start_date": start_date,
+                "end_date": end_date,
+                "limit": limit,
+                "offset": offset,
+            },
+            statement_timeout_ms=5_000,
+        )
+        return TradingBillboardPageResponse.model_validate(rows[0]["payload"])
+
+    def trading_billboard_by_seat(
+        self,
+        seat_code: str | None,
+        seat_name: str | None,
+        start_date: date,
+        end_date: date,
+        side: str | None,
+        limit: int,
+        offset: int,
+    ) -> TradingBillboardSeatPageResponse:
+        rows = self._execute(
+            QUERY_TRADING_BILLBOARD_BY_SEAT,
+            {
+                "seat_code": seat_code,
+                "seat_name": seat_name,
+                "start_date": start_date,
+                "end_date": end_date,
+                "side": side,
+                "limit": limit,
+                "offset": offset,
+            },
+            statement_timeout_ms=5_000,
+        )
+        return TradingBillboardSeatPageResponse.model_validate(rows[0]["payload"])
 
     def latest_stock_daily_indicators(
         self, codes: tuple[str, ...]
