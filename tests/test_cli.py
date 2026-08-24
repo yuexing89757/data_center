@@ -59,6 +59,85 @@ def test_stock_daily_indicator_bulk_parses_one_trade_date() -> None:
     assert args.trade_date == "2026-07-31"
 
 
+def test_shareholder_count_commands_parse_controlled_daily_and_backfill_inputs() -> None:
+    daily = _parser().parse_args(
+        [
+            "shareholder-count-daily",
+            "--as-of-date",
+            "2026-08-24",
+            "--provider",
+            "tushare",
+        ]
+    )
+    backfill = _parser().parse_args(
+        [
+            "shareholder-count-backfill",
+            "--cutoff-date",
+            "2026-08-24",
+            "--symbols",
+            "SSE:600000",
+            "BSE:920000",
+            "--resume-after-symbol",
+            "SSE:600000",
+            "--yes",
+            "--provider",
+            "tushare",
+        ]
+    )
+
+    assert daily.provider == "tushare"
+    assert daily.as_of_date == "2026-08-24"
+    assert backfill.symbols == ["SSE:600000", "BSE:920000"]
+    assert backfill.resume_after_symbol == "SSE:600000"
+    assert backfill.yes is True
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["shareholder-count-daily", "--provider", "akshare"],
+        [
+            "shareholder-count-backfill",
+            "--cutoff-date",
+            "2026-08-25",
+            "--yes",
+            "--provider",
+            "tushare",
+        ],
+        [
+            "shareholder-count-backfill",
+            "--cutoff-date",
+            "2026-08-24",
+            "--provider",
+            "tushare",
+        ],
+    ],
+)
+def test_shareholder_count_invalid_commands_fail_before_provider_creation(
+    argv: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    provider_calls = 0
+
+    def fail_provider_creation(provider_code: str):
+        nonlocal provider_calls
+        provider_calls += 1
+        raise AssertionError(provider_code)
+
+    monkeypatch.setattr(cli, "create_provider", fail_provider_creation)
+    args = _parser().parse_args(argv)
+
+    with pytest.raises(SystemExit):
+        cli.run_shareholder_count_workflow(
+            args,
+            cast(PostgreSQLPersistence, object()),
+            cast(LocalRawStore, object()),
+            today=date(2026, 8, 24),
+            interactive=False,
+        )
+
+    assert provider_calls == 0
+
+
 def test_stock_pool_commands_require_exact_dates_and_known_pool_codes() -> None:
     build = _parser().parse_args(["stock-pools-build", "--basis-trade-date", "2026-07-31"])
     check = _parser().parse_args(

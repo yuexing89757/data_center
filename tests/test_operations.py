@@ -26,6 +26,7 @@ from market_data_center.providers.pytdx_pool import (
 from market_data_center.scheduler import execute_pytdx_pool_refresh
 from market_data_center.scheduling_catalog import WORKFLOW_DEFINITIONS, job_definitions
 from market_data_center.settings import PytdxPoolSettings, SchedulerSettings
+from market_data_center.shareholder_count_batch import ShareholderCountSyncSummary
 
 NOW = datetime(2026, 8, 2, 10, tzinfo=UTC)
 
@@ -256,6 +257,26 @@ def test_execution_service_records_call_auction_market_statistics() -> None:
     assert (job.fetched_rows, job.accepted_rows, job.rejected_rows) == (5_200, 5_199, 1)
     assert job.status is ExecutionStatus.PARTIAL
     assert workflow.status is ExecutionStatus.PARTIAL
+
+
+def test_execution_service_records_shareholder_count_statistics() -> None:
+    persistence = MemoryOperationsPersistence()
+    execution = WorkflowExecutionService(cast(PostgreSQLOperationsPersistence, persistence)).start(
+        WorkflowCode.SHAREHOLDER_COUNT_DAILY, NOW, TriggerSource.SCHEDULED
+    )
+    summary = ShareholderCountSyncSummary(
+        request_count=3,
+        fetched_rows=3_002,
+        accepted_rows=2,
+        superseded_request_count=1,
+    )
+
+    execution.step("shareholder_count_daily", 1, lambda: summary)
+    execution.succeed()
+
+    job = persistence.finished_jobs[0]
+    assert (job.fetched_rows, job.accepted_rows, job.rejected_rows) == (3_002, 2, 0)
+    assert job.status is ExecutionStatus.SUCCEEDED
 
 
 def test_execution_service_records_call_auction_market_series_statistics() -> None:

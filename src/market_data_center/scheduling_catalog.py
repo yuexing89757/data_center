@@ -79,6 +79,18 @@ WORKFLOW_DEFINITIONS = (
         ("deducted_profit",),
     ),
     WorkflowDefinition(
+        "shareholder_count_daily",
+        "股东人数每日增量同步",
+        "按滚动三十日公告窗口同步股东人数点时事实。",
+        ("shareholder_count_daily",),
+    ),
+    WorkflowDefinition(
+        "shareholder_count_backfill",
+        "股东人数受控历史回填",
+        "按证券顺序执行显式确认的股东人数全历史回填。",
+        ("shareholder_count_backfill",),
+    ),
+    WorkflowDefinition(
         "stock_pool",
         "沪深主板昨日涨跌停股票池",
         "在日 K 与每日指标成功后构建下一交易日生效的不可变涨跌停股票池。",

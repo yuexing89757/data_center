@@ -22,6 +22,7 @@ from market_data_center.domain.stock_pool import StockPoolBuildSummary
 from market_data_center.persistence.operations_postgres import PostgreSQLOperationsPersistence
 from market_data_center.persistence.today_limit_up_postgres import TodayLimitUpFillSummary
 from market_data_center.providers.pytdx_pool import PytdxPoolRefreshResult
+from market_data_center.shareholder_count_batch import ShareholderCountSyncSummary
 
 T = TypeVar("T")
 
@@ -115,6 +116,13 @@ def safe_error_summary(error: BaseException) -> str:
 
 
 def _result_statistics(result: object) -> tuple[int, int, int, ExecutionStatus]:
+    if isinstance(result, ShareholderCountSyncSummary):
+        return (
+            result.fetched_rows,
+            result.accepted_rows,
+            0,
+            ExecutionStatus.SUCCEEDED,
+        )
     if isinstance(result, DailyBarBulkSummary):
         status = {
             "succeeded": ExecutionStatus.SUCCEEDED,

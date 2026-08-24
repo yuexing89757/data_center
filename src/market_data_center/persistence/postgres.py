@@ -60,6 +60,7 @@ from market_data_center.domain.records import (
 from market_data_center.domain.shareholder_count import ShareholderCountRecord
 from market_data_center.domain.stock_daily_indicator import StockDailyIndicatorSnapshotRecord
 from market_data_center.shareholder_count_batch import PreparedShareholderCountBatch
+from market_data_center.shareholder_count_service import ShareholderCountBackfillTarget
 
 INSERT_INGESTION_RUN = text("""
 insert into ingestion.ingestion_run (
@@ -871,6 +872,46 @@ returning ingestion_id
         )
         with self._engine.connect() as connection:
             return set(connection.execute(statement, {"symbols": list(symbols)}).scalars())
+
+    def shareholder_count_backfill_targets(
+        self,
+        symbols: Collection[str] | None,
+        resume_after_symbol: str | None,
+    ) -> tuple[ShareholderCountBackfillTarget, ...]:
+        requested = None if symbols is None else set(symbols)
+        statement = text("""
+select symbol, coalesce(ipo_date, date '1990-12-19') as start_date
+from core.security
+where security_type = 'stock'
+  and exchange in ('SSE', 'SZSE', 'BSE')
+  and (:all_symbols or symbol in :symbols)
+order by symbol
+""").bindparams(bindparam("symbols", expanding=True))
+        parameters = {
+            "all_symbols": requested is None,
+            "symbols": sorted(requested or {""}),
+        }
+        with self._engine.connect() as connection:
+            rows = connection.execute(statement, parameters).mappings().all()
+        targets = tuple(
+            ShareholderCountBackfillTarget(
+                symbol=str(row["symbol"]),
+                start_date=cast(date, row["start_date"]),
+            )
+            for row in rows
+        )
+        found = {target.symbol for target in targets}
+        if requested is not None:
+            missing = requested - found
+            if missing:
+                raise ValueError(
+                    "unknown shareholder-count backfill symbols: " + ", ".join(sorted(missing))
+                )
+        if resume_after_symbol is not None:
+            if resume_after_symbol not in found:
+                raise ValueError("resume-after shareholder-count symbol is not in target set")
+            targets = tuple(target for target in targets if target.symbol > resume_after_symbol)
+        return targets
 
     def known_board_ids(self, board_ids: Collection[str]) -> set[str]:
         if not board_ids:
