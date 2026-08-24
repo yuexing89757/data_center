@@ -177,7 +177,7 @@
     },
     {
       "name": "market_call_auction_series_snapshots",
-      "description": "Read one exact-date opening-auction market series session by six-digit codes.",
+      "description": "Read one exact-date opening-auction market series session by six-digit codes, including batch codes and bid/ask five-level price-volume facts.",
       "endpoint": "query_call_auction_market_series_snapshots",
       "read_only": true,
       "input_schema": {
@@ -191,6 +191,10 @@
             "items": {"type": "string", "pattern": "^[0-9]{6}$"},
             "minItems": 1,
             "maxItems": 500
+          },
+          "p_batch_code": {
+            "type": ["string", "null"],
+            "pattern": "^[0-9]{6}$"
           }
         }
       }

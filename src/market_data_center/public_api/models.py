@@ -66,9 +66,10 @@ class DailyBarItem(ApiModel):
 
 
 class DailyBarResponse(ApiModel):
+    code: str = Field(pattern=r"^[0-9]{6}$")
     symbol: str
-    start_date: date
-    end_date: date
+    trade_date: date
+    limit: int = Field(ge=1, le=5000)
     count: int = Field(ge=0)
     items: list[DailyBarItem]
 
@@ -179,6 +180,7 @@ class DailyLimitUpListResponse(ApiModel):
 
 
 SixDigitCode = Annotated[str, Field(pattern=r"^[0-9]{6}$")]
+BatchCode = Annotated[str, Field(pattern=r"^[0-9]{6}$")]
 
 
 class CallAuctionMarketSnapshotQuery(ApiModel):
@@ -191,7 +193,97 @@ class CallAuctionMarketSnapshotQuery(ApiModel):
         return list(dict.fromkeys(codes))
 
 
-class CallAuctionMarketSnapshotItem(ApiModel):
+class LatestStockDailyIndicatorQuery(ApiModel):
+    codes: list[SixDigitCode] = Field(min_length=1, max_length=500)
+
+    @field_validator("codes")
+    @classmethod
+    def deduplicate_codes(cls, codes: list[str]) -> list[str]:
+        return list(dict.fromkeys(codes))
+
+
+class LatestStockQuoteQuery(ApiModel):
+    codes: list[SixDigitCode] = Field(min_length=1, max_length=500)
+    max_age_seconds: int = Field(default=15, ge=1, le=86400)
+
+    @field_validator("codes")
+    @classmethod
+    def deduplicate_quote_codes(cls, codes: list[str]) -> list[str]:
+        return list(dict.fromkeys(codes))
+
+
+class StockQuoteLevel(ApiModel):
+    level: int = Field(ge=1, le=5)
+    price: Decimal | None
+    volume_shares: int | None = Field(default=None, ge=0)
+
+
+class LatestStockQuoteItem(ApiModel):
+    symbol: str
+    code: SixDigitCode
+    name: str
+    observed_at: datetime
+    source_timestamp: datetime
+    quote_status: Literal["trading", "suspended", "closed", "unknown"]
+    last_price: Decimal | None
+    previous_close: Decimal | None
+    open: Decimal | None
+    high: Decimal | None
+    low: Decimal | None
+    cumulative_volume_shares: int | None = Field(default=None, ge=0)
+    cumulative_amount_cny: Decimal | None
+    bid_levels: list[StockQuoteLevel] = Field(min_length=5, max_length=5)
+    ask_levels: list[StockQuoteLevel] = Field(min_length=5, max_length=5)
+
+
+class LatestStockQuoteResponse(ApiModel):
+    max_age_seconds: int = Field(ge=1, le=86400)
+    requested_count: int = Field(ge=0, le=500)
+    found_count: int = Field(ge=0, le=500)
+    missing_codes: list[SixDigitCode] = Field(max_length=500)
+    items: list[LatestStockQuoteItem] = Field(max_length=500)
+
+
+class LatestStockDailyIndicatorItem(ApiModel):
+    symbol: str
+    code: SixDigitCode
+    trade_date: date
+    close: Decimal | None
+    turnover_rate_pct: Decimal | None
+    free_float_turnover_rate_pct: Decimal | None
+    volume_ratio: Decimal | None
+    pe: Decimal | None
+    pe_ttm: Decimal | None
+    pb: Decimal | None
+    ps: Decimal | None
+    ps_ttm: Decimal | None
+    dividend_yield_pct: Decimal | None
+    dividend_yield_ttm_pct: Decimal | None
+    total_shares: int | None
+    circulating_shares: int | None
+    free_float_shares: int | None
+    total_market_value: Decimal | None
+    circulating_market_value: Decimal | None
+    price_limit_status: Literal[
+        "flat",
+        "rise",
+        "limit_up",
+        "one_price_limit_up",
+        "fall",
+        "limit_down",
+        "one_price_limit_down",
+        "unknown",
+    ]
+
+
+class LatestStockDailyIndicatorResponse(ApiModel):
+    requested_count: int = Field(ge=1, le=500)
+    found_count: int = Field(ge=0, le=500)
+    missing_codes: list[SixDigitCode]
+    items: list[LatestStockDailyIndicatorItem]
+
+
+class _CallAuctionMarketSnapshotBaseItem(ApiModel):
     symbol: str
     code: SixDigitCode
     observed_at: datetime
@@ -201,6 +293,30 @@ class CallAuctionMarketSnapshotItem(ApiModel):
     low_price: Decimal | None
     cumulative_volume: int | None = Field(default=None, ge=0)
     cumulative_amount: Decimal | None
+
+
+class CallAuctionMarketSnapshotItem(_CallAuctionMarketSnapshotBaseItem):
+    bid1_price: Decimal | None = None
+    bid1_volume: int | None = Field(default=None, ge=0)
+    bid2_price: Decimal | None = None
+    bid2_volume: int | None = Field(default=None, ge=0)
+    bid3_price: Decimal | None = None
+    bid3_volume: int | None = Field(default=None, ge=0)
+    bid4_price: Decimal | None = None
+    bid4_volume: int | None = Field(default=None, ge=0)
+    bid5_price: Decimal | None = None
+    bid5_volume: int | None = Field(default=None, ge=0)
+    ask1_price: Decimal | None = None
+    ask1_volume: int | None = Field(default=None, ge=0)
+    ask2_price: Decimal | None = None
+    ask2_volume: int | None = Field(default=None, ge=0)
+    ask3_price: Decimal | None = None
+    ask3_volume: int | None = Field(default=None, ge=0)
+    ask4_price: Decimal | None = None
+    ask4_volume: int | None = Field(default=None, ge=0)
+    ask5_price: Decimal | None = None
+    ask5_volume: int | None = Field(default=None, ge=0)
+    seal_amount: Decimal | None = None
 
 
 class CallAuctionMarketSnapshotResponse(ApiModel):
@@ -214,11 +330,32 @@ class CallAuctionMarketSnapshotResponse(ApiModel):
 
 
 class CallAuctionMarketSeriesSnapshotQuery(CallAuctionMarketSnapshotQuery):
-    pass
+    batch_code: BatchCode | None = None
 
 
-class CallAuctionMarketSeriesSnapshotItem(CallAuctionMarketSnapshotItem):
-    pass
+class CallAuctionMarketSeriesSnapshotItem(_CallAuctionMarketSnapshotBaseItem):
+    batch_code: BatchCode
+    value_semantics: Literal["auction_indicative", "opening_trade", "legacy_source_quote"]
+    bid1_price: Decimal | None = None
+    bid1_volume: int | None = Field(default=None, ge=0)
+    bid2_price: Decimal | None = None
+    bid2_volume: int | None = Field(default=None, ge=0)
+    bid3_price: Decimal | None = None
+    bid3_volume: int | None = Field(default=None, ge=0)
+    bid4_price: Decimal | None = None
+    bid4_volume: int | None = Field(default=None, ge=0)
+    bid5_price: Decimal | None = None
+    bid5_volume: int | None = Field(default=None, ge=0)
+    ask1_price: Decimal | None = None
+    ask1_volume: int | None = Field(default=None, ge=0)
+    ask2_price: Decimal | None = None
+    ask2_volume: int | None = Field(default=None, ge=0)
+    ask3_price: Decimal | None = None
+    ask3_volume: int | None = Field(default=None, ge=0)
+    ask4_price: Decimal | None = None
+    ask4_volume: int | None = Field(default=None, ge=0)
+    ask5_price: Decimal | None = None
+    ask5_volume: int | None = Field(default=None, ge=0)
 
 
 class CallAuctionMarketSeriesRound(ApiModel):
@@ -321,8 +458,8 @@ class BoardIndexBiasResponse(ApiModel):
     lowest_bias_5_pct: Decimal | None
     lowest_bias_trade_date: date | None
     algorithm_version: Literal["board_index_bias_v1"]
-    data_origin: Literal["database", "ths_live"]
-    persistence_status: Literal["persisted", "queued"]
+    data_origin: Literal["database"]
+    persistence_status: Literal["persisted"]
     fetched_at: datetime
 
 
@@ -331,26 +468,59 @@ class AuctionOnePriceLimitItem(ApiModel):
     code: SixDigitCode
     name: str
     direction: Literal["up", "down"]
-    observed_at: datetime
+    observed_at: datetime = Field(
+        description="上海时区行情观察时间。格式为 YYYY-MM-DD HH:mm:ss",
+        examples=["2026-08-18 14:27:46"],
+    )
     indicated_price: Decimal
     limit_price: Decimal
     previous_close: Decimal
     cumulative_volume: int | None = Field(default=None, ge=0)
     cumulative_amount: Decimal | None
+    seal_amount: Decimal | None = Field(default=None, ge=0)
+
+    @field_serializer("observed_at", when_used="json")
+    def serialize_observed_at(self, value: datetime) -> str:
+        return value.astimezone(SHANGHAI).strftime("%Y-%m-%d %H:%M:%S")
 
 
 class AuctionOnePriceLimitResponse(ApiModel):
     trade_date: date
     ingestion_id: UUID
     ingestion_status: Literal["succeeded", "partial"]
-    price_limit_calculation_id: UUID
-    snapshot_window: Literal["09:26:00-09:26:59 Asia/Shanghai"]
+    price_limit_calculation_id: UUID | None
+    price_limit_rule_version: Literal["CN_MAINBOARD_2026_07_06"]
+    price_limit_algorithm_version: Literal["1.0.0"]
+    calculation_mode: Literal["realtime_read"]
+    snapshot_window: Literal["09:25:30-09:29:59 Asia/Shanghai"]
     candidate_count: int = Field(ge=0)
     omitted_incomplete_count: int = Field(ge=0)
     up_count: int = Field(ge=0)
     down_count: int = Field(ge=0)
     up: list[AuctionOnePriceLimitItem]
     down: list[AuctionOnePriceLimitItem]
+
+
+class CallAuctionOnePricePatternItem(ApiModel):
+    symbol: str
+    code: SixDigitCode
+    name: str | None
+    exchange: Literal["SSE", "SZSE"]
+    one_price: Decimal = Field(gt=0)
+    previous_close: Decimal = Field(gt=0)
+    change_pct: Decimal = Field(ge=Decimal("-4"), le=Decimal("4"))
+    sample_count: Literal[29]
+
+
+class CallAuctionOnePricePatternResponse(ApiModel):
+    trade_date: date
+    session_id: UUID
+    session_status: Literal["succeeded", "partial"]
+    window_start: datetime
+    window_end: datetime
+    round_count: Literal[29]
+    candidate_count: int = Field(ge=0)
+    items: list[CallAuctionOnePricePatternItem]
 
 
 class AuctionIndicativeDetailItem(ApiModel):

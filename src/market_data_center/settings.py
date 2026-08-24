@@ -30,13 +30,13 @@ class SchedulerSettings(BaseSettings):
 
     scheduler_store_path: Path = Path("data/scheduler/jobs.sqlite")
     worker_admin_port: int = Field(default=8765, ge=1, le=65_535)
-    auction_collection_enabled: bool = True
     eod_quote_snapshot_enabled: bool = True
     call_auction_snapshot_enabled: bool = True
     call_auction_market_series_enabled: bool = True
     # Remains opt-in until the new migration and provider preflight are explicitly deployed.
     today_limit_up_snapshot_enabled: bool = False
     close_price_new_highs_120d_enabled: bool = True
+    board_index_daily_bar_enabled: bool = True
 
 
 class PytdxPoolSettings(BaseSettings):
@@ -55,6 +55,15 @@ class PytdxHqSettings(BaseSettings):
     pytdx_hq_timeout_seconds: float = Field(default=2.0, gt=0, le=4.0)
     pytdx_hq_batch_size: int = Field(default=80, ge=1, le=80)
     pytdx_hq_max_retries: int = Field(default=1, ge=0, le=1)
+
+
+class TencentQuoteSettings(BaseSettings):
+    """Bounded Tencent batch quote request settings."""
+
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    tencent_quote_timeout_seconds: float = Field(default=3.0, gt=0, le=10)
+    tencent_quote_batch_size: int = Field(default=50, ge=1, le=50)
 
 
 class PytdxDailyBarSettings(BaseSettings):
@@ -87,6 +96,7 @@ class ApiSettings(BaseSettings):
     fastapi_api_key: SecretStr = Field(min_length=32)
     fastapi_host: str = "127.0.0.1"
     fastapi_port: int = Field(default=8000, ge=1, le=65535)
+    fastapi_tencent_quote_deadline_seconds: float = Field(default=8.0, ge=1, le=15)
     fastapi_auction_live_timeout_seconds: float = Field(default=5.0, ge=1, le=8)
     fastapi_auction_live_max_attempts: int = Field(default=2, ge=1, le=2)
     fastapi_auction_live_cache_seconds: float = Field(default=3.0, ge=0, le=5)

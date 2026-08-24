@@ -59,6 +59,7 @@ EXPECTED_TABLES = {
     ("realtime", "auction_collection_round"),
     ("realtime", "auction_collection_session"),
     ("realtime", "five_level_quote_snapshot"),
+    ("realtime", "stock_quote_snapshot"),
     ("stock_pool", "calculation_quality"),
     ("stock_pool", "member"),
     ("stock_pool", "snapshot"),

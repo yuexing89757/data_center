@@ -30,6 +30,15 @@ PostgREST 已经为内部消费者提供稳定查询契约，但外部调用方�
 11. TLS、IP 限流、访问日志保留周期和密钥轮换由反向代理/网关及安全治理 Issue #15 负责；应用内不实现不可共享的进程内限流器。
 12. FastAPI 与采集 Worker 分进程运行。Windows 的既有 20:00 采集任务不启动 API 服务；API 使用独立启动脚本。
 
+## 2026-08-18 Accepted clarification：个股最近日 K 查询
+
+Issue #58 将 `GET /api/v1/daily-bars/{symbol}` 的外部参数收敛为面向使用者的六位股票代码：
+
+1. 路径参数只接受六位代码，数据库以 Security 事实唯一解析标准 `symbol`；未知代码返回 404，跨交易所歧义返回 422，不依据代码前缀猜测交易所。
+2. `trade_date` 是包含性的截止交易日；`limit`（默认 20，最大 5000）表示向前返回的最近 N 条已存未复权日 K，结果按交易日倒序。
+3. 停牌、缺失或尚未采集的交易日不补造记录，因此返回数可以少于 `limit`；接口不回退到请求日之后的数据。
+4. 新 RPC `api_v1.query_recent_daily_bars` 仅授权 `market_data_api`。既有 PostgREST `query_daily_bars(symbol,start,end,limit)` 保持不变，避免破坏其客户端。
+
 ## 结果
 
 - 外部消费者获得稳定、可认证的 HTTP/OpenAPI 边界，同时数据库查询语义仍只有一份。

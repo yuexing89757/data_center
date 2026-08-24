@@ -121,6 +121,7 @@ def test_job_catalog_is_stable_and_references_defined_workflows() -> None:
     assert workflows["close_price_new_highs_120d"].step_codes == (
         "build_close_price_new_highs_120d_snapshot",
     )
+    assert workflows["board_index_daily_bar"].step_codes == ("collect_board_index_daily_bars",)
     assert all(job.timezone == "Asia/Shanghai" for job in jobs)
     assert {workflow.value for workflow in WorkflowCode} == set(workflows)
 
@@ -128,11 +129,8 @@ def test_job_catalog_is_stable_and_references_defined_workflows() -> None:
 def test_job_catalog_owns_all_fixed_schedules() -> None:
     jobs = {job.code: job for job in job_definitions(SchedulerSettings(_env_file=None))}
 
-    assert (
-        jobs["opening-auction-limit-up-quotes"].hour,
-        jobs["opening-auction-limit-up-quotes"].minute,
-    ) == (9, 15)
-    assert jobs["opening-auction-limit-up-quotes"].cadence_seconds == 30
+    assert "opening-auction-limit-up-quotes" not in jobs
+    assert WorkflowCode("auction_collection") is WorkflowCode.AUCTION_COLLECTION
     assert (
         jobs["call-auction-market-series"].hour,
         jobs["call-auction-market-series"].minute,
@@ -156,10 +154,14 @@ def test_job_catalog_owns_all_fixed_schedules() -> None:
         jobs["close-price-new-highs-120d-daily"].minute,
     ) == (21, 30)
     assert jobs["close-price-new-highs-120d-daily"].enabled is True
+    assert jobs["board-index-883423-daily-bar"].hour == "15-17"
+    assert jobs["board-index-883423-daily-bar"].minute == 30
+    assert jobs["board-index-883423-daily-bar"].enabled is True
     assert (
         jobs["call-auction-market-snapshot-daily"].hour,
         jobs["call-auction-market-snapshot-daily"].minute,
-    ) == (9, 26)
+        jobs["call-auction-market-snapshot-daily"].second,
+    ) == (9, 25, 30)
     assert jobs["call-auction-market-snapshot-daily"].enabled is True
     assert "call-auction-snapshot-daily" not in jobs
     assert (

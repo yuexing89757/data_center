@@ -9,17 +9,15 @@ STOCK_DAILY_INDICATOR_JOB_ID = "stock-daily-indicators-daily"
 STALE_RUN_RECOVERY_JOB_ID = "recover-stale-ingestion-runs"
 DEDUCTED_PROFIT_JOB_ID = "deducted-profit-daily"
 STOCK_POOL_JOB_ID = "mainboard-price-limit-stock-pools-daily"
-AUCTION_COLLECTION_JOB_ID = "opening-auction-limit-up-quotes"
 EOD_QUOTE_SNAPSHOT_JOB_ID = "eod-quote-snapshot-daily"
 CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID = "call-auction-market-snapshot-daily"
 CALL_AUCTION_MARKET_SERIES_JOB_ID = "call-auction-market-series"
 TODAY_LIMIT_UP_SNAPSHOT_JOB_ID = "today-limit-up-snapshot-daily"
 PYTDX_POOL_REFRESH_JOB_ID = "pytdx-pool-refresh"
 CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID = "close-price-new-highs-120d-daily"
+BOARD_INDEX_DAILY_BAR_JOB_ID = "board-index-883423-daily-bar"
 SCHEDULER_TIMEZONE = "Asia/Shanghai"
 JOB_TIMEOUT_SECONDS = 21_600
-AUCTION_COLLECTION_CADENCE_SECONDS = 30
-AUCTION_COLLECTION_QUOTE_BATCH_SIZE = 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,8 +41,9 @@ class JobDefinition:
     timeout_seconds: int
     recovery_policy: str
     day_of_week: str | None = None
-    hour: int | None = None
+    hour: int | str | None = None
     minute: int | None = None
+    second: int | None = None
     interval_hours: int | None = None
     cadence_seconds: int | None = None
 
@@ -133,6 +132,12 @@ WORKFLOW_DEFINITIONS = (
         "在日 K 完成后构建版本化沪深120交易日收盘新高快照。",
         ("build_close_price_new_highs_120d_snapshot",),
     ),
+    WorkflowDefinition(
+        "board_index_daily_bar",
+        "883423 板块日线收盘采集",
+        "收盘后采集固定同花顺板块 THS:883423 日线, 并补齐尾部缺口。",
+        ("collect_board_index_daily_bars",),
+    ),
 )
 
 
@@ -140,22 +145,6 @@ def job_definitions(settings: SchedulerSettings) -> tuple[JobDefinition, ...]:
     timezone = SCHEDULER_TIMEZONE
     timeout = JOB_TIMEOUT_SECONDS
     return (
-        JobDefinition(
-            AUCTION_COLLECTION_JOB_ID,
-            "集合竞价涨停池五档采集",
-            "单次启动十分钟会话, 仅采集精确 ready 的昨日涨停池。",
-            "auction_collection",
-            "cron",
-            "周一至周五 09:15",
-            timezone,
-            settings.auction_collection_enabled,
-            timeout,
-            "进程恢复仅续采当前及未来轮次, 过去轮次记为缺失, 不回填。",
-            day_of_week="mon-fri",
-            hour=9,
-            minute=15,
-            cadence_seconds=AUCTION_COLLECTION_CADENCE_SECONDS,
-        ),
         JobDefinition(
             DAILY_RUN_JOB_ID,
             "日 K 与基础数据更新",
@@ -233,17 +222,18 @@ def job_definitions(settings: SchedulerSettings) -> tuple[JobDefinition, ...]:
         JobDefinition(
             CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID,
             "沪深全市场开盘竞价快照",
-            "采集沪深上市股票在开盘集合竞价结束后的完整来源快照。",
+            "采集沪深上市股票在开盘集合竞价结束后、连续竞价前的完整五档来源快照。",
             "call_auction_market_snapshot",
             "cron",
-            "周一至周五 09:26",
+            "周一至周五 09:25:30",
             timezone,
             settings.call_auction_snapshot_enabled,
             timeout,
             "只在当日 09:25-09:30 窗口内采集; 失败保持显式缺口, 不盘后补采。",
             day_of_week="mon-fri",
             hour=9,
-            minute=26,
+            minute=25,
+            second=30,
         ),
         JobDefinition(
             CALL_AUCTION_MARKET_SERIES_JOB_ID,
@@ -288,6 +278,21 @@ def job_definitions(settings: SchedulerSettings) -> tuple[JobDefinition, ...]:
             "同日 daily_market 未终态时失败; 下一次调度或显式日期手工命令重试",
             day_of_week="mon-fri",
             hour=21,
+            minute=30,
+        ),
+        JobDefinition(
+            BOARD_INDEX_DAILY_BAR_JOB_ID,
+            "883423 板块日线收盘采集",
+            "在三个收盘后时点幂等采集 THS:883423 日线。",
+            "board_index_daily_bar",
+            "cron",
+            "周一至周五 15:30、16:30、17:30",
+            timezone,
+            settings.board_index_daily_bar_enabled,
+            timeout,
+            "每轮最多三次 Provider 短重试; 后续时点及下一交易日继续补采缺口",
+            day_of_week="mon-fri",
+            hour="15-17",
             minute=30,
         ),
         JobDefinition(

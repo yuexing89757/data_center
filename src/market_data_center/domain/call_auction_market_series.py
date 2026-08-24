@@ -13,8 +13,14 @@ from re import fullmatch
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
+from market_data_center.domain.realtime_quote import (
+    OrderBookLevel,
+    validate_order_book_levels,
+)
+
 SHANGHAI_ZONE = ZoneInfo("Asia/Shanghai")
 SERIES_START = time(9, 15)
+SERIES_OPENING_TRADE_START = time(9, 25)
 SERIES_CADENCE_SECONDS = 20
 SERIES_ROUND_COUNT = 32
 
@@ -26,11 +32,23 @@ class MarketSeriesStatus(StrEnum):
     FAILED = "failed"
 
 
+class MarketSeriesValueSemantics(StrEnum):
+    AUCTION_INDICATIVE = "auction_indicative"
+    OPENING_TRADE = "opening_trade"
+    LEGACY_SOURCE_QUOTE = "legacy_source_quote"
+
+
 def series_slots(trade_date: date) -> tuple[datetime, ...]:
     """Return the 32 immutable sample timestamps as UTC datetimes."""
     start = datetime.combine(trade_date, SERIES_START, SHANGHAI_ZONE).astimezone(UTC)
     cadence = timedelta(seconds=SERIES_CADENCE_SECONDS)
     return tuple(start + cadence * sample_seq for sample_seq in range(SERIES_ROUND_COUNT))
+
+
+def series_batch_code(scheduled_at: datetime) -> str:
+    """Return the immutable Shanghai-time batch label for a scheduled round."""
+    _require_utc(scheduled_at, "scheduled_at")
+    return scheduled_at.astimezone(SHANGHAI_ZONE).strftime("%H%M%S")
 
 
 def universe_hash(symbols: Sequence[str]) -> str:
@@ -188,9 +206,13 @@ class MarketSeriesSnapshotRecord:
     trade_date: date
     session_id: UUID
     sample_seq: int
+    batch_code: str
     scheduled_at: datetime
     observed_at: datetime
     source_code: str
+    value_semantics: MarketSeriesValueSemantics
+    bid_levels: tuple[OrderBookLevel, ...]
+    ask_levels: tuple[OrderBookLevel, ...]
     last_price: Decimal | None = None
     previous_close: Decimal | None = None
     high_price: Decimal | None = None
@@ -206,12 +228,29 @@ class MarketSeriesSnapshotRecord:
         _require_utc(self.scheduled_at, "scheduled_at")
         if self.scheduled_at != series_slots(self.trade_date)[self.sample_seq]:
             raise ValueError("scheduled_at must match trade_date and sample_seq")
+        if self.batch_code != series_batch_code(self.scheduled_at):
+            raise ValueError("batch_code must match scheduled_at in Asia/Shanghai")
         _require_utc(self.observed_at, "observed_at")
         deadline = self.scheduled_at + timedelta(seconds=SERIES_CADENCE_SECONDS)
         if not self.scheduled_at <= self.observed_at < deadline:
             raise ValueError("observed_at must be within the scheduled round")
         if self.source_code != "pytdx_hq":
             raise ValueError("market series source_code must be pytdx_hq")
+        if not isinstance(self.value_semantics, MarketSeriesValueSemantics):
+            raise TypeError("value_semantics must be a MarketSeriesValueSemantics")
+        validate_order_book_levels(self.bid_levels, descending=True, side="bid")
+        validate_order_book_levels(self.ask_levels, descending=False, side="ask")
+        scheduled_time = self.scheduled_at.astimezone(SHANGHAI_ZONE).time()
+        if (
+            self.value_semantics is MarketSeriesValueSemantics.AUCTION_INDICATIVE
+            and scheduled_time >= SERIES_OPENING_TRADE_START
+        ):
+            raise ValueError("auction_indicative must be scheduled before 09:25")
+        if (
+            self.value_semantics is MarketSeriesValueSemantics.OPENING_TRADE
+            and scheduled_time < SERIES_OPENING_TRADE_START
+        ):
+            raise ValueError("opening_trade must not be scheduled before 09:25")
         decimal_values = (
             self.last_price,
             self.previous_close,
@@ -230,6 +269,24 @@ class MarketSeriesSnapshotRecord:
                 raise TypeError("cumulative_volume must be an integer share count")
             if self.cumulative_volume < 0:
                 raise ValueError("cumulative_volume must not be negative")
+        if self.value_semantics is MarketSeriesValueSemantics.AUCTION_INDICATIVE:
+            indicative_values = (
+                self.last_price,
+                self.cumulative_volume,
+                self.cumulative_amount,
+            )
+            if any(value is None for value in indicative_values) and not all(
+                value is None for value in indicative_values
+            ):
+                raise ValueError(
+                    "auction indicative price, volume and amount must be jointly present"
+                )
+            if (
+                self.last_price is not None
+                and self.cumulative_volume is not None
+                and self.cumulative_amount != self.last_price * self.cumulative_volume
+            ):
+                raise ValueError("auction indicative amount must equal price multiplied by volume")
         if (
             self.high_price is not None
             and self.low_price is not None

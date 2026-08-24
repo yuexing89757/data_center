@@ -21,7 +21,7 @@ from market_data_center.scheduler import (
     prepare_locked_worker,
 )
 from market_data_center.scheduling_catalog import (
-    AUCTION_COLLECTION_JOB_ID,
+    BOARD_INDEX_DAILY_BAR_JOB_ID,
     CALL_AUCTION_MARKET_SERIES_JOB_ID,
     CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID,
     CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID,
@@ -40,7 +40,6 @@ def test_scheduler_registers_persistent_single_instance_market_job(tmp_path: Pat
     store_path = tmp_path / "scheduler" / "jobs.sqlite"
     settings = SchedulerSettings(
         scheduler_store_path=store_path,
-        auction_collection_enabled=False,
         _env_file=None,
     )
     scheduler = build_scheduler(settings)
@@ -69,8 +68,11 @@ def test_scheduler_registers_persistent_single_instance_market_job(tmp_path: Pat
     closing_highs = scheduler.get_job(CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID)
     assert closing_highs is not None
     assert str(closing_highs.trigger) == ("cron[day_of_week='mon-fri', hour='21', minute='30']")
+    board_bars = scheduler.get_job(BOARD_INDEX_DAILY_BAR_JOB_ID)
+    assert board_bars is not None
+    assert str(board_bars.trigger) == ("cron[day_of_week='mon-fri', hour='15-17', minute='30']")
     assert store_path.parent.is_dir()
-    assert scheduler.get_job(AUCTION_COLLECTION_JOB_ID) is None
+    assert scheduler.get_job("opening-auction-limit-up-quotes") is None
 
 
 def test_scheduler_registers_twelve_hour_pytdx_pool_refresh(tmp_path: Path) -> None:
@@ -105,7 +107,7 @@ def test_legacy_time_environment_cannot_change_registered_jobs(monkeypatch, tmp_
     )
 
     assert str(scheduler.get_job(CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID).trigger) == (
-        "cron[day_of_week='mon-fri', hour='9', minute='26']"
+        "cron[day_of_week='mon-fri', hour='9', minute='25', second='30']"
     )
     assert scheduler.get_job("call-auction-snapshot-daily") is None
     assert str(scheduler.get_job(EOD_QUOTE_SNAPSHOT_JOB_ID).trigger) == (
@@ -119,12 +121,17 @@ def test_legacy_time_environment_cannot_change_registered_jobs(monkeypatch, tmp_
 
 def test_scheduled_job_fire_time_uses_catalog_definition(monkeypatch) -> None:
     expected = datetime(2026, 8, 11, 13, 30, tzinfo=UTC)
-    captured: list[tuple[int, int, str, bool]] = []
+    captured: list[tuple[int, int, int, str, bool]] = []
 
     def fake_fire_time(
-        hour: int, minute: int, timezone_name: str, *, weekdays_only: bool
+        hour: int,
+        minute: int,
+        timezone_name: str,
+        *,
+        second: int,
+        weekdays_only: bool,
     ) -> datetime:
-        captured.append((hour, minute, timezone_name, weekdays_only))
+        captured.append((hour, minute, second, timezone_name, weekdays_only))
         return expected
 
     monkeypatch.setattr(scheduler_module, "_scheduled_fire_time", fake_fire_time)
@@ -135,7 +142,7 @@ def test_scheduled_job_fire_time_uses_catalog_definition(monkeypatch) -> None:
     )
 
     assert actual == expected
-    assert captured == [(9, 26, "Asia/Shanghai", True)]
+    assert captured == [(9, 25, 30, "Asia/Shanghai", True)]
 
 
 class FakeScheduler:
@@ -215,50 +222,34 @@ def test_locked_worker_does_not_build_runtime_when_refresh_fails() -> None:
     assert events == ["pool-failed"]
 
 
-def test_scheduler_registers_one_auction_session_job_only_when_enabled(tmp_path: Path) -> None:
-    scheduler = build_scheduler(
-        SchedulerSettings(
-            scheduler_store_path=tmp_path / "auction.sqlite",
-            auction_collection_enabled=True,
-            _env_file=None,
-        )
-    )
-
-    auction = scheduler.get_job(AUCTION_COLLECTION_JOB_ID)
-    assert auction is not None
-    assert str(auction.trigger) == "cron[day_of_week='mon-fri', hour='9', minute='15']"
-    assert auction.max_instances == 1
-
-
-def test_morning_auction_jobs_have_a_dedicated_two_thread_executor(tmp_path: Path) -> None:
+def test_market_series_has_a_dedicated_morning_executor(tmp_path: Path) -> None:
     scheduler = build_scheduler(
         SchedulerSettings(scheduler_store_path=tmp_path / "executors.sqlite", _env_file=None)
     )
 
     series = scheduler.get_job(CALL_AUCTION_MARKET_SERIES_JOB_ID)
-    limit_up = scheduler.get_job(AUCTION_COLLECTION_JOB_ID)
     snapshot_0926 = scheduler.get_job(CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID)
-    assert series is not None and limit_up is not None and snapshot_0926 is not None
-    assert series.executor == limit_up.executor == "morning_auction"
+    assert series is not None and snapshot_0926 is not None
+    assert scheduler.get_job("opening-auction-limit-up-quotes") is None
+    assert series.executor == "morning_auction"
     assert snapshot_0926.executor == "default"
-    assert series.max_instances == limit_up.max_instances == 1
+    assert series.max_instances == 1
     assert scheduler._executors["default"]._pool._max_workers == 1
-    assert scheduler._executors["morning_auction"]._pool._max_workers == 2
+    assert scheduler._executors["morning_auction"]._pool._max_workers == 1
 
 
-def test_disabling_series_does_not_disable_other_morning_jobs(tmp_path: Path) -> None:
+def test_disabling_series_does_not_disable_0926_snapshot(tmp_path: Path) -> None:
     scheduler = build_scheduler(
         SchedulerSettings(
             scheduler_store_path=tmp_path / "no_series.sqlite",
             call_auction_market_series_enabled=False,
-            auction_collection_enabled=True,
             call_auction_snapshot_enabled=True,
             _env_file=None,
         )
     )
 
     assert scheduler.get_job(CALL_AUCTION_MARKET_SERIES_JOB_ID) is None
-    assert scheduler.get_job(AUCTION_COLLECTION_JOB_ID) is not None
+    assert scheduler.get_job("opening-auction-limit-up-quotes") is None
     assert scheduler.get_job(CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID) is not None
 
 
@@ -275,25 +266,107 @@ def test_closing_high_snapshot_can_only_be_enabled_or_disabled(tmp_path: Path) -
     assert scheduler.get_job(DAILY_RUN_JOB_ID) is not None
 
 
-def test_auction_collection_job_requests_one_symbol_per_pytdx_call(
-    monkeypatch: pytest.MonkeyPatch,
+def test_board_index_daily_bar_job_can_only_be_enabled_or_disabled(tmp_path: Path) -> None:
+    scheduler = build_scheduler(
+        SchedulerSettings(
+            scheduler_store_path=tmp_path / "no_board_bars.sqlite",
+            board_index_daily_bar_enabled=False,
+            _env_file=None,
+        )
+    )
+
+    assert scheduler.get_job(BOARD_INDEX_DAILY_BAR_JOB_ID) is None
+    assert scheduler.get_job(DAILY_RUN_JOB_ID) is not None
+
+
+def test_board_index_daily_bar_runner_collects_missing_tail(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    fire_time = datetime(2026, 8, 20, 7, 30, tzinfo=UTC)
+    engine = SimpleNamespace(disposed=False)
+    engine.dispose = lambda: setattr(engine, "disposed", True)
     captured: dict[str, object] = {}
 
-    class StopAfterQuoteSettings(Exception):
-        pass
+    class FakePersistence:
+        collected = False
 
-    def quote_settings(**kwargs: object) -> None:
-        captured.update(kwargs)
-        raise StopAfterQuoteSettings
+        def latest_trading_date(self, start_date, end_date):
+            captured["calendar_range"] = (start_date, end_date)
+            return date(2026, 8, 20)
 
-    monkeypatch.setattr(scheduler_module, "WorkerSettings", lambda: object())
-    monkeypatch.setattr(scheduler_module, "PytdxHqSettings", quote_settings)
+        def latest_board_index_daily_bar_date(self, board_id):
+            captured["latest_board"] = board_id
+            return date(2026, 8, 20) if self.collected else date(2026, 8, 19)
 
-    with pytest.raises(StopAfterQuoteSettings):
-        scheduler_module.run_auction_collection_job()
+    class FakeExecution:
+        def step(self, code, sequence, operation):
+            captured["step"] = (code, sequence)
+            return operation()
 
-    assert captured == {"pytdx_hq_batch_size": 1}
+        def succeed(self):
+            captured["succeeded"] = True
+
+        def fail(self, error):
+            captured["failed"] = type(error).__name__
+
+    class FakeProvider:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+    class FakePipeline:
+        def __init__(self, **kwargs):
+            captured["pipeline"] = kwargs
+
+        def ingest_board_index_daily_bars(self, board_id, start_date, end_date):
+            captured["ingest"] = (board_id, start_date, end_date)
+            persistence.collected = True
+            return object()
+
+    persistence = FakePersistence()
+    monkeypatch.setattr(
+        scheduler_module,
+        "WorkerSettings",
+        lambda: SimpleNamespace(
+            database_url=SimpleNamespace(get_secret_value=lambda: "unused"),
+            raw_data_root=tmp_path / "raw",
+        ),
+    )
+    monkeypatch.setattr(
+        scheduler_module, "SchedulerSettings", lambda: SchedulerSettings(_env_file=None)
+    )
+    monkeypatch.setattr(scheduler_module, "sqlalchemy_url", lambda value: value)
+    monkeypatch.setattr(scheduler_module, "create_engine", lambda *args, **kwargs: engine)
+    monkeypatch.setattr(scheduler_module, "PostgreSQLPersistence", lambda value: persistence)
+    monkeypatch.setattr(scheduler_module, "PostgreSQLOperationsPersistence", lambda value: object())
+    monkeypatch.setattr(
+        scheduler_module,
+        "WorkflowExecutionService",
+        lambda operations: SimpleNamespace(
+            start=lambda *args: captured.setdefault("workflow", args) and FakeExecution()
+        ),
+    )
+    monkeypatch.setattr(scheduler_module, "_scheduled_job_fire_time", lambda *args: fire_time)
+    monkeypatch.setattr(
+        scheduler_module, "create_board_index_provider", lambda code: FakeProvider()
+    )
+    monkeypatch.setattr(scheduler_module, "BoardIndexIngestionPipeline", FakePipeline)
+    monkeypatch.setattr(scheduler_module, "LocalRawStore", lambda root: ("raw", root))
+    monkeypatch.setattr(scheduler_module, "sleep", lambda seconds: None)
+
+    scheduler_module.run_board_index_daily_bar_job()
+
+    assert captured["latest_board"] == "THS:883423"
+    assert captured["ingest"] == (
+        "THS:883423",
+        date(2026, 8, 20),
+        date(2026, 8, 20),
+    )
+    assert captured["step"] == ("collect_board_index_daily_bars", 1)
+    assert captured["succeeded"] is True
+    assert engine.disposed is True
 
 
 def test_call_auction_market_series_runner_wires_isolated_dependencies(
@@ -475,7 +548,9 @@ def test_only_call_auction_morning_job_is_registered_when_enabled(tmp_path: Path
 
     morning = scheduler.get_job(CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID)
     assert morning is not None
-    assert str(morning.trigger) == "cron[day_of_week='mon-fri', hour='9', minute='26']"
+    assert str(morning.trigger) == (
+        "cron[day_of_week='mon-fri', hour='9', minute='25', second='30']"
+    )
     assert morning.func is scheduler_module.run_call_auction_market_snapshot_job
     assert morning.max_instances == 1
     assert morning.coalesce
@@ -564,11 +639,11 @@ def test_scheduler_health_requires_jobs_fresh_snapshot_and_no_stale_runs(tmp_pat
             STOCK_DAILY_INDICATOR_JOB_ID,
             STOCK_POOL_JOB_ID,
             CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID,
+            BOARD_INDEX_DAILY_BAR_JOB_ID,
         ),
     )
     settings = SchedulerSettings(
         scheduler_store_path=store_path,
-        auction_collection_enabled=False,
         eod_quote_snapshot_enabled=False,
         call_auction_snapshot_enabled=False,
         call_auction_market_series_enabled=False,

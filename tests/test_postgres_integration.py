@@ -1,4 +1,3 @@
-import json
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import replace
@@ -45,6 +44,8 @@ from market_data_center.domain import (
     IngestionRun,
     IngestionStatus,
     Market,
+    OrderBookLevel,
+    PriceLimitStatus,
     ProviderCode,
     QualityResult,
     QualitySeverity,
@@ -56,6 +57,7 @@ from market_data_center.domain import (
     SecurityStatus,
     SecurityType,
     ShareCapitalRecord,
+    StockDailyIndicatorSnapshotRecord,
     TradeStatus,
     deducted_profit_revision_key,
 )
@@ -64,6 +66,8 @@ from market_data_center.domain.call_auction_market_series import (
     MarketSeriesSession,
     MarketSeriesSnapshotRecord,
     MarketSeriesStatus,
+    MarketSeriesValueSemantics,
+    series_batch_code,
     series_slots,
     universe_hash,
 )
@@ -86,6 +90,17 @@ from market_data_center.recovery import (
 )
 
 pytestmark = pytest.mark.integration
+
+
+def _market_series_levels(first_price: str, second_volume: int) -> tuple[OrderBookLevel, ...]:
+    return (
+        OrderBookLevel(1, Decimal(first_price), 100),
+        OrderBookLevel(2, None, second_volume),
+        OrderBookLevel(3, None, None),
+        OrderBookLevel(4, None, None),
+        OrderBookLevel(5, None, None),
+    )
+
 
 MIGRATIONS = tuple(sorted(MIGRATION_DIR.glob("*.sql")))
 NOW = datetime(2026, 7, 28, 8, tzinfo=UTC)
@@ -162,6 +177,8 @@ def test_migrations_apply_to_empty_database_and_are_idempotent(
     assert {
         "query_securities",
         "query_daily_bars",
+        "query_recent_daily_bars",
+        "query_latest_stock_daily_indicators",
         "query_adjusted_daily_bars",
         "query_market_snapshot",
         "query_classification_members_as_of",
@@ -170,6 +187,435 @@ def test_migrations_apply_to_empty_database_and_are_idempotent(
         "query_limit_up_pool",
         "query_auction_quotes",
     }.issubset({row[1] for row in first_snapshot["routines"]})
+
+
+def test_persisted_latest_stock_quotes_rpc_is_retired(
+    database_engine: Engine,
+) -> None:
+    with database_engine.connect() as connection:
+        assert (
+            connection.scalar(
+                text("select to_regprocedure('api_v1.query_latest_stock_quotes(text[],integer)')")
+            )
+            is None
+        )
+        assert connection.scalar(
+            text(
+                "select relrowsecurity from pg_class where oid = "
+                "'realtime.stock_quote_snapshot'::regclass"
+            )
+        )
+
+
+def test_recent_daily_bars_rpc_permission_boundary(migrated_database_url: str) -> None:
+    signature = "api_v1.query_recent_daily_bars(text,date,integer)"
+    with psycopg.connect(migrated_database_url) as connection:
+        assert connection.execute(
+            "select has_function_privilege('market_data_api', %s, 'execute')",
+            (signature,),
+        ).fetchone() == (True,)
+        assert connection.execute(
+            "select has_function_privilege('anon', %s, 'execute')",
+            (signature,),
+        ).fetchone() == (False,)
+        assert connection.execute(
+            "select has_function_privilege('authenticated', %s, 'execute')",
+            (signature,),
+        ).fetchone() == (False,)
+
+
+def test_latest_stock_daily_indicators_rpc_returns_each_symbol_latest_in_request_order(
+    database_engine: Engine,
+) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    securities = [
+        _security(),
+        SecurityRecord(
+            symbol="SZSE:000001",
+            code="000001",
+            exchange=Exchange.SZSE,
+            name="平安银行",
+            security_type=SecurityType.STOCK,
+            status=SecurityStatus.LISTED,
+            ipo_date=date(1991, 4, 3),
+            delisting_date=None,
+            source_code="baostock",
+        ),
+    ]
+    security_run = _running_run(DatasetCode.SECURITY)
+    persistence.create_ingestion_run(security_run)
+    persistence.commit_security_batch(
+        _completed_run(security_run, len(securities)),
+        _manifest(security_run.ingestion_id, "latest-indicator-securities", len(securities)),
+        _envelopes(security_run.ingestion_id, securities),
+    )
+
+    trading_dates = [date(2026, 8, 20), date(2026, 8, 21)]
+    calendar_run = _running_run(DatasetCode.TRADING_CALENDAR)
+    persistence.create_ingestion_run(calendar_run)
+    persistence.commit_trading_calendar_batch(
+        _completed_run(calendar_run, len(trading_dates)),
+        _manifest(calendar_run.ingestion_id, "latest-indicator-calendar", len(trading_dates)),
+        _envelopes(
+            calendar_run.ingestion_id,
+            [
+                CalculatedTradingDay(
+                    market=Market.CN_A_SHARE,
+                    trade_date=trade_date,
+                    is_trading_day=True,
+                    previous_trading_day=trading_dates[index - 1] if index else None,
+                    next_trading_day=(
+                        trading_dates[index + 1] if index + 1 < len(trading_dates) else None
+                    ),
+                    source_code="baostock",
+                )
+                for index, trade_date in enumerate(trading_dates)
+            ],
+        ),
+    )
+
+    indicator_run = _running_run(DatasetCode.STOCK_DAILY_INDICATOR, ProviderCode.TUSHARE)
+    persistence.create_ingestion_run(indicator_run)
+    indicators = [
+        StockDailyIndicatorSnapshotRecord(
+            symbol=symbol,
+            trade_date=trade_date,
+            market=Market.CN_A_SHARE,
+            close=close,
+            turnover_rate_pct=Decimal("1.25"),
+            free_float_turnover_rate_pct=None,
+            volume_ratio=None,
+            pe=None,
+            pe_ttm=None,
+            pb=None,
+            ps=None,
+            ps_ttm=None,
+            dividend_yield_pct=None,
+            dividend_yield_ttm_pct=None,
+            total_shares=10_000_000,
+            circulating_shares=8_000_000,
+            free_float_shares=7_000_000,
+            total_market_value=Decimal("100000000.0000"),
+            circulating_market_value=Decimal("80000000.0000"),
+            price_limit_status=PriceLimitStatus.RISE,
+            source_code="tushare",
+        )
+        for symbol, trade_date, close in (
+            ("SSE:600000", trading_dates[0], Decimal("10.0000")),
+            ("SSE:600000", trading_dates[1], Decimal("10.5000")),
+            ("SZSE:000001", trading_dates[0], Decimal("12.0000")),
+        )
+    ]
+    persistence.commit_stock_daily_indicator_batch(
+        _completed_run(indicator_run, len(indicators)),
+        _manifest(indicator_run.ingestion_id, "latest-indicators", len(indicators)),
+        [IngestionEnvelope(indicator_run.ingestion_id, item) for item in indicators],
+        [],
+    )
+
+    with database_engine.begin() as connection:
+        connection.execute(text("set local role market_data_api"))
+        payload = connection.execute(
+            text("select api_v1.query_latest_stock_daily_indicators(:codes)"),
+            {"codes": ["000001", "999999", "600000", "000001"]},
+        ).scalar_one()
+
+    assert payload["requested_count"] == 3
+    assert payload["found_count"] == 2
+    assert payload["missing_codes"] == ["999999"]
+    assert [item["code"] for item in payload["items"]] == ["000001", "600000"]
+    assert [item["trade_date"] for item in payload["items"]] == ["2026-08-20", "2026-08-21"]
+    assert [item["close"] for item in payload["items"]] == [12.0, 10.5]
+
+
+def test_latest_stock_daily_indicators_rpc_permission_boundary(
+    migrated_database_url: str,
+) -> None:
+    signature = "api_v1.query_latest_stock_daily_indicators(text[])"
+    with psycopg.connect(migrated_database_url) as connection:
+        privileges = connection.execute(
+            """
+            select
+                has_function_privilege('market_data_api', %s, 'execute'),
+                has_function_privilege('anon', %s, 'execute'),
+                has_function_privilege('authenticated', %s, 'execute')
+            """,
+            (signature, signature, signature),
+        ).fetchone()
+
+    assert privileges == (True, False, False)
+
+
+def test_pysnowball_auction_session_and_quote_are_valid_source_facts(
+    database_engine: Engine,
+) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    _commit_security_prerequisite(persistence)
+    calculation_id = uuid4()
+    snapshot_id = uuid4()
+    session_id = uuid4()
+    ingestion_id = uuid4()
+    raw_id = uuid4()
+    basis = date(2026, 8, 14)
+    effective = date(2026, 8, 17)
+    scheduled_at = datetime(2026, 8, 17, 1, 15, tzinfo=UTC)
+
+    with database_engine.begin() as connection:
+        connection.execute(
+            text("""
+insert into derived.calculation_run (
+ calculation_id, calculation_code, algorithm_version, mode, start_date, end_date,
+ status, input_watermark, input_hash, requested_at, calculated_at, finished_at, output_rows
+) values (
+ :calculation_id, 'cn_a_mainboard_price_limit_pools', '1.0.0', 'incremental',
+ :basis, :basis, 'succeeded', '{}'::jsonb, :input_hash, now(), now(), now(), 1
+)
+"""),
+            {"calculation_id": calculation_id, "basis": basis, "input_hash": "0" * 64},
+        )
+        connection.execute(
+            text("""
+insert into stock_pool.snapshot (
+ snapshot_id, calculation_id, pool_code, basis_trade_date, effective_trade_date,
+ version, status, member_count, candidate_count, rejected_count, content_hash,
+ input_hash, rule_version, algorithm_version, generated_at
+) values (
+ :snapshot_id, :calculation_id, 'CN_A_PREVIOUS_DAY_MAINBOARD_LIMIT_UP',
+ :basis, :effective, 1, 'ready', 1, 1, 0, :content_hash,
+ :input_hash, 'CN_MAINBOARD_2026_07_06', '1.0.0', now()
+)
+"""),
+            {
+                "snapshot_id": snapshot_id,
+                "calculation_id": calculation_id,
+                "basis": basis,
+                "effective": effective,
+                "content_hash": "1" * 64,
+                "input_hash": "0" * 64,
+            },
+        )
+        connection.execute(
+            text("""
+insert into realtime.auction_collection_session (
+ session_id, pool_snapshot_id, pool_snapshot_version, basis_trade_date,
+ effective_trade_date, window_start, window_end, cadence_seconds, expected_rounds,
+ expected_quotes, provider_code, status, started_at
+) values (
+ :session_id, :snapshot_id, 1, :basis, :effective, :window_start,
+ :window_end, 30, 21, 21, 'pysnowball', 'running', :window_start
+)
+"""),
+            {
+                "session_id": session_id,
+                "snapshot_id": snapshot_id,
+                "basis": basis,
+                "effective": effective,
+                "window_start": scheduled_at,
+                "window_end": scheduled_at + timedelta(minutes=10),
+            },
+        )
+        connection.execute(
+            text("""
+insert into ingestion.ingestion_run (
+ ingestion_id, provider_code, dataset_code, status, requested_at, started_at
+) values (:ingestion_id, 'pysnowball', 'five_level_quote', 'running', :at, :at)
+"""),
+            {"ingestion_id": ingestion_id, "at": scheduled_at},
+        )
+        connection.execute(
+            text("""
+insert into ingestion.raw_manifest (
+ raw_id, ingestion_id, object_path, file_format, content_sha256,
+ byte_size, row_count, schema_version
+) values (
+ :raw_id, :ingestion_id, 'pysnowball/auction.jsonl', 'jsonl', :sha,
+ 1, 1, 'pysnowball.pankou.v1'
+)
+"""),
+            {"raw_id": raw_id, "ingestion_id": ingestion_id, "sha": "2" * 64},
+        )
+        connection.execute(
+            text("""
+insert into realtime.five_level_quote_snapshot (
+ session_id, pool_snapshot_id, ingestion_id, raw_id, symbol, sample_seq,
+ scheduled_at, collected_at, phase, quote_semantics, quote_status,
+ last_price, bid1_price, bid1_volume, ask1_price, ask1_volume, source_code
+) values (
+ :session_id, :snapshot_id, :ingestion_id, :raw_id, :symbol, 0,
+ :at, :at, 'cancellable', 'auction_indicative', 'trading',
+ 10.00, 9.99, 100, 10.01, 200, 'pysnowball'
+)
+"""),
+            {
+                "session_id": session_id,
+                "snapshot_id": snapshot_id,
+                "ingestion_id": ingestion_id,
+                "raw_id": raw_id,
+                "symbol": SYMBOL,
+                "at": scheduled_at,
+            },
+        )
+
+    assert (
+        _scalar(
+            database_engine,
+            "select source_code from realtime.five_level_quote_snapshot where session_id=:id",
+            {"id": session_id},
+        )
+        == "pysnowball"
+    )
+
+
+def test_auction_series_semantics_migration_labels_existing_rows_without_rewrite(
+    empty_database_url: str,
+) -> None:
+    migration = next(
+        migration
+        for migration in MIGRATIONS
+        if migration.name == "20260817000200_add_auction_series_value_semantics.sql"
+    )
+    enrichment_migration = next(
+        item
+        for item in MIGRATIONS
+        if item.name == "20260818000100_enrich_call_auction_market_series.sql"
+    )
+    with psycopg.connect(empty_database_url) as connection:
+        apply_migrations(
+            connection, tuple(item for item in MIGRATIONS if item.name < migration.name)
+        )
+
+    trade_date = date(2026, 8, 17)
+    slots = series_slots(trade_date)
+    workflow_id = uuid4()
+    session_id = uuid4()
+    ingestion_id = uuid4()
+    engine = create_engine(_sqlalchemy_url(empty_database_url))
+    try:
+        with engine.begin() as connection:
+            _insert_call_auction_security_universe(connection)
+            connection.execute(
+                text("""
+                    insert into operations.workflow_run (
+                        workflow_run_id, workflow_code, scheduled_for, trigger_source,
+                        attempt, status, started_at, finished_at
+                    ) values (
+                        :workflow_id, 'call_auction_market_series', :started_at,
+                        'scheduled', 1, 'succeeded', :started_at, :finished_at
+                    )
+                """),
+                {
+                    "workflow_id": workflow_id,
+                    "started_at": slots[0],
+                    "finished_at": slots[0] + timedelta(seconds=2),
+                },
+            )
+            connection.execute(
+                text("""
+                    insert into realtime.call_auction_market_series_session (
+                        session_id, workflow_run_id, trade_date, window_start, window_end,
+                        cadence_seconds, expected_rounds, universe_symbols, universe_count,
+                        universe_hash, status, started_at, finished_at, successful_rounds,
+                        successful_quotes
+                    ) values (
+                        :session_id, :workflow_id, :trade_date, :window_start, :window_end,
+                        20, 32, array['SSE:600000'], 1, :universe_hash, 'succeeded',
+                        :window_start, :finished_at, 1, 1
+                    )
+                """),
+                {
+                    "session_id": session_id,
+                    "workflow_id": workflow_id,
+                    "trade_date": trade_date,
+                    "window_start": slots[0],
+                    "window_end": slots[-1] + timedelta(seconds=20),
+                    "universe_hash": universe_hash(("SSE:600000",)),
+                    "finished_at": slots[0] + timedelta(seconds=2),
+                },
+            )
+            connection.execute(
+                text("""
+                    insert into ingestion.ingestion_run (
+                        ingestion_id, provider_code, dataset_code, status, requested_at,
+                        started_at, finished_at, fetched_rows, accepted_rows
+                    ) values (
+                        :ingestion_id, 'pytdx_hq', 'call_auction_market_series',
+                        'succeeded', :started_at, :started_at, :finished_at, 1, 1
+                    )
+                """),
+                {
+                    "ingestion_id": ingestion_id,
+                    "started_at": slots[0],
+                    "finished_at": slots[0] + timedelta(seconds=2),
+                },
+            )
+            connection.execute(
+                text("""
+                    insert into realtime.call_auction_market_series_round (
+                        session_id, sample_seq, scheduled_at, collected_at, status,
+                        attempt_count, expected_quotes, successful_quotes, failed_quotes,
+                        selected_ingestion_id
+                    ) values (
+                        :session_id, 0, :scheduled_at, :collected_at, 'succeeded',
+                        1, 1, 1, 0, :ingestion_id
+                    )
+                """),
+                {
+                    "session_id": session_id,
+                    "scheduled_at": slots[0],
+                    "collected_at": slots[0] + timedelta(seconds=2),
+                    "ingestion_id": ingestion_id,
+                },
+            )
+            connection.execute(
+                text("""
+                    insert into realtime.call_auction_market_series_snapshot (
+                        trade_date, ingestion_id, session_id, sample_seq, scheduled_at,
+                        symbol, observed_at, last_price, cumulative_volume,
+                        cumulative_amount, source_code
+                    ) values (
+                        :trade_date, :ingestion_id, :session_id, 0, :scheduled_at,
+                        'SSE:600000', :observed_at, 9.8700, 32100, 316827.0000,
+                        'pytdx_hq'
+                    )
+                """),
+                {
+                    "trade_date": trade_date,
+                    "ingestion_id": ingestion_id,
+                    "session_id": session_id,
+                    "scheduled_at": slots[0],
+                    "observed_at": slots[0] + timedelta(seconds=1),
+                },
+            )
+            before = tuple(
+                connection.execute(
+                    text("""
+                        select last_price, cumulative_volume, cumulative_amount
+                        from realtime.call_auction_market_series_snapshot
+                    """)
+                ).one()
+            )
+    finally:
+        engine.dispose()
+
+    with psycopg.connect(empty_database_url) as connection:
+        apply_migrations(connection, (migration,))
+        after = connection.execute("""
+            select last_price, cumulative_volume, cumulative_amount, value_semantics
+            from realtime.call_auction_market_series_snapshot
+        """).fetchone()
+
+    assert after is not None
+    assert tuple(after[:3]) == before
+    assert after[3] == "legacy_source_quote"
+
+    with psycopg.connect(empty_database_url) as connection:
+        apply_migrations(connection, (enrichment_migration,))
+        enriched = connection.execute("""
+            select batch_code, bid1_price, bid1_volume, ask5_price, ask5_volume
+            from realtime.call_auction_market_series_snapshot
+        """).fetchone()
+
+    assert enriched == ("091500", None, None, None, None)
 
 
 def test_call_auction_market_series_schema_is_partitioned_and_internal(
@@ -242,6 +688,29 @@ def test_call_auction_market_series_schema_is_partitioned_and_internal(
         assert constraints["call_auction_market_series_snapshot_pkey"] == (
             "PRIMARY KEY (trade_date, ingestion_id, symbol)"
         )
+        expected_quote_columns = {
+            "batch_code",
+            *(
+                f"{side}{level}_{field}"
+                for side in ("bid", "ask")
+                for level in range(1, 6)
+                for field in ("price", "volume")
+            ),
+        }
+        for table_name in (
+            "call_auction_market_series_snapshot",
+            "call_auction_market_series_snapshot_202608",
+        ):
+            columns = set(
+                connection.execute(
+                    text("""
+                        select column_name from information_schema.columns
+                        where table_schema='realtime' and table_name=:table_name
+                    """),
+                    {"table_name": table_name},
+                ).scalars()
+            )
+            assert expected_quote_columns <= columns
         grants = {
             (row.table_name, row.privilege_type)
             for row in connection.execute(
@@ -400,9 +869,13 @@ def test_market_series_persistence_commits_attempt_and_finishes_partial_session(
             trade_date=trade_date,
             session_id=session.session_id,
             sample_seq=0,
+            batch_code="091500",
             scheduled_at=slots[0],
             observed_at=slots[0] + timedelta(seconds=1),
             source_code="pytdx_hq",
+            value_semantics=MarketSeriesValueSemantics.AUCTION_INDICATIVE,
+            bid_levels=_market_series_levels("10.00", 10_743_200),
+            ask_levels=_market_series_levels("10.01", 13_300),
             last_price=Decimal("10.10"),
             previous_close=Decimal("10.00"),
             high_price=Decimal("10.10"),
@@ -444,6 +917,26 @@ def test_market_series_persistence_commits_attempt_and_finishes_partial_session(
             )
             == 1
         )
+        stored = connection.execute(
+            text(
+                """
+                select last_price, cumulative_volume, cumulative_amount, value_semantics,
+                       batch_code, bid2_price, bid2_volume, ask2_price, ask2_volume
+                from realtime.call_auction_market_series_snapshot
+                """
+            )
+        ).one()
+        assert tuple(stored) == (
+            Decimal("10.1000"),
+            100,
+            Decimal("1010.0000"),
+            "auction_indicative",
+            "091500",
+            None,
+            10_743_200,
+            None,
+            13_300,
+        )
         assert (
             connection.scalar(
                 text("select status from ingestion.ingestion_run where ingestion_id=:id"),
@@ -451,6 +944,18 @@ def test_market_series_persistence_commits_attempt_and_finishes_partial_session(
             )
             == "partial"
         )
+
+    invalid_updates = (
+        "update realtime.call_auction_market_series_snapshot set batch_code='091501'",
+        "update realtime.call_auction_market_series_snapshot set bid2_volume=-1",
+        """
+        update realtime.call_auction_market_series_snapshot
+        set bid2_price=9.9900, bid2_volume=null
+        """,
+    )
+    for statement in invalid_updates:
+        with pytest.raises(IntegrityError), database_engine.begin() as connection:
+            connection.execute(text(statement))
 
 
 def test_market_series_attempt_rolls_back_manifest_quality_and_facts(
@@ -505,19 +1010,23 @@ def test_market_series_attempt_rolls_back_manifest_quality_and_facts(
     )
     persistence.create_ingestion_run(running_run)
     record = MarketSeriesSnapshotRecord(
-        "SSE:600000",
-        trade_date,
-        session.session_id,
-        0,
-        slots[0],
-        slots[0] + timedelta(seconds=1),
-        "pytdx_hq",
-        Decimal("10.00"),
-        Decimal("9.90"),
-        Decimal("10.00"),
-        Decimal("10.00"),
-        100,
-        Decimal("1000.00"),
+        symbol="SSE:600000",
+        trade_date=trade_date,
+        session_id=session.session_id,
+        sample_seq=0,
+        batch_code="091500",
+        scheduled_at=slots[0],
+        observed_at=slots[0] + timedelta(seconds=1),
+        source_code="pytdx_hq",
+        value_semantics=MarketSeriesValueSemantics.AUCTION_INDICATIVE,
+        bid_levels=_market_series_levels("10.00", 10_743_200),
+        ask_levels=_market_series_levels("10.01", 13_300),
+        last_price=Decimal("10.00"),
+        previous_close=Decimal("9.90"),
+        high_price=Decimal("10.00"),
+        low_price=Decimal("10.00"),
+        cumulative_volume=100,
+        cumulative_amount=Decimal("1000.00"),
     )
     completed = replace(
         running_run,
@@ -861,14 +1370,18 @@ insert into core.security (
 insert into realtime.call_auction_market_snapshot (
     ingestion_id, symbol, trade_date, observed_at, last_price,
     previous_close, high_price, low_price, cumulative_volume,
-    cumulative_amount, source_code
+    cumulative_amount, bid1_price, bid1_volume, bid2_volume,
+    ask1_volume, ask2_volume, seal_amount, source_code
 ) values
     (:succeeded_id, 'SSE:600000', :trade_date, :observed_at,
-     10.1200, 10.0000, 10.1500, 9.9800, 123400, 1248808.0000, 'pytdx_hq'),
+     10.1200, 10.0000, 10.1500, 9.9800, 123400, 1248808.0000,
+     10.1200, 560200, 10743200, 0, 13300, 5673224.0000, 'pytdx_hq'),
     (:succeeded_id, 'SZSE:600000', :trade_date, :observed_at,
-     20.1200, 20.0000, 20.1500, 19.9800, 223400, 4494808.0000, 'pytdx_hq'),
+     20.1200, 20.0000, 20.1500, 19.9800, 223400, 4494808.0000,
+     null, null, null, null, null, null, 'pytdx_hq'),
     (:partial_id, 'SSE:600000', :trade_date, :observed_at,
-     99.0000, 98.0000, 99.0000, 98.0000, 1, 99.0000, 'pytdx_hq')
+     99.0000, 98.0000, 99.0000, 98.0000, 1, 99.0000,
+     null, null, null, null, null, null, 'pytdx_hq')
 """),
             {
                 "succeeded_id": succeeded_ingestion_id,
@@ -931,10 +1444,357 @@ select api_v1.query_call_auction_market_snapshots(
         ("600000", "SZSE:600000"),
     ]
     assert payload["items"][0]["last_price"] == 10.1200
+    assert payload["items"][0]["bid2_price"] is None
+    assert payload["items"][0]["bid2_volume"] == 10_743_200
+    assert payload["items"][0]["ask2_volume"] == 13_300
+    assert payload["items"][0]["seal_amount"] == 5_673_224.0000
     assert partial_payload["ingestion_id"] == str(partial_ingestion_id)
     assert partial_payload["ingestion_status"] == "partial"
     assert partial_payload["returned_count"] == 1
     assert partial_payload["items"][0]["last_price"] == 99.0000
+
+
+def test_auction_one_price_limits_calculates_mainboard_limits_from_092530_snapshot(
+    database_engine: Engine,
+) -> None:
+    security_ingestion_id = uuid4()
+    calendar_ingestion_id = uuid4()
+    bar_ingestion_id = uuid4()
+    snapshot_ingestion_id = uuid4()
+    partial_ingestion_id = uuid4()
+    trade_date = date(2026, 8, 17)
+    observed_at = datetime(2026, 8, 17, 1, 25, 30, tzinfo=UTC)
+    prior_dates = tuple(date(2026, 8, day) for day in range(10, 15))
+    with database_engine.begin() as connection:
+        connection.execute(
+            text("""
+insert into ingestion.ingestion_run (
+ ingestion_id,provider_code,dataset_code,status,requested_at,started_at,finished_at,
+ fetched_rows,accepted_rows
+) values
+ (:security_id,'baostock','security','running',:started_at,:started_at,null,0,0),
+ (:calendar_id,'baostock','trading_calendar','running',:started_at,:started_at,null,0,0),
+ (:bar_id,'baostock','daily_bar','running',:started_at,:started_at,null,0,0),
+ (:snapshot_id,'pytdx_hq','call_auction_market_snapshot','succeeded',
+  :started_at,:started_at,:finished_at,16,16),
+ (:partial_id,'pytdx_hq','call_auction_market_snapshot','partial',
+  :started_at,:started_at,:partial_finished_at,1,1)
+"""),
+            {
+                "security_id": security_ingestion_id,
+                "calendar_id": calendar_ingestion_id,
+                "bar_id": bar_ingestion_id,
+                "snapshot_id": snapshot_ingestion_id,
+                "partial_id": partial_ingestion_id,
+                "started_at": observed_at - timedelta(minutes=1),
+                "finished_at": observed_at + timedelta(seconds=10),
+                "partial_finished_at": observed_at + timedelta(seconds=20),
+            },
+        )
+        connection.execute(
+            text("""
+insert into core.security (
+ symbol,code,exchange,current_name,security_type,status,ipo_date,source_code,ingestion_id
+) values
+ ('SSE:600000','600000','SSE','上海涨停','stock','listed','2026-08-03','baostock',:id),
+ ('SZSE:000001','000001','SZSE','深圳跌停','stock','listed','2026-08-03','baostock',:id),
+ ('SSE:600001','600001','SSE','上海普通','stock','listed','2026-08-03','baostock',:id),
+ ('SSE:600002','600002','SSE','低价涨停','stock','listed','2026-08-03','baostock',:id),
+ ('SSE:600003','600003','SSE','缺IPO','stock','listed',null,'baostock',:id),
+ ('SSE:600004','600004','SSE','上市五日内','stock','listed','2026-08-14','baostock',:id),
+ ('SSE:600005','600005','SSE','半分涨停','stock','listed','2026-08-03','baostock',:id),
+ ('SSE:600006','600006','SSE','最低跌停','stock','listed','2026-08-03','baostock',:id),
+ ('SSE:600007','600007','SSE','缺一根日K','stock','listed','2026-08-03','baostock',:id),
+ ('SSE:603999','603999','SSE','沪市边界一','stock','listed','2026-08-03','baostock',:id),
+ ('SSE:605000','605000','SSE','沪市边界二','stock','listed','2026-08-03','baostock',:id),
+ ('SZSE:004999','004999','SZSE','深市边界','stock','listed','2026-08-03','baostock',:id),
+ ('SSE:604000','604000','SSE','沪市排除','stock','listed','2026-08-03','baostock',:id),
+ ('SZSE:001001','001001','SZSE','深市排除一','stock','listed','2026-08-03','baostock',:id),
+ ('SZSE:300001','300001','SZSE','创业排除','stock','listed','2026-08-03','baostock',:id),
+ ('SSE:688001','688001','SSE','科创排除','stock','listed','2026-08-03','baostock',:id)
+"""),
+            {"id": security_ingestion_id},
+        )
+        connection.execute(
+            text("""
+insert into core.security_name_history (
+ symbol,name,effective_from,source_code,ingestion_id
+)
+select symbol,current_name,'2026-08-03','baostock',:id
+from core.security where ingestion_id=:id
+"""),
+            {"id": security_ingestion_id},
+        )
+        connection.execute(
+            text("""
+insert into core.trading_calendar (
+ market,trade_date,is_trading_day,source_code,ingestion_id
+)
+select 'CN_A_SHARE',day,true,'baostock',:id
+from unnest(cast(:days as date[])) day
+"""),
+            {
+                "id": calendar_ingestion_id,
+                "days": [date(2026, 8, 3), *prior_dates, trade_date],
+            },
+        )
+        connection.execute(
+            text("""
+insert into core.daily_bar (
+ symbol,trade_date,market,open,high,low,close,previous_close,volume,amount,
+ trade_status,is_st,source_code,ingestion_id
+)
+select symbol,day,'CN_A_SHARE',10,10,10,10,10,100,1000,
+       'unknown',false,'baostock',:bar_id
+from unnest(cast(:symbols as text[])) symbol
+cross join unnest(cast(:days as date[])) day
+"""),
+            {
+                "bar_id": bar_ingestion_id,
+                "symbols": [
+                    "SSE:600000",
+                    "SZSE:000001",
+                    "SSE:600001",
+                    "SSE:600002",
+                    "SSE:600005",
+                    "SSE:600006",
+                    "SSE:603999",
+                    "SSE:605000",
+                    "SZSE:004999",
+                ],
+                "days": list(prior_dates),
+            },
+        )
+        connection.execute(
+            text("""
+insert into core.daily_bar (
+ symbol,trade_date,market,open,high,low,close,previous_close,volume,amount,
+ trade_status,is_st,source_code,ingestion_id
+)
+select 'SSE:600007',day,'CN_A_SHARE',10,10,10,10,10,100,1000,
+       'unknown',false,'baostock',:bar_id
+from unnest(cast(:days as date[])) day
+"""),
+            {"bar_id": bar_ingestion_id, "days": list(prior_dates[:4])},
+        )
+        connection.execute(
+            text("""
+insert into realtime.call_auction_market_snapshot (
+ ingestion_id,symbol,trade_date,observed_at,last_price,previous_close,
+ high_price,low_price,cumulative_volume,cumulative_amount,source_code
+) values
+ (:id,'SSE:600000',:day,:at,11,10,11,11,100,1100,'pytdx_hq'),
+ (:id,'SZSE:000001',:day,:at,9,10,9,9,100,900,'pytdx_hq'),
+ (:id,'SSE:600001',:day,:at,10.5,10,10.5,10.5,100,1050,'pytdx_hq'),
+ (:id,'SSE:600002',:day,:at,0.05,0.04,0.05,0.05,100,5,'pytdx_hq'),
+ (:id,'SSE:600003',:day,:at,11,10,11,11,100,1100,'pytdx_hq'),
+ (:id,'SSE:600004',:day,:at,11,10,11,11,100,1100,'pytdx_hq'),
+ (:id,'SSE:600005',:day,:at,11.06,10.05,11.06,11.06,100,1106,'pytdx_hq'),
+ (:id,'SSE:600006',:day,:at,0.01,0.01,0.01,0.01,100,1,'pytdx_hq'),
+ (:id,'SSE:600007',:day,:at,11,10,11,11,100,1100,'pytdx_hq'),
+ (:id,'SSE:603999',:day,:at,10,10,10,10,100,1000,'pytdx_hq'),
+ (:id,'SSE:605000',:day,:at,10,10,10,10,100,1000,'pytdx_hq'),
+ (:id,'SZSE:004999',:day,:at,10,10,10,10,100,1000,'pytdx_hq'),
+ (:id,'SSE:604000',:day,:at,11,10,11,11,100,1100,'pytdx_hq'),
+ (:id,'SZSE:001001',:day,:at,11,10,11,11,100,1100,'pytdx_hq'),
+ (:id,'SZSE:300001',:day,:at,12,10,12,12,100,1200,'pytdx_hq'),
+ (:id,'SSE:688001',:day,:at,12,10,12,12,100,1200,'pytdx_hq'),
+ (:partial_id,'SSE:600001',:day,:at,10,10,10,10,100,1000,'pytdx_hq')
+"""),
+            {
+                "id": snapshot_ingestion_id,
+                "partial_id": partial_ingestion_id,
+                "day": trade_date,
+                "at": observed_at,
+            },
+        )
+        connection.execute(
+            text("""
+update realtime.call_auction_market_snapshot
+set bid1_price=11, bid1_volume=100, seal_amount=1100
+where ingestion_id=:id and symbol='SSE:600000'
+"""),
+            {"id": snapshot_ingestion_id},
+        )
+        assert connection.scalar(
+            text(
+                "select has_function_privilege('market_data_api', "
+                "'api_v1.query_auction_one_price_limits(date)', 'execute')"
+            )
+        )
+        assert not connection.scalar(
+            text(
+                "select has_table_privilege('market_data_api', "
+                "'realtime.call_auction_market_snapshot', 'select')"
+            )
+        )
+        assert not connection.scalar(
+            text(
+                "select has_table_privilege('market_data_api', "
+                "'core.trading_calendar', 'select') "
+                "or has_table_privilege('market_data_api', 'core.daily_bar', 'select') "
+                "or has_table_privilege('market_data_api', "
+                "'derived.daily_price_limit', 'select')"
+            )
+        )
+        connection.execute(text("set local role market_data_api"))
+        payload = connection.scalar(
+            text("select api_v1.query_auction_one_price_limits(:day)"),
+            {"day": trade_date},
+        )
+        connection.execute(text("reset role"))
+        connection.execute(
+            text("update ingestion.ingestion_run set status='failed' where ingestion_id=:id"),
+            {"id": snapshot_ingestion_id},
+        )
+        connection.execute(text("set local role market_data_api"))
+        partial_payload = connection.scalar(
+            text("select api_v1.query_auction_one_price_limits(:day)"),
+            {"day": trade_date},
+        )
+
+    assert payload["ingestion_id"] == str(snapshot_ingestion_id)
+    assert payload["price_limit_calculation_id"] is None
+    assert payload["price_limit_rule_version"] == "CN_MAINBOARD_2026_07_06"
+    assert payload["price_limit_algorithm_version"] == "1.0.0"
+    assert payload["calculation_mode"] == "realtime_read"
+    assert payload["candidate_count"] == 12
+    assert payload["omitted_incomplete_count"] == 3
+    assert [item["symbol"] for item in payload["up"]] == [
+        "SSE:600000",
+        "SSE:600002",
+        "SSE:600005",
+    ]
+    assert payload["up"][1]["limit_price"] == 0.05
+    assert payload["up"][2]["limit_price"] == 11.06
+    assert payload["up"][0]["seal_amount"] == 1100
+    assert [item["symbol"] for item in payload["down"]] == [
+        "SSE:600006",
+        "SZSE:000001",
+    ]
+    assert payload["down"][0]["limit_price"] == 0.01
+    assert payload["down"][0]["seal_amount"] is None
+    assert partial_payload["ingestion_id"] == str(partial_ingestion_id)
+    assert partial_payload["ingestion_status"] == "partial"
+    assert partial_payload["candidate_count"] == 1
+    assert partial_payload["up"] == []
+    assert partial_payload["down"] == []
+
+
+def test_auction_one_price_limits_requires_exact_092550_snapshot(
+    database_engine: Engine,
+) -> None:
+    with database_engine.connect() as connection:
+        connection.execute(text("set local role market_data_api"))
+        with pytest.raises(DBAPIError) as raised:
+            connection.scalar(
+                text("select api_v1.query_auction_one_price_limits(:day)"),
+                {"day": date(2026, 8, 17)},
+            )
+
+    assert raised.value.orig.sqlstate == "P0002"
+
+
+def test_call_auction_one_price_patterns_requires_a_complete_window_session(
+    database_engine: Engine,
+) -> None:
+    with database_engine.connect() as connection:
+        connection.execute(text("set local role market_data_api"))
+        with pytest.raises(DBAPIError) as raised:
+            connection.scalar(
+                text("select api_v1.query_call_auction_one_price_patterns(:day)"),
+                {"day": date(2026, 8, 18)},
+            )
+
+    assert raised.value.orig.sqlstate == "P0002"
+
+
+def test_call_auction_one_price_patterns_filters_strict_29_round_window(
+    database_engine: Engine,
+) -> None:
+    trade_date = date(2026, 8, 18)
+    session_id = uuid4()
+
+    with database_engine.begin() as connection:
+        _seed_one_price_pattern_session(connection, trade_date, session_id)
+        connection.execute(text("set local role market_data_api"))
+        payload = connection.scalar(
+            text("select api_v1.query_call_auction_one_price_patterns(:day)"),
+            {"day": trade_date},
+        )
+        latest_payload = connection.scalar(
+            text("select api_v1.query_call_auction_one_price_patterns(null)"),
+        )
+        connection.execute(text("reset role"))
+
+        assert connection.scalar(
+            text("""
+select has_function_privilege(
+    'market_data_api',
+    'api_v1.query_call_auction_one_price_patterns(date)',
+    'execute'
+)
+""")
+        )
+        assert not connection.scalar(
+            text("""
+select has_function_privilege(
+    'authenticated',
+    'api_v1.query_call_auction_one_price_patterns(date)',
+    'execute'
+)
+""")
+        )
+        assert connection.scalar(
+            text("""
+select 'statement_timeout=10s' = any(proconfig)
+from pg_proc
+where oid = 'api_v1.query_call_auction_one_price_patterns(date)'::regprocedure
+""")
+        )
+        assert connection.scalar(
+            text("""
+select to_regclass(
+    'realtime.call_auction_market_series_snapshot_session_symbol_idx'
+) is not null
+""")
+        )
+
+        connection.execute(
+            text("""
+update realtime.call_auction_market_series_snapshot
+set last_price = 10.5000
+where session_id = :session_id
+  and symbol in ('SSE:600000','SZSE:000001','SZSE:000002')
+"""),
+            {"session_id": session_id},
+        )
+        connection.execute(text("set local role market_data_api"))
+        empty_payload = connection.scalar(
+            text("select api_v1.query_call_auction_one_price_patterns(:day)"),
+            {"day": trade_date},
+        )
+
+    assert payload["trade_date"] == trade_date.isoformat()
+    assert payload["session_id"] == str(session_id)
+    assert payload["session_status"] == "partial"
+    assert payload["round_count"] == 29
+    assert payload["candidate_count"] == 3
+    assert [item["code"] for item in payload["items"]] == [
+        "000002",
+        "600000",
+        "000001",
+    ]
+    assert [Decimal(str(item["change_pct"])) for item in payload["items"]] == [
+        Decimal("4.0000000000"),
+        Decimal("2.0000000000"),
+        Decimal("-4.0000000000"),
+    ]
+    assert payload["items"][1]["name"] == "浦发银行"
+    assert all(item["sample_count"] == 29 for item in payload["items"])
+    assert latest_payload == payload
+    assert empty_payload["candidate_count"] == 0
+    assert empty_payload["items"] == []
 
 
 def test_call_auction_market_series_rpc_selects_one_session_and_orders_rounds(
@@ -1052,19 +1912,24 @@ insert into realtime.call_auction_market_series_round (
         connection.execute(
             text("""
 insert into realtime.call_auction_market_series_snapshot (
-    trade_date, ingestion_id, session_id, sample_seq, scheduled_at, symbol,
+    trade_date, ingestion_id, session_id, sample_seq, batch_code, scheduled_at, symbol,
     observed_at, last_price, previous_close, high_price, low_price,
-    cumulative_volume, cumulative_amount, source_code
+    cumulative_volume, cumulative_amount, source_code, value_semantics,
+    bid1_price, bid1_volume, bid2_price, bid2_volume,
+    ask1_price, ask1_volume, ask2_price, ask2_volume
 ) values
-    (:trade_date, :round_zero_id, :succeeded_session_id, 0, :slot_zero,
+    (:trade_date, :round_zero_id, :succeeded_session_id, 0, '091500', :slot_zero,
      'SSE:600000', :round_zero_observed, 10.1000, 10.0000, 10.1000, 10.0000,
-     100, 1010.0000, 'pytdx_hq'),
-    (:trade_date, :round_one_id, :succeeded_session_id, 1, :slot_one,
+     100, 1010.0000, 'pytdx_hq', 'auction_indicative',
+     10.0000, 100, null, 10743200, 10.0100, 100, null, 13300),
+    (:trade_date, :round_one_id, :succeeded_session_id, 1, '091520', :slot_one,
      'SSE:600000', :round_one_observed, 10.2000, 10.0000, 10.2000, 10.0000,
-     200, 2040.0000, 'pytdx_hq'),
-    (:trade_date, :partial_id, :partial_session_id, 0, :slot_zero,
+     200, 2040.0000, 'pytdx_hq', 'auction_indicative',
+     10.0000, 100, null, 10743200, 10.0100, 100, null, 13300),
+    (:trade_date, :partial_id, :partial_session_id, 0, '091500', :slot_zero,
      'SSE:600000', :partial_observed, 99.0000, 98.0000, 99.0000, 98.0000,
-     1, 99.0000, 'pytdx_hq')
+     1, 99.0000, 'pytdx_hq', 'auction_indicative',
+     98.0000, 100, null, 10743200, 99.0000, 100, null, 13300)
 """),
             {
                 "trade_date": trade_date,
@@ -1085,7 +1950,7 @@ insert into realtime.call_auction_market_series_snapshot (
             text("""
 select has_function_privilege(
     'market_data_api',
-    'api_v1.query_call_auction_market_series_snapshots(date,text[])',
+    'api_v1.query_call_auction_market_series_snapshots(date,text[],text)',
     'execute'
 )
 """)
@@ -1101,7 +1966,23 @@ select has_table_privilege(
         payload = connection.scalar(
             text("""
 select api_v1.query_call_auction_market_series_snapshots(
-    :trade_date, array['600000','000001','600000']::text[]
+    :trade_date, array['600000','000001','600000']::text[], '091520'
+)
+"""),
+            {"trade_date": trade_date},
+        )
+        unfiltered_payload = connection.scalar(
+            text("""
+select api_v1.query_call_auction_market_series_snapshots(
+    :trade_date, array['600000']::text[]
+)
+"""),
+            {"trade_date": trade_date},
+        )
+        missing_batch_payload = connection.scalar(
+            text("""
+select api_v1.query_call_auction_market_series_snapshots(
+    :trade_date, array['600000']::text[], '091540'
 )
 """),
             {"trade_date": trade_date},
@@ -1128,11 +2009,19 @@ select api_v1.query_call_auction_market_series_snapshots(
     assert payload["session_id"] == str(succeeded_session_id)
     assert payload["session_status"] == "succeeded"
     assert payload["requested_count"] == 2
-    assert payload["returned_rounds"] == 2
-    assert [item["sample_seq"] for item in payload["rounds"]] == [0, 1]
+    assert payload["returned_rounds"] == 1
+    assert [item["sample_seq"] for item in payload["rounds"]] == [1]
     assert payload["rounds"][0]["missing_codes"] == ["000001"]
-    assert payload["rounds"][0]["items"][0]["last_price"] == 10.1000
-    assert payload["rounds"][1]["items"][0]["last_price"] == 10.2000
+    assert payload["rounds"][0]["items"][0]["last_price"] == 10.2000
+    assert payload["rounds"][0]["items"][0]["value_semantics"] == "auction_indicative"
+    assert payload["rounds"][0]["items"][0]["batch_code"] == "091520"
+    assert payload["rounds"][0]["items"][0]["bid2_price"] is None
+    assert payload["rounds"][0]["items"][0]["bid2_volume"] == 10_743_200
+    assert payload["rounds"][0]["items"][0]["ask2_volume"] == 13_300
+    assert unfiltered_payload["returned_rounds"] == 2
+    assert [item["sample_seq"] for item in unfiltered_payload["rounds"]] == [0, 1]
+    assert missing_batch_payload["returned_rounds"] == 0
+    assert missing_batch_payload["rounds"] == []
     assert partial_payload["session_id"] == str(partial_session_id)
     assert partial_payload["session_status"] == "partial"
     assert partial_payload["rounds"][0]["items"][0]["last_price"] == 99.0000
@@ -1297,6 +2186,27 @@ def test_call_auction_market_schema_enforces_append_only_source_facts(
             "low_price",
             "cumulative_volume",
             "cumulative_amount",
+            "bid1_price",
+            "bid1_volume",
+            "bid2_price",
+            "bid2_volume",
+            "bid3_price",
+            "bid3_volume",
+            "bid4_price",
+            "bid4_volume",
+            "bid5_price",
+            "bid5_volume",
+            "ask1_price",
+            "ask1_volume",
+            "ask2_price",
+            "ask2_volume",
+            "ask3_price",
+            "ask3_volume",
+            "ask4_price",
+            "ask4_volume",
+            "ask5_price",
+            "ask5_volume",
+            "seal_amount",
             "source_code",
             "created_at",
         }
@@ -1315,6 +2225,17 @@ def test_call_auction_market_schema_enforces_append_only_source_facts(
             "high_price": (18, 4, "YES"),
             "low_price": (18, 4, "YES"),
             "cumulative_amount": (30, 4, "YES"),
+            "bid1_price": (18, 4, "YES"),
+            "bid2_price": (18, 4, "YES"),
+            "bid3_price": (18, 4, "YES"),
+            "bid4_price": (18, 4, "YES"),
+            "bid5_price": (18, 4, "YES"),
+            "ask1_price": (18, 4, "YES"),
+            "ask2_price": (18, 4, "YES"),
+            "ask3_price": (18, 4, "YES"),
+            "ask4_price": (18, 4, "YES"),
+            "ask5_price": (18, 4, "YES"),
+            "seal_amount": (30, 4, "YES"),
         }
         nonnumeric_columns = {
             cast(str, row["column_name"]): (row["data_type"], row["is_nullable"])
@@ -1384,7 +2305,11 @@ def test_call_auction_market_schema_enforces_append_only_source_facts(
         assert check_constraints == {
             "call_auction_market_nonnegative": True,
             "call_auction_market_observation_window": True,
+            "call_auction_market_order_book_nonnegative": True,
+            "call_auction_market_order_book_price_requires_volume": True,
+            "call_auction_market_order_book_volume_only_positive": True,
             "call_auction_market_price_range": True,
+            "call_auction_market_seal_amount_rule": True,
             "call_auction_market_snapshot_source_code_check": True,
         }
         index_columns = connection.execute(
@@ -1634,6 +2559,87 @@ def test_call_auction_market_schema_enforces_append_only_source_facts(
 
     orphaned_snapshot = capture_database_snapshot(database_url)
     assert orphaned_snapshot.orphan_facts == 1
+
+
+def test_call_auction_market_seal_rule_preserves_legacy_and_checks_three_ask_levels(
+    database_engine: Engine,
+) -> None:
+    security_ingestion_id = uuid4()
+    legacy_ingestion_id = uuid4()
+    current_ingestion_id = uuid4()
+    invalid_ingestion_id = uuid4()
+    with database_engine.begin() as connection:
+        connection.execute(
+            text("""
+                insert into ingestion.ingestion_run (
+                    ingestion_id, provider_code, dataset_code, status
+                ) values
+                    (:security_id, 'baostock', 'security', 'running'),
+                    (:legacy_id, 'pytdx_hq', 'call_auction_market_snapshot', 'running'),
+                    (:current_id, 'pytdx_hq', 'call_auction_market_snapshot', 'running'),
+                    (:invalid_id, 'pytdx_hq', 'call_auction_market_snapshot', 'running')
+            """),
+            {
+                "security_id": security_ingestion_id,
+                "legacy_id": legacy_ingestion_id,
+                "current_id": current_ingestion_id,
+                "invalid_id": invalid_ingestion_id,
+            },
+        )
+        connection.execute(
+            text("""
+                insert into core.security (
+                    symbol, code, exchange, current_name, security_type, status,
+                    source_code, ingestion_id
+                ) values (
+                    'SSE:600000', '600000', 'SSE', '浦发银行', 'stock', 'listed',
+                    'baostock', :security_id
+                )
+            """),
+            {"security_id": security_ingestion_id},
+        )
+        insert_snapshot = text("""
+            insert into realtime.call_auction_market_snapshot (
+                ingestion_id, symbol, trade_date, observed_at,
+                bid1_price, bid1_volume,
+                ask1_volume, ask2_volume, ask3_volume,
+                seal_amount, source_code
+            ) values (
+                :ingestion_id, 'SSE:600000', :trade_date, :observed_at,
+                10, 100, null, 100, null, :seal_amount, 'pytdx_hq'
+            )
+        """)
+        connection.execute(
+            insert_snapshot,
+            [
+                {
+                    "ingestion_id": legacy_ingestion_id,
+                    "trade_date": date(2026, 8, 19),
+                    "observed_at": datetime(2026, 8, 19, 1, 25, 50, tzinfo=UTC),
+                    "seal_amount": Decimal("1000"),
+                },
+                {
+                    "ingestion_id": current_ingestion_id,
+                    "trade_date": date(2026, 8, 20),
+                    "observed_at": datetime(2026, 8, 20, 1, 25, 30, tzinfo=UTC),
+                    "seal_amount": None,
+                },
+            ],
+        )
+
+    with pytest.raises(DBAPIError) as raised, database_engine.begin() as connection:
+        connection.execute(
+            insert_snapshot,
+            {
+                "ingestion_id": invalid_ingestion_id,
+                "trade_date": date(2026, 8, 20),
+                "observed_at": datetime(2026, 8, 20, 1, 25, 30, tzinfo=UTC),
+                "seal_amount": Decimal("1000"),
+            },
+        )
+
+    assert isinstance(raised.value.orig, CheckViolation)
+    assert raised.value.orig.diag.constraint_name == "call_auction_market_seal_amount_rule"
 
 
 def test_call_auction_market_attempts_are_append_only_and_finalize_latest_success(
@@ -2632,7 +3638,7 @@ def test_board_index_bias_rpc_requests_fallback_with_fewer_than_34_bars(
     assert captured.value.orig.sqlstate == "P0002"
 
 
-def test_board_index_bias_rpc_requests_fallback_when_latest_bar_is_stale(
+def test_board_index_bias_rpc_returns_latest_stored_date_when_current_date_is_missing(
     database_engine: Engine,
 ) -> None:
     start_date = date(2026, 6, 1)
@@ -2650,10 +3656,12 @@ def test_board_index_bias_rpc_requests_fallback_when_latest_bar_is_stale(
             {"trade_date": start_date + timedelta(days=34)},
         )
 
-    with pytest.raises(DBAPIError) as captured, database_engine.connect() as connection:
-        connection.execute(text("select api_v1.query_board_index_bias_latest()"))
+    with database_engine.connect() as connection:
+        payload = connection.execute(
+            text("select api_v1.query_board_index_bias_latest()")
+        ).scalar_one()
 
-    assert captured.value.orig.sqlstate == "P0002"
+    assert payload["trade_date"] == (start_date + timedelta(days=33)).isoformat()
 
 
 def test_board_index_bias_rpc_fails_when_no_board_bars_exist(database_engine: Engine) -> None:
@@ -2940,97 +3948,19 @@ where snapshot_id=:snapshot_id
     assert revised_payload["items"][0]["breakout_pct"] == 20.0
 
 
-def test_live_board_index_persistence_is_atomic_idempotent_and_fastapi_only(
+def test_live_board_index_persistence_rpc_is_removed(
     database_engine: Engine,
 ) -> None:
-    start_date = date(2026, 6, 1)
-    closes = [Decimal(index) for index in range(1, 36)]
-    _commit_board_bias_bars(database_engine, start_date, closes)
-    records = [
-        {
-            "board_id": "THS:883423",
-            "trade_date": (start_date + timedelta(days=index)).isoformat(),
-            "market": "CN_A_SHARE",
-            "open": str(close),
-            "high": str(close),
-            "low": str(close),
-            "close": str(close),
-            "volume": index,
-            "amount": str(close * index),
-            "source_code": "akshare_ths",
-        }
-        for index, close in enumerate(closes)
-    ]
-    first_ingestion_id = uuid4()
-    first_raw_id = uuid4()
-    second_ingestion_id = uuid4()
-    second_raw_id = uuid4()
-    call = text("""
-        select api_v1.persist_board_index_daily_bars_live(
-            :ingestion_id, :raw_id, :fetched_at, :input_hash, :object_path,
-            :content_sha256, :byte_size, :source_row_count,
-            cast(:source_years as jsonb), cast(:records as jsonb)
-        ) as payload
-    """)
-    common = {
-        "fetched_at": datetime(2026, 8, 15, 1, 2, 3, tzinfo=UTC),
-        "input_hash": "b" * 64,
-        "content_sha256": "a" * 64,
-        "byte_size": 1234,
-        "source_row_count": 1,
-        "source_years": json.dumps([2026]),
-        "records": json.dumps(records),
-    }
-    with database_engine.begin() as connection:
-        first = connection.execute(
-            call,
-            {
-                **common,
-                "ingestion_id": first_ingestion_id,
-                "raw_id": first_raw_id,
-                "object_path": (
-                    "akshare_ths/board_index_daily_bar/year=2026/month=08/day=15/"
-                    f"{first_raw_id}.jsonl"
-                ),
-            },
-        ).scalar_one()
-        second = connection.execute(
-            call,
-            {
-                **common,
-                "ingestion_id": second_ingestion_id,
-                "raw_id": second_raw_id,
-                "object_path": (
-                    "akshare_ths/board_index_daily_bar/year=2026/month=08/day=15/"
-                    f"{second_raw_id}.jsonl"
-                ),
-            },
-        ).scalar_one()
-        signature = (
-            "api_v1.persist_board_index_daily_bars_live("
-            "uuid,uuid,timestamptz,text,text,text,bigint,integer,jsonb,jsonb)"
+    with database_engine.connect() as connection:
+        function_oid = connection.scalar(
+            text(
+                "select to_regprocedure("
+                "'api_v1.persist_board_index_daily_bars_live("
+                "uuid,uuid,timestamptz,text,text,text,bigint,integer,jsonb,jsonb)')"
+            )
         )
-        privileges = connection.execute(
-            text(
-                "select has_function_privilege('market_data_api', :signature, 'EXECUTE'), "
-                "has_function_privilege('anon', :signature, 'EXECUTE')"
-            ),
-            {"signature": signature},
-        ).one()
-        persisted = connection.execute(
-            text(
-                "select count(*) from ingestion.ingestion_run "
-                "where request_params->>'input_hash'=:input_hash"
-            ),
-            {"input_hash": common["input_hash"]},
-        ).scalar_one()
 
-    assert first["outcome"] == "created"
-    assert second["outcome"] == "reused"
-    assert second["ingestion_id"] == str(first_ingestion_id)
-    assert second["raw_id"] == str(first_raw_id)
-    assert persisted == 1
-    assert tuple(privileges) == (True, False)
+    assert function_oid is None
 
 
 def test_derived_calculation_is_versioned_idempotent_and_revision_aware(
@@ -3167,6 +4097,10 @@ def test_postgrest_query_contracts_are_bounded_version_coherent_and_as_of(
             .scalars()
             .all()
         )
+        recent_payload = connection.execute(
+            text("select api_v1.query_recent_daily_bars(:code, :trade_date, :limit)"),
+            {"code": "600000", "trade_date": date(2026, 7, 29), "limit": 2},
+        ).scalar_one()
         adjusted = connection.execute(
             text("""
                 select trade_date, adjustment_type, calculation_id
@@ -3199,6 +4133,15 @@ def test_postgrest_query_contracts_are_bounded_version_coherent_and_as_of(
 
     assert securities == [SYMBOL]
     assert raw_dates == [date(2026, 7, 27), date(2026, 7, 28)]
+    assert recent_payload["code"] == "600000"
+    assert recent_payload["symbol"] == SYMBOL
+    assert recent_payload["trade_date"] == "2026-07-29"
+    assert recent_payload["limit"] == 2
+    assert recent_payload["count"] == 2
+    assert [item["trade_date"] for item in recent_payload["items"]] == [
+        "2026-07-29",
+        "2026-07-28",
+    ]
     assert [tuple(row) for row in adjusted] == [
         (date(2026, 7, 27), "forward", calculation_id),
         (date(2026, 7, 28), "forward", calculation_id),
@@ -3997,6 +4940,221 @@ def test_daily_bar_quality_audit_excludes_pre_ipo_days_and_reports_active_gaps(
     assert report.gap_candidates[0].symbol == "SZSE:000001"
     assert report.gap_candidates[0].first_missing_date == date(2026, 7, 28)
     assert report.gap_candidates[0].last_missing_date == date(2026, 7, 29)
+
+
+def _seed_one_price_pattern_session(
+    connection: Connection,
+    trade_date: date,
+    session_id: UUID,
+) -> None:
+    _insert_call_auction_security_universe(connection)
+    security_ingestion_id = uuid4()
+    workflow_id = uuid4()
+    slots = series_slots(trade_date)
+    extra_symbols = tuple(f"SSE:60000{suffix}" for suffix in range(4, 10))
+    symbols = tuple(
+        sorted(
+            (
+                "SSE:600000",
+                "SZSE:000001",
+                "SZSE:000002",
+                *extra_symbols,
+            )
+        )
+    )
+    snapshot_symbols = (*symbols, "BSE:920000", "SSE:510300")
+    connection.execute(
+        text("""
+insert into ingestion.ingestion_run (
+    ingestion_id, provider_code, dataset_code, status, requested_at, started_at
+) values (
+    :ingestion_id, 'baostock', 'security', 'running', :started_at, :started_at
+)
+"""),
+        {"ingestion_id": security_ingestion_id, "started_at": slots[0]},
+    )
+    connection.execute(
+        text("""
+insert into core.security (
+    symbol, code, exchange, current_name, security_type, status,
+    source_code, ingestion_id
+) values (
+    :symbol, :code, 'SSE', :current_name, 'stock', 'listed',
+    'baostock', :ingestion_id
+)
+"""),
+        [
+            {
+                "symbol": symbol,
+                "code": symbol.split(":", maxsplit=1)[1],
+                "current_name": f"测试{symbol[-2:]}",
+                "ingestion_id": security_ingestion_id,
+            }
+            for symbol in extra_symbols
+        ],
+    )
+    connection.execute(
+        text("""
+insert into core.security_name_history (
+    symbol, name, effective_from, effective_to, source_code, ingestion_id
+)
+select symbol, current_name, date '2020-01-01', null, 'baostock', ingestion_id
+from core.security
+"""),
+    )
+    connection.execute(
+        text("""
+insert into operations.workflow_run (
+    workflow_run_id, workflow_code, scheduled_for, trigger_source,
+    attempt, status, started_at, finished_at
+) values (
+    :workflow_id, 'call_auction_market_series', :started_at, 'scheduled',
+    1, 'succeeded', :started_at, :finished_at
+)
+"""),
+        {
+            "workflow_id": workflow_id,
+            "started_at": slots[0],
+            "finished_at": slots[-1] + timedelta(seconds=2),
+        },
+    )
+    connection.execute(
+        text("""
+insert into realtime.call_auction_market_series_session (
+    session_id, workflow_run_id, trade_date, window_start, window_end,
+    cadence_seconds, expected_rounds, universe_symbols, universe_count,
+    universe_hash, status, started_at, finished_at, successful_rounds,
+    partial_rounds, failed_rounds, successful_quotes, failed_quotes
+) values (
+    :session_id, :workflow_id, :trade_date, :window_start, :window_end,
+    20, 32, :universe_symbols, :universe_count,
+    :universe_hash, 'partial', :window_start, :finished_at, 29,
+    0, 3, :successful_quotes, :failed_quotes
+)
+"""),
+        {
+            "session_id": session_id,
+            "workflow_id": workflow_id,
+            "trade_date": trade_date,
+            "window_start": slots[0],
+            "window_end": slots[-1] + timedelta(seconds=20),
+            "universe_symbols": list(symbols),
+            "universe_count": len(symbols),
+            "universe_hash": universe_hash(symbols),
+            "finished_at": slots[-1] + timedelta(seconds=2),
+            "successful_quotes": len(symbols) * 29,
+            "failed_quotes": len(symbols) * 3,
+        },
+    )
+
+    ingestion_ids = {sample_seq: uuid4() for sample_seq in range(1, 30)}
+    connection.execute(
+        text("""
+insert into ingestion.ingestion_run (
+    ingestion_id, provider_code, dataset_code, status, requested_at,
+    started_at, finished_at, fetched_rows, accepted_rows
+) values (
+    :ingestion_id, 'pytdx_hq', 'call_auction_market_series', 'succeeded',
+    :scheduled_at, :scheduled_at, :finished_at, :row_count, :row_count
+)
+"""),
+        [
+            {
+                "ingestion_id": ingestion_id,
+                "scheduled_at": slots[sample_seq],
+                "finished_at": slots[sample_seq] + timedelta(seconds=2),
+                "row_count": len(snapshot_symbols),
+            }
+            for sample_seq, ingestion_id in ingestion_ids.items()
+        ],
+    )
+    connection.execute(
+        text("""
+insert into realtime.call_auction_market_series_round (
+    session_id, sample_seq, scheduled_at, collected_at, status,
+    attempt_count, expected_quotes, successful_quotes, failed_quotes,
+    selected_ingestion_id
+) values (
+    :session_id, :sample_seq, :scheduled_at, :collected_at, :status,
+    1, :expected_quotes, :successful_quotes, :failed_quotes,
+    :selected_ingestion_id
+)
+"""),
+        [
+            {
+                "session_id": session_id,
+                "sample_seq": sample_seq,
+                "scheduled_at": slots[sample_seq],
+                "collected_at": slots[sample_seq] + timedelta(seconds=2),
+                "status": "succeeded" if sample_seq in ingestion_ids else "failed",
+                "expected_quotes": len(symbols),
+                "successful_quotes": len(symbols) if sample_seq in ingestion_ids else 0,
+                "failed_quotes": 0 if sample_seq in ingestion_ids else len(symbols),
+                "selected_ingestion_id": ingestion_ids.get(sample_seq),
+            }
+            for sample_seq in range(32)
+        ],
+    )
+
+    base_prices = {
+        "SSE:600000": (Decimal("10.20"), Decimal("10.00")),
+        "SZSE:000001": (Decimal("9.60"), Decimal("10.00")),
+        "SZSE:000002": (Decimal("10.40"), Decimal("10.00")),
+        "BSE:920000": (Decimal("10.20"), Decimal("10.00")),
+        "SSE:510300": (Decimal("10.20"), Decimal("10.00")),
+        "SSE:600004": (Decimal("10.4001"), Decimal("10.00")),
+        "SSE:600005": (Decimal("10.20"), Decimal("10.00")),
+        "SSE:600006": (Decimal("10.20"), Decimal("10.00")),
+        "SSE:600007": (Decimal("10.20"), Decimal("10.00")),
+        "SSE:600008": (Decimal("10.20"), Decimal("10.00")),
+        "SSE:600009": (Decimal("10.20"), Decimal("10.00")),
+    }
+    snapshots: list[dict[str, object]] = []
+    for sample_seq, ingestion_id in ingestion_ids.items():
+        for symbol in snapshot_symbols:
+            if symbol == "SSE:600009" and sample_seq == 29:
+                continue
+            last_price, previous_close = base_prices[symbol]
+            if symbol == "SSE:600005" and sample_seq == 7:
+                last_price = Decimal("10.21")
+            if symbol == "SSE:600006" and sample_seq == 7:
+                previous_close = Decimal("9.99")
+            if symbol == "SSE:600007" and sample_seq == 7:
+                last_price = None
+            value_semantics = (
+                "opening_trade"
+                if symbol == "SSE:600008" and sample_seq == 7
+                else "auction_indicative"
+            )
+            snapshots.append(
+                {
+                    "trade_date": trade_date,
+                    "ingestion_id": ingestion_id,
+                    "session_id": session_id,
+                    "sample_seq": sample_seq,
+                    "batch_code": series_batch_code(slots[sample_seq]),
+                    "scheduled_at": slots[sample_seq],
+                    "symbol": symbol,
+                    "observed_at": slots[sample_seq] + timedelta(seconds=1),
+                    "last_price": last_price,
+                    "previous_close": previous_close,
+                    "value_semantics": value_semantics,
+                }
+            )
+    connection.execute(
+        text("""
+insert into realtime.call_auction_market_series_snapshot (
+    trade_date, ingestion_id, session_id, sample_seq, batch_code,
+    scheduled_at, symbol, observed_at, last_price, previous_close,
+    source_code, value_semantics
+) values (
+    :trade_date, :ingestion_id, :session_id, :sample_seq, :batch_code,
+    :scheduled_at, :symbol, :observed_at, :last_price, :previous_close,
+    'pytdx_hq', :value_semantics
+)
+"""),
+        snapshots,
+    )
 
 
 def _insert_call_auction_security_universe(connection: Connection) -> None:

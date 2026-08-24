@@ -3,13 +3,14 @@
 from argparse import Namespace
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from json import dumps
 from logging import INFO, basicConfig, getLogger
 from pathlib import Path
 from signal import SIGINT, SIGTERM, signal
 from sqlite3 import Error as SQLiteError
 from sqlite3 import connect
+from time import sleep
 from types import FrameType
 from typing import Protocol
 from zoneinfo import ZoneInfo
@@ -21,7 +22,7 @@ from apscheduler.triggers.cron import CronTrigger  # type: ignore[import-untyped
 from apscheduler.triggers.interval import IntervalTrigger  # type: ignore[import-untyped]
 from sqlalchemy import URL, create_engine
 
-from market_data_center.auction_service import AuctionCollectionService
+from market_data_center.board_index_daily_schedule import collect_board_index_daily_bar_gap
 from market_data_center.call_auction_market_series_service import (
     CallAuctionMarketSeriesService,
 )
@@ -41,7 +42,9 @@ from market_data_center.persistence.close_price_new_highs_postgres import (
 )
 from market_data_center.persistence.operations_postgres import PostgreSQLOperationsPersistence
 from market_data_center.persistence.stock_pool_postgres import PostgreSQLStockPoolPersistence
-from market_data_center.pipeline import IngestionPipeline
+from market_data_center.pipeline import BoardIndexIngestionPipeline, IngestionPipeline
+from market_data_center.providers import create_board_index_provider
+from market_data_center.providers.contracts import ProviderError
 from market_data_center.providers.pytdx_hq import PytdxHqProvider
 from market_data_center.providers.pytdx_pool import (
     PytdxCapability,
@@ -53,8 +56,7 @@ from market_data_center.providers.pytdx_pool import (
 from market_data_center.raw_store import LocalRawStore
 from market_data_center.reliability import recover_stale_runs
 from market_data_center.scheduling_catalog import (
-    AUCTION_COLLECTION_JOB_ID,
-    AUCTION_COLLECTION_QUOTE_BATCH_SIZE,
+    BOARD_INDEX_DAILY_BAR_JOB_ID,
     CALL_AUCTION_MARKET_SERIES_JOB_ID,
     CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID,
     CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID,
@@ -81,7 +83,7 @@ from market_data_center.stock_pool_service import StockPoolService
 
 SCHEDULER_LOCK_KEY = "market-data-center:scheduler"
 LOGGER = getLogger(__name__)
-_RETIRED_JOB_IDS = ("call-auction-snapshot-daily",)
+_RETIRED_JOB_IDS = ("call-auction-snapshot-daily", "opening-auction-limit-up-quotes")
 
 
 @dataclass(frozen=True, slots=True)
@@ -276,6 +278,60 @@ def run_close_price_new_highs_120d_job() -> None:
         engine.dispose()
 
 
+def run_board_index_daily_bar_job() -> None:
+    """Collect the missing THS:883423 daily-bar tail after market close."""
+    settings = WorkerSettings()  # type: ignore[call-arg]
+    scheduling = SchedulerSettings()
+    engine = create_engine(
+        sqlalchemy_url(settings.database_url.get_secret_value()), pool_pre_ping=True
+    )
+    fire_time = _scheduled_job_fire_time(BOARD_INDEX_DAILY_BAR_JOB_ID, scheduling)
+    as_of_date = fire_time.astimezone(ZoneInfo(SCHEDULER_TIMEZONE)).date()
+    try:
+        persistence = PostgreSQLPersistence(engine)
+        execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
+            WorkflowCode.BOARD_INDEX_DAILY_BAR,
+            fire_time,
+            TriggerSource.SCHEDULED,
+        )
+        try:
+            expected_date = persistence.latest_trading_date(
+                as_of_date - timedelta(days=14), as_of_date
+            )
+            if expected_date is None:
+                raise RuntimeError("CN_A_SHARE trading calendar has no recent trading date")
+            latest_stored_date = persistence.latest_board_index_daily_bar_date("THS:883423")
+
+            def ingest(start_date: date, end_date: date) -> object:
+                with create_board_index_provider("akshare_ths") as provider:
+                    run = BoardIndexIngestionPipeline(
+                        provider=provider,
+                        persistence=persistence,
+                        raw_store=LocalRawStore(settings.raw_data_root),
+                    ).ingest_board_index_daily_bars("THS:883423", start_date, end_date)
+                stored_date = persistence.latest_board_index_daily_bar_date("THS:883423")
+                if stored_date is None or stored_date < end_date:
+                    raise ProviderError("THS board-index response did not include expected date")
+                return run
+
+            execution.step(
+                "collect_board_index_daily_bars",
+                1,
+                lambda: collect_board_index_daily_bar_gap(
+                    expected_date=expected_date,
+                    latest_stored_date=latest_stored_date,
+                    ingest=ingest,
+                    before_retry=lambda _attempt: sleep(2),
+                ),
+            )
+        except BaseException as error:
+            execution.fail(error)
+            raise
+        execution.succeed()
+    finally:
+        engine.dispose()
+
+
 def run_stale_recovery_job() -> None:
     """Fail ingestion runs left running after an interrupted worker process."""
     settings = WorkerSettings()  # type: ignore[call-arg]
@@ -394,44 +450,6 @@ def run_stock_pool_job() -> None:
             execution.step(
                 "build_stock_pools", 1, lambda: StockPoolService(persistence).build(basis)
             )
-        except BaseException as error:
-            execution.fail(error)
-            raise
-        execution.succeed()
-    finally:
-        engine.dispose()
-
-
-def run_auction_collection_job() -> None:
-    """Collect one bounded opening-auction session for today's exact limit-up pool."""
-    settings = WorkerSettings()  # type: ignore[call-arg]
-    scheduling = SchedulerSettings()
-    definition = job_definition(AUCTION_COLLECTION_JOB_ID, scheduling)
-    if definition.cadence_seconds is None:
-        raise ValueError(f"job has no cadence: {AUCTION_COLLECTION_JOB_ID}")
-    quote_settings = PytdxHqSettings(pytdx_hq_batch_size=AUCTION_COLLECTION_QUOTE_BATCH_SIZE)
-    engine = create_engine(
-        sqlalchemy_url(settings.database_url.get_secret_value()), pool_pre_ping=True
-    )
-    try:
-        operations = PostgreSQLOperationsPersistence(engine)
-        execution = WorkflowExecutionService(operations).start(
-            WorkflowCode.AUCTION_COLLECTION,
-            _scheduled_job_fire_time(AUCTION_COLLECTION_JOB_ID, scheduling),
-            TriggerSource.SCHEDULED,
-        )
-        try:
-            trade_date = datetime.now(ZoneInfo(definition.timezone)).date()
-            with PytdxHqProvider(quote_settings) as provider:
-                service = AuctionCollectionService(
-                    PostgreSQLAuctionPersistence(engine),
-                    provider,
-                    LocalRawStore(settings.raw_data_root),
-                    cadence_seconds=definition.cadence_seconds,
-                    max_retries=quote_settings.pytdx_hq_max_retries,
-                    retry_budget_seconds=quote_settings.pytdx_hq_timeout_seconds,
-                )
-                execution.step("collect_auction_quotes", 1, lambda: service.collect(trade_date))
         except BaseException as error:
             execution.fail(error)
             raise
@@ -585,12 +603,13 @@ def _scheduled_fire_time(
     minute: int,
     timezone_name: str,
     *,
+    second: int = 0,
     weekdays_only: bool = True,
 ) -> datetime:
     """Resolve the intended weekday fire time, including after-midnight misfires."""
     timezone = ZoneInfo(timezone_name)
     now = datetime.now(timezone)
-    candidate = datetime.combine(now.date(), time(hour, minute), timezone)
+    candidate = datetime.combine(now.date(), time(hour, minute, second), timezone)
     if candidate > now:
         candidate -= timedelta(days=1)
     while weekdays_only and candidate.weekday() >= 5:
@@ -607,12 +626,26 @@ def _scheduled_job_fire_time(
     definition = job_definition(job_code, settings)
     if definition.hour is None or definition.minute is None:
         raise ValueError(f"job has no cron time: {job_code}")
-    return _scheduled_fire_time(
-        definition.hour,
-        definition.minute,
-        definition.timezone,
-        weekdays_only=weekdays_only,
+    hours = _cron_hour_values(definition.hour)
+    return max(
+        _scheduled_fire_time(
+            hour,
+            definition.minute,
+            definition.timezone,
+            second=definition.second or 0,
+            weekdays_only=weekdays_only,
+        )
+        for hour in hours
     )
+
+
+def _cron_hour_values(value: int | str) -> tuple[int, ...]:
+    if isinstance(value, int):
+        return (value,)
+    if "-" in value:
+        start, end = (int(part) for part in value.split("-", maxsplit=1))
+        return tuple(range(start, end + 1))
+    return tuple(int(part) for part in value.split(","))
 
 
 def build_scheduler(settings: SchedulerSettings | None = None) -> BlockingScheduler:
@@ -625,7 +658,7 @@ def build_scheduler(settings: SchedulerSettings | None = None) -> BlockingSchedu
         jobstores={"default": SQLAlchemyJobStore(engine=job_store_engine)},
         executors={
             "default": ThreadPoolExecutor(max_workers=1),
-            "morning_auction": ThreadPoolExecutor(max_workers=2),
+            "morning_auction": ThreadPoolExecutor(max_workers=1),
         },
         timezone=SCHEDULER_TIMEZONE,
     )
@@ -635,21 +668,19 @@ def build_scheduler(settings: SchedulerSettings | None = None) -> BlockingSchedu
         STALE_RUN_RECOVERY_JOB_ID: run_stale_recovery_job,
         DEDUCTED_PROFIT_JOB_ID: run_deducted_profit_job,
         STOCK_POOL_JOB_ID: run_stock_pool_job,
-        AUCTION_COLLECTION_JOB_ID: run_auction_collection_job,
         EOD_QUOTE_SNAPSHOT_JOB_ID: run_eod_quote_snapshot_job,
         CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID: run_call_auction_market_snapshot_job,
         CALL_AUCTION_MARKET_SERIES_JOB_ID: run_call_auction_market_series_job,
         TODAY_LIMIT_UP_SNAPSHOT_JOB_ID: run_today_limit_up_snapshot_job,
         CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID: run_close_price_new_highs_120d_job,
+        BOARD_INDEX_DAILY_BAR_JOB_ID: run_board_index_daily_bar_job,
         PYTDX_POOL_REFRESH_JOB_ID: run_pytdx_pool_refresh_job,
     }
     for definition in job_definitions(settings):
         if not definition.enabled:
             continue
         executor = (
-            "morning_auction"
-            if definition.code in {AUCTION_COLLECTION_JOB_ID, CALL_AUCTION_MARKET_SERIES_JOB_ID}
-            else "default"
+            "morning_auction" if definition.code == CALL_AUCTION_MARKET_SERIES_JOB_ID else "default"
         )
         scheduler.add_job(
             functions[definition.code],
@@ -681,11 +712,16 @@ def _trigger(definition: JobDefinition) -> CronTrigger | IntervalTrigger:
     if definition.trigger_type == "cron":
         if definition.hour is None or definition.minute is None:
             raise ValueError(f"incomplete cron definition: {definition.code}")
+        trigger_options: dict[str, object] = {
+            "day_of_week": definition.day_of_week,
+            "hour": definition.hour,
+            "minute": definition.minute,
+            "timezone": definition.timezone,
+        }
+        if definition.second is not None:
+            trigger_options["second"] = definition.second
         return CronTrigger(
-            day_of_week=definition.day_of_week,
-            hour=definition.hour,
-            minute=definition.minute,
-            timezone=definition.timezone,
+            **trigger_options,
         )
     if definition.trigger_type == "interval" and definition.interval_hours is not None:
         return IntervalTrigger(hours=definition.interval_hours, timezone=definition.timezone)

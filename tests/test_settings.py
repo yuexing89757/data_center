@@ -2,13 +2,16 @@ from pathlib import Path
 
 from pydantic import SecretStr
 
-from market_data_center.settings import PytdxPoolSettings, SchedulerSettings, WorkerSettings
+from market_data_center.settings import (
+    PytdxPoolSettings,
+    SchedulerSettings,
+    WorkerSettings,
+)
 
 
 def test_optional_scheduled_tasks_default_enabled() -> None:
     settings = SchedulerSettings(_env_file=None)
 
-    assert settings.auction_collection_enabled is True
     assert settings.eod_quote_snapshot_enabled is True
     assert settings.call_auction_snapshot_enabled is True
     assert settings.call_auction_market_series_enabled is True
@@ -16,7 +19,6 @@ def test_optional_scheduled_tasks_default_enabled() -> None:
 
 
 def test_optional_scheduled_tasks_can_be_disabled_by_environment(monkeypatch) -> None:
-    monkeypatch.setenv("AUCTION_COLLECTION_ENABLED", "false")
     monkeypatch.setenv("EOD_QUOTE_SNAPSHOT_ENABLED", "false")
     monkeypatch.setenv("CALL_AUCTION_SNAPSHOT_ENABLED", "false")
     monkeypatch.setenv("CALL_AUCTION_MARKET_SERIES_ENABLED", "false")
@@ -24,7 +26,6 @@ def test_optional_scheduled_tasks_can_be_disabled_by_environment(monkeypatch) ->
 
     settings = SchedulerSettings(_env_file=None)
 
-    assert settings.auction_collection_enabled is False
     assert settings.eod_quote_snapshot_enabled is False
     assert settings.call_auction_snapshot_enabled is False
     assert settings.call_auction_market_series_enabled is False

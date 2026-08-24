@@ -33,6 +33,7 @@ class WorkflowCode(StrEnum):
     PYTDX_POOL_REFRESH = "pytdx_pool_refresh"
     TODAY_LIMIT_UP_SNAPSHOT = "today_limit_up_snapshot"
     CLOSE_PRICE_NEW_HIGHS_120D = "close_price_new_highs_120d"
+    BOARD_INDEX_DAILY_BAR = "board_index_daily_bar"
 
 
 @dataclass(frozen=True, slots=True)

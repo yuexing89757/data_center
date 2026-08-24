@@ -41,8 +41,15 @@
 
 - 表：`core.stock_daily_indicator`；
 - Raw：`tushare.stock_daily_indicator.v1`；
-- API：`api_v1.stock_daily_indicators`，不暴露采集技术字段；
+- PostgREST API：`api_v1.stock_daily_indicators`，不暴露采集技术字段；
+- FastAPI API：依据 ADR-0043，通过私有有界 RPC
+  `api_v1.query_latest_stock_daily_indicators(text[])` 支持 1～500 个六位股票代码的逐股票
+  最新指标查询；
 - 默认查询必须限定 symbol 和日期区间，消费者自行处理缺失交易日。
+
+FastAPI 批量查询由 Security 事实解析标准 `symbol`，不根据代码前缀猜交易所。每只股票独立
+选取 Core 当前保留窗口内最大的 `trade_date`，不同股票不要求同日。未知代码或没有保留指标
+的代码进入 `missing_codes`；接口不触发 Provider、Raw 重放、补齐或日期回退。
 
 ## 调度与保留
 

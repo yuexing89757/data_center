@@ -16,43 +16,131 @@ from market_data_center.domain import (
     TradeStatus,
 )
 from market_data_center.public_api import create_app
-from market_data_center.public_api.board_index_bias_live import (
-    BoardIndexBiasLiveBusy,
-    BoardIndexBiasLivePersistence,
-    BoardIndexBiasLiveUpstream,
-)
+from market_data_center.public_api import models as api_models
 from market_data_center.public_api.models import (
     AuctionIndicativeDetailItem,
     AuctionIndicativeDetailResponse,
     AuctionIndicativeQuality,
     AuctionOnePriceLimitItem,
     AuctionOnePriceLimitResponse,
-    BoardIndexBiasResponse,
     CallAuctionMarketSnapshotItem,
     CallAuctionMarketSnapshotResponse,
     ClassificationMembersResponse,
     DailyBarItem,
+    DailyBarResponse,
     DailyLimitUpListItem,
     DailyLimitUpListResponse,
     DailyLimitUpQualitySummary,
+    LatestStockDailyIndicatorItem,
+    LatestStockDailyIndicatorResponse,
+    LatestStockQuoteItem,
+    LatestStockQuoteResponse,
     LimitUpPoolItem,
     LimitUpPoolOmissionReasons,
     LimitUpPoolResponse,
     SecurityItem,
+    StockQuoteLevel,
     TopGainer20dItem,
     TopGainer20dOmissions,
     TopGainers20dResponse,
 )
 from market_data_center.public_api.queries import (
-    BoardIndexBiasNotReady,
     PostgreSQLPublicQueryService,
+    PublicQueryAmbiguous,
     PublicQueryNotFound,
     PublicQueryUnavailable,
     _raise_safe_query_error,
 )
+from market_data_center.public_api.tencent_quote_live import (
+    TencentQuoteLiveService,
+    TencentQuoteLiveUpstream,
+)
 from market_data_center.settings import ApiSettings
 
 API_KEY = "test-api-key-00000000000000000000"
+
+
+def test_call_auction_one_price_pattern_models_enforce_fixed_contract() -> None:
+    assert hasattr(api_models, "CallAuctionOnePricePatternItem")
+    assert hasattr(api_models, "CallAuctionOnePricePatternResponse")
+    item_type = api_models.CallAuctionOnePricePatternItem
+    response_type = api_models.CallAuctionOnePricePatternResponse
+    item = item_type(
+        symbol="SSE:600000",
+        code="600000",
+        name="浦发银行",
+        exchange="SSE",
+        one_price=Decimal("10.20"),
+        previous_close=Decimal("10.00"),
+        change_pct=Decimal("2.0000000000"),
+        sample_count=29,
+    )
+    response = response_type(
+        trade_date=date(2026, 8, 18),
+        session_id="00000000-0000-0000-0000-000000000056",
+        session_status="partial",
+        window_start="2026-08-18T09:15:20+08:00",
+        window_end="2026-08-18T09:24:40+08:00",
+        round_count=29,
+        candidate_count=1,
+        items=[item],
+    )
+
+    assert response.items[0].one_price == Decimal("10.20")
+    with pytest.raises(ValidationError):
+        item_type(
+            symbol="SSE:600000",
+            code="600000",
+            name=None,
+            exchange="SSE",
+            one_price=Decimal("10.20"),
+            previous_close=Decimal("10.00"),
+            change_pct=Decimal("4.0000000001"),
+            sample_count=29,
+        )
+
+
+def test_call_auction_one_price_pattern_query_uses_optional_date() -> None:
+    calls: list[tuple[str, object]] = []
+    payload = {
+        "trade_date": "2026-08-18",
+        "session_id": "00000000-0000-0000-0000-000000000056",
+        "session_status": "succeeded",
+        "window_start": "2026-08-18T09:15:20+08:00",
+        "window_end": "2026-08-18T09:24:40+08:00",
+        "round_count": 29,
+        "candidate_count": 0,
+        "items": [],
+    }
+
+    class StubResult:
+        def mappings(self) -> "StubResult":
+            return self
+
+        def all(self) -> list[dict[str, object]]:
+            return [{"payload": payload}]
+
+    class StubConnection:
+        def __enter__(self) -> "StubConnection":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def execute(self, statement: object, parameters: object) -> StubResult:
+            calls.append((str(statement), parameters))
+            return StubResult()
+
+    class StubEngine:
+        def connect(self) -> StubConnection:
+            return StubConnection()
+
+    service = PostgreSQLPublicQueryService(StubEngine())  # type: ignore[arg-type]
+    response = service.auction_one_price_patterns(None)
+
+    assert response.candidate_count == 0
+    assert "query_call_auction_one_price_patterns" in calls[0][0]
+    assert calls[0][1] == {"trade_date": None}
 
 
 class FakeQueryService:
@@ -60,18 +148,22 @@ class FakeQueryService:
         self.ready_error: Exception | None = None
         self.classification_error: Exception | None = None
         self.security_calls: list[tuple[str, int]] = []
-        self.daily_bar_calls: list[tuple[str, date, date, int]] = []
+        self.daily_bar_calls: list[tuple[str, date, int]] = []
+        self.latest_stock_daily_indicator_calls: list[tuple[str, ...]] = []
+        self.latest_stock_daily_indicator_error: Exception | None = None
+        self.latest_stock_quote_calls: list[tuple[tuple[str, ...], int]] = []
         self.limit_up_calls: list[tuple[date, int | None, int]] = []
         self.daily_limit_up_calls: list[tuple[date, int | None, int, int]] = []
         self.call_auction_market_snapshot_calls: list[tuple[date, tuple[str, ...]]] = []
-        self.call_auction_market_series_snapshot_calls: list[tuple[date, tuple[str, ...]]] = []
+        self.call_auction_market_series_snapshot_calls: list[
+            tuple[date, tuple[str, ...], str | None]
+        ] = []
         self.top_gainer_calls: list[tuple[date | None, int]] = []
         self.close_price_new_highs_120d_calls = 0
         self.board_index_bias_calls = 0
         self.board_index_bias_error: Exception | None = None
-        self.board_index_bias_live_calls = 0
-        self.board_index_bias_live_error: Exception | None = None
         self.auction_one_price_limit_calls: list[date | None] = []
+        self.auction_one_price_pattern_calls: list[date | None] = []
         self.auction_indicative_database_calls: list[tuple[str, int, int]] = []
         self.auction_indicative_database_error: Exception | None = PublicQueryNotFound("not stored")
         self.auction_indicative_calls: list[tuple[str, date, int, int]] = []
@@ -95,24 +187,66 @@ class FakeQueryService:
             ),
         )
 
-    def daily_bars(
-        self, symbol: str, start_date: date, end_date: date, limit: int
-    ) -> tuple[DailyBarItem, ...]:
-        self.daily_bar_calls.append((symbol, start_date, end_date, limit))
-        return (
-            DailyBarItem(
-                symbol=symbol,
-                trade_date=start_date,
-                open=Decimal("10.10"),
-                high=Decimal("10.30"),
-                low=Decimal("10.00"),
-                close=Decimal("10.20"),
-                previous_close=Decimal("10.05"),
-                volume=123_400,
-                amount=Decimal("1258680.00"),
-                trade_status=TradeStatus.TRADING,
-                is_st=False,
-            ),
+    def daily_bars(self, code: str, trade_date: date, limit: int) -> DailyBarResponse:
+        self.daily_bar_calls.append((code, trade_date, limit))
+        symbol = "SSE:600000"
+        return DailyBarResponse(
+            code=code,
+            symbol=symbol,
+            trade_date=trade_date,
+            limit=limit,
+            count=1,
+            items=[
+                DailyBarItem(
+                    symbol=symbol,
+                    trade_date=trade_date,
+                    open=Decimal("10.10"),
+                    high=Decimal("10.30"),
+                    low=Decimal("10.00"),
+                    close=Decimal("10.20"),
+                    previous_close=Decimal("10.05"),
+                    volume=123_400,
+                    amount=Decimal("1258680.00"),
+                    trade_status=TradeStatus.TRADING,
+                    is_st=False,
+                ),
+            ],
+        )
+
+    def latest_stock_daily_indicators(
+        self, codes: tuple[str, ...]
+    ) -> LatestStockDailyIndicatorResponse:
+        self.latest_stock_daily_indicator_calls.append(codes)
+        if self.latest_stock_daily_indicator_error is not None:
+            raise self.latest_stock_daily_indicator_error
+        return LatestStockDailyIndicatorResponse(
+            requested_count=2,
+            found_count=1,
+            missing_codes=["000001"],
+            items=[
+                LatestStockDailyIndicatorItem(
+                    symbol="SSE:600000",
+                    code="600000",
+                    trade_date=date(2026, 8, 21),
+                    close=Decimal("12.3400"),
+                    turnover_rate_pct=Decimal("1.2500000000"),
+                    free_float_turnover_rate_pct=Decimal("1.5000000000"),
+                    volume_ratio=Decimal("0.8800000000"),
+                    pe=Decimal("8.1000000000"),
+                    pe_ttm=None,
+                    pb=Decimal("1.2000000000"),
+                    ps=None,
+                    ps_ttm=None,
+                    dividend_yield_pct=Decimal("2.3000000000"),
+                    dividend_yield_ttm_pct=None,
+                    total_shares=10_000_000_000,
+                    circulating_shares=8_000_000_000,
+                    free_float_shares=7_000_000_000,
+                    total_market_value=Decimal("123400000000.0000"),
+                    circulating_market_value=Decimal("98720000000.0000"),
+                    price_limit_status="rise",
+                )
+            ],
         )
 
     def classification_members(
@@ -137,6 +271,44 @@ class FakeQueryService:
             member_count=2,
             returned_count=2,
             members=["SSE:600000", "SZSE:000001"],
+        )
+
+    def latest_stock_quotes(
+        self, codes: tuple[str, ...], max_age_seconds: int
+    ) -> LatestStockQuoteResponse:
+        self.latest_stock_quote_calls.append((codes, max_age_seconds))
+        levels = [
+            StockQuoteLevel(
+                level=level,
+                price=Decimal("3.58") if level == 1 else None,
+                volume_shares=57_100 if level == 1 else None,
+            )
+            for level in range(1, 6)
+        ]
+        return LatestStockQuoteResponse(
+            max_age_seconds=max_age_seconds,
+            requested_count=2,
+            found_count=1,
+            missing_codes=["600123"],
+            items=[
+                LatestStockQuoteItem(
+                    symbol="SSE:601003",
+                    code="601003",
+                    name="柳钢股份",
+                    observed_at=datetime(2026, 8, 21, 8, 15, tzinfo=UTC),
+                    source_timestamp=datetime.fromisoformat("2026-08-21T16:14:41+08:00"),
+                    quote_status="trading",
+                    last_price=Decimal("3.58"),
+                    previous_close=Decimal("3.60"),
+                    open=Decimal("3.58"),
+                    high=Decimal("3.60"),
+                    low=Decimal("3.54"),
+                    cumulative_volume_shares=9_920_300,
+                    cumulative_amount_cny=Decimal("35356540"),
+                    bid_levels=levels,
+                    ask_levels=levels,
+                )
+            ],
         )
 
     def limit_up_pool(
@@ -263,14 +435,23 @@ class FakeQueryService:
                     low_price=Decimal("9.9800"),
                     cumulative_volume=123400,
                     cumulative_amount=Decimal("1248808.0000"),
+                    bid1_price=Decimal("10.1200"),
+                    bid1_volume=560200,
+                    bid2_price=None,
+                    bid2_volume=10743200,
+                    ask1_price=None,
+                    ask1_volume=0,
+                    ask2_price=None,
+                    ask2_volume=13300,
+                    seal_amount=Decimal("5673224.0000"),
                 )
             ],
         )
 
     def call_auction_market_series_snapshots(
-        self, trade_date: date, codes: tuple[str, ...]
+        self, trade_date: date, codes: tuple[str, ...], batch_code: str | None
     ) -> object:
-        self.call_auction_market_series_snapshot_calls.append((trade_date, codes))
+        self.call_auction_market_series_snapshot_calls.append((trade_date, codes, batch_code))
         return {
             "trade_date": trade_date,
             "session_id": "11111111-1111-1111-1111-111111111111",
@@ -292,6 +473,7 @@ class FakeQueryService:
                         {
                             "symbol": "SSE:600000",
                             "code": "600000",
+                            "batch_code": "091500",
                             "observed_at": "2026-08-14T01:15:01Z",
                             "last_price": "10.1200",
                             "previous_close": "10.0000",
@@ -299,6 +481,27 @@ class FakeQueryService:
                             "low_price": "9.9800",
                             "cumulative_volume": 123400,
                             "cumulative_amount": "1248808.0000",
+                            "value_semantics": "auction_indicative",
+                            "bid1_price": "10.0000",
+                            "bid1_volume": 100,
+                            "bid2_price": None,
+                            "bid2_volume": 10743200,
+                            "bid3_price": None,
+                            "bid3_volume": None,
+                            "bid4_price": None,
+                            "bid4_volume": None,
+                            "bid5_price": None,
+                            "bid5_volume": None,
+                            "ask1_price": "10.0100",
+                            "ask1_volume": 100,
+                            "ask2_price": None,
+                            "ask2_volume": 13300,
+                            "ask3_price": None,
+                            "ask3_volume": None,
+                            "ask4_price": None,
+                            "ask4_volume": None,
+                            "ask5_price": None,
+                            "ask5_volume": None,
                         }
                     ],
                 }
@@ -406,19 +609,49 @@ class FakeQueryService:
             previous_close=Decimal("10"),
             cumulative_volume=100,
             cumulative_amount=Decimal("1100"),
+            seal_amount=Decimal("1100"),
         )
         return AuctionOnePriceLimitResponse(
             trade_date=day,
             ingestion_id="dddddddd-dddd-dddd-dddd-dddddddddddd",
             ingestion_status="partial",
-            price_limit_calculation_id="eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
-            snapshot_window="09:26:00-09:26:59 Asia/Shanghai",
+            price_limit_calculation_id=None,
+            price_limit_rule_version="CN_MAINBOARD_2026_07_06",
+            price_limit_algorithm_version="1.0.0",
+            calculation_mode="realtime_read",
+            snapshot_window="09:25:30-09:29:59 Asia/Shanghai",
             candidate_count=2,
             omitted_incomplete_count=1,
             up_count=1,
             down_count=0,
             up=[item],
             down=[],
+        )
+
+    def auction_one_price_patterns(
+        self, trade_date: date | None
+    ) -> api_models.CallAuctionOnePricePatternResponse:
+        self.auction_one_price_pattern_calls.append(trade_date)
+        return api_models.CallAuctionOnePricePatternResponse(
+            trade_date=trade_date or date(2026, 8, 18),
+            session_id="00000000-0000-0000-0000-000000000056",
+            session_status="partial",
+            window_start="2026-08-18T09:15:20+08:00",
+            window_end="2026-08-18T09:24:40+08:00",
+            round_count=29,
+            candidate_count=1,
+            items=[
+                api_models.CallAuctionOnePricePatternItem(
+                    symbol="SSE:600000",
+                    code="600000",
+                    name="浦发银行",
+                    exchange="SSE",
+                    one_price=Decimal("10.20"),
+                    previous_close=Decimal("10.00"),
+                    change_pct=Decimal("2.0000000000"),
+                    sample_count=29,
+                )
+            ],
         )
 
     def auction_indicative_details(
@@ -489,38 +722,6 @@ class FakeLiveAuctionService:
         return self.fetch(symbol, date(2026, 8, 14), offset, limit)
 
 
-class FakeBoardIndexBiasLiveService:
-    def __init__(self, query_service: FakeQueryService) -> None:
-        self._query_service = query_service
-
-    def fetch_current(self) -> BoardIndexBiasResponse:
-        self._query_service.board_index_bias_live_calls += 1
-        if self._query_service.board_index_bias_live_error is not None:
-            raise self._query_service.board_index_bias_live_error
-        return BoardIndexBiasResponse(
-            board_id="THS:883423",
-            board_code="883423",
-            board_name="沪深主板昨日涨停",
-            trade_date=date(2026, 8, 14),
-            close=Decimal("1234.5600"),
-            moving_average_5=Decimal("1220.110000"),
-            bias_5_pct=Decimal("1.184319"),
-            previous_trade_date=date(2026, 8, 13),
-            previous_bias_5_pct=Decimal("0.932150"),
-            bias_direction="up",
-            window_trading_days=30,
-            bias_sample_count=30,
-            highest_bias_5_pct=Decimal("4.521300"),
-            highest_bias_trade_date=date(2026, 8, 6),
-            lowest_bias_5_pct=Decimal("-2.861700"),
-            lowest_bias_trade_date=date(2026, 7, 22),
-            algorithm_version="board_index_bias_v1",
-            data_origin="ths_live",
-            persistence_status="queued",
-            fetched_at=datetime(2026, 8, 15, 3, 26, 46, tzinfo=UTC),
-        )
-
-
 def _auction_indicative_response(
     *, symbol: str, data_origin: Literal["database", "eastmoney_live"]
 ) -> AuctionIndicativeDetailResponse:
@@ -573,7 +774,25 @@ def _auction_indicative_response(
     )
 
 
-def _client(service: FakeQueryService) -> TestClient:
+class FakeTencentQuoteLiveService:
+    def __init__(self) -> None:
+        self.calls: list[tuple[tuple[str, ...], int]] = []
+        self.error: Exception | None = None
+
+    def fetch_current(
+        self, codes: tuple[str, ...], max_age_seconds: int
+    ) -> LatestStockQuoteResponse:
+        self.calls.append((codes, max_age_seconds))
+        if self.error is not None:
+            raise self.error
+        return FakeQueryService().latest_stock_quotes(codes, max_age_seconds)
+
+
+def _client(
+    service: FakeQueryService,
+    *,
+    quote_service: TencentQuoteLiveService | None = None,
+) -> TestClient:
     settings = ApiSettings(
         fastapi_database_url=SecretStr("unused"),
         fastapi_api_key=SecretStr(API_KEY),
@@ -583,7 +802,7 @@ def _client(service: FakeQueryService) -> TestClient:
             settings=settings,
             query_service=service,
             auction_indicative_service=FakeLiveAuctionService(service),  # type: ignore[arg-type]
-            board_index_bias_live_service=FakeBoardIndexBiasLiveService(service),  # type: ignore[arg-type]
+            tencent_quote_live_service=quote_service or FakeTencentQuoteLiveService(),
         )
     )
 
@@ -648,6 +867,16 @@ def test_safe_query_error_logs_sqlstate_but_hides_detail(
     assert any("connection refused" in r.message for r in caplog.records)
 
 
+def test_safe_query_error_maps_ambiguous_stock_code() -> None:
+    orig = SimpleNamespace(sqlstate="P0003", args=("internal ambiguity detail",))
+    error = DBAPIError(statement=None, params=None, orig=orig)
+
+    with pytest.raises(PublicQueryAmbiguous) as exc_info:
+        _raise_safe_query_error(error)
+
+    assert "internal ambiguity detail" not in str(exc_info.value)
+
+
 def test_market_routes_require_the_api_key() -> None:
     client = _client(FakeQueryService())
 
@@ -682,34 +911,90 @@ def test_daily_bars_keep_decimal_values_as_strings() -> None:
     service = FakeQueryService()
 
     response = _client(service).get(
-        "/api/v1/daily-bars/SSE:600000",
-        params={"start_date": "2026-07-29", "end_date": "2026-07-29"},
+        "/api/v1/daily-bars/600000",
+        params={"trade_date": "2026-07-29", "limit": 5},
         headers=_headers(),
     )
 
     assert response.status_code == 200
     assert response.json()["items"][0]["close"] == "10.20"
     assert response.json()["items"][0]["amount"] == "1258680.00"
-    assert service.daily_bar_calls == [("SSE:600000", date(2026, 7, 29), date(2026, 7, 29), 1000)]
+    assert response.json()["code"] == "600000"
+    assert response.json()["symbol"] == "SSE:600000"
+    assert response.json()["trade_date"] == "2026-07-29"
+    assert response.json()["limit"] == 5
+    assert service.daily_bar_calls == [("600000", date(2026, 7, 29), 5)]
 
 
 def test_daily_bar_validation_does_not_call_the_service() -> None:
     service = FakeQueryService()
 
     invalid_symbol = _client(service).get(
-        "/api/v1/daily-bars/600000",
-        params={"start_date": "2026-07-29", "end_date": "2026-07-29"},
+        "/api/v1/daily-bars/SSE:600000",
+        params={"trade_date": "2026-07-29"},
         headers=_headers(),
     )
-    reversed_dates = _client(service).get(
-        "/api/v1/daily-bars/SSE:600000",
-        params={"start_date": "2026-07-30", "end_date": "2026-07-29"},
+    missing_trade_date = _client(service).get(
+        "/api/v1/daily-bars/600000",
         headers=_headers(),
     )
 
     assert invalid_symbol.status_code == 422
-    assert reversed_dates.status_code == 422
+    assert missing_trade_date.status_code == 422
     assert service.daily_bar_calls == []
+
+
+def test_latest_stock_daily_indicators_deduplicate_and_keep_decimals() -> None:
+    service = FakeQueryService()
+
+    response = _client(service).post(
+        "/api/v1/stock-daily-indicators/latest/query",
+        json={"codes": ["600000", "000001", "600000"]},
+        headers=_headers(),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["requested_count"] == 2
+    assert body["found_count"] == 1
+    assert body["missing_codes"] == ["000001"]
+    assert body["items"][0]["trade_date"] == "2026-08-21"
+    assert body["items"][0]["close"] == "12.3400"
+    assert body["items"][0]["total_market_value"] == "123400000000.0000"
+    assert body["items"][0]["pe_ttm"] is None
+    assert service.latest_stock_daily_indicator_calls == [("600000", "000001")]
+
+
+@pytest.mark.parametrize(
+    "codes",
+    [[], ["60000"], ["60000A"], [f"{value:06d}" for value in range(501)]],
+)
+def test_latest_stock_daily_indicator_request_is_bounded(codes: list[str]) -> None:
+    service = FakeQueryService()
+
+    response = _client(service).post(
+        "/api/v1/stock-daily-indicators/latest/query",
+        json={"codes": codes},
+        headers=_headers(),
+    )
+
+    assert response.status_code == 422
+    assert service.latest_stock_daily_indicator_calls == []
+
+
+def test_latest_stock_daily_indicator_ambiguity_is_422() -> None:
+    service = FakeQueryService()
+    service.latest_stock_daily_indicator_error = PublicQueryAmbiguous("internal detail")
+
+    response = _client(service).post(
+        "/api/v1/stock-daily-indicators/latest/query",
+        json={"codes": ["600000"]},
+        headers=_headers(),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "ambiguous_stock_code"
+    assert "internal" not in response.text
 
 
 def test_classification_members_and_not_found_response() -> None:
@@ -759,6 +1044,65 @@ def test_limit_up_pool_returns_exact_decimal_market_cap_and_revision() -> None:
     }
 
 
+def test_latest_stock_quotes_is_key_protected_bounded_and_provider_direct() -> None:
+    service = FakeQueryService()
+    quote_service = FakeTencentQuoteLiveService()
+    client = _client(service, quote_service=quote_service)
+
+    unauthorized = client.post(
+        "/api/v1/realtime-quotes/latest/query",
+        json={"codes": ["601003"]},
+    )
+    response = client.post(
+        "/api/v1/realtime-quotes/latest/query",
+        json={"codes": ["601003", "600123"], "max_age_seconds": 30},
+        headers=_headers(),
+    )
+
+    assert unauthorized.status_code == 401
+    assert response.status_code == 200
+    assert quote_service.calls == [(("601003", "600123"), 30)]
+    assert service.latest_stock_quote_calls == []
+    body = response.json()
+    assert body["missing_codes"] == ["600123"]
+    assert body["items"][0]["cumulative_volume_shares"] == 9_920_300
+    assert body["items"][0]["cumulative_amount_cny"] == "35356540"
+    assert body["items"][0]["bid_levels"][0] == {
+        "level": 1,
+        "price": "3.58",
+        "volume_shares": 57_100,
+    }
+
+    invalid = client.post(
+        "/api/v1/realtime-quotes/latest/query",
+        json={"codes": ["601003"], "max_age_seconds": 0},
+        headers=_headers(),
+    )
+    assert invalid.status_code == 422
+
+
+def test_latest_stock_quotes_maps_tencent_failure_without_database_fallback() -> None:
+    service = FakeQueryService()
+    quote_service = FakeTencentQuoteLiveService()
+    quote_service.error = TencentQuoteLiveUpstream("private upstream detail")
+    client = _client(service, quote_service=quote_service)
+
+    response = client.post(
+        "/api/v1/realtime-quotes/latest/query",
+        json={"codes": ["601003"]},
+        headers=_headers(),
+    )
+
+    assert response.status_code == 502
+    assert response.json() == {
+        "error": {
+            "code": "upstream_error",
+            "message": "Tencent quote provider request failed",
+        }
+    }
+    assert service.latest_stock_quote_calls == []
+
+
 def test_limit_up_pool_is_api_key_protected_and_bounded() -> None:
     service = FakeQueryService()
     client = _client(service)
@@ -782,6 +1126,8 @@ def test_openapi_only_contains_the_active_non_derived_routes() -> None:
 
     assert "/api/v1/securities" in schema["paths"]
     assert "/api/v1/daily-bars/{symbol}" in schema["paths"]
+    assert "/api/v1/stock-daily-indicators/latest/query" in schema["paths"]
+    assert "/api/v1/realtime-quotes/latest/query" in schema["paths"]
     assert "/api/v1/limit-up-pool" in schema["paths"]
     assert "/api/v1/daily-limit-up-list" in schema["paths"]
     assert "/api/v1/call-auction-market-snapshots/query" in schema["paths"]
@@ -883,6 +1229,27 @@ def test_call_auction_market_snapshots_deduplicate_codes_and_keep_decimals() -> 
                 "low_price": "9.9800",
                 "cumulative_volume": 123400,
                 "cumulative_amount": "1248808.0000",
+                "bid1_price": "10.1200",
+                "bid1_volume": 560200,
+                "bid2_price": None,
+                "bid2_volume": 10743200,
+                "bid3_price": None,
+                "bid3_volume": None,
+                "bid4_price": None,
+                "bid4_volume": None,
+                "bid5_price": None,
+                "bid5_volume": None,
+                "ask1_price": None,
+                "ask1_volume": 0,
+                "ask2_price": None,
+                "ask2_volume": 13300,
+                "ask3_price": None,
+                "ask3_volume": None,
+                "ask4_price": None,
+                "ask4_volume": None,
+                "ask5_price": None,
+                "ask5_volume": None,
+                "seal_amount": "5673224.0000",
             }
         ],
     }
@@ -911,7 +1278,11 @@ def test_call_auction_market_series_snapshots_return_rounds_in_one_session() -> 
 
     response = _client(service).post(
         "/api/v1/call-auction-market-series-snapshots/query",
-        json={"trade_date": "2026-08-14", "codes": ["600000", "000001", "600000"]},
+        json={
+            "trade_date": "2026-08-14",
+            "codes": ["600000", "000001", "600000"],
+            "batch_code": "091500",
+        },
         headers=_headers(),
     )
 
@@ -937,6 +1308,7 @@ def test_call_auction_market_series_snapshots_return_rounds_in_one_session() -> 
                     {
                         "symbol": "SSE:600000",
                         "code": "600000",
+                        "batch_code": "091500",
                         "observed_at": "2026-08-14T01:15:01Z",
                         "last_price": "10.1200",
                         "previous_close": "10.0000",
@@ -944,13 +1316,49 @@ def test_call_auction_market_series_snapshots_return_rounds_in_one_session() -> 
                         "low_price": "9.9800",
                         "cumulative_volume": 123400,
                         "cumulative_amount": "1248808.0000",
+                        "value_semantics": "auction_indicative",
+                        "bid1_price": "10.0000",
+                        "bid1_volume": 100,
+                        "bid2_price": None,
+                        "bid2_volume": 10743200,
+                        "bid3_price": None,
+                        "bid3_volume": None,
+                        "bid4_price": None,
+                        "bid4_volume": None,
+                        "bid5_price": None,
+                        "bid5_volume": None,
+                        "ask1_price": "10.0100",
+                        "ask1_volume": 100,
+                        "ask2_price": None,
+                        "ask2_volume": 13300,
+                        "ask3_price": None,
+                        "ask3_volume": None,
+                        "ask4_price": None,
+                        "ask4_volume": None,
+                        "ask5_price": None,
+                        "ask5_volume": None,
                     }
                 ],
             }
         ],
     }
     assert service.call_auction_market_series_snapshot_calls == [
-        (date(2026, 8, 14), ("600000", "000001"))
+        (date(2026, 8, 14), ("600000", "000001"), "091500")
+    ]
+
+
+def test_call_auction_market_series_snapshots_keep_unfiltered_compatibility() -> None:
+    service = FakeQueryService()
+
+    response = _client(service).post(
+        "/api/v1/call-auction-market-series-snapshots/query",
+        json={"trade_date": "2026-08-14", "codes": ["600000"]},
+        headers=_headers(),
+    )
+
+    assert response.status_code == 200
+    assert service.call_auction_market_series_snapshot_calls == [
+        (date(2026, 8, 14), ("600000",), None)
     ]
 
 
@@ -961,6 +1369,26 @@ def test_call_auction_market_series_snapshot_request_is_bounded(codes: list[str]
     response = _client(service).post(
         "/api/v1/call-auction-market-series-snapshots/query",
         json={"trade_date": "2026-08-14", "codes": codes},
+        headers=_headers(),
+    )
+
+    assert response.status_code == 422
+    assert service.call_auction_market_series_snapshot_calls == []
+
+
+@pytest.mark.parametrize("batch_code", ["09150", "09150A", "0915000"])
+def test_call_auction_market_series_snapshot_batch_code_is_six_digits(
+    batch_code: str,
+) -> None:
+    service = FakeQueryService()
+
+    response = _client(service).post(
+        "/api/v1/call-auction-market-series-snapshots/query",
+        json={
+            "trade_date": "2026-08-14",
+            "codes": ["600000"],
+            "batch_code": batch_code,
+        },
         headers=_headers(),
     )
 
@@ -1124,20 +1552,17 @@ def test_board_index_bias_requires_api_key() -> None:
     assert service.board_index_bias_calls == 0
 
 
-def test_board_index_bias_falls_back_only_for_explicit_not_ready_error() -> None:
+def test_board_index_bias_returns_404_without_live_fallback_when_database_is_not_ready() -> None:
     service = FakeQueryService()
-    service.board_index_bias_error = BoardIndexBiasNotReady("not ready")
+    service.board_index_bias_error = PublicQueryNotFound("not ready")
 
     response = _client(service).get(
         "/api/v1/board-indexes/883423/bias",
         headers=_headers(),
     )
 
-    assert response.status_code == 200
-    assert response.json()["data_origin"] == "ths_live"
-    assert response.json()["persistence_status"] == "queued"
+    assert response.status_code == 404
     assert service.board_index_bias_calls == 1
-    assert service.board_index_bias_live_calls == 1
 
 
 def test_board_index_bias_does_not_fallback_for_database_failure() -> None:
@@ -1150,29 +1575,6 @@ def test_board_index_bias_does_not_fallback_for_database_failure() -> None:
     )
 
     assert response.status_code == 503
-    assert service.board_index_bias_live_calls == 0
-
-
-@pytest.mark.parametrize(
-    ("error", "expected_status"),
-    [
-        (BoardIndexBiasLiveBusy("busy"), 429),
-        (BoardIndexBiasLiveUpstream("upstream"), 502),
-        (BoardIndexBiasLivePersistence("persistence"), 503),
-    ],
-)
-def test_board_index_bias_maps_live_fallback_errors(error: Exception, expected_status: int) -> None:
-    service = FakeQueryService()
-    service.board_index_bias_error = BoardIndexBiasNotReady("not ready")
-    service.board_index_bias_live_error = error
-
-    response = _client(service).get(
-        "/api/v1/board-indexes/883423/bias",
-        headers=_headers(),
-    )
-
-    assert response.status_code == expected_status
-    assert service.board_index_bias_live_calls == 1
 
 
 def test_auction_one_price_limits_returns_separate_sets() -> None:
@@ -1186,6 +1588,59 @@ def test_auction_one_price_limits_returns_separate_sets() -> None:
     assert response.json()["up"][0]["direction"] == "up"
     assert response.json()["down"] == []
     assert response.json()["ingestion_status"] == "partial"
+    assert response.json()["price_limit_calculation_id"] is None
+    assert response.json()["price_limit_rule_version"] == "CN_MAINBOARD_2026_07_06"
+    assert response.json()["price_limit_algorithm_version"] == "1.0.0"
+    assert response.json()["calculation_mode"] == "realtime_read"
+    assert response.json()["up"][0]["seal_amount"] == "1100"
+    assert response.json()["up"][0]["observed_at"] == "2026-08-13 09:26:00"
+
+
+def test_call_auction_one_price_patterns_returns_fixed_window() -> None:
+    service = FakeQueryService()
+    response = _client(service).get(
+        "/api/v1/call-auction-one-price-patterns",
+        params={"trade_date": "2026-08-18"},
+        headers=_headers(),
+    )
+
+    assert response.status_code == 200
+    assert service.auction_one_price_pattern_calls == [date(2026, 8, 18)]
+    assert response.json()["round_count"] == 29
+    assert response.json()["items"][0]["one_price"] == "10.20"
+    assert response.json()["items"][0]["change_pct"] == "2.0000000000"
+
+
+def test_call_auction_one_price_patterns_openapi_is_chinese() -> None:
+    schema = _client(FakeQueryService()).get("/openapi.json").json()
+    operation = schema["paths"]["/api/v1/call-auction-one-price-patterns"]["get"]
+
+    assert "集合竞价" in operation["summary"]
+    assert "09:15:20" in operation["description"]
+    assert "09:24:40" in operation["description"]
+    assert "29" in operation["description"]
+    assert "不回退" in operation["description"]
+
+
+def test_auction_one_price_limits_openapi_exposes_realtime_lineage() -> None:
+    schema = _client(FakeQueryService()).get("/openapi.json").json()
+    response = schema["components"]["schemas"]["AuctionOnePriceLimitResponse"]
+    item = schema["components"]["schemas"]["AuctionOnePriceLimitItem"]
+
+    assert {
+        item["type"] for item in response["properties"]["price_limit_calculation_id"]["anyOf"]
+    } == {
+        "string",
+        "null",
+    }
+    assert response["properties"]["price_limit_rule_version"]["const"] == (
+        "CN_MAINBOARD_2026_07_06"
+    )
+    assert response["properties"]["price_limit_algorithm_version"]["const"] == "1.0.0"
+    assert response["properties"]["calculation_mode"]["const"] == "realtime_read"
+    assert "seal_amount" in item["properties"]
+    assert "封单额" in item["properties"]["seal_amount"]["description"]
+    assert item["properties"]["observed_at"]["examples"] == ["2026-08-18 14:27:46"]
 
 
 def test_auction_indicative_details_falls_back_to_live_only_when_database_is_empty() -> None:

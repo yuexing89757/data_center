@@ -600,10 +600,18 @@ on conflict (symbol, trade_date) do update set
 INSERT_CALL_AUCTION_MARKET = text("""
 insert into realtime.call_auction_market_snapshot (
     ingestion_id, symbol, trade_date, observed_at, last_price, previous_close,
-    high_price, low_price, cumulative_volume, cumulative_amount, source_code
+    high_price, low_price, cumulative_volume, cumulative_amount,
+    bid1_price, bid1_volume, bid2_price, bid2_volume, bid3_price, bid3_volume,
+    bid4_price, bid4_volume, bid5_price, bid5_volume,
+    ask1_price, ask1_volume, ask2_price, ask2_volume, ask3_price, ask3_volume,
+    ask4_price, ask4_volume, ask5_price, ask5_volume, seal_amount, source_code
 ) values (
     :ingestion_id, :symbol, :trade_date, :observed_at, :last_price, :previous_close,
-    :high_price, :low_price, :cumulative_volume, :cumulative_amount, :source_code
+    :high_price, :low_price, :cumulative_volume, :cumulative_amount,
+    :bid1_price, :bid1_volume, :bid2_price, :bid2_volume, :bid3_price, :bid3_volume,
+    :bid4_price, :bid4_volume, :bid5_price, :bid5_volume,
+    :ask1_price, :ask1_volume, :ask2_price, :ask2_volume, :ask3_price, :ask3_volume,
+    :ask4_price, :ask4_volume, :ask5_price, :ask5_volume, :seal_amount, :source_code
 )
 """)
 
@@ -993,6 +1001,15 @@ where market = 'CN_A_SHARE'
             return connection.execute(
                 statement, {"start_date": start_date, "end_date": end_date}
             ).scalar_one_or_none()
+
+    def latest_board_index_daily_bar_date(self, board_id: str) -> date | None:
+        statement = text("""
+select max(trade_date)
+from core.board_index_daily_bar
+where board_id = :board_id
+""")
+        with self._engine.connect() as connection:
+            return connection.execute(statement, {"board_id": board_id}).scalar_one_or_none()
 
     def latest_stock_daily_indicator_count_before(self, trade_date: date) -> int | None:
         statement = text("""
@@ -1761,6 +1778,27 @@ where board_id = :board_id and trade_date = :trade_date
                 "low_price": record.low_price,
                 "cumulative_volume": record.cumulative_volume,
                 "cumulative_amount": record.cumulative_amount,
+                "bid1_price": record.bid_levels[0].price,
+                "bid1_volume": record.bid_levels[0].volume,
+                "bid2_price": record.bid_levels[1].price,
+                "bid2_volume": record.bid_levels[1].volume,
+                "bid3_price": record.bid_levels[2].price,
+                "bid3_volume": record.bid_levels[2].volume,
+                "bid4_price": record.bid_levels[3].price,
+                "bid4_volume": record.bid_levels[3].volume,
+                "bid5_price": record.bid_levels[4].price,
+                "bid5_volume": record.bid_levels[4].volume,
+                "ask1_price": record.ask_levels[0].price,
+                "ask1_volume": record.ask_levels[0].volume,
+                "ask2_price": record.ask_levels[1].price,
+                "ask2_volume": record.ask_levels[1].volume,
+                "ask3_price": record.ask_levels[2].price,
+                "ask3_volume": record.ask_levels[2].volume,
+                "ask4_price": record.ask_levels[3].price,
+                "ask4_volume": record.ask_levels[3].volume,
+                "ask5_price": record.ask_levels[4].price,
+                "ask5_volume": record.ask_levels[4].volume,
+                "seal_amount": record.seal_amount,
                 "source_code": record.source_code,
             }
             for record in records

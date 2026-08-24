@@ -13,11 +13,14 @@ PUBLISHED_FUNCTIONS = (
     "api_v1.query_classification_members_as_of(text,text,text,date,integer)",
     "api_v1.query_limit_up_pool(date,integer,integer)",
     "api_v1.query_call_auction_market_snapshots(date,text[])",
+    "api_v1.query_call_auction_market_series_snapshots(date,text[],text)",
+    "api_v1.query_latest_stock_daily_indicators(text[])",
+    "api_v1.query_auction_one_price_limits(date)",
+    "api_v1.query_call_auction_one_price_patterns(date)",
     "api_v1.query_call_auction_indicative_details(text,date,integer,integer)",
     "api_v1.persist_call_auction_indicative_details(uuid,uuid,text,date,timestamptz,text,text,text,bigint,integer,jsonb)",
     "api_v1.query_close_price_new_highs_120d()",
     "api_v1.query_board_index_bias_latest()",
-    "api_v1.persist_board_index_daily_bars_live(uuid,uuid,timestamptz,text,text,text,bigint,integer,jsonb,jsonb)",
 )
 
 

@@ -15,10 +15,12 @@ from market_data_center.public_api.models import (
     BoardIndexBiasResponse,
     CallAuctionMarketSeriesSnapshotResponse,
     CallAuctionMarketSnapshotResponse,
+    CallAuctionOnePricePatternResponse,
     ClassificationMembersResponse,
     ClosePriceNewHighs120dResponse,
-    DailyBarItem,
+    DailyBarResponse,
     DailyLimitUpListResponse,
+    LatestStockDailyIndicatorResponse,
     LimitUpPoolResponse,
     SecurityItem,
     TopGainers20dResponse,
@@ -32,13 +34,17 @@ from api_v1.query_securities(p_query => :query, p_limit => :limit)
 """)
 
 QUERY_DAILY_BARS = text("""
-select *
-from api_v1.query_daily_bars(
-    p_symbol => :symbol,
-    p_start_date => :start_date,
-    p_end_date => :end_date,
+select api_v1.query_recent_daily_bars(
+    p_code => :code,
+    p_trade_date => :trade_date,
     p_limit => :limit
-)
+) as payload
+""")
+
+QUERY_LATEST_STOCK_DAILY_INDICATORS = text("""
+select api_v1.query_latest_stock_daily_indicators(
+    p_codes => :codes
+) as payload
 """)
 
 QUERY_CLASSIFICATION_MEMBERS = text("""
@@ -79,7 +85,8 @@ select api_v1.query_call_auction_market_snapshots(
 QUERY_CALL_AUCTION_MARKET_SERIES_SNAPSHOTS = text("""
 select api_v1.query_call_auction_market_series_snapshots(
     p_trade_date => :trade_date,
-    p_codes => :codes
+    p_codes => :codes,
+    p_batch_code => :batch_code
 ) as payload
 """)
 
@@ -97,6 +104,12 @@ select api_v1.query_board_index_bias_latest() as payload
 
 QUERY_AUCTION_ONE_PRICE_LIMITS = text("""
 select api_v1.query_auction_one_price_limits(p_trade_date => :trade_date) as payload
+""")
+
+QUERY_AUCTION_ONE_PRICE_PATTERNS = text("""
+select api_v1.query_call_auction_one_price_patterns(
+    p_trade_date => :trade_date
+) as payload
 """)
 
 QUERY_AUCTION_INDICATIVE_DETAILS = text("""
@@ -117,12 +130,12 @@ class PublicQueryInvalid(PublicQueryError):
     pass
 
 
-class PublicQueryNotFound(PublicQueryError):
+class PublicQueryAmbiguous(PublicQueryError):
     pass
 
 
-class BoardIndexBiasNotReady(PublicQueryNotFound):
-    """The fixed board cache explicitly requested live fallback via SQLSTATE P0002."""
+class PublicQueryNotFound(PublicQueryError):
+    pass
 
 
 class PublicQueryTimeout(PublicQueryError):
@@ -138,9 +151,11 @@ class PublicQueryService(Protocol):
 
     def search_securities(self, query: str, limit: int) -> tuple[SecurityItem, ...]: ...
 
-    def daily_bars(
-        self, symbol: str, start_date: date, end_date: date, limit: int
-    ) -> tuple[DailyBarItem, ...]: ...
+    def daily_bars(self, code: str, trade_date: date, limit: int) -> DailyBarResponse: ...
+
+    def latest_stock_daily_indicators(
+        self, codes: tuple[str, ...]
+    ) -> LatestStockDailyIndicatorResponse: ...
 
     def classification_members(
         self,
@@ -164,7 +179,7 @@ class PublicQueryService(Protocol):
     ) -> CallAuctionMarketSnapshotResponse: ...
 
     def call_auction_market_series_snapshots(
-        self, trade_date: date, codes: tuple[str, ...]
+        self, trade_date: date, codes: tuple[str, ...], batch_code: str | None
     ) -> CallAuctionMarketSeriesSnapshotResponse: ...
 
     def top_gainers_20d(self, end_date: date | None, limit: int) -> TopGainers20dResponse: ...
@@ -174,6 +189,10 @@ class PublicQueryService(Protocol):
     def board_index_bias_latest(self) -> BoardIndexBiasResponse: ...
 
     def auction_one_price_limits(self, trade_date: date | None) -> AuctionOnePriceLimitResponse: ...
+
+    def auction_one_price_patterns(
+        self, trade_date: date | None
+    ) -> CallAuctionOnePricePatternResponse: ...
 
     def auction_indicative_details(
         self, symbol: str, offset: int, limit: int
@@ -191,19 +210,18 @@ class PostgreSQLPublicQueryService:
         rows = self._execute(QUERY_SECURITIES, {"query": query, "limit": limit})
         return tuple(SecurityItem.model_validate(dict(row)) for row in rows)
 
-    def daily_bars(
-        self, symbol: str, start_date: date, end_date: date, limit: int
-    ) -> tuple[DailyBarItem, ...]:
+    def daily_bars(self, code: str, trade_date: date, limit: int) -> DailyBarResponse:
         rows = self._execute(
             QUERY_DAILY_BARS,
-            {
-                "symbol": symbol,
-                "start_date": start_date,
-                "end_date": end_date,
-                "limit": limit,
-            },
+            {"code": code, "trade_date": trade_date, "limit": limit},
         )
-        return tuple(DailyBarItem.model_validate(dict(row)) for row in rows)
+        return DailyBarResponse.model_validate(rows[0]["payload"])
+
+    def latest_stock_daily_indicators(
+        self, codes: tuple[str, ...]
+    ) -> LatestStockDailyIndicatorResponse:
+        rows = self._execute(QUERY_LATEST_STOCK_DAILY_INDICATORS, {"codes": list(codes)})
+        return LatestStockDailyIndicatorResponse.model_validate(rows[0]["payload"])
 
     def classification_members(
         self,
@@ -266,11 +284,15 @@ class PostgreSQLPublicQueryService:
         return CallAuctionMarketSnapshotResponse.model_validate(rows[0]["payload"])
 
     def call_auction_market_series_snapshots(
-        self, trade_date: date, codes: tuple[str, ...]
+        self, trade_date: date, codes: tuple[str, ...], batch_code: str | None
     ) -> CallAuctionMarketSeriesSnapshotResponse:
         rows = self._execute(
             QUERY_CALL_AUCTION_MARKET_SERIES_SNAPSHOTS,
-            {"trade_date": trade_date, "codes": list(codes)},
+            {
+                "trade_date": trade_date,
+                "codes": list(codes),
+                "batch_code": batch_code,
+            },
         )
         if not rows:
             raise PublicQueryNotFound("call-auction market series snapshot was not found")
@@ -285,15 +307,20 @@ class PostgreSQLPublicQueryService:
         return ClosePriceNewHighs120dResponse.model_validate(rows[0]["payload"])
 
     def board_index_bias_latest(self) -> BoardIndexBiasResponse:
-        try:
-            rows = self._execute(QUERY_BOARD_INDEX_BIAS_LATEST, {})
-        except PublicQueryNotFound as error:
-            raise BoardIndexBiasNotReady("board-index history requires live fallback") from error
+        rows = self._execute(QUERY_BOARD_INDEX_BIAS_LATEST, {})
         return BoardIndexBiasResponse.model_validate(rows[0]["payload"])
 
     def auction_one_price_limits(self, trade_date: date | None) -> AuctionOnePriceLimitResponse:
         rows = self._execute(QUERY_AUCTION_ONE_PRICE_LIMITS, {"trade_date": trade_date})
         return AuctionOnePriceLimitResponse.model_validate(rows[0]["payload"])
+
+    def auction_one_price_patterns(
+        self, trade_date: date | None
+    ) -> CallAuctionOnePricePatternResponse:
+        rows = self._execute(QUERY_AUCTION_ONE_PRICE_PATTERNS, {"trade_date": trade_date})
+        if not rows or rows[0]["payload"] is None:
+            raise PublicQueryNotFound("call-auction one-price pattern session was not found")
+        return CallAuctionOnePricePatternResponse.model_validate(rows[0]["payload"])
 
     def auction_indicative_details(
         self, symbol: str, offset: int, limit: int
@@ -335,6 +362,8 @@ def _raise_safe_query_error(error: DBAPIError) -> Never:
     )
     if sqlstate == "22023":
         raise PublicQueryInvalid("query parameters were rejected") from error
+    if sqlstate == "P0003":
+        raise PublicQueryAmbiguous("stock code is ambiguous across exchanges") from error
     if sqlstate == "P0002":
         raise PublicQueryNotFound("requested data was not found") from error
     if sqlstate == "57014":

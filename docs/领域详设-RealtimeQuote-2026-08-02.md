@@ -10,7 +10,7 @@
 stock 来源事实。它不是逐笔成交、分钟行情或盘后历史重建。BSE 不在 v2 支持范围。
 
 ```text
-09:26 Security 全集
+09:25:30 Security 全集
   → 单 endpoint、每批 ≤80 的 pytdx_hq 采集
   → Raw JSONL + RawManifest + IngestionRun
   → realtime.call_auction_market_snapshot（append-only）
@@ -29,6 +29,9 @@ CallAuctionMarketSnapshotRecord
 ├── low_price: Decimal | None
 ├── cumulative_volume: int | None
 ├── cumulative_amount: Decimal | None
+├── bid_levels: tuple[OrderBookLevel, ×5]
+├── ask_levels: tuple[OrderBookLevel, ×5]
+├── seal_amount: Decimal | None
 └── source_code: pytdx_hq
 ```
 
@@ -49,7 +52,9 @@ CallAuctionMarketSnapshotRecord
 ### 存储和查询
 
 `realtime.call_auction_market_snapshot` 以 `(ingestion_id,symbol)` 为主键，保存 `trade_date`、
-`observed_at`、最新价、昨收、截至观察时点的当日最高价/最低价、标准量额和来源。最高价/最低价
+`observed_at`、最新价、昨收、截至观察时点的当日最高价/最低价、标准量额、买卖五档、
+`seal_amount` 和来源。档位价格为零且数量为正时保存为 `price=NULL` 并保留数量；卖一至卖三量
+分别为空或零且买一价量完整时，`seal_amount=bid1_price*bid1_volume`，否则为 `NULL`。最高价/最低价
 允许缺失；非空时必须非负且 `high_price >= low_price`，最新价与两者均非空时必须落在该区间。
 索引支持按 `(trade_date,ingestion_id,symbol)` 读取。
 成功输入的选择先在 `ingestion.ingestion_run` 限定 dataset/status，再与精确日期事实连接；不得从
@@ -68,32 +73,26 @@ ingestion；不得拼接批次或回退日期。响应显式返回 provider-neut
 
 ### 时间和调度
 
-- `call-auction-market-snapshot-daily`：工作日 09:26；
+- `call-auction-market-snapshot-daily`：工作日 09:25:30；
 - 09:29:30 后不发新请求，`observed_at >=09:30` 硬拒绝；
 - `call-auction-snapshot-daily` 已移除，无替代自动调度；
-- `CALL_AUCTION_SNAPSHOT_ENABLED` 只控制 09:26 任务；时间只在代码目录；
+- `CALL_AUCTION_SNAPSHOT_ENABLED` 只控制 09:25:30 任务；时间只在代码目录；
 - 非交易日跳过，错过晨间窗口不补采，盘后不调用历史成交或实时行情伪造。
 
 ### 保留和容量
 
-以 50 只涨停池估算每天约 1,050 行、每年约 26 万行。来源事实和 Raw 长期保留，首版不增加清理任务；只有原冻结全集
-的确定性身份被持久化并验证后，才可重新启用 Raw replay。每日单次
-快照不构成逐秒持续采集，也不改变 ADR-0012 对分钟、tick、逐笔和 Level-2 的禁止边界。
+来源事实和 Raw 长期保留，首版不增加清理任务；只有原冻结全集的确定性身份被持久化并验证后，
+才可重新启用 Raw replay。每日单次快照不构成逐秒持续采集，也不改变 ADR-0012 对分钟、tick、
+逐笔和 Level-2 的禁止边界。
 
 > 集合竞价采集落地决策：`adr/ADR-0022-集合竞价涨停池五档快照采集.md`（Accepted）
 
-## 集合竞价采集边界（v1）
+## 集合竞价涨停池采集边界（已退役）
 
-- `AuctionCollectionSession` 冻结当日精确 ready 的
-  `CN_A_PREVIOUS_DAY_MAINBOARD_LIMIT_UP` snapshot ID/version；不回退旧日期，也不采跌停池。
-- 上海时间 09:15:00 至 09:25:00（含端点）每 30 秒一轮，共 21 轮；每只股票单独
-  发起一次 PYTDX 请求；APScheduler 只注册一个 09:15 会话任务，轮询在会话内部完成。
-- 阶段明确记录为 09:15–09:20 可撤单、09:20–09:25 不可撤单、09:25 最终撮合附近。
-- `scheduled_at`、Worker 的 `collected_at` 与可选 provider `source_timestamp` 分开保存；
-  pytdx 不能提供可靠完整日期时不得拼造 source 时间。
-- pytdx 集合竞价档位暂标记 `auction_indicative`。在下一交易日 live validation
-  证明其为标准连续五档前，spread/depth/imbalance/seal amount 均保持 NULL。
-- 进程恢复只续采当前及未来轮次；过去轮次计入失败/缺失，禁止生成补采快照。
+Issue #54 删除 `opening-auction-limit-up-quotes` Worker 任务和 pysnowball 运行时 Adapter。
+`AuctionCollectionSession`、历史来源身份、历史事实表、Raw、查询和陈旧会话恢复仍保留，以保证
+既有数据可追溯；不得再注册、启动或补采该会话。全市场竞价序列与 09:25:30 快照继续独立使用
+`pytdx_hq`。
 
 > 状态：有效，已实现
 > 日期：2026-08-02
@@ -138,7 +137,8 @@ OrderBookLevel
 ```
 
 `OrderBookLevel` 是值对象，方向由其所在的 `bid_levels`/`ask_levels` 决定，避免同一层级
-同时携带相互冲突的 side。元组固定五个位置，但允许某一档的价格和数量同时为空。
+同时携带相互冲突的 side。元组固定五个位置。`price` 非空时 `volume` 必须非空；集合竞价
+来源允许 `price=NULL` 且 `volume>0`，表示尚未形成价格的真实委托量；两者同时为空表示空档。
 
 DTO 不包含 `ingestion_id`。Pipeline 在校验后使用
 `IngestionEnvelope[FiveLevelQuoteSnapshotRecord]` 附加采集批次。
@@ -180,16 +180,15 @@ DTO 不包含 `ingestion_id`。Pipeline 在校验后使用
 - 只使用网络 `get_security_quotes`，与本地 `.day` Provider `pytdx` 分开注册；
 - `bid1..bid5`/`ask1..ask5` 转换为五档价格；
 - `bid_vol1..5`/`ask_vol1..5` 和累计量从“手”转换为股；
+- 来源档位价格为零且数量为正时保留股数并将价格标准化为 `NULL`；价格和数量均为零时
+  标准化为空档；
 - 记录节点、连接耗时和协议字段版本到采集参数/Raw，不进入领域 DTO；
 - 未验证 BSE 前返回 `ProviderRequestUnavailable`，不得猜测市场编号。
 
 ### 5.2 pysnowball
 
-- 输入标准 symbol，在 Adapter 内转换为 `SH600000`/`SZ000001`；
-- 使用显式配置的 Cookie Token；不得由 Provider 自动登录或输出 Cookie；
-- 只消费一至五档，即使响应存在六至十档字段也不进入本模型；
-- `level != 1`、授权状态变化和响应字段变化必须记录并触发契约检查；
-- 数量按来源“股”口径接入；样本对照必须验证，不能只依赖字段名。
+`pysnowball` 仅作为历史来源身份保留。Issue #54 删除其运行时 Adapter、配置和自动路由；历史
+快照及 ingestion lineage 不迁移、不改写。
 
 ## 6. 校验
 
@@ -198,7 +197,7 @@ DTO 不包含 `ingestion_id`。Pipeline 在校验后使用
 - symbol 不存在、不是允许的股票类型或交易所未获支持；
 - `observed_at` 无时区、晚于 Worker 当前时间的允许偏差，或同批观察时间不一致；
 - 任一价格、数量或金额为负；
-- 同一档位的价格和数量只有一个为空；
+- 同一档位价格非空但数量为空；
 - 买/卖元组不是严格的 level 1～5 且有重复或缺少位置；
 - 非空买价不按 level 递减，或非空卖价不按 level 递增；
 - OHLC 关系非法，或最新价明显超出当日高低范围；
@@ -250,7 +249,8 @@ DTO 不包含 `ingestion_id`。Pipeline 在校验后使用
 | `price` | numeric(18,4) | 可空、非负 |
 | `volume` | bigint | 可空、非负，股 |
 
-主键：`(snapshot_id, side, level)`。数据库约束保证 price/volume 同空或同非空。
+主键：`(snapshot_id, side, level)`。数据库约束禁止 price 非空而 volume 为空；允许集合竞价
+阶段的 price 为空、volume 为正，并禁止用双零表示空档。
 
 历史清理不能直接进入首个 migration。必须先确定热数据保留期、Raw 保留和恢复目标，并
 通过独立受测运维命令按明确截止时间执行；禁止依赖无界触发器静默删除。
@@ -315,12 +315,12 @@ PostgREST 是查询已有快照，不在请求线程中调用外部行情源。�
 ## 11. 测试矩阵
 
 - 标准 symbol 与 SSE/SZSE 映射；BSE 未验证时明确拒绝；
-- pytdx 手到股、雪球股单位和价格精度；
+- pytdx 手到股、价格精度和集合竞价“无价格但有量”语义；
 - 正常五档、单侧空档、涨跌停、停牌、闭市；
-- 乱序档位、重复 level、负数、半空 price/volume、交叉盘口；
+- 乱序档位、重复 level、负数、price 非空但 volume 为空、交叉盘口；
 - observed/source 时间、时区、陈旧和未来时间；
 - 同批多证券共享 observed_at、自然键幂等与冲突；
-- Provider 超时、节点失败、Token 缺失/失效、字段变更和确定性回退；
+- Provider 超时、节点失败和字段变更；
 - Raw 重放产生相同 DTO；
 - RLS、authenticated-only、时效上限、P0002 和 statement timeout；
 - OpenAPI/Agent 契约不含 Secret 和内部 Schema。
@@ -339,3 +339,27 @@ GitHub Issue
   → 小范围生产观察
   → 再决定扩大标的和采样频率
 ```
+
+## 13. 腾讯批量 Provider 与最新批量查询（2026-08-23）
+
+ADR-0044 / Issue #62 新增 `tencent_quote`。该 Adapter 严格解码 GBK，以字段 30 作为
+Asia/Shanghai 来源时间，以字段 35 第三段作为 CNY 累计成交额，并把所有“手”转换为“股”。
+未验证的下标 29 和尾部字段只保留在 Raw，不进入领域 Record。
+
+显式命令每次接收 1～500 个唯一 SSE/SZSE 标准 symbol，每个腾讯请求最多 50 只，不注册
+持续任务。事实追加写入 `realtime.stock_quote_snapshot`；公共读取通过
+`api_v1.query_latest_stock_quotes(text[],integer)` 和 FastAPI
+`POST /api/v1/realtime-quotes/latest/query`。RPC 同时检查数据中心观察时间与腾讯来源时间，
+陈旧行情进入 `missing_codes`，FastAPI 不在请求路径访问 Provider。
+
+## 14. FastAPI 请求时腾讯实时读取（2026-08-23）
+
+ADR-0045 / Issue #63 将 `POST /api/v1/realtime-quotes/latest/query` 改为请求时直接调用
+`TencentQuoteProvider`。该路径不查询数据库、不创建 IngestionRun、不保存 Raw、不写快照，
+也不回退任何历史数据；返回值因此是不可重放的临时上游响应，不进入派生计算。
+
+请求仍接受 1～500 个去重六位代码。`6` 开头映射 SSE，`0`/`3` 开头映射 SZSE，其他代码
+进入 `missing_codes`。`max_age_seconds` 只为兼容旧客户端保留，不参与实时结果过滤。全部支持
+代码的腾讯请求均失败时返回稳定 502；部分成功时按请求顺序返回成功项并明确缺失代码。
+`api_v1.query_latest_stock_quotes(text[],integer)` 通过 ordered migration 退役，PostgREST 和
+Agent 合同同步删除；历史空表和显式采集能力本次不做破坏性清理。

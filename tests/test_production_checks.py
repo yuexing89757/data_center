@@ -24,24 +24,200 @@ VIEW_COUNT = cast(Any, SMOKE_CHECKS["_view_count"])
 PUBLISHED_FUNCTIONS = cast(tuple[str, ...], FASTAPI_CHECKS["PUBLISHED_FUNCTIONS"])
 
 
+def test_auction_series_five_level_migration_is_bounded_and_preserves_history() -> None:
+    migration = (
+        (MIGRATION_DIR / "20260818000100_enrich_call_auction_market_series.sql")
+        .read_text(encoding="utf-8")
+        .lower()
+    )
+
+    assert "update realtime.call_auction_market_series_snapshot" in migration
+    update_body = migration.split(
+        "update realtime.call_auction_market_series_snapshot", maxsplit=1
+    )[1].split("alter table", maxsplit=1)[0]
+    assert "set batch_code" in update_body
+    assert "bid1_price" not in update_body
+    assert "ask5_volume" not in update_body
+    assert "security definer" in migration
+    assert "set search_path = pg_catalog, api_v1, realtime, core" in migration
+    assert "set statement_timeout = '5s'" in migration
+    assert "from public, anon, authenticated" in migration
+    assert "to market_data_api" in migration
+    assert all(token not in migration for token in ("schtasks", "crontab", "oncalendar"))
+
+
+def test_auction_series_rpc_qualifies_cte_payload_against_plpgsql_variable() -> None:
+    signature = "query_call_auction_market_series_snapshots("
+    defining_migrations = [
+        path
+        for path in sorted(MIGRATION_DIR.glob("*.sql"))
+        if signature in path.read_text(encoding="utf-8")
+    ]
+
+    latest_definition = defining_migrations[-1].read_text(encoding="utf-8").lower()
+    assert (
+        "jsonb_agg(round_payloads.payload order by round_payloads.sample_seq)" in latest_definition
+    )
+
+
+def test_auction_series_batch_filter_migration_is_optional_bounded_and_private() -> None:
+    migration = (
+        (MIGRATION_DIR / "20260823000300_filter_call_auction_market_series_by_batch.sql")
+        .read_text(encoding="utf-8")
+        .lower()
+    )
+
+    assert "p_batch_code text default null" in migration
+    assert "p_batch_code !~ '^[0-9]{6}$'" in migration
+    assert "round.scheduled_at at time zone 'asia/shanghai'" in migration
+    assert "p_batch_code is null" in migration
+    assert "set statement_timeout = '5s'" in migration
+    assert "security definer" in migration
+    assert "from public, anon, authenticated" in migration
+    assert "to market_data_api" in migration
+
+
+def test_realtime_auction_one_price_limit_decision_is_documented() -> None:
+    adr = (PROJECT_ROOT / "docs/adr/ADR-0039-09点26沪深主板一字涨跌停实时计算.md").read_text(
+        encoding="utf-8"
+    )
+    detail = (
+        PROJECT_ROOT / "docs/领域详设-09点26沪深主板一字涨跌停实时计算-2026-08-17.md"
+    ).read_text(encoding="utf-8")
+    for term in (
+        "CN_MAINBOARD_2026_07_06",
+        "realtime_read",
+        "price_limit_calculation_id",
+        "market_data_api",
+        "09:25:30",
+    ):
+        assert term in adr + detail
+
+
 def test_fastapi_preflight_checks_call_auction_market_snapshot_rpc() -> None:
     assert "api_v1.query_call_auction_market_snapshots(date,text[])" in PUBLISHED_FUNCTIONS
+    assert (
+        "api_v1.query_call_auction_market_series_snapshots(date,text[],text)" in PUBLISHED_FUNCTIONS
+    )
     assert (
         "api_v1.query_call_auction_indicative_details(text,date,integer,integer)"
         in PUBLISHED_FUNCTIONS
     )
     assert "api_v1.query_board_index_bias_latest()" in PUBLISHED_FUNCTIONS
     assert "api_v1.query_close_price_new_highs_120d()" in PUBLISHED_FUNCTIONS
-    assert (
-        "api_v1.persist_board_index_daily_bars_live("
-        "uuid,uuid,timestamptz,text,text,text,bigint,integer,jsonb,jsonb)" in PUBLISHED_FUNCTIONS
+    assert not any("persist_board_index_daily_bars_live" in item for item in PUBLISHED_FUNCTIONS)
+    assert "api_v1.query_latest_stock_daily_indicators(text[])" in PUBLISHED_FUNCTIONS
+    assert "api_v1.query_latest_stock_quotes(text[],integer)" not in PUBLISHED_FUNCTIONS
+
+
+def test_latest_stock_daily_indicator_rpc_is_private_and_bounded() -> None:
+    migration = (
+        (MIGRATION_DIR / "20260822000100_query_latest_stock_daily_indicators.sql")
+        .read_text(encoding="utf-8")
+        .lower()
     )
+
+    assert "create function api_v1.query_latest_stock_daily_indicators" in migration
+    assert "cardinality(p_codes) > 500" in migration
+    assert "set statement_timeout = '5s'" in migration
+    assert "security definer" in migration
+    assert "from public" in migration
+    assert "from anon" in migration
+    assert "from authenticated" in migration
+    assert "to market_data_api" in migration
+
+
+def test_fastapi_preflight_and_docs_publish_realtime_auction_limits() -> None:
+    assert "api_v1.query_auction_one_price_limits(date)" in PUBLISHED_FUNCTIONS
+
+
+def test_fastapi_preflight_publishes_auction_one_price_patterns() -> None:
+    assert "api_v1.query_call_auction_one_price_patterns(date)" in PUBLISHED_FUNCTIONS
+    documentation = "\n".join(
+        (
+            (PROJECT_ROOT / "docs/FastAPI外部接口.md").read_text(encoding="utf-8"),
+            (PROJECT_ROOT / "docs/数据库导航.md").read_text(encoding="utf-8"),
+        )
+    )
+    for term in (
+        "realtime_read",
+        "CN_MAINBOARD_2026_07_06",
+        "1.0.0",
+        "price_limit_calculation_id=null",
+        "09:25:30",
+        "10%",
+    ):
+        assert term in documentation
 
 
 def _migration_sql() -> str:
     return "\n".join(
         migration.read_text(encoding="utf-8") for migration in sorted(MIGRATION_DIR.glob("*.sql"))
     )
+
+
+def test_realtime_auction_limit_migration_is_read_only_and_independent() -> None:
+    migration = (MIGRATION_DIR / "20260817000100_realtime_auction_one_price_limits.sql").read_text(
+        encoding="utf-8"
+    )
+    normalized = migration.lower()
+    assert "create or replace function api_v1.query_auction_one_price_limits" in normalized
+    assert "derived.daily_price_limit" not in normalized
+    assert "cn_a_mainboard_price_limit_pools" not in normalized
+    assert "market_data_api" in normalized
+    assert "realtime_read" in normalized
+    assert "row_number() over" in normalized
+    assert "prior_bar_counts" in normalized
+    assert "abs(raw_upper_limit - previous_close)" in normalized
+    assert "previous_close + 0.01::numeric" in normalized
+    assert "greatest(" in normalized
+    assert "security.code ~ '^[0-9]{6}$'" in normalized
+    assert not re.search(r"(?im)^\s*(insert|update|delete)\s", migration)
+
+
+def test_auction_snapshot_schedule_and_seal_rule_migration_is_versioned() -> None:
+    migration = (
+        MIGRATION_DIR / "20260819000100_adjust_call_auction_market_snapshot_schedule.sql"
+    ).read_text(encoding="utf-8")
+    normalized = migration.lower()
+    assert "drop constraint call_auction_market_seal_amount_rule" in normalized
+    assert "date '2026-08-20'" in normalized
+    for level in (1, 2, 3):
+        assert f"(ask{level}_volume is null or ask{level}_volume = 0)" in normalized
+    assert "time '09:25:30'" in normalized
+    assert "'snapshot_window', '09:25:30-09:29:59 asia/shanghai'" in normalized
+    assert "create or replace function api_v1.query_auction_one_price_limits" in normalized
+    assert "market_data_api" in normalized
+    assert not re.search(r"(?im)^\s*(insert|update|delete)\s", migration)
+
+
+def test_auction_series_bid1_semantics_are_governed() -> None:
+    adr = (PROJECT_ROOT / "docs/adr/ADR-0040-竞价序列买一价量额语义.md").read_text(encoding="utf-8")
+    detail = (PROJECT_ROOT / "docs/领域详设-沪深全市场竞价序列买一价量额-2026-08-17.md").read_text(
+        encoding="utf-8"
+    )
+    for token in (
+        "scheduled_at < 09:25:00",
+        "auction_indicative",
+        "opening_trade",
+        "legacy_source_quote",
+        "bid1.price * bid1.volume",
+    ):
+        assert token in adr + detail
+
+
+def test_auction_series_value_semantics_migration_is_bounded() -> None:
+    sql = (MIGRATION_DIR / "20260817000200_add_auction_series_value_semantics.sql").read_text(
+        encoding="utf-8"
+    )
+    normalized = sql.lower()
+    assert "legacy_source_quote" in normalized
+    assert "auction_indicative" in normalized
+    assert "opening_trade" in normalized
+    assert (
+        "create or replace function api_v1.query_call_auction_market_series_snapshots" in normalized
+    )
+    assert "drop table" not in normalized
 
 
 def test_production_schema_expectations_follow_all_migrations() -> None:
@@ -364,6 +540,40 @@ def test_live_board_index_persistence_is_narrow_and_fastapi_only() -> None:
     assert not re.search(r"(?im)^grant\s+(insert|update|delete|all)", migration)
 
 
+def test_board_index_worker_migration_removes_api_write_and_stale_gate() -> None:
+    migration = (
+        (MIGRATION_DIR / "20260820000100_board_index_daily_bar_worker_schedule.sql")
+        .read_text(encoding="utf-8")
+        .lower()
+    )
+
+    assert "'board_index_daily_bar'" in migration
+    assert "ready_count < 34" in migration
+    assert "expected_trade_date" not in migration
+    assert "drop function api_v1.persist_board_index_daily_bars_live" in migration
+    assert "from public, anon, authenticated, market_data_api" in migration
+    assert "grant execute on function api_v1.query_board_index_bias_latest" in migration
+
+
+def test_recent_daily_bars_rpc_is_bounded_and_fastapi_only() -> None:
+    migration = (
+        (MIGRATION_DIR / "20260818000600_add_recent_daily_bars_api.sql")
+        .read_text(encoding="utf-8")
+        .lower()
+    )
+
+    assert "query_recent_daily_bars" in migration
+    assert "p_code !~ '^[0-9]{6}$'" in migration
+    assert "p_limit > 5000" in migration
+    assert "bar.trade_date <= p_trade_date" in migration
+    assert "order by bar.trade_date desc" in migration
+    assert "from public" in migration
+    assert "from anon" in migration
+    assert "from authenticated" in migration
+    assert "to market_data_api" in migration
+    assert not re.search(r"(?im)^grant\s+(insert|update|delete|all)", migration)
+
+
 def test_daily_limit_up_list_quality_fix_uses_calculation_quality_table() -> None:
     """Regression guard: the quality CTE must read today_limit_up.calculation_quality,
     not the non-existent today_limit_up.member_quality that caused HTTP 503."""
@@ -498,7 +708,8 @@ def test_linux_worker_uses_the_shared_pool_runtime_contract() -> None:
 
     assert "check_pytdx_" + "daily_bar_endpoints.py" not in unit
     assert "PYTDX_POOL_PATH=/var/lib/market-data-center/pytdx_pool.json" in template
-    assert "AUCTION_COLLECTION_ENABLED=true" in template
+    assert "AUCTION_COLLECTION_ENABLED" not in template
+    assert "PYSNOWBALL_TOKEN" not in template
     assert "EOD_QUOTE_SNAPSHOT_ENABLED=true" in template
     assert "CALL_AUCTION_SNAPSHOT_ENABLED=true" in template
     assert "CALL_AUCTION_MARKET_SERIES_ENABLED=true" in template
@@ -515,7 +726,6 @@ def test_release_templates_expose_task_switches_but_not_task_times() -> None:
         )
     )
     switches = (
-        "AUCTION_COLLECTION_ENABLED=true",
         "EOD_QUOTE_SNAPSHOT_ENABLED=true",
         "CALL_AUCTION_SNAPSHOT_ENABLED=true",
         "CALL_AUCTION_MARKET_SERIES_ENABLED=true",

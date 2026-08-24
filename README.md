@@ -122,10 +122,16 @@ facts, and provider-neutral lineage. It never substitutes an older date or missi
 members are deterministically ordered by symbol. The generic `/api/v1/limit-up-pool` contract is
 unchanged.
 
-`POST /api/v1/call-auction-market-snapshots/query` batch-reads the exact-date 09:26 Shanghai and
-Shenzhen market source facts for 1–500 six-digit codes. It selects one coherent succeeded batch,
+`POST /api/v1/call-auction-market-snapshots/query` batch-reads the exact-date 09:25:30 Shanghai and
+Shenzhen market five-level source facts and calculated seal amount for 1–500 six-digit codes. It selects one coherent succeeded batch,
 falling back to one partial batch only when no succeeded batch exists, and reports missing codes
 without substituting another date or combining ingestions.
+
+`POST /api/v1/call-auction-market-series-snapshots/query` reads the exact-date 09:15:00–09:25:20
+PYTDX full-market series for 1–500 six-digit codes. Each item includes its deterministic `HHMMSS`
+batch code and bid/ask levels 1–5; a missing price with positive volume is preserved as a source
+fact. The retired limit-up-pool auction collector is not registered by the Worker, while its
+historical workflow and stored facts remain readable.
 
 Daily Bar bulk ingestion keeps one provider/Raw/ingestion lineage unit per security while writing
 validated facts in bounded PostgreSQL transactions. Configure `DAILY_BAR_WRITE_BATCH_SIZE`
@@ -153,6 +159,21 @@ executes bounded PostgreSQL `api_v1` functions directly; consumers never receive
 addresses, source payload field names, Raw objects, or secrets. Only contract-defined immutable
 lineage identifiers are exposed where required for reproducibility.
 
+Tencent five-level quotes use an explicit, bounded ingestion command and are never fetched by an
+API request:
+
+```bash
+market-data-center realtime-quotes --symbols SSE:601003 SSE:600123 \
+  --confirm-bounded-tencent-request
+```
+
+The command converts lot quantities to shares, stores immutable Raw plus append-only normalized
+facts, and does not register a schedule. Authenticated consumers call
+`POST /api/v1/realtime-quotes/latest/query` now performs a bounded request-time Tencent read and
+does not query or write the quote database, save Raw, or trigger collection. The retained
+`max_age_seconds` field is compatibility-only. See
+[ADR-0045](docs/adr/ADR-0045-腾讯实时五档API请求时直连且不落库.md).
+
 The third-party dynamic board index `THS:883423` is isolated from Security and
 ordinary Daily Bar facts. Synchronize its explicit directory before bars and
 today's complete constituent snapshot:
@@ -164,6 +185,8 @@ market-data-center board-index-constituents
 ```
 
 The dedicated `akshare_ths` adapter is selected automatically for these commands.
+The Worker also collects `THS:883423` daily bars at the code-owned weekday slots 15:30, 16:30,
+and 17:30 with bounded retries and tail-gap recovery. The bias API reads only persisted data.
 THS exposes current constituents rather than trustworthy historical membership,
 so historical snapshots are accumulated by daily runs and can be replayed from
 immutable Raw data. See [ADR-0003](docs/adr/ADR-0003-同花顺动态板块指数.md) and

@@ -144,6 +144,18 @@ def test_quote_requires_decimal_and_ordered_contiguous_levels() -> None:
         _quote(bid_levels=broken)
 
 
+def test_order_book_level_allows_auction_volume_without_price() -> None:
+    level = OrderBookLevel(2, None, 10_743_200)
+
+    assert level.price is None
+    assert level.volume == 10_743_200
+
+
+def test_order_book_level_rejects_price_without_volume() -> None:
+    with pytest.raises(ValueError, match="volume must be present"):
+        OrderBookLevel(2, Decimal("7.11"), None)
+
+
 def test_quote_requires_utc_observation_time() -> None:
     with pytest.raises(ValueError, match="UTC"):
         _quote(observed_at=datetime(2026, 8, 3, 9, 30))

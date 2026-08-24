@@ -119,6 +119,21 @@ class BatchRecordedClient(RecordedClient):
         return [self._row(market, code) for market, code in requests]
 
 
+class AuctionVolumeOnlyClient(RecordedClient):
+    def _row(self, market: int, code: str) -> Mapping[str, object]:
+        row = dict(super()._row(market, code))
+        row["bid2"] = Decimal("0")
+        row["bid_vol2"] = 107_432
+        row["ask2"] = Decimal("0")
+        row["ask_vol2"] = 0
+        for level in range(3, 6):
+            row[f"bid{level}"] = Decimal("0")
+            row[f"bid_vol{level}"] = 0
+            row[f"ask{level}"] = Decimal("0")
+            row[f"ask_vol{level}"] = 0
+        return row
+
+
 def test_pytdx_hq_contract_keeps_decimal_and_converts_lots_to_shares(tmp_path: Path) -> None:
     observed = datetime(2026, 8, 3, 1, 15, tzinfo=UTC)
     pool = _write_pool(tmp_path, [_node("quote.example", quote=True)])
@@ -138,6 +153,23 @@ def test_pytdx_hq_contract_keeps_decimal_and_converts_lots_to_shares(tmp_path: P
     assert quote.bid_levels[0].volume == 100
     assert quote.source_timestamp is None
     assert result.failed_symbols == ()
+
+
+def test_pytdx_hq_preserves_auction_volume_when_level_price_is_zero(tmp_path: Path) -> None:
+    pool = _write_pool(tmp_path, [_node("quote.example", quote=True)])
+    provider = PytdxHqProvider(
+        PytdxHqSettings(_env_file=None),
+        pool_settings=PytdxPoolSettings(pytdx_pool_path=pool, _env_file=None),
+        client_factory=lambda _hosts, _timeout: AuctionVolumeOnlyClient(),
+    )
+
+    with provider:
+        quote = provider.fetch_five_level_quotes(("SSE:600000",)).records[0]
+
+    assert quote.bid_levels[1].price is None
+    assert quote.bid_levels[1].volume == 10_743_200
+    assert quote.ask_levels[1].price is None
+    assert quote.ask_levels[1].volume is None
 
 
 def test_hq_provider_uses_only_quote_nodes_and_fixes_one_session(tmp_path: Path) -> None:

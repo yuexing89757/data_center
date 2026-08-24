@@ -29,6 +29,10 @@ def test_terminal_ingestion_requires_finished_at() -> None:
         )
 
 
+def test_pysnowball_is_a_distinct_provider_identity() -> None:
+    assert ProviderCode("pysnowball") is ProviderCode.PYSNOWBALL
+
+
 def test_raw_manifest_rejects_path_traversal() -> None:
     with pytest.raises(ValueError, match="safe relative"):
         RawManifest(

@@ -2,8 +2,8 @@
 
 The FastAPI process is an independent protocol boundary that connects directly to PostgreSQL. It
 does not require PostgREST or the Worker scheduler. Provider access and Raw capture exist only for
-the explicitly documented bounded single-symbol live-auction endpoint and the fixed THS:883423
-bias fallback. Its SQL is limited to explicitly granted bounded `api_v1` functions.
+the explicitly documented bounded single-symbol live-auction endpoint. The fixed THS:883423 bias
+endpoint is database-only. Its SQL is limited to explicitly granted bounded `api_v1` functions.
 
 ```dotenv
 FASTAPI_DATABASE_URL='postgresql+psycopg://<api-login>:<password>@<host>:5432/<database>'
@@ -16,10 +16,11 @@ FASTAPI_PORT=8000
 `market_data_api` group role. The API never falls back to the Worker's `DATABASE_URL`. Connections
 force read-only transactions and a five-second statement timeout.
 
-Stable v1 routes are security search (100 rows), unadjusted daily bars (5,000 rows and 3,661 days),
+Stable v1 routes are security search (100 rows), recent unadjusted daily bars (5,000 rows),
 classification members (5,000 rows), the exact-date generic limit-up pool (5,000 rows), the
 versioned same-day limit-up snapshot (500 rows per page), and exact-date call-auction market
-snapshots and market-series sessions (500 requested six-digit codes). Business routes require
+snapshots and market-series sessions (500 requested six-digit codes), plus latest retained stock
+daily indicators (500 requested six-digit codes). Business routes require
 `X-API-Key`. `/healthz` is
 process-local and `/readyz` verifies a bounded database query. Prices and amounts remain decimal
 strings. Errors never return SQL, internal schema names, database addresses, or credentials.
@@ -37,6 +38,23 @@ or free-float shares are omitted individually and reported through total/valid/r
 counts plus grouped omission reasons; no value or date is substituted. Validation covers the whole
 snapshot, then `limit` selects valid rows in ascending symbol order. `has_more` reports truncation;
 v1 has no offset/cursor, so request 5,000 for the complete bounded set.
+
+`GET /api/v1/daily-bars/{code}?trade_date=YYYY-MM-DD&limit=20` accepts exactly one six-digit
+stock code. `trade_date` is an inclusive cutoff and `limit` is the maximum number of most-recent
+stored unadjusted daily bars to return. The database resolves the code to one standard symbol from
+Security facts; it does not guess an exchange from the code prefix. Items are newest first and
+never later than the cutoff. Missing or suspended sessions are not fabricated, so `count` may be
+less than `limit`. Unknown codes return 404 and ambiguous codes are rejected.
+
+`POST /api/v1/stock-daily-indicators/latest/query` accepts `codes` containing 1–500 six-digit
+stock codes. Duplicate codes are removed while preserving their first position. Security facts
+resolve each code to one standard symbol; the service never guesses an exchange from a prefix, and
+an ambiguous cross-exchange code returns 422. Each symbol independently selects the greatest
+retained `trade_date` in `stock_daily_indicator`, so items need not share a date. Unknown codes and
+known stocks without a retained indicator are returned in `missing_codes`; an all-missing query is
+still 200 with an empty `items` list. Items preserve request order and expose all provider-neutral
+daily indicator fields. Decimal values are strings, missing values remain `null`, and the route does
+not fetch providers, replay Raw data, fill dates, or expose source/ingestion fields.
 
 `GET /api/v1/daily-limit-up-list?trade_date=YYYY-MM-DD&version=&offset=0&limit=200`
 returns the immutable `today_limit_up` snapshot for the exact date. When `version` is omitted it
@@ -57,16 +75,32 @@ never combines ingestions or falls back to another date. A code shared by SSE an
 both standardized symbols. `missing_codes` reports requested codes absent from the selected batch.
 The envelope includes the selected provider-neutral ingestion ID and status so consumers can prove
 batch coherence. Items expose observation time, latest/previous-close/high/low prices, cumulative
-volume and amount; source codes, Raw fields and internal timestamps remain private.
+volume and amount, bid/ask levels 1–5, and nullable `seal_amount`. The seal amount is calculated as
+bid-1 price times bid-1 shares only when ask-1 volume is missing or zero; source codes, Raw fields
+and internal timestamps remain private.
 
-`POST /api/v1/call-auction-market-series-snapshots/query` accepts the same exact `trade_date` and
-1–500 six-digit `codes`. It selects the latest succeeded session for that date, or the latest
+`POST /api/v1/realtime-quotes/latest/query` accepts 1–500 six-digit stock `codes` and
+`max_age_seconds` from 1 to 86,400 (default 15). On every request it directly performs bounded
+Tencent batch reads and returns that response without querying or writing PostgreSQL, saving Raw,
+creating an ingestion run, or triggering the Worker. `max_age_seconds` remains only for client
+compatibility and does not filter the request-time result. Codes beginning with `6` route to SSE;
+`0` and `3` route to SZSE; other codes are reported in `missing_codes`. Quantities are shares and
+cumulative amount is CNY. Total upstream failure returns 502 and never falls back to stored data.
+
+`POST /api/v1/call-auction-market-series-snapshots/query` accepts the same exact `trade_date`,
+1–500 six-digit `codes`, and an optional six-digit `batch_code` in `HHMMSS` form. It selects the
+latest succeeded session for that date, or the latest
 partial session only when no succeeded session exists; sessions and dates are never merged or
 substituted. The response contains session status and all persisted rounds ordered by
-`sample_seq`. Every round reports its scheduled/collected times, status, selected provider-neutral
+`sample_seq`. When `batch_code` is provided, only the matching round inside that selected session
+is returned; a valid but absent batch returns an empty `rounds` list and does not select another
+session or date. Every round reports its scheduled/collected times, status, selected provider-neutral
 ingestion ID, returned facts and its own `missing_codes`, so partial coverage remains explicit.
-Snapshot fields use the same provider-neutral price, cumulative volume/amount and observation-time
-semantics as the 09:26 batch route.
+Every item includes `value_semantics`. Before 09:25 it is `auction_indicative`: `last_price` is
+bid-1 price, `cumulative_volume` is bid-1 shares and `cumulative_amount` is their exact product; if
+either bid-1 input is missing, all three values are `null`. From 09:25 onward it is `opening_trade`
+and preserves the provider's actual trade price, cumulative volume and amount. Rows written before
+this contract are labeled `legacy_source_quote`; their historical values are not rewritten.
 
 `GET /api/v1/top-gainers-20d?end_date=&limit=10` ranks unadjusted close-to-close returns over
 exactly 20 calendar trading sessions (19 intervals), with exact observation dates/prices, end-date
@@ -86,29 +120,33 @@ that run, on weekends, or after an upstream failure, the endpoint continues to r
 ready immutable snapshot and exposes its `trade_date`; it never recalculates from `core.daily_bar` on
 the request path. If no ready snapshot has ever been published, the endpoint returns not found.
 
-`GET /api/v1/board-indexes/883423/bias` takes no parameters and first reads stored
-`THS:883423` daily bars. The database result is ready only with at least 34 rows and a latest bar
-matching the most recent expected `CN_A_SHARE` trading date. A ready hit returns
-`data_origin=database` and `persistence_status=persisted`. Only SQLSTATE `P0002` for missing,
-insufficient, or stale history triggers the fixed THS annual URL; other database failures never
-trigger provider access. The live request uses a five-second timeout, reads the current year, and
-reads the previous year only when fewer than 34 unique bars were obtained.
+`GET /api/v1/board-indexes/883423/bias` takes no parameters and only reads stored
+`THS:883423` daily bars through a bounded `api_v1` RPC. At least 34 rows are required; otherwise
+the endpoint returns 404. When today's bar is not yet stored, the endpoint returns the latest
+persisted board date and exposes that actual `trade_date` rather than failing or accessing THS.
+Successful responses always use `data_origin=database` and `persistence_status=persisted`.
 
 `moving_average_5` is the simple mean of the current close and four
 preceding available positive closes; `bias_5_pct=(close-moving_average_5)/moving_average_5*100`.
 The response compares the current value with the previous available board session as
 `up`/`down`/`flat`, and reports the highest and lowest valid BIAS5 values across the latest 30
-board sessions, uses the latest date for tied extrema, and returns Decimal strings. Before a live
-response is returned, exact source bytes are captured losslessly in immutable JSONL Raw. The
-response is marked `data_origin=ths_live`, `persistence_status=queued`, and the standard bars are
-registered asynchronously through a narrowly granted idempotent RPC. The queue has one running
-and one waiting slot. Provider failure is 502, Raw/persistence failure is 503, and a busy fetch or
-full queue is 429. The endpoint never accepts a board/date input, fills gaps, changes the formula,
-or adds a Worker/OS schedule.
+board sessions, uses the latest date for tied extrema, and returns Decimal strings. The endpoint
+never accepts a board/date input, fills gaps, changes the formula, accesses a Provider, writes Raw,
+or writes PostgreSQL. Worker collection and its retry status are independent of API requests.
 
-`GET /api/v1/call-auction-one-price-limits?trade_date=` returns separate up/down lists only when
-the stored 09:26 Asia/Shanghai snapshot has complete equal last/high/low evidence at the applicable
-versioned price limit. Partial status and incomplete omissions remain visible; later bars are unused.
+`GET /api/v1/call-auction-one-price-limits?trade_date=` selects the exact stored 09:25:30
+Asia/Shanghai snapshot and calculates SSE/SZSE mainboard limits at read time. Ordinary and ST
+stocks both use the accepted 10% rule, tick 0.01, `CN_MAINBOARD_2026_07_06` and algorithm `1.0.0`.
+Only complete `last_price=high_price=low_price=upper_limit/lower_limit` evidence enters the separate
+up/down lists. The response identifies `calculation_mode=realtime_read` and
+`price_limit_calculation_id=null`; the selected ingestion remains the source lineage. A ready 09:25:30
+snapshot is the only market-data dependency, so the endpoint does not wait for the nightly
+price-limit batch. It does not fetch providers, write data or use later bars. Partial status and
+incomplete mainboard omissions remain visible; a valid empty list is HTTP 200, while no exact
+09:25:30 snapshot is HTTP 404. Each item exposes the stored `seal_amount`; under the accepted
+snapshot rule it is `bid1_price * bid1_volume` when ask-1 through ask-3 volumes are each missing
+or zero, so down-limit items normally return `null`. `observed_at` is rendered in Asia/Shanghai as
+`YYYY-MM-DD HH:mm:ss`.
 
 `GET /api/v1/call-auction-indicative-details?code=688796&offset=0&limit=200` requires only one
 six-digit SSE/SZSE stock code; the service derives the current Asia/Shanghai date and standardized

@@ -104,9 +104,120 @@ def test_fastapi_openapi_contract_matches_the_application() -> None:
             settings=settings,
             query_service=cast(PublicQueryService, object()),
             auction_indicative_service=cast(object, object()),  # type: ignore[arg-type]
-            board_index_bias_live_service=cast(object, object()),  # type: ignore[arg-type]
         ).openapi()
     )
+
+
+def test_fastapi_docs_use_chinese_annotations_for_owned_contracts() -> None:
+    settings = ApiSettings(
+        fastapi_database_url=SecretStr("unused"),
+        fastapi_api_key=SecretStr("contract-api-key-0000000000000000"),
+    )
+    schema = create_app(
+        settings=settings,
+        query_service=cast(PublicQueryService, object()),
+        auction_indicative_service=cast(object, object()),  # type: ignore[arg-type]
+    ).openapi()
+
+    def contains_chinese(value: object) -> bool:
+        return isinstance(value, str) and any("\u4e00" <= char <= "\u9fff" for char in value)
+
+    info = schema["info"]
+    assert contains_chinese(info["title"])
+    assert contains_chinese(info["summary"])
+    assert contains_chinese(info["description"])
+
+    tags = schema["tags"]
+    assert tags
+    assert all(contains_chinese(tag["name"]) for tag in tags)
+    assert all(contains_chinese(tag["description"]) for tag in tags)
+
+    for path_item in schema["paths"].values():
+        for method, operation in path_item.items():
+            if method == "parameters":
+                continue
+            assert contains_chinese(operation["summary"])
+            assert contains_chinese(operation["description"])
+            assert all(contains_chinese(tag) for tag in operation["tags"])
+            assert all(
+                contains_chinese(parameter.get("description"))
+                for parameter in operation.get("parameters", [])
+            )
+
+    owned_schemas = {
+        name: component
+        for name, component in schema["components"]["schemas"].items()
+        if name not in {"HTTPValidationError", "ValidationError"}
+    }
+    for component in owned_schemas.values():
+        assert all(
+            contains_chinese(property_schema.get("description"))
+            for property_schema in component.get("properties", {}).values()
+        )
+
+    snapshot_properties = owned_schemas["CallAuctionMarketSnapshotItem"]["properties"]
+    assert "买二" in snapshot_properties["bid2_volume"]["description"]
+    assert "封单额" in snapshot_properties["seal_amount"]["description"]
+
+
+def test_auction_series_item_contract_exposes_batch_and_five_levels() -> None:
+    fastapi = _load("fastapi-openapi-v1.json")
+    schema = fastapi["components"]["schemas"][  # type: ignore[index]
+        "CallAuctionMarketSeriesSnapshotItem"
+    ]
+    properties = schema["properties"]
+
+    assert properties["batch_code"]["pattern"] == "^[0-9]{6}$"
+    assert properties["bid2_volume"]["anyOf"][0]["minimum"] == 0
+    assert "ask5_price" in properties
+    query_schema = fastapi["components"]["schemas"][  # type: ignore[index]
+        "CallAuctionMarketSeriesSnapshotQuery"
+    ]
+    assert query_schema["properties"]["batch_code"]["anyOf"][0]["pattern"] == "^[0-9]{6}$"
+    assert "batch_code" not in query_schema["required"]
+
+    postgrest = _load("postgrest-openapi-v1.json")
+    request_schema = postgrest["components"]["requestBodies"][  # type: ignore[index]
+        "CallAuctionMarketSeriesSnapshots"
+    ]["content"]["application/json"]["schema"]
+    assert request_schema["properties"]["p_batch_code"]["pattern"] == "^[0-9]{6}$"
+    assert "p_batch_code" not in request_schema["required"]
+
+    agent = _load("agent-tools-v1.json")
+    tool = next(
+        item
+        for item in agent["tools"]  # type: ignore[union-attr]
+        if item["endpoint"] == "query_call_auction_market_series_snapshots"
+    )
+    assert tool["input_schema"]["properties"]["p_batch_code"]["pattern"] == "^[0-9]{6}$"
+
+
+def test_market_snapshot_item_contract_exposes_five_levels_and_seal_amount() -> None:
+    schema = _load("fastapi-openapi-v1.json")["components"]["schemas"][  # type: ignore[index]
+        "CallAuctionMarketSnapshotItem"
+    ]
+    properties = schema["properties"]
+
+    assert properties["bid2_volume"]["anyOf"][0]["minimum"] == 0
+    assert "ask5_price" in properties
+    assert "seal_amount" in properties
+
+
+def test_latest_stock_daily_indicator_contract_is_bounded_and_decimal_safe() -> None:
+    fastapi = _load("fastapi-openapi-v1.json")
+    operation = fastapi["paths"]["/api/v1/stock-daily-indicators/latest/query"]["post"]
+    query_schema = fastapi["components"]["schemas"]["LatestStockDailyIndicatorQuery"]
+    response_schema = fastapi["components"]["schemas"]["LatestStockDailyIndicatorResponse"]
+    item_schema = fastapi["components"]["schemas"]["LatestStockDailyIndicatorItem"]
+
+    assert query_schema["properties"]["codes"]["minItems"] == 1
+    assert query_schema["properties"]["codes"]["maxItems"] == 500
+    assert query_schema["properties"]["codes"]["items"]["pattern"] == "^[0-9]{6}$"
+    assert response_schema["properties"]["requested_count"]["maximum"] == 500
+    assert response_schema["properties"]["found_count"]["maximum"] == 500
+    assert item_schema["properties"]["close"]["anyOf"][0]["type"] == "string"
+    assert item_schema["properties"]["total_market_value"]["anyOf"][0]["type"] == "string"
+    assert {"401", "422", "503"}.issubset(operation["responses"])
 
 
 def test_close_price_new_highs_contract_is_no_input_strict_and_bounded() -> None:
@@ -162,10 +273,9 @@ def test_board_index_bias_contract_is_fixed_bounded_and_no_input() -> None:
     assert response_schema["properties"]["algorithm_version"]["const"] == ("board_index_bias_v1")
     assert response_schema["properties"]["window_trading_days"]["const"] == 30
     assert response_schema["properties"]["close"]["type"] == "string"
-    assert response_schema["properties"]["data_origin"]["enum"] == ["database", "ths_live"]
-    assert response_schema["properties"]["persistence_status"]["enum"] == [
-        "persisted",
-        "queued",
-    ]
+    assert response_schema["properties"]["data_origin"]["const"] == "database"
+    assert response_schema["properties"]["persistence_status"]["const"] == "persisted"
     assert response_schema["properties"]["fetched_at"]["format"] == "date-time"
-    assert {"429", "502", "503"}.issubset(operation["responses"])
+    assert {"404", "503"}.issubset(operation["responses"])
+    assert "429" not in operation["responses"]
+    assert "502" not in operation["responses"]

@@ -59,6 +59,12 @@ pytdx 还可从通达信 `T0002/hq_cache` 读取行业和概念完整快照，�
 完成的证明：任务还会检查 basis 当日 `daily_market`、`stock_daily_indicator` WorkflowRun
 均成功，并校验精确交易日、日 K、每日指标和 lineage；缺失时失败且不回退旧快照。
 
+固定板块 `THS:883423` 的日线由 Worker 在工作日 15:30、16:30、17:30 提供三个收盘后
+执行机会。每轮先比较统一交易日历的最近应有交易日和数据库最新板块日线：已覆盖则幂等
+跳过，有尾部缺口才通过 `akshare_ths` 标准 Pipeline 采集。每轮 Provider 失败最多短重试
+三次，成功即停止；当天最终仍失败时，下一交易日继续从最新已存日期补采。调度时间固定在
+代码目录，`.env` 只可用 `BOARD_INDEX_DAILY_BAR_ENABLED` 启用或停用。
+
 收盘五档任务默认启用，在工作日 21:10 运行，只读取当天最新
 `ready` 涨停池，保存原始 JSONL、Manifest、质量结果和标准快照。当天池缺失时失败，空池
 合法跳过；任务禁止把当前实时报价写成其他历史日期，也不会回退旧股票池。
@@ -69,7 +75,7 @@ pytdx 还可从通达信 `T0002/hq_cache` 读取行业和概念完整快照，�
 80 只，每轮最多使用两个 endpoint 做完整全集 attempt，partial 结果不跨 endpoint 拼接。错过的轮次
 显式记为 failed，最后一轮 deadline 为 09:25:40，不补采过去时槽。两个 09:15 任务只在专用
 `morning_auction` 两线程 executor 内并行，其他 Worker 任务仍使用单线程 executor。另有沪深全市场
-开盘竞价来源采集任务在工作日 09:26 运行：只采集 `SSE`、`SZSE` 的 `stock`、`listed` 证券，BSE
+开盘竞价来源采集任务在工作日 09:25:30 运行：只采集 `SSE`、`SZSE` 的 `stock`、`listed` 证券，BSE
 暂缓，ETF、可转债和指数不进入集合。每次尝试固定一个 quote-capable endpoint，按最多 80 只分批；
 每个 endpoint 只允许形成完整全集，至多进行两次完整尝试，绝不拼接 endpoint 的 partial 结果。新
 请求的硬截止为 09:29:30；09:30 后观察到的记录不能进入成功快照。失败或 partial 尝试仍保留 Raw、
@@ -77,7 +83,7 @@ Manifest、质量结果和 ingestion lineage。
 
 项目所有者已移除工作日 21:30 “今日竞价量”自动最终化，不提供替代调度、环境时间或 OS 计划任务。
 数据库最终化实现和历史 workflow code 仅作为非调度的内部能力保留。`CALL_AUCTION_SNAPSHOT_ENABLED`
-只控制 09:26 来源采集。该数据集的来源 Raw 继续长期保留，但 operational Raw replay 暂停；只有持久化并
+只控制 09:25:30 来源采集。该数据集的来源 Raw 继续长期保留，但 operational Raw replay 暂停；只有持久化并
 验证原始冻结 SSE/SZSE listed-stock 全集的确定性身份后，才可通过后续接受决策重新启用。
 
 Worker 启动时先探测一个有界候选集，按 quote、SSE 日 K、SZSE 日 K 和 BSE 日 K 能力生成
@@ -91,10 +97,10 @@ PYTDX_POOL_PATH=/var/lib/market-data-center/pytdx_pool.json
 PYTDX_VIPDOC_PATH=D:\new_tdx64\vipdoc
 RAW_DATA_ROOT=/var/lib/market-data-center/raw
 SCHEDULER_STORE_PATH=/var/lib/market-data-center/scheduler/jobs.sqlite
-AUCTION_COLLECTION_ENABLED=true
 EOD_QUOTE_SNAPSHOT_ENABLED=true
 CALL_AUCTION_SNAPSHOT_ENABLED=true
 CALL_AUCTION_MARKET_SERIES_ENABLED=true
+BOARD_INDEX_DAILY_BAR_ENABLED=true
 ```
 
 ### 竞价序列诊断与保留

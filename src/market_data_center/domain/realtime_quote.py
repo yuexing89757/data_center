@@ -1,7 +1,7 @@
 """Provider-neutral realtime five-level quote facts and objective metrics."""
 
 from collections.abc import Collection, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from enum import StrEnum
@@ -29,8 +29,8 @@ class OrderBookLevel:
     def __post_init__(self) -> None:
         if not 1 <= self.level <= 5:
             raise ValueError("order-book level must be between 1 and 5")
-        if (self.price is None) != (self.volume is None):
-            raise ValueError("order-book price and volume must both be present or both be absent")
+        if self.price is not None and self.volume is None:
+            raise ValueError("order-book volume must be present when price is present")
         if self.price is not None:
             if not isinstance(self.price, Decimal):
                 raise TypeError("order-book price must use Decimal")
@@ -57,6 +57,7 @@ class FiveLevelQuoteSnapshotRecord:
     bid_levels: tuple[OrderBookLevel, ...]
     ask_levels: tuple[OrderBookLevel, ...]
     source_code: str
+    name: str | None = None
 
     def __post_init__(self) -> None:
         if fullmatch(r"(?:SSE|SZSE|BSE):[0-9]{6}", self.symbol) is None:
@@ -68,6 +69,8 @@ class FiveLevelQuoteSnapshotRecord:
             raise ValueError("source_timestamp must be timezone-aware")
         if not self.source_code.strip():
             raise ValueError("source_code must not be blank")
+        if self.name is not None and not self.name.strip():
+            raise ValueError("quote name must not be blank when supplied")
 
         prices_and_amount = (
             self.last_price,
@@ -91,8 +94,8 @@ class FiveLevelQuoteSnapshotRecord:
                 if value is not None and not self.low <= value <= self.high:
                     raise ValueError(f"{field_name} must be within [low, high]")
 
-        _validate_levels(self.bid_levels, descending=True, side="bid")
-        _validate_levels(self.ask_levels, descending=False, side="ask")
+        validate_order_book_levels(self.bid_levels, descending=True, side="bid")
+        validate_order_book_levels(self.ask_levels, descending=False, side="ask")
 
 
 @dataclass(frozen=True, slots=True)
@@ -278,7 +281,9 @@ def validate_realtime_quotes(
     return RealtimeQuoteValidationResult(tuple(accepted), tuple(findings), rejected_rows)
 
 
-def _validate_levels(levels: tuple[OrderBookLevel, ...], *, descending: bool, side: str) -> None:
+def validate_order_book_levels(
+    levels: tuple[OrderBookLevel, ...], *, descending: bool, side: str
+) -> None:
     if len(levels) != 5 or tuple(item.level for item in levels) != (1, 2, 3, 4, 5):
         raise ValueError(f"{side} levels must contain level 1 through 5 exactly once")
     seen_absent = False
@@ -392,6 +397,9 @@ class CallAuctionMarketSnapshotRecord:
     low_price: Decimal | None = None
     cumulative_volume: int | None = None
     cumulative_amount: Decimal | None = None
+    bid_levels: tuple[OrderBookLevel, ...] = field(default_factory=lambda: _empty_levels())
+    ask_levels: tuple[OrderBookLevel, ...] = field(default_factory=lambda: _empty_levels())
+    seal_amount: Decimal | None = None
 
     def __post_init__(self) -> None:
         if fullmatch(r"(?:SSE|SZSE):[0-9]{6}", self.symbol) is None:
@@ -450,3 +458,21 @@ class CallAuctionMarketSnapshotRecord:
             and self.last_price < self.low_price
         ):
             raise ValueError("last_price must be within supplied price bounds")
+        validate_order_book_levels(self.bid_levels, descending=True, side="bid")
+        validate_order_book_levels(self.ask_levels, descending=False, side="ask")
+        bid1 = self.bid_levels[0]
+        expected_seal_amount = (
+            bid1.price * Decimal(bid1.volume)
+            if (
+                all(level.volume in (None, 0) for level in self.ask_levels[:3])
+                and bid1.price is not None
+                and bid1.volume is not None
+            )
+            else None
+        )
+        if self.seal_amount != expected_seal_amount:
+            raise ValueError("seal_amount must match the auction order-book rule")
+
+
+def _empty_levels() -> tuple[OrderBookLevel, ...]:
+    return tuple(OrderBookLevel(level, None, None) for level in range(1, 6))

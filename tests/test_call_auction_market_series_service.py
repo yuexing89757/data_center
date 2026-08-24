@@ -12,12 +12,14 @@ from uuid import UUID, uuid4
 from market_data_center.call_auction_market_series_service import (
     CALL_AUCTION_MARKET_SERIES_RAW_SCHEMA_VERSION,
     CallAuctionMarketSeriesService,
+    _series_values,
 )
 from market_data_center.domain.call_auction_market_series import (
     MarketSeriesRound,
     MarketSeriesSession,
     MarketSeriesSnapshotRecord,
     MarketSeriesStatus,
+    MarketSeriesValueSemantics,
     series_slots,
 )
 from market_data_center.domain.ingestion import IngestionRun, QualityResult
@@ -218,8 +220,8 @@ def _quote(symbol: str, observed_at: datetime) -> FiveLevelQuoteSnapshotRecord:
         last_price=Decimal("10.00"),
         previous_close=Decimal("9.90"),
         open=Decimal("10.00"),
-        high=Decimal("10.00"),
-        low=Decimal("10.00"),
+        high=None,
+        low=None,
         cumulative_volume=100,
         cumulative_amount=Decimal("1000.00"),
         bid_levels=bids,
@@ -245,6 +247,36 @@ def _service(
     )
 
 
+def test_series_values_use_bid1_before_0925_and_source_trade_at_0925() -> None:
+    quote = _quote("SSE:600000", SLOTS[29])
+    assert _series_values(quote, SLOTS[29]) == (
+        Decimal("9.99"),
+        100,
+        Decimal("999.00"),
+        MarketSeriesValueSemantics.AUCTION_INDICATIVE,
+    )
+    assert _series_values(quote, SLOTS[30]) == (
+        Decimal("10.00"),
+        100,
+        Decimal("1000.00"),
+        MarketSeriesValueSemantics.OPENING_TRADE,
+    )
+
+
+def test_series_values_keep_all_bid1_values_missing_together() -> None:
+    quote = _quote("SSE:600000", SLOTS[0])
+    quote = replace(
+        quote,
+        bid_levels=tuple(OrderBookLevel(level, None, None) for level in range(1, 6)),
+    )
+    assert _series_values(quote, SLOTS[0]) == (
+        None,
+        None,
+        None,
+        MarketSeriesValueSemantics.AUCTION_INDICATIVE,
+    )
+
+
 def test_collects_thirty_two_exact_rounds_and_raw_lineage() -> None:
     clock = MutableClock(SLOTS[0])
     persistence = FakePersistence()
@@ -264,6 +296,10 @@ def test_collects_thirty_two_exact_rounds_and_raw_lineage() -> None:
     assert first_raw["sample_seq"] == "0"
     assert first_raw["scheduled_at"] == SLOTS[0].isoformat()
     assert loads(first_raw["provider_raw_json"]) == {"symbol": "SSE:600000"}
+    first_snapshot = persistence.records[0][0]
+    assert first_snapshot.batch_code == "091500"
+    assert first_snapshot.bid_levels == _quote("SSE:600000", SLOTS[0]).bid_levels
+    assert first_snapshot.ask_levels == _quote("SSE:600000", SLOTS[0]).ask_levels
 
 
 def test_partial_attempt_retries_entire_universe_on_second_endpoint() -> None:
