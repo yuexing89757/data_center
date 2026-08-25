@@ -1378,17 +1378,17 @@ insert into realtime.call_auction_market_snapshot (
     ingestion_id, symbol, trade_date, observed_at, last_price,
     previous_close, high_price, low_price, cumulative_volume,
     cumulative_amount, bid1_price, bid1_volume, bid2_volume,
-    ask1_volume, ask2_volume, seal_amount, source_code
+    ask1_price, ask1_volume, ask2_volume, seal_amount, source_code
 ) values
     (:succeeded_id, 'SSE:600000', :trade_date, :observed_at,
      10.1200, 10.0000, 10.1500, 9.9800, 123400, 1248808.0000,
-     10.1200, 560200, 10743200, 0, 13300, 5673224.0000, 'pytdx_hq'),
+     10.1200, 560200, 10743200, 10.1300, 0, 13300, 5669224.0000, 'pytdx_hq'),
     (:succeeded_id, 'SZSE:600000', :trade_date, :observed_at,
      20.1200, 20.0000, 20.1500, 19.9800, 223400, 4494808.0000,
-     null, null, null, null, null, null, 'pytdx_hq'),
+     null, null, null, null, null, null, null, 'pytdx_hq'),
     (:partial_id, 'SSE:600000', :trade_date, :observed_at,
      99.0000, 98.0000, 99.0000, 98.0000, 1, 99.0000,
-     null, null, null, null, null, null, 'pytdx_hq')
+     null, null, null, null, null, null, null, 'pytdx_hq')
 """),
             {
                 "succeeded_id": succeeded_ingestion_id,
@@ -1454,7 +1454,7 @@ select api_v1.query_call_auction_market_snapshots(
     assert payload["items"][0]["bid2_price"] is None
     assert payload["items"][0]["bid2_volume"] == 10_743_200
     assert payload["items"][0]["ask2_volume"] == 13_300
-    assert payload["items"][0]["seal_amount"] == 5_673_224.0000
+    assert payload["items"][0]["seal_amount"] == 5_669_224.0000
     assert partial_payload["ingestion_id"] == str(partial_ingestion_id)
     assert partial_payload["ingestion_status"] == "partial"
     assert partial_payload["returned_count"] == 1
@@ -3796,7 +3796,12 @@ def test_close_price_new_highs_rpc_requires_complete_history_and_strict_breakout
             name="邯郸钢铁",
         ),
     ]
-    security_run = _running_run(DatasetCode.SECURITY)
+    security_observed_at = datetime(2026, 1, 1, tzinfo=UTC)
+    security_run = replace(
+        _running_run(DatasetCode.SECURITY),
+        requested_at=security_observed_at,
+        started_at=security_observed_at,
+    )
     persistence.create_ingestion_run(security_run)
     persistence.commit_security_batch(
         _completed_run(security_run, len(securities)),
@@ -3875,7 +3880,7 @@ def test_close_price_new_highs_rpc_requires_complete_history_and_strict_breakout
         WorkflowCode.DAILY_MARKET, scheduled_for, TriggerSource.SCHEDULED
     )
     operations.finish_workflow(
-        workflow.finish(ExecutionStatus.SUCCEEDED, scheduled_for + timedelta(minutes=1))
+        workflow.finish(ExecutionStatus.SUCCEEDED, workflow.started_at + timedelta(minutes=1))
     )
     first = ClosePriceNewHighsService(
         PostgreSQLClosePriceNewHighsPersistence(database_engine)
@@ -4784,6 +4789,8 @@ def test_worker_has_only_ingestion_permissions(
         ("core", "security_name_history", "INSERT"),
         ("core", "security_name_history", "SELECT"),
         ("core", "security_name_history", "UPDATE"),
+        ("core", "shareholder_count", "INSERT"),
+        ("core", "shareholder_count", "SELECT"),
         ("core", "stock_daily_indicator", "DELETE"),
         ("core", "stock_daily_indicator", "INSERT"),
         ("core", "stock_daily_indicator", "SELECT"),
@@ -4830,6 +4837,7 @@ def test_internal_tables_have_rls_with_worker_only_policies(database_engine: Eng
         ("core", "board_index_constituent_snapshot"),
         ("core", "security"),
         ("core", "security_name_history"),
+        ("core", "shareholder_count"),
         ("core", "stock_daily_indicator"),
         ("core", "trading_calendar"),
         ("ingestion", "ingestion_run"),
@@ -5666,6 +5674,7 @@ select
 select grantee, privilege_type
 from information_schema.role_table_grants
 where table_schema='core' and table_name='shareholder_count'
+  and grantee='market_data_worker'
 order by grantee, privilege_type
 """
         ).fetchall() == [("market_data_worker", "INSERT"), ("market_data_worker", "SELECT")]
@@ -6185,6 +6194,9 @@ def test_trading_billboard_constraints_and_bounded_rpcs(database_engine: Engine)
                 )
 
     with database_engine.connect() as connection:
+        assert not connection.scalar(
+            text("select has_table_privilege('market_data_api', 'billboard.entry', 'select')")
+        )
         connection.execute(text("set local role market_data_api"))
         by_date = cast(
             Mapping[str, object],
@@ -6248,9 +6260,6 @@ def test_trading_billboard_constraints_and_bounded_rpcs(database_engine: Engine)
                     'execute'
                 )
             """)
-        )
-        assert not connection.scalar(
-            text("select has_table_privilege('market_data_api', 'billboard.entry', 'select')")
         )
         with pytest.raises(DBAPIError), connection.begin_nested():
             connection.execute(text("select * from billboard.entry"))
@@ -6489,6 +6498,7 @@ def test_trading_billboard_persistence_is_idempotent_and_revision_is_atomic(
         original,
         reason_text="修订原因",
         buy_seats=tuple(replace(item, seat_name="修订营业部") for item in original.buy_seats),
+        sell_seats=tuple(replace(item, seat_name="修订营业部") for item in original.sell_seats),
     )
     revision_id = uuid4()
     persistence.commit_success(
