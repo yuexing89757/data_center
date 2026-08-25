@@ -58,7 +58,7 @@
 5. **锁内依次**：
    - **立即同步执行一次** `run_stale_recovery_job`（清理上次进程残留的 running 记录）
    - **刷新 PYTDX 节点池**：探测并原子发布；失败时使用 last-good；新旧池均无效则拒绝启动
-   - 构建调度器 `build_scheduler()`，注册每 12 小时刷新任务和其他启用任务
+   - 构建调度器 `build_scheduler()`，注册每 1 小时刷新任务和其他启用任务
    - 启动 Worker Admin Page（`127.0.0.1:8765`）
    - `scheduler.start()`（**阻塞**，直到收到 shutdown）
 6. **退出时**（finally）：关 admin page、关调度器、释放锁、释放连接池
