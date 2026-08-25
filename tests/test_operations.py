@@ -286,6 +286,7 @@ def test_execution_service_records_shareholder_count_statistics() -> None:
         request_count=3,
         fetched_rows=3_002,
         accepted_rows=2,
+        rejected_rows=1,
         superseded_request_count=1,
     )
 
@@ -293,8 +294,8 @@ def test_execution_service_records_shareholder_count_statistics() -> None:
     execution.succeed()
 
     job = persistence.finished_jobs[0]
-    assert (job.fetched_rows, job.accepted_rows, job.rejected_rows) == (3_002, 2, 0)
-    assert job.status is ExecutionStatus.SUCCEEDED
+    assert (job.fetched_rows, job.accepted_rows, job.rejected_rows) == (3_002, 2, 1)
+    assert job.status is ExecutionStatus.PARTIAL
 
 
 def test_execution_service_records_call_auction_market_series_statistics() -> None:

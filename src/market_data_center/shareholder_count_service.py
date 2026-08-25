@@ -114,6 +114,7 @@ class ShareholderCountService:
             fetched_rows=sum(summary.fetched_rows for summary in summaries),
             accepted_rows=sum(summary.accepted_rows for summary in summaries),
             superseded_request_count=sum(summary.superseded_request_count for summary in summaries),
+            rejected_rows=sum(summary.rejected_rows for summary in summaries),
         )
 
     def _collect_request_tree(
@@ -179,7 +180,7 @@ class ShareholderCountService:
         )
         return replace(
             batch,
-            run=replace(batch.run, accepted_rows=0, rejected_rows=0),
+            run=replace(batch.run, accepted_rows=0),
             records=(),
             quality_results=(*batch.quality_results, quality),
         )
@@ -194,4 +195,5 @@ class ShareholderCountService:
             fetched_rows=sum(batch.run.fetched_rows for batch in batches),
             accepted_rows=sum(len(batch.records) for batch in batches),
             superseded_request_count=superseded_request_count,
+            rejected_rows=sum(batch.run.rejected_rows for batch in batches),
         )

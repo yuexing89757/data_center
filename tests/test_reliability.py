@@ -556,7 +556,13 @@ def test_raw_replay_normalizes_and_commits_shareholder_count_without_new_manifes
                 "ann_date": "20260820",
                 "end_date": "20260630",
                 "holder_num": "12001",
-            }
+            },
+            {
+                "ts_code": "600000.SH",
+                "ann_date": "20260821",
+                "end_date": "20260731",
+                "holder_num": "",
+            },
         ],
         request_params={
             "source_symbol": "600000.SH",
@@ -573,10 +579,15 @@ def test_raw_replay_normalizes_and_commits_shareholder_count_without_new_manifes
         uuid_factory=lambda: REPLAY_RUN_ID,
     ).replay(SOURCE_RUN_ID)
 
+    assert summary.fetched_rows == 2
     assert summary.accepted_rows == 1
+    assert summary.rejected_rows == 1
+    assert summary.status == "partial"
     batch = persistence.shareholder_count_commits[0][0]
     assert batch.manifest is None
     assert batch.run.replayed_from_raw_id == RAW_ID
+    assert batch.run.rejected_rows == 1
+    assert batch.quality_results[0].rule_code == "shareholder_count.missing_source_value"
     assert isinstance(batch.records[0].record, ShareholderCountRecord)
     assert batch.records[0].record.shareholder_count == 12001
 

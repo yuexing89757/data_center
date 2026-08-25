@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from typing import Any, cast
 from uuid import uuid4
@@ -159,6 +160,42 @@ def test_limit_sized_multi_day_response_splits_into_nonoverlapping_halves() -> N
     assert committed[0].records == ()
     assert committed[0].quality_results[0].rule_code == "shareholder_count.response_split"
     assert sum(len(batch.records) for batch in committed) == 2
+
+
+def test_superseded_probe_preserves_rejected_source_row_accounting() -> None:
+    start = date(2026, 8, 1)
+    end = date(2026, 8, 2)
+    probe = _batch(None, start, end, 3_000)
+    probe = replace(
+        probe,
+        run=replace(
+            probe.run,
+            status=IngestionStatus.PARTIAL,
+            accepted_rows=2_999,
+            rejected_rows=1,
+        ),
+    )
+
+    class PartialProbePipeline(FakePipeline):
+        def prepare_shareholder_count_request(
+            self, source_symbol: str | None, start_date: date, end_date: date
+        ) -> PreparedShareholderCountBatch:
+            if (source_symbol, start_date, end_date) == (None, start, end):
+                self.calls.append((source_symbol, start_date, end_date))
+                return probe
+            return super().prepare_shareholder_count_request(source_symbol, start_date, end_date)
+
+    persistence = FakePersistence()
+    summary = ShareholderCountService(
+        PartialProbePipeline({}),
+        persistence,  # type: ignore[arg-type]  # existing fake narrows sequences
+    ).sync_range(None, start, end)
+
+    superseded = persistence.commits[0][0]
+    assert superseded.records == ()
+    assert superseded.run.accepted_rows == 0
+    assert superseded.run.rejected_rows == 1
+    assert summary.rejected_rows == 1
 
 
 def test_limit_sized_single_day_global_response_falls_back_to_sorted_symbols() -> None:

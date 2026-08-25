@@ -479,7 +479,7 @@ class TushareProvider(AbstractContextManager["TushareProvider"]):
                 "end_date": params["end_date"],
             },
             schema_version="tushare.shareholder_count.v1",
-            record_factory=lambda: [_map_shareholder_count(row) for row in rows],
+            record_factory=lambda: _shareholder_count_records(rows),
         )
 
     def fetch_convertible_bonds(self) -> ProviderBatch[ConvertibleBondRecord]:
@@ -575,15 +575,16 @@ def normalize_tushare_raw(
         )
     if dataset_code is DatasetCode.SHAREHOLDER_COUNT:
         return tuple(
-            _map_shareholder_count(row)
-            for row in sorted(
-                raw_rows,
-                key=lambda row: (
-                    row["ts_code"],
-                    row["end_date"],
-                    row["ann_date"],
-                    row["holder_num"],
-                ),
+            _shareholder_count_records(
+                sorted(
+                    raw_rows,
+                    key=lambda row: (
+                        row["ts_code"],
+                        row["end_date"],
+                        row["ann_date"],
+                        row.get("holder_num", ""),
+                    ),
+                )
             )
         )
     if dataset_code is DatasetCode.CONVERTIBLE_BOND:
@@ -871,6 +872,19 @@ def _map_shareholder_count(row: Mapping[str, str]) -> ShareholderCountRecord:
         ),
         source_code="tushare",
     )
+
+
+def _shareholder_count_records(
+    rows: Sequence[Mapping[str, str]],
+) -> list[ShareholderCountRecord]:
+    records: list[ShareholderCountRecord] = []
+    for row in rows:
+        if "holder_num" not in row:
+            raise ProviderError("Tushare stk_holdernumber missing fields: holder_num")
+        if not row["holder_num"].strip():
+            continue
+        records.append(_map_shareholder_count(row))
+    return records
 
 
 def _source_symbol(value: str) -> str:

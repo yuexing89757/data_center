@@ -121,11 +121,18 @@ def safe_error_summary(error: BaseException) -> str:
 
 def _result_statistics(result: object) -> tuple[int, int, int, ExecutionStatus]:
     if isinstance(result, ShareholderCountSyncSummary):
+        status = (
+            ExecutionStatus.FAILED
+            if result.rejected_rows and not result.accepted_rows
+            else ExecutionStatus.PARTIAL
+            if result.rejected_rows
+            else ExecutionStatus.SUCCEEDED
+        )
         return (
             result.fetched_rows,
             result.accepted_rows,
-            0,
-            ExecutionStatus.SUCCEEDED,
+            result.rejected_rows,
+            status,
         )
     if isinstance(result, TradingBillboardCollectionSummary):
         return (

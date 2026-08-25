@@ -75,7 +75,10 @@ from market_data_center.providers.eastmoney_trading_billboard import (
 from market_data_center.providers.pytdx import normalize_pytdx_raw
 from market_data_center.providers.tushare import normalize_tushare_raw
 from market_data_center.raw_store import LocalRawStore, RawIntegrityError
-from market_data_center.shareholder_count_batch import PreparedShareholderCountBatch
+from market_data_center.shareholder_count_batch import (
+    PreparedShareholderCountBatch,
+    shareholder_count_missing_source_quality_result,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -568,13 +571,30 @@ class RawReplayService:
                     {record.symbol for record in shareholder_records}
                 ),
             )
+            fetched_shareholder_rows = (
+                source.manifest.row_count if source.manifest is not None else len(records)
+            )
+            rejected_shareholder_rows = fetched_shareholder_rows - len(
+                validated_shareholder_records
+            )
             completed = self._completed(
                 run,
-                len(shareholder_records),
+                fetched_shareholder_rows,
                 len(validated_shareholder_records),
-                0,
+                rejected_shareholder_rows,
             )
             if completed is not None:
+                shareholder_quality = (
+                    (
+                        shareholder_count_missing_source_quality_result(
+                            quality_result_id=self._uuid_factory(),
+                            ingestion_id=completed.ingestion_id,
+                            rejected_rows=rejected_shareholder_rows,
+                        ),
+                    )
+                    if rejected_shareholder_rows
+                    else ()
+                )
                 self._persistence.commit_shareholder_count_batches(
                     (
                         PreparedShareholderCountBatch(
@@ -583,6 +603,7 @@ class RawReplayService:
                             records=self._envelopes(
                                 completed.ingestion_id, validated_shareholder_records
                             ),
+                            quality_results=shareholder_quality,
                         ),
                     )
                 )
@@ -590,9 +611,9 @@ class RawReplayService:
                 source,
                 completed,
                 dry_run,
-                len(shareholder_records),
+                fetched_shareholder_rows,
                 len(validated_shareholder_records),
-                0,
+                rejected_shareholder_rows,
             )
 
         if source.dataset_code is DatasetCode.CLASSIFICATION_CATALOG:

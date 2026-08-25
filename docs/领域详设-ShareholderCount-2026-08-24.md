@@ -63,9 +63,11 @@ Tushare `stk_holdernumber` 映射如下：
 | `end_date` | `statistics_date` |
 | `holder_num` | `shareholder_count` |
 
-`holder_num` 只能由十进制整数字符串直接构造 Python `int`，不得经过 `float`。Raw schema
-固定为 `tushare.shareholder_count.v1`。每个实际来源请求各保存一份 JSONL Raw、SHA-256、
-请求参数和 manifest；Token 不属于请求参数。
+非空 `holder_num` 只能由十进制整数字符串直接构造 Python `int`，不得经过 `float`。字段存在
+但值为 NULL、空字符串或纯空白时，Adapter 保留原始行但不生成标准记录；Pipeline 按
+`shareholder_count.missing_source_value` 登记聚合质量拒绝和拒绝行数。字段本身缺失以及非空的
+零、负数、非整数字符串仍硬失败。Raw schema 固定为 `tushare.shareholder_count.v1`。每个实际
+来源请求各保存一份 JSONL Raw、SHA-256、请求参数和 manifest；Token 不属于请求参数。
 
 单次响应上限为 3000 行。状态机为：
 
@@ -107,6 +109,10 @@ change_ratio = change_count / previous_shareholder_count
 每日同步以执行日及此前 29 个自然日为公告日期窗口。每个真实请求分别创建 IngestionRun 和
 Raw manifest；所有切片准备完成并完成整批自然键校验后，在一个数据库事务中发布。切片失败时，
 已经准备的运行统一失败、登记 Raw/质量结果但不写 Core。
+
+来源空值行不属于切片失败：合法记录、Raw manifest、质量拒绝和 IngestionRun 在同一事务提交。
+同时存在合法记录和空值时请求状态为 `partial`；全部来源行均为空时请求状态为 `failed`，但历史
+回填按证券隔离，继续处理下一目标。汇总和 Operations 同步累计 fetched、accepted、rejected。
 
 历史回填由显式 CLI 启动，按 symbol 升序处理沪深北所有 stock 状态。起始日为 `ipo_date`，
 缺失时使用 1990-12-19；截止日必须显式指定且不晚于当前上海自然日。每只证券单独原子提交，
@@ -166,7 +172,8 @@ history RPC 先应用请求统计日期范围再计算 lag，因此范围首条�
 
 ## 8. 质量与测试
 
-测试覆盖领域不变量、SH/SZ/BJ 映射、严格整数、空响应、3000 行拆分与最终失败、Raw 重放、
+测试覆盖领域不变量、SH/SZ/BJ 映射、严格整数、来源空值 Raw 保留与质量拒绝、空响应、
+3000 行拆分与最终失败、Raw 重放、
 每日整批原子性、历史单证券恢复、Scheduler/Operations、数据库约束/RLS/授权、双时间查询、
 变化计算、契约同步和备份恢复行数/孤儿血缘检查。
 

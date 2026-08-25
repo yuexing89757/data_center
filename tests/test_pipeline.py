@@ -290,6 +290,27 @@ class StubShareholderCountProvider(StubProvider):
         )
 
 
+class StubShareholderCountProviderWithMissing(StubShareholderCountProvider):
+    def fetch_shareholder_counts(
+        self, source_symbol: str | None, start_date: date, end_date: date
+    ) -> ProviderBatch[ShareholderCountRecord]:
+        batch = super().fetch_shareholder_counts(source_symbol, start_date, end_date)
+        return ProviderBatch(
+            records=batch.records,
+            raw_rows=[
+                *batch.raw_rows,
+                {
+                    "ts_code": "600000.SH",
+                    "ann_date": "20260729",
+                    "end_date": "20260728",
+                    "holder_num": "",
+                },
+            ],
+            request_params=batch.request_params,
+            schema_version=batch.schema_version,
+        )
+
+
 class StubBoardIndexProvider:
     source_code = "akshare_ths"
 
@@ -769,6 +790,78 @@ def test_shareholder_count_request_is_prepared_with_raw_without_core_commit(
     assert tmp_path.joinpath(*prepared.manifest.object_path.split("/")).exists()
     assert prepared.records[0].record == _shareholder_count()
     assert persistence.created[0].request_params["source_symbol"] == "SSE:600000"
+
+
+def test_shareholder_count_request_rejects_missing_source_values_without_losing_raw(
+    tmp_path: Path,
+) -> None:
+    persistence = StubPersistence()
+    pipeline = IngestionPipeline(
+        provider=StubShareholderCountProviderWithMissing(),
+        raw_store=LocalRawStore(tmp_path),
+        persistence=persistence,  # type: ignore[arg-type]  # existing stub is intentionally partial
+        clock=lambda: datetime(2026, 7, 28, 8, tzinfo=UTC),
+        uuid_factory=uuid4,
+    )
+
+    prepared = pipeline.prepare_shareholder_count_request(
+        "SSE:600000", date(2026, 7, 1), date(2026, 7, 28)
+    )
+
+    assert prepared.run.status is IngestionStatus.PARTIAL
+    assert prepared.run.fetched_rows == 2
+    assert prepared.run.accepted_rows == 1
+    assert prepared.run.rejected_rows == 1
+    assert prepared.manifest is not None
+    assert prepared.manifest.row_count == 2
+    assert len(prepared.records) == 1
+    assert len(prepared.quality_results) == 1
+    assert prepared.quality_results[0].rule_code == "shareholder_count.missing_source_value"
+    assert prepared.quality_results[0].details == {"rejected_rows": 1}
+
+
+def test_shareholder_count_request_with_only_missing_values_is_failed_and_retained(
+    tmp_path: Path,
+) -> None:
+    class AllMissingProvider(StubShareholderCountProvider):
+        def fetch_shareholder_counts(
+            self, source_symbol: str | None, start_date: date, end_date: date
+        ) -> ProviderBatch[ShareholderCountRecord]:
+            return ProviderBatch(
+                records=[],
+                raw_rows=[
+                    {
+                        "ts_code": "600000.SH",
+                        "ann_date": "20260729",
+                        "end_date": "20260728",
+                        "holder_num": "",
+                    }
+                ],
+                request_params={"source_symbol": source_symbol},
+                schema_version="tushare.shareholder_count.v1",
+            )
+
+    persistence = StubPersistence()
+    pipeline = IngestionPipeline(
+        provider=AllMissingProvider(),
+        raw_store=LocalRawStore(tmp_path),
+        persistence=persistence,  # type: ignore[arg-type]  # existing stub is intentionally partial
+        clock=lambda: datetime(2026, 7, 28, 8, tzinfo=UTC),
+        uuid_factory=uuid4,
+    )
+
+    prepared = pipeline.prepare_shareholder_count_request(
+        "SSE:600000", date(2026, 7, 1), date(2026, 7, 28)
+    )
+
+    assert prepared.run.status is IngestionStatus.FAILED
+    assert prepared.run.fetched_rows == 1
+    assert prepared.run.accepted_rows == 0
+    assert prepared.run.rejected_rows == 1
+    assert prepared.records == ()
+    assert prepared.manifest is not None
+    assert prepared.manifest.row_count == 1
+    assert prepared.quality_results[0].rule_code == "shareholder_count.missing_source_value"
 
 
 def test_provider_failure_marks_run_failed_without_leaking_message(tmp_path: Path) -> None:
