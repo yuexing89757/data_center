@@ -199,6 +199,19 @@ def test_shareholder_count_migration_is_append_only_bitemporal_and_bounded() -> 
     assert not re.search(r"(?im)^grant\s+(update|delete|all).*core\.shareholder_count", normalized)
 
 
+def test_shareholder_count_date_constraint_tolerates_less_than_three_days() -> None:
+    migration = (
+        (MIGRATION_DIR / "20260826000100_tolerate_short_shareholder_count_date_inversion.sql")
+        .read_text(encoding="utf-8")
+        .lower()
+    )
+
+    assert "drop constraint shareholder_count_date_order" in migration
+    assert "add constraint shareholder_count_announcement_lag_check" in migration
+    assert "announcement_date >= statistics_date - 2" in migration
+    assert "validate constraint shareholder_count_announcement_lag_check" in migration
+
+
 def test_fastapi_preflight_and_docs_publish_realtime_auction_limits() -> None:
     assert "api_v1.query_auction_one_price_limits(date)" in PUBLISHED_FUNCTIONS
 

@@ -5641,6 +5641,55 @@ select * from api_v1.query_shareholder_count_history_latest(
     assert len(clamped) == 1
 
 
+def test_shareholder_count_date_constraint_allows_two_days_but_rejects_three(
+    database_engine: Engine,
+) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    _commit_security_prerequisite(persistence)
+    run = _running_run(DatasetCode.SHAREHOLDER_COUNT, ProviderCode.TUSHARE)
+    persistence.create_ingestion_run(run)
+
+    with database_engine.begin() as connection:
+        connection.execute(
+            text("""
+insert into core.shareholder_count (
+ symbol,statistics_date,announcement_date,shareholder_count,revision_key,
+ source_code,ingestion_id
+) values (
+ :symbol,:statistics_date,:announcement_date,1000,:revision_key,
+ 'tushare',:ingestion_id
+)
+"""),
+            {
+                "symbol": SYMBOL,
+                "statistics_date": date(2026, 8, 25),
+                "announcement_date": date(2026, 8, 23),
+                "revision_key": "a" * 64,
+                "ingestion_id": run.ingestion_id,
+            },
+        )
+
+    with pytest.raises(DBAPIError), database_engine.begin() as connection:
+        connection.execute(
+            text("""
+insert into core.shareholder_count (
+ symbol,statistics_date,announcement_date,shareholder_count,revision_key,
+ source_code,ingestion_id
+) values (
+ :symbol,:statistics_date,:announcement_date,900,:revision_key,
+ 'tushare',:ingestion_id
+)
+"""),
+            {
+                "symbol": SYMBOL,
+                "statistics_date": date(2026, 8, 26),
+                "announcement_date": date(2026, 8, 23),
+                "revision_key": "b" * 64,
+                "ingestion_id": run.ingestion_id,
+            },
+        )
+
+
 def test_shareholder_count_rpc_bounds_and_append_only_permissions(
     migrated_database_url: str,
 ) -> None:

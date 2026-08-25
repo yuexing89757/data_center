@@ -40,7 +40,7 @@ def validate_shareholder_counts(
     for record in records:
         if record.symbol not in known_symbols:
             raise ValueError(f"unknown shareholder-count symbol: {record.symbol}")
-        if record.statistics_date > record.announcement_date:
+        if (record.statistics_date - record.announcement_date).days >= 3:
             raise ValueError("shareholder-count announcement precedes statistics date")
         if record.shareholder_count <= 0:
             raise ValueError("shareholder count must be positive")
