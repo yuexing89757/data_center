@@ -363,12 +363,12 @@ def job_definitions(settings: SchedulerSettings) -> tuple[JobDefinition, ...]:
             "有界探测节点能力, 成功时原子发布, 失败时保留 last-good。",
             "pytdx_pool_refresh",
             "interval",
-            "每 12 小时",
+            "每 1 小时",
             timezone,
             True,
             timeout,
             "刷新失败保留 last-good; 新旧池均无效时 Worker 启动失败",
-            interval_hours=12,
+            interval_hours=1,
         ),
     )
 

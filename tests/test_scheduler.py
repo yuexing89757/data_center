@@ -181,14 +181,14 @@ def test_shareholder_count_daily_runner_wires_tushare_pipeline_and_operations(
     assert engine.disposed is True
 
 
-def test_scheduler_registers_twelve_hour_pytdx_pool_refresh(tmp_path: Path) -> None:
+def test_scheduler_registers_hourly_pytdx_pool_refresh(tmp_path: Path) -> None:
     scheduler = build_scheduler(
         SchedulerSettings(scheduler_store_path=tmp_path / "refresh.sqlite", _env_file=None),
     )
 
     refresh = scheduler.get_job(PYTDX_POOL_REFRESH_JOB_ID)
     assert refresh is not None
-    assert str(refresh.trigger) == "interval[12:00:00]"
+    assert str(refresh.trigger) == "interval[1:00:00]"
     assert refresh.max_instances == 1
     assert refresh.coalesce
 
@@ -241,7 +241,7 @@ def test_legacy_time_environment_cannot_change_registered_jobs(monkeypatch, tmp_
     assert str(scheduler.get_job(EOD_QUOTE_SNAPSHOT_JOB_ID).trigger) == (
         "cron[day_of_week='mon-fri', hour='21', minute='10']"
     )
-    assert str(scheduler.get_job(PYTDX_POOL_REFRESH_JOB_ID).trigger) == "interval[12:00:00]"
+    assert str(scheduler.get_job(PYTDX_POOL_REFRESH_JOB_ID).trigger) == "interval[1:00:00]"
     assert str(scheduler.get_job(CALL_AUCTION_MARKET_SERIES_JOB_ID).trigger) == (
         "cron[day_of_week='mon-fri', hour='9', minute='15']"
     )

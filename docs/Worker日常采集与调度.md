@@ -113,7 +113,7 @@ Manifest、质量结果和 ingestion lineage。
 验证原始冻结 SSE/SZSE listed-stock 全集的确定性身份后，才可通过后续接受决策重新启用。
 
 Worker 启动时先探测一个有界候选集，按 quote、SSE 日 K、SZSE 日 K 和 BSE 日 K 能力生成
-统一的版本化 PYTDX 节点池，之后每 12 小时刷新。刷新失败时继续使用最后一个有效池；首次
+统一的版本化 PYTDX 节点池，之后每 1 小时刷新。刷新失败时继续使用最后一个有效池；首次
 启动且新旧池均不可用时拒绝启动。消费者按能力筛选节点，建立会话时有限 failover，成功
 会话不切换 endpoint。公共节点无 SLA，可能限流、下线或缺少 BSE。Raw、节点池和 JobStore
 必须使用持久目录，例如：

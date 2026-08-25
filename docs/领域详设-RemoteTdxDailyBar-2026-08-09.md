@@ -8,7 +8,7 @@
 
 - `PYTDX_POOL_PATH`：版本化统一节点池路径；Windows 默认 `data/pytdx_pool.json`，Linux
   生产模板使用 Worker 可写的 `/var/lib/market-data-center/pytdx_pool.json`。
-- `PYTDX_POOL_REFRESH_HOURS`：Worker 刷新间隔，默认 12 小时，范围 `1..168`。
+- 节点池刷新间隔固定在 Worker 任务目录中为 1 小时，不接受环境变量覆盖。
 - `PYTDX_VIPDOC_PATH`：可选本地通达信 `vipdoc` 根目录；有效 `.day` 文件优先于远程请求。
 - `PYTDX_DAILY_BAR_TIMEOUT_SECONDS`：连接和读取超时，默认 3 秒，范围 `(0, 10]`。
 - `PYTDX_DAILY_BAR_MAX_ATTEMPTS`：建立每个市场会话最多尝试节点数，默认 2，范围 `1..5`。
@@ -19,7 +19,7 @@
 
 ## 统一节点池
 
-Worker 取得全局 Scheduler advisory lock 后执行启动刷新，之后由 APScheduler 每 12 小时
+Worker 取得全局 Scheduler advisory lock 后执行启动刷新，之后由 APScheduler 每 1 小时
 刷新。候选来自 pytdx 内置目录；探测分别验证实时 quote、SSE 日 K、SZSE 日 K 和 BSE 日 K。
 新池至少需要 quote、SSE 与 SZSE 各一个可用节点才能原子发布；BSE 能力缺失不阻断发布，
 但北交所远程 Daily Bar 保持显式缺口。刷新失败不修改 last-good；新旧池均无效时 Worker

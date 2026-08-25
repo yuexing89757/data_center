@@ -5,6 +5,7 @@
 - 关联 Issue：#39
 - 取代：ADR-0024 中显式 endpoint 配置与禁止运行时节点发现的决定
 - 澄清：ADR-0024 的未复权 Daily Bar、Raw lineage、有限连接 failover、单批次固定 endpoint 与缺口可见语义继续有效
+- 2026-08-25 澄清：刷新间隔固定在 Worker 任务目录中为 1 小时，不接受环境变量覆盖
 
 ## 背景
 
@@ -19,8 +20,8 @@ endpoint，导致可用池存在时 Worker 仍可能拒绝启动。公共 TDX �
 
 1. Daily Bar 与五档行情只读取 `PYTDX_POOL_PATH` 指向的
    `pytdx.endpoint_pool.v1` 文件，并按 capability 选择节点。
-2. Worker 取得全局 Scheduler advisory lock 后执行启动刷新，随后每
-   `PYTDX_POOL_REFRESH_HOURS`（默认 12）小时通过 APScheduler 刷新。不得使用 cron、
+2. Worker 取得全局 Scheduler advisory lock 后执行启动刷新，随后每 1 小时通过
+   APScheduler 刷新。刷新间隔由受控代码任务目录固定，不通过 `.env` 配置。不得使用 cron、
    Windows Task Scheduler 或其他 OS 级刷新任务。
 3. 刷新从 pytdx 内置候选目录执行有界并发探测。每个节点显式记录 `quote`、
    `daily_bar_sse`、`daily_bar_szse`、`daily_bar_bse` 四项布尔能力及探测延迟。
@@ -67,7 +68,7 @@ capability。节点按 `(latency_ms, host, port)` 稳定排序。池文件是可
 
 ## 后果与限制
 
-- 节点维护从人工配置转为 Worker 内部受控刷新，运维只配置池路径与刷新周期。
+- 节点维护从人工配置转为 Worker 内部受控刷新，运维只配置池路径，不配置刷新周期。
 - Worker 启动依赖一个满足门禁的新池或 last-good 池；网络全面不可用且没有 last-good 时
   会明确失败，而不是以无可用 Provider 的状态继续运行。
 - 节点能力是协议探测结果，不是市场事实，不进入数据库领域模型。
@@ -78,7 +79,7 @@ capability。节点按 `(latency_ms, host, port)` 稳定排序。池文件是可
 ## 验收
 
 - Fake client 测试覆盖严格解析、能力筛选、有界探测、稳定排序、原子发布和 last-good。
-- Worker 测试覆盖取得全局锁后启动刷新、无有效池拒绝启动和每 12 小时 interval job。
+- Worker 测试覆盖取得全局锁后启动刷新、无有效池拒绝启动和每 1 小时 interval job。
 - Daily Bar 测试覆盖 vipdoc 本地优先、按市场 capability、连接阶段 failover、请求阶段不切换、
   BSE 显式缺口和 endpoint lineage。
 - 五档测试覆盖只选择 quote 节点、固定采集会话、Decimal 与手转股语义不变。

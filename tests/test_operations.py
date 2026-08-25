@@ -182,7 +182,7 @@ def test_job_catalog_owns_all_fixed_schedules() -> None:
         jobs["deducted-profit-daily"].minute,
     ) == (20, 0)
     assert jobs["recover-stale-ingestion-runs"].interval_hours == 1
-    assert jobs["pytdx-pool-refresh"].interval_hours == 12
+    assert jobs["pytdx-pool-refresh"].interval_hours == 1
     assert all(job.timezone == "Asia/Shanghai" for job in jobs.values())
     assert all(job.timeout_seconds == 21_600 for job in jobs.values())
     shareholder_count = jobs["shareholder-count-daily"]
@@ -193,13 +193,13 @@ def test_job_catalog_owns_all_fixed_schedules() -> None:
     assert shareholder_count.enabled is False
 
 
-def test_catalog_registers_twelve_hour_pytdx_pool_refresh() -> None:
+def test_catalog_registers_hourly_pytdx_pool_refresh() -> None:
     jobs = {job.code: job for job in job_definitions(SchedulerSettings(_env_file=None))}
 
     refresh = jobs["pytdx-pool-refresh"]
     assert refresh.workflow_code == "pytdx_pool_refresh"
     assert refresh.trigger_type == "interval"
-    assert refresh.interval_hours == 12
+    assert refresh.interval_hours == 1
     assert refresh.enabled is True
 
 
