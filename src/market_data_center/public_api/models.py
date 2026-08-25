@@ -74,6 +74,71 @@ class DailyBarResponse(ApiModel):
     items: list[DailyBarItem]
 
 
+class TradingBillboardSeatItem(ApiModel):
+    symbol: str
+    trade_date: date
+    source_event_id: str
+    side: Literal["buy", "sell"]
+    rank: int = Field(ge=1, le=5)
+    seat_code: str | None
+    seat_name: str
+    buy_amount: Decimal | None
+    sell_amount: Decimal | None
+    net_amount: Decimal | None
+    buy_to_market_pct: Decimal | None
+    sell_to_market_pct: Decimal | None
+
+
+class TradingBillboardItem(ApiModel):
+    symbol: str
+    trade_date: date
+    source_event_id: str
+    reason_code: str
+    reason_text: str
+    close_price: Decimal | None
+    change_rate_pct: Decimal | None
+    turnover_rate_pct: Decimal | None
+    market_amount: Decimal | None
+    buy_amount: Decimal
+    sell_amount: Decimal
+    net_amount: Decimal
+    deal_amount: Decimal
+    deal_to_market_pct: Decimal | None
+    net_to_market_pct: Decimal | None
+    free_float_market_value: Decimal | None
+    source_code: Literal["eastmoney"]
+    buy_seats: list[TradingBillboardSeatItem]
+    sell_seats: list[TradingBillboardSeatItem]
+
+
+class TradingBillboardPageResponse(ApiModel):
+    items: list[TradingBillboardItem]
+    returned_count: int = Field(ge=0)
+    total_count: int = Field(ge=0)
+    has_more: bool
+    limit: int = Field(ge=1, le=500)
+    offset: int = Field(ge=0, le=10000)
+
+
+class TradingBillboardSeatOccurrenceItem(TradingBillboardSeatItem):
+    reason_code: str
+    reason_text: str
+    summary_buy_amount: Decimal
+    summary_sell_amount: Decimal
+    summary_net_amount: Decimal
+    summary_deal_amount: Decimal
+    source_code: Literal["eastmoney"]
+
+
+class TradingBillboardSeatPageResponse(ApiModel):
+    items: list[TradingBillboardSeatOccurrenceItem]
+    returned_count: int = Field(ge=0)
+    total_count: int = Field(ge=0)
+    has_more: bool
+    limit: int = Field(ge=1, le=500)
+    offset: int = Field(ge=0, le=10000)
+
+
 class ClassificationMembersResponse(ApiModel):
     snapshot_date: date
     member_count: int = Field(ge=0)

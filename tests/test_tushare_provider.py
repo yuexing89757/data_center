@@ -11,6 +11,7 @@ from market_data_center.domain import (
     Exchange,
     PriceLimitStatus,
     SecurityStatus,
+    ShareholderCountRecord,
     StockDailyIndicatorSnapshotRecord,
     TradeStatus,
 )
@@ -107,6 +108,15 @@ class FakeClient:
                     "total_mv": "10500.50",
                     "circ_mv": "8400.40",
                     "limit_status": 2,
+                },
+            )
+        if api_name == "stk_holdernumber":
+            return (
+                {
+                    "ts_code": "920000.BJ",
+                    "ann_date": "20260820",
+                    "end_date": "20260630",
+                    "holder_num": "12001",
                 },
             )
         raise AssertionError(api_name)
@@ -271,3 +281,181 @@ def test_calendar_gap_is_not_silently_treated_as_closed() -> None:
 
     with pytest.raises(ProviderError, match="first missing date"):
         _ = batch.records
+
+
+def test_shareholder_count_maps_bse_request_and_raw_replay() -> None:
+    client = FakeClient()
+    provider = TushareProvider(client)
+
+    batch = provider.fetch_shareholder_counts("BSE:920000", date(2026, 8, 1), date(2026, 8, 24))
+
+    assert client.calls[0] == (
+        "stk_holdernumber",
+        {"ts_code": "920000.BJ", "start_date": "20260801", "end_date": "20260824"},
+        ("ts_code", "ann_date", "end_date", "holder_num"),
+    )
+    assert batch.request_params == {
+        "source_symbol": "920000.BJ",
+        "start_date": "20260801",
+        "end_date": "20260824",
+    }
+    assert batch.schema_version == "tushare.shareholder_count.v1"
+    assert batch.records[0].shareholder_count == 12001
+    assert batch.records[0].symbol == "BSE:920000"
+
+    replayed = normalize_tushare_raw(
+        DatasetCode.SHAREHOLDER_COUNT,
+        batch.schema_version,
+        batch.raw_rows,
+        batch.request_params,
+    )
+    assert isinstance(replayed[0], ShareholderCountRecord)
+    assert replayed == batch.records
+
+
+def test_shareholder_count_all_market_request_can_succeed_empty() -> None:
+    class EmptyClient(FakeClient):
+        def query(
+            self, api_name: str, *, params: Mapping[str, str], fields: Sequence[str]
+        ) -> Sequence[Mapping[str, object]]:
+            self.calls.append((api_name, params, fields))
+            if api_name == "stk_holdernumber":
+                return ()
+            return super().query(api_name, params=params, fields=fields)
+
+    client = EmptyClient()
+    batch = TushareProvider(client).fetch_shareholder_counts(
+        None, date(2026, 8, 1), date(2026, 8, 24)
+    )
+
+    assert client.calls[0][1] == {"start_date": "20260801", "end_date": "20260824"}
+    assert batch.request_params["source_symbol"] is None
+    assert batch.records == ()
+
+
+@pytest.mark.parametrize("missing_count", [None, "", " \t "])
+def test_shareholder_count_keeps_missing_counts_in_raw_but_omits_records(
+    missing_count: object,
+) -> None:
+    class MissingCountClient(FakeClient):
+        def query(
+            self, api_name: str, *, params: Mapping[str, str], fields: Sequence[str]
+        ) -> Sequence[Mapping[str, object]]:
+            if api_name == "stk_holdernumber":
+                return (
+                    {
+                        "ts_code": "600000.SH",
+                        "ann_date": "20260820",
+                        "end_date": "20260630",
+                        "holder_num": "12001",
+                    },
+                    {
+                        "ts_code": "600000.SH",
+                        "ann_date": "20260821",
+                        "end_date": "20260731",
+                        "holder_num": missing_count,
+                    },
+                )
+            return super().query(api_name, params=params, fields=fields)
+
+    batch = TushareProvider(MissingCountClient()).fetch_shareholder_counts(
+        "SSE:600000", date(2026, 8, 1), date(2026, 8, 24)
+    )
+
+    assert len(batch.raw_rows) == 2
+    assert not batch.raw_rows[1]["holder_num"].strip()
+    assert [record.shareholder_count for record in batch.records] == [12001]
+    replayed = normalize_tushare_raw(
+        DatasetCode.SHAREHOLDER_COUNT,
+        batch.schema_version,
+        batch.raw_rows,
+        batch.request_params,
+    )
+    assert replayed == batch.records
+
+
+@pytest.mark.parametrize("holder_num", ["1.5", "0"])
+def test_shareholder_count_rejects_invalid_integer_counts(holder_num: object) -> None:
+    class InvalidCountClient(FakeClient):
+        def query(
+            self, api_name: str, *, params: Mapping[str, str], fields: Sequence[str]
+        ) -> Sequence[Mapping[str, object]]:
+            if api_name == "stk_holdernumber":
+                return (
+                    {
+                        "ts_code": "600000.SH",
+                        "ann_date": "20260820",
+                        "end_date": "20260630",
+                        "holder_num": holder_num,
+                    },
+                )
+            return super().query(api_name, params=params, fields=fields)
+
+    batch = TushareProvider(InvalidCountClient()).fetch_shareholder_counts(
+        "SSE:600000", date(2026, 8, 1), date(2026, 8, 24)
+    )
+
+    with pytest.raises(ProviderError, match=r"holder_num|positive"):
+        _ = batch.records
+
+
+def test_shareholder_count_rejects_missing_count_field() -> None:
+    class MissingCountClient(FakeClient):
+        def query(
+            self, api_name: str, *, params: Mapping[str, str], fields: Sequence[str]
+        ) -> Sequence[Mapping[str, object]]:
+            if api_name == "stk_holdernumber":
+                return (
+                    {
+                        "ts_code": "600000.SH",
+                        "ann_date": "20260820",
+                        "end_date": "20260630",
+                    },
+                )
+            return super().query(api_name, params=params, fields=fields)
+
+    with pytest.raises(ProviderError, match="missing fields: holder_num"):
+        TushareProvider(MissingCountClient()).fetch_shareholder_counts(
+            "SSE:600000", date(2026, 8, 1), date(2026, 8, 24)
+        )
+
+    with pytest.raises(ProviderError, match="missing fields: holder_num"):
+        normalize_tushare_raw(
+            DatasetCode.SHAREHOLDER_COUNT,
+            "tushare.shareholder_count.v1",
+            (
+                {
+                    "ts_code": "600000.SH",
+                    "ann_date": "20260820",
+                    "end_date": "20260630",
+                },
+            ),
+            {
+                "source_symbol": "600000.SH",
+                "start_date": "20260801",
+                "end_date": "20260824",
+            },
+        )
+
+
+def test_shareholder_count_rejects_reversed_dates_before_request() -> None:
+    client = FakeClient()
+
+    with pytest.raises(ValueError, match="end_date"):
+        TushareProvider(client).fetch_shareholder_counts(None, date(2026, 8, 24), date(2026, 8, 1))
+
+    assert client.calls == []
+
+
+def test_only_shareholder_count_requests_are_paced() -> None:
+    sleeps: list[float] = []
+    provider = TushareProvider(
+        FakeClient(),
+        shareholder_count_request_interval_seconds=1 / 3,
+        sleeper=sleeps.append,
+    )
+
+    provider.fetch_shareholder_counts(None, date(2026, 8, 1), date(2026, 8, 24))
+    provider.fetch_shareholder_counts(None, date(2026, 8, 1), date(2026, 8, 24))
+
+    assert sleeps == [pytest.approx(1 / 3)]

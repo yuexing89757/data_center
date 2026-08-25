@@ -11,6 +11,7 @@ from market_data_center.migrations import MIGRATION_DIR, apply_migrations
 TARGET_SCHEMAS = (
     "api_v1",
     "audit",
+    "billboard",
     "capital",
     "classification",
     "convertible_bond",
@@ -25,6 +26,8 @@ TARGET_SCHEMAS = (
 )
 EXPECTED_TABLES = {
     ("audit", "quality_result"),
+    ("billboard", "entry"),
+    ("billboard", "seat"),
     ("capital", "distribution"),
     ("capital", "rights_issue"),
     ("capital", "share_capital"),
@@ -40,6 +43,7 @@ EXPECTED_TABLES = {
     ("core", "deducted_profit"),
     ("core", "security"),
     ("core", "security_name_history"),
+    ("core", "shareholder_count"),
     ("core", "stock_daily_indicator"),
     ("core", "trading_calendar"),
     ("derived", "adjusted_daily_bar"),

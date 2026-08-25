@@ -59,7 +59,11 @@ from market_data_center.domain import (
     ShareCapitalRecord,
     StockDailyIndicatorSnapshotRecord,
     TradeStatus,
+    TradingBillboardRecord,
+    TradingBillboardSeatRecord,
+    TradingBillboardSide,
     deducted_profit_revision_key,
+    trading_billboard_content_hash,
 )
 from market_data_center.domain.call_auction_market_series import (
     MarketSeriesRound,
@@ -81,6 +85,9 @@ from market_data_center.persistence.close_price_new_highs_postgres import (
     PostgreSQLClosePriceNewHighsPersistence,
 )
 from market_data_center.persistence.operations_postgres import PostgreSQLOperationsPersistence
+from market_data_center.persistence.trading_billboard_postgres import (
+    PostgreSQLTradingBillboardPersistence,
+)
 from market_data_center.quality_audit import audit_daily_bars
 from market_data_center.recovery import (
     backup_application_data,
@@ -1371,17 +1378,17 @@ insert into realtime.call_auction_market_snapshot (
     ingestion_id, symbol, trade_date, observed_at, last_price,
     previous_close, high_price, low_price, cumulative_volume,
     cumulative_amount, bid1_price, bid1_volume, bid2_volume,
-    ask1_volume, ask2_volume, seal_amount, source_code
+    ask1_price, ask1_volume, ask2_volume, seal_amount, source_code
 ) values
     (:succeeded_id, 'SSE:600000', :trade_date, :observed_at,
      10.1200, 10.0000, 10.1500, 9.9800, 123400, 1248808.0000,
-     10.1200, 560200, 10743200, 0, 13300, 5673224.0000, 'pytdx_hq'),
+     10.1200, 560200, 10743200, 10.1300, 0, 13300, 5669224.0000, 'pytdx_hq'),
     (:succeeded_id, 'SZSE:600000', :trade_date, :observed_at,
      20.1200, 20.0000, 20.1500, 19.9800, 223400, 4494808.0000,
-     null, null, null, null, null, null, 'pytdx_hq'),
+     null, null, null, null, null, null, null, 'pytdx_hq'),
     (:partial_id, 'SSE:600000', :trade_date, :observed_at,
      99.0000, 98.0000, 99.0000, 98.0000, 1, 99.0000,
-     null, null, null, null, null, null, 'pytdx_hq')
+     null, null, null, null, null, null, null, 'pytdx_hq')
 """),
             {
                 "succeeded_id": succeeded_ingestion_id,
@@ -1447,7 +1454,7 @@ select api_v1.query_call_auction_market_snapshots(
     assert payload["items"][0]["bid2_price"] is None
     assert payload["items"][0]["bid2_volume"] == 10_743_200
     assert payload["items"][0]["ask2_volume"] == 13_300
-    assert payload["items"][0]["seal_amount"] == 5_673_224.0000
+    assert payload["items"][0]["seal_amount"] == 5_669_224.0000
     assert partial_payload["ingestion_id"] == str(partial_ingestion_id)
     assert partial_payload["ingestion_status"] == "partial"
     assert partial_payload["returned_count"] == 1
@@ -3789,7 +3796,12 @@ def test_close_price_new_highs_rpc_requires_complete_history_and_strict_breakout
             name="邯郸钢铁",
         ),
     ]
-    security_run = _running_run(DatasetCode.SECURITY)
+    security_observed_at = datetime(2026, 1, 1, tzinfo=UTC)
+    security_run = replace(
+        _running_run(DatasetCode.SECURITY),
+        requested_at=security_observed_at,
+        started_at=security_observed_at,
+    )
     persistence.create_ingestion_run(security_run)
     persistence.commit_security_batch(
         _completed_run(security_run, len(securities)),
@@ -3868,7 +3880,7 @@ def test_close_price_new_highs_rpc_requires_complete_history_and_strict_breakout
         WorkflowCode.DAILY_MARKET, scheduled_for, TriggerSource.SCHEDULED
     )
     operations.finish_workflow(
-        workflow.finish(ExecutionStatus.SUCCEEDED, scheduled_for + timedelta(minutes=1))
+        workflow.finish(ExecutionStatus.SUCCEEDED, workflow.started_at + timedelta(minutes=1))
     )
     first = ClosePriceNewHighsService(
         PostgreSQLClosePriceNewHighsPersistence(database_engine)
@@ -4777,6 +4789,8 @@ def test_worker_has_only_ingestion_permissions(
         ("core", "security_name_history", "INSERT"),
         ("core", "security_name_history", "SELECT"),
         ("core", "security_name_history", "UPDATE"),
+        ("core", "shareholder_count", "INSERT"),
+        ("core", "shareholder_count", "SELECT"),
         ("core", "stock_daily_indicator", "DELETE"),
         ("core", "stock_daily_indicator", "INSERT"),
         ("core", "stock_daily_indicator", "SELECT"),
@@ -4823,6 +4837,7 @@ def test_internal_tables_have_rls_with_worker_only_policies(database_engine: Eng
         ("core", "board_index_constituent_snapshot"),
         ("core", "security"),
         ("core", "security_name_history"),
+        ("core", "shareholder_count"),
         ("core", "stock_daily_indicator"),
         ("core", "trading_calendar"),
         ("ingestion", "ingestion_run"),
@@ -5470,6 +5485,231 @@ def _insert_existing_call_auction_final(
     return ingestion_id
 
 
+def test_shareholder_count_rpcs_preserve_strict_knowledge_and_latest_revision_semantics(
+    database_engine: Engine,
+) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    _commit_security_prerequisite(persistence)
+    run = _running_run(DatasetCode.SHAREHOLDER_COUNT, ProviderCode.TUSHARE)
+    persistence.create_ingestion_run(run)
+    rows = [
+        {
+            "symbol": SYMBOL,
+            "statistics_date": date(2026, 3, 31),
+            "announcement_date": date(2026, 4, 20),
+            "shareholder_count": 1_000,
+            "revision_key": "1" * 64,
+            "observed_at": datetime(2026, 4, 20, 3, tzinfo=UTC),
+        },
+        {
+            "symbol": SYMBOL,
+            "statistics_date": date(2026, 6, 30),
+            "announcement_date": date(2026, 7, 20),
+            "shareholder_count": 900,
+            "revision_key": "2" * 64,
+            "observed_at": datetime(2026, 7, 20, 3, tzinfo=UTC),
+        },
+        {
+            "symbol": SYMBOL,
+            "statistics_date": date(2026, 6, 30),
+            "announcement_date": date(2026, 7, 25),
+            "shareholder_count": 850,
+            "revision_key": "3" * 64,
+            "observed_at": datetime(2026, 8, 10, 3, tzinfo=UTC),
+        },
+        {
+            "symbol": SYMBOL,
+            "statistics_date": date(2026, 9, 30),
+            "announcement_date": date(2026, 10, 20),
+            "shareholder_count": 800,
+            "revision_key": "4" * 64,
+            "observed_at": datetime(2026, 10, 20, 3, tzinfo=UTC),
+        },
+    ]
+    with database_engine.begin() as connection:
+        connection.execute(
+            text("""
+insert into core.shareholder_count (
+ symbol,statistics_date,announcement_date,shareholder_count,revision_key,
+ source_code,ingestion_id,first_observed_at
+) values (
+ :symbol,:statistics_date,:announcement_date,:shareholder_count,:revision_key,
+ 'tushare',:ingestion_id,:observed_at
+)
+"""),
+            [{**row, "ingestion_id": run.ingestion_id} for row in rows],
+        )
+
+    with database_engine.connect() as connection:
+        strict_history = (
+            connection.execute(
+                text("""
+select * from api_v1.query_shareholder_count_history_as_of(
+ :symbol,:as_of,:start_date,:end_date,:limit
+)
+"""),
+                {
+                    "symbol": SYMBOL,
+                    "as_of": date(2026, 7, 31),
+                    "start_date": date(2026, 1, 1),
+                    "end_date": date(2026, 12, 31),
+                    "limit": 500,
+                },
+            )
+            .mappings()
+            .all()
+        )
+        latest_history = (
+            connection.execute(
+                text("""
+select * from api_v1.query_shareholder_count_history_latest(
+ :symbol,:start_date,:end_date,:limit
+)
+"""),
+                {
+                    "symbol": SYMBOL,
+                    "start_date": date(2026, 1, 1),
+                    "end_date": date(2026, 12, 31),
+                    "limit": 500,
+                },
+            )
+            .mappings()
+            .all()
+        )
+        cross_section = (
+            connection.execute(
+                text("""
+select * from api_v1.query_shareholder_counts_as_of(
+ :as_of,cast(:symbols as text[]),:limit
+)
+"""),
+                {"as_of": date(2026, 7, 31), "symbols": None, "limit": 500},
+            )
+            .mappings()
+            .all()
+        )
+        empty_cross_section = connection.execute(
+            text("""
+select * from api_v1.query_shareholder_counts_as_of(
+ :as_of,cast(:symbols as text[]),:limit
+)
+"""),
+            {"as_of": date(2026, 7, 31), "symbols": [], "limit": 500},
+        ).all()
+        narrowed = (
+            connection.execute(
+                text("""
+select * from api_v1.query_shareholder_count_history_latest(
+ :symbol,:start_date,:end_date,:limit
+)
+"""),
+                {
+                    "symbol": SYMBOL,
+                    "start_date": date(2026, 6, 30),
+                    "end_date": date(2026, 6, 30),
+                    "limit": 500,
+                },
+            )
+            .mappings()
+            .all()
+        )
+        clamped = connection.execute(
+            text("""
+select * from api_v1.query_shareholder_count_history_latest(
+ :symbol,:start_date,:end_date,:limit
+)
+"""),
+            {
+                "symbol": SYMBOL,
+                "start_date": date(2026, 1, 1),
+                "end_date": date(2026, 12, 31),
+                "limit": 0,
+            },
+        ).all()
+
+    assert [row["shareholder_count"] for row in strict_history] == [1_000, 900]
+    assert strict_history[0]["previous_shareholder_count"] is None
+    assert strict_history[1]["previous_statistics_date"] == date(2026, 3, 31)
+    assert strict_history[1]["change_count"] == -100
+    assert strict_history[1]["change_ratio"] == Decimal("-0.1")
+    assert [row["shareholder_count"] for row in latest_history] == [1_000, 850, 800]
+    assert cross_section[0]["shareholder_count"] == 900
+    assert cross_section[0]["previous_shareholder_count"] == 1_000
+    assert empty_cross_section == []
+    assert narrowed[0]["previous_statistics_date"] is None
+    assert narrowed[0]["change_count"] is None
+    assert len(clamped) == 1
+
+
+def test_shareholder_count_rpc_bounds_and_append_only_permissions(
+    migrated_database_url: str,
+) -> None:
+    signatures = (
+        "api_v1.query_shareholder_counts_as_of(date,text[],integer)",
+        "api_v1.query_shareholder_count_history_as_of(text,date,date,date,integer)",
+        "api_v1.query_shareholder_count_history_latest(text,date,date,integer)",
+    )
+    with psycopg.connect(migrated_database_url) as connection:
+        for signature in signatures:
+            assert connection.execute(
+                """
+select
+ has_function_privilege('anon', %s, 'execute'),
+ has_function_privilege('authenticated', %s, 'execute'),
+ has_function_privilege('market_data_api', %s, 'execute')
+""",
+                (signature, signature, signature),
+            ).fetchone() == (True, True, True)
+        assert connection.execute(
+            """
+select
+ has_table_privilege('market_data_worker','core.shareholder_count','select'),
+ has_table_privilege('market_data_worker','core.shareholder_count','insert'),
+ has_table_privilege('market_data_worker','core.shareholder_count','update'),
+ has_table_privilege('market_data_worker','core.shareholder_count','delete')
+"""
+        ).fetchone() == (True, True, False, False)
+        assert connection.execute(
+            """
+select grantee, privilege_type
+from information_schema.role_table_grants
+where table_schema='core' and table_name='shareholder_count'
+  and grantee='market_data_worker'
+order by grantee, privilege_type
+"""
+        ).fetchall() == [("market_data_worker", "INSERT"), ("market_data_worker", "SELECT")]
+
+    engine = create_engine(_sqlalchemy_url(migrated_database_url))
+    try:
+        with pytest.raises(DBAPIError), engine.begin() as connection:
+            connection.execute(
+                text("""
+select * from api_v1.query_shareholder_counts_as_of(
+ :as_of,cast(:symbols as text[]),500
+)
+"""),
+                {
+                    "as_of": date(2026, 8, 24),
+                    "symbols": [f"SSE:{index:06d}" for index in range(501)],
+                },
+            )
+        with pytest.raises(DBAPIError), engine.begin() as connection:
+            connection.execute(
+                text("""
+select * from api_v1.query_shareholder_count_history_latest(
+ :symbol,:start_date,:end_date,500
+)
+"""),
+                {
+                    "symbol": SYMBOL,
+                    "start_date": date(2026, 8, 2),
+                    "end_date": date(2026, 8, 1),
+                },
+            )
+    finally:
+        engine.dispose()
+
+
 @contextmanager
 def _temporary_database_url(admin_url: str) -> Iterator[str]:
     database_name = f"market_data_center_test_{uuid4().hex}"
@@ -5881,6 +6121,458 @@ def _prepare_query_contract_data(engine: Engine) -> UUID:
         date(2026, 7, 27), date(2026, 7, 29)
     )
     return summary.calculation_id
+
+
+def test_trading_billboard_constraints_and_bounded_rpcs(database_engine: Engine) -> None:
+    _prepare_api_data(database_engine)
+    ingestion_id = uuid4()
+    entry_id = uuid4()
+    with database_engine.begin() as connection:
+        connection.execute(
+            text("""
+                insert into ingestion.ingestion_run (
+                    ingestion_id, provider_code, dataset_code, status,
+                    requested_at, started_at, finished_at,
+                    fetched_rows, accepted_rows, rejected_rows
+                ) values (
+                    :ingestion_id, 'eastmoney', 'trading_billboard', 'succeeded',
+                    now(), now(), now(), 11, 1, 0
+                )
+            """),
+            {"ingestion_id": ingestion_id},
+        )
+        connection.execute(
+            text("""
+                insert into billboard.entry (
+                    entry_id, symbol, trade_date, source_event_id,
+                    reason_code, reason_text, close_price, change_rate_pct,
+                    turnover_rate_pct, market_amount, buy_amount, sell_amount,
+                    net_amount, deal_amount, deal_to_market_pct,
+                    net_to_market_pct, free_float_market_value,
+                    source_code, ingestion_id, content_hash
+                ) values (
+                    :entry_id, :symbol, :trade_date, 'event-1',
+                    '106001', '测试上榜原因', 10.50, 9.9,
+                    12.5, 10000, 600, 400,
+                    200, 1000, 10, 2, 50000,
+                    'eastmoney', :ingestion_id, :content_hash
+                )
+            """),
+            {
+                "entry_id": entry_id,
+                "symbol": SYMBOL,
+                "trade_date": TRADE_DATE,
+                "ingestion_id": ingestion_id,
+                "content_hash": "a" * 64,
+            },
+        )
+        for side in ("buy", "sell"):
+            for rank in range(1, 6):
+                connection.execute(
+                    text("""
+                        insert into billboard.seat (
+                            entry_id, source_code, source_event_id, symbol, trade_date,
+                            side, rank, seat_code, seat_name,
+                            buy_amount, sell_amount, net_amount,
+                            buy_to_market_pct, sell_to_market_pct, ingestion_id
+                        ) values (
+                            :entry_id, 'eastmoney', 'event-1', :symbol, :trade_date,
+                            :side, :rank, :seat_code, :seat_name,
+                            120, 20, 100, 1.2, 0.2, :ingestion_id
+                        )
+                    """),
+                    {
+                        "entry_id": entry_id,
+                        "symbol": SYMBOL,
+                        "trade_date": TRADE_DATE,
+                        "side": side,
+                        "rank": rank,
+                        "seat_code": "80000001" if rank == 1 else None,
+                        "seat_name": "测试营业部" if rank == 1 else "机构专用",
+                        "ingestion_id": ingestion_id,
+                    },
+                )
+
+    with database_engine.connect() as connection:
+        assert not connection.scalar(
+            text("select has_table_privilege('market_data_api', 'billboard.entry', 'select')")
+        )
+        connection.execute(text("set local role market_data_api"))
+        by_date = cast(
+            Mapping[str, object],
+            connection.scalar(
+                text("select api_v1.query_trading_billboard_by_date(:day, 100, 0)"),
+                {"day": TRADE_DATE},
+            ),
+        )
+        no_fallback = cast(
+            Mapping[str, object],
+            connection.scalar(
+                text("select api_v1.query_trading_billboard_by_date(:day, 100, 0)"),
+                {"day": TRADE_DATE + timedelta(days=1)},
+            ),
+        )
+        by_symbol = cast(
+            Mapping[str, object],
+            connection.scalar(
+                text("""
+                    select api_v1.query_trading_billboard_by_symbol(
+                        :symbol, :start_date, :end_date, 100, 0
+                    )
+                """),
+                {"symbol": SYMBOL, "start_date": TRADE_DATE, "end_date": TRADE_DATE},
+            ),
+        )
+        by_code = cast(
+            Mapping[str, object],
+            connection.scalar(
+                text("""
+                    select api_v1.query_trading_billboard_by_seat(
+                        '80000001', null, :start_date, :end_date, null, 100, 0
+                    )
+                """),
+                {"start_date": TRADE_DATE, "end_date": TRADE_DATE},
+            ),
+        )
+        by_name = cast(
+            Mapping[str, object],
+            connection.scalar(
+                text("""
+                    select api_v1.query_trading_billboard_by_seat(
+                        null, '机构专用', :start_date, :end_date, 'buy', 100, 0
+                    )
+                """),
+                {"start_date": TRADE_DATE, "end_date": TRADE_DATE},
+            ),
+        )
+
+        assert by_date["total_count"] == 1
+        assert len(cast(list[object], by_date["items"])) == 1
+        assert no_fallback["items"] == []
+        assert by_symbol["total_count"] == 1
+        assert by_code["total_count"] == 2
+        assert by_name["total_count"] == 4
+        assert connection.scalar(
+            text("""
+                select has_function_privilege(
+                    'market_data_api',
+                    'api_v1.query_trading_billboard_by_seat(text,text,date,date,text,integer,integer)',
+                    'execute'
+                )
+            """)
+        )
+        with pytest.raises(DBAPIError), connection.begin_nested():
+            connection.execute(text("select * from billboard.entry"))
+        with pytest.raises(DBAPIError) as invalid:
+            connection.execute(
+                text("""
+                    select api_v1.query_trading_billboard_by_seat(
+                        '80000001', '机构专用', :start_date, :end_date, null, 100, 0
+                    )
+                """),
+                {"start_date": TRADE_DATE, "end_date": TRADE_DATE},
+            )
+        assert getattr(invalid.value.orig, "sqlstate", None) == "22023"
+
+
+def test_trading_billboard_seat_composite_parent_key_is_enforced(
+    database_engine: Engine,
+) -> None:
+    _prepare_api_data(database_engine)
+    ingestion_id = uuid4()
+    entry_id = uuid4()
+    with database_engine.begin() as connection:
+        connection.execute(
+            text("""
+                insert into ingestion.ingestion_run (
+                    ingestion_id, provider_code, dataset_code, status,
+                    requested_at, started_at, finished_at
+                ) values (
+                    :ingestion_id, 'eastmoney', 'trading_billboard', 'succeeded',
+                    now(), now(), now()
+                )
+            """),
+            {"ingestion_id": ingestion_id},
+        )
+        connection.execute(
+            text("""
+                insert into billboard.entry (
+                    entry_id, symbol, trade_date, source_event_id,
+                    reason_code, reason_text, buy_amount, sell_amount,
+                    net_amount, deal_amount, source_code, ingestion_id, content_hash
+                ) values (
+                    :entry_id, :symbol, :trade_date, 'event-parent',
+                    '106001', '测试上榜原因', 60, 40,
+                    20, 100, 'eastmoney', :ingestion_id, :content_hash
+                )
+            """),
+            {
+                "entry_id": entry_id,
+                "symbol": SYMBOL,
+                "trade_date": TRADE_DATE,
+                "ingestion_id": ingestion_id,
+                "content_hash": "b" * 64,
+            },
+        )
+        connection.execute(
+            text("""
+                insert into billboard.seat (
+                    entry_id, source_code, source_event_id, symbol, trade_date,
+                    side, rank, seat_name, ingestion_id
+                ) values (
+                    :entry_id, 'eastmoney', 'event-parent', :symbol, :trade_date,
+                    'buy', 1, '测试营业部', :ingestion_id
+                )
+            """),
+            {
+                "entry_id": entry_id,
+                "symbol": SYMBOL,
+                "trade_date": TRADE_DATE,
+                "ingestion_id": ingestion_id,
+            },
+        )
+        with pytest.raises(IntegrityError), connection.begin_nested():
+            connection.execute(
+                text("""
+                    insert into billboard.seat (
+                        entry_id, source_code, source_event_id, symbol, trade_date,
+                        side, rank, seat_name, ingestion_id
+                    ) values (
+                        :entry_id, 'eastmoney', 'event-parent', :symbol, :trade_date,
+                        'buy', 1, '重复名次营业部', :ingestion_id
+                    )
+                """),
+                {
+                    "entry_id": entry_id,
+                    "symbol": SYMBOL,
+                    "trade_date": TRADE_DATE,
+                    "ingestion_id": ingestion_id,
+                },
+            )
+
+        with pytest.raises(IntegrityError), connection.begin_nested():
+            connection.execute(
+                text("""
+                    insert into billboard.seat (
+                        entry_id, source_code, source_event_id, symbol, trade_date,
+                        side, rank, seat_name, ingestion_id
+                    ) values (
+                        :entry_id, 'eastmoney', 'wrong-event', :symbol, :trade_date,
+                        'buy', 2, '测试营业部', :ingestion_id
+                    )
+                """),
+                {
+                    "entry_id": entry_id,
+                    "symbol": SYMBOL,
+                    "trade_date": TRADE_DATE,
+                    "ingestion_id": ingestion_id,
+                },
+            )
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "select api_v1.query_trading_billboard_by_date(:day, null, 0)",
+        "select api_v1.query_trading_billboard_by_date(:day, 100, null)",
+        "select api_v1.query_trading_billboard_by_symbol(:symbol, :day, :day, null, 0)",
+        "select api_v1.query_trading_billboard_by_symbol(:symbol, :day, :day, 100, null)",
+        "select api_v1.query_trading_billboard_by_seat("
+        "null, '机构专用', :day, :day, null, null, 0)",
+        "select api_v1.query_trading_billboard_by_seat("
+        "null, '机构专用', :day, :day, null, 100, null)",
+    ],
+)
+def test_trading_billboard_rpcs_reject_null_pagination(
+    database_engine: Engine, statement: str
+) -> None:
+    with database_engine.connect() as connection:
+        connection.execute(text("set local role market_data_api"))
+        with pytest.raises(DBAPIError) as invalid:
+            connection.execute(
+                text(statement),
+                {"day": TRADE_DATE, "symbol": SYMBOL},
+            )
+
+    assert getattr(invalid.value.orig, "sqlstate", None) == "22023"
+
+
+def test_trading_billboard_persistence_is_idempotent_and_revision_is_atomic(
+    database_engine: Engine,
+) -> None:
+    _prepare_api_data(database_engine)
+    persistence = PostgreSQLTradingBillboardPersistence(database_engine)
+
+    def seat(
+        side: TradingBillboardSide, rank: int, name: str = "机构专用"
+    ) -> TradingBillboardSeatRecord:
+        return TradingBillboardSeatRecord(
+            source_event_id="persist-event",
+            symbol=SYMBOL,
+            trade_date=TRADE_DATE,
+            side=side,
+            rank=rank,
+            seat_code=None,
+            seat_name=name,
+            buy_amount=Decimal("120"),
+            sell_amount=Decimal("20"),
+            net_amount=Decimal("100"),
+            buy_to_market_pct=Decimal("1.2"),
+            sell_to_market_pct=Decimal("0.2"),
+        )
+
+    original = TradingBillboardRecord(
+        symbol=SYMBOL,
+        trade_date=TRADE_DATE,
+        source_event_id="persist-event",
+        reason_code="106001",
+        reason_text="原始原因",
+        close_price=Decimal("10.5"),
+        change_rate_pct=Decimal("9.9"),
+        turnover_rate_pct=Decimal("12.5"),
+        market_amount=Decimal("10000"),
+        buy_amount=Decimal("600"),
+        sell_amount=Decimal("400"),
+        net_amount=Decimal("200"),
+        deal_amount=Decimal("1000"),
+        deal_to_market_pct=Decimal("10"),
+        net_to_market_pct=Decimal("2"),
+        free_float_market_value=Decimal("50000"),
+        buy_seats=tuple(seat(TradingBillboardSide.BUY, rank) for rank in range(1, 6)),
+        sell_seats=tuple(seat(TradingBillboardSide.SELL, rank) for rank in range(1, 6)),
+    )
+
+    def completed_run(ingestion_id: UUID) -> IngestionRun:
+        return IngestionRun(
+            ingestion_id=ingestion_id,
+            provider_code=ProviderCode.EASTMONEY,
+            dataset_code=DatasetCode.TRADING_BILLBOARD,
+            status=IngestionStatus.SUCCEEDED,
+            requested_at=NOW,
+            started_at=NOW,
+            finished_at=NOW,
+            request_params={"trade_date": TRADE_DATE.isoformat()},
+            fetched_rows=11,
+            accepted_rows=11,
+        )
+
+    def manifest(ingestion_id: UUID, suffix: str) -> RawManifest:
+        return RawManifest(
+            raw_id=uuid4(),
+            ingestion_id=ingestion_id,
+            object_path=f"eastmoney/trading_billboard/{suffix}.jsonl",
+            file_format=RawFileFormat.JSONL,
+            content_sha256=suffix[0] * 64,
+            byte_size=100,
+            row_count=11,
+            schema_version="eastmoney.trading_billboard.v1",
+        )
+
+    first_id = uuid4()
+    persistence.commit_success(
+        completed_run(first_id), manifest(first_id, "a-first"), (), (original,)
+    )
+    with database_engine.connect() as connection:
+        first = connection.execute(
+            text("""
+                select entry_id, ingestion_id, content_hash, created_at, updated_at
+                from billboard.entry where source_event_id='persist-event'
+            """)
+        ).one()
+
+    identical_id = uuid4()
+    identical = persistence.commit_success(
+        completed_run(identical_id), manifest(identical_id, "b-identical"), (), (original,)
+    )
+    with database_engine.connect() as connection:
+        second = connection.execute(
+            text("""
+                select entry_id, ingestion_id, content_hash, created_at, updated_at
+                from billboard.entry where source_event_id='persist-event'
+            """)
+        ).one()
+    assert second == first
+    assert identical.unchanged_entries == 1
+
+    revised = replace(
+        original,
+        reason_text="修订原因",
+        buy_seats=tuple(replace(item, seat_name="修订营业部") for item in original.buy_seats),
+        sell_seats=tuple(replace(item, seat_name="修订营业部") for item in original.sell_seats),
+    )
+    revision_id = uuid4()
+    persistence.commit_success(
+        completed_run(revision_id), manifest(revision_id, "c-revision"), (), (revised,)
+    )
+    with database_engine.connect() as connection:
+        revision = connection.execute(
+            text("""
+                select entry_id, ingestion_id, content_hash
+                from billboard.entry where source_event_id='persist-event'
+            """)
+        ).one()
+        names = (
+            connection.execute(
+                text("select distinct seat_name from billboard.seat where entry_id=:entry_id"),
+                {"entry_id": first.entry_id},
+            )
+            .scalars()
+            .all()
+        )
+    assert revision.entry_id == first.entry_id
+    assert revision.ingestion_id == revision_id
+    assert revision.content_hash == trading_billboard_content_hash(revised)
+    assert names == ["修订营业部"]
+
+    broken = replace(
+        revised,
+        reason_text="不得提交的修订",
+        buy_seats=(replace(revised.buy_seats[0], symbol="SSE:600001"),),
+    )
+    broken_id = uuid4()
+    with pytest.raises(IntegrityError):
+        persistence.commit_success(
+            completed_run(broken_id), manifest(broken_id, "d-broken"), (), (broken,)
+        )
+    with database_engine.connect() as connection:
+        after_failure = connection.execute(
+            text("""
+                select ingestion_id, content_hash
+                from billboard.entry where source_event_id='persist-event'
+            """)
+        ).one()
+        broken_run_count = connection.scalar(
+            text("select count(*) from ingestion.ingestion_run where ingestion_id=:id"),
+            {"id": broken_id},
+        )
+    assert after_failure.ingestion_id == revision_id
+    assert after_failure.content_hash == trading_billboard_content_hash(revised)
+    assert broken_run_count == 0
+
+
+def test_replay_stock_lookup_enforces_type_and_lifecycle(database_engine: Engine) -> None:
+    _prepare_api_data(database_engine)
+    persistence = PostgreSQLPersistence(database_engine)
+
+    assert persistence.known_stock_symbols_for_date({SYMBOL}, TRADE_DATE) == {SYMBOL}
+
+    with database_engine.begin() as connection:
+        connection.execute(
+            text("update core.security set ipo_date=:future_date where symbol=:symbol"),
+            {"future_date": TRADE_DATE + timedelta(days=1), "symbol": SYMBOL},
+        )
+    assert persistence.known_stock_symbols_for_date({SYMBOL}, TRADE_DATE) == set()
+
+    with database_engine.begin() as connection:
+        connection.execute(
+            text("""
+                update core.security
+                set ipo_date=null, security_type='index'
+                where symbol=:symbol
+            """),
+            {"symbol": SYMBOL},
+        )
+    assert persistence.known_stock_symbols_for_date({SYMBOL}, TRADE_DATE) == set()
 
 
 def _envelopes[

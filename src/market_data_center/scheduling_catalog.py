@@ -8,6 +8,7 @@ DAILY_RUN_JOB_ID = "daily-run"
 STOCK_DAILY_INDICATOR_JOB_ID = "stock-daily-indicators-daily"
 STALE_RUN_RECOVERY_JOB_ID = "recover-stale-ingestion-runs"
 DEDUCTED_PROFIT_JOB_ID = "deducted-profit-daily"
+SHAREHOLDER_COUNT_DAILY_JOB_ID = "shareholder-count-daily"
 STOCK_POOL_JOB_ID = "mainboard-price-limit-stock-pools-daily"
 EOD_QUOTE_SNAPSHOT_JOB_ID = "eod-quote-snapshot-daily"
 CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID = "call-auction-market-snapshot-daily"
@@ -16,6 +17,7 @@ TODAY_LIMIT_UP_SNAPSHOT_JOB_ID = "today-limit-up-snapshot-daily"
 PYTDX_POOL_REFRESH_JOB_ID = "pytdx-pool-refresh"
 CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID = "close-price-new-highs-120d-daily"
 BOARD_INDEX_DAILY_BAR_JOB_ID = "board-index-883423-daily-bar"
+TRADING_BILLBOARD_JOB_ID = "trading-billboard-daily"
 SCHEDULER_TIMEZONE = "Asia/Shanghai"
 JOB_TIMEOUT_SECONDS = 21_600
 
@@ -79,6 +81,18 @@ WORKFLOW_DEFINITIONS = (
         ("deducted_profit",),
     ),
     WorkflowDefinition(
+        "shareholder_count_daily",
+        "股东人数每日增量同步",
+        "按滚动三十日公告窗口同步股东人数点时事实。",
+        ("shareholder_count_daily",),
+    ),
+    WorkflowDefinition(
+        "shareholder_count_backfill",
+        "股东人数受控历史回填",
+        "按证券顺序执行显式确认的股东人数全历史回填。",
+        ("shareholder_count_backfill",),
+    ),
+    WorkflowDefinition(
         "stock_pool",
         "沪深主板昨日涨跌停股票池",
         "在日 K 与每日指标成功后构建下一交易日生效的不可变涨跌停股票池。",
@@ -137,6 +151,12 @@ WORKFLOW_DEFINITIONS = (
         "883423 板块日线收盘采集",
         "收盘后采集固定同花顺板块 THS:883423 日线, 并补齐尾部缺口。",
         ("collect_board_index_daily_bars",),
+    ),
+    WorkflowDefinition(
+        "trading_billboard_daily",
+        "股票龙虎榜采集",
+        "采集东方财富每日上榜证券汇总及买入/卖出前五席位。",
+        ("collect_trading_billboard",),
     ),
 )
 
@@ -202,6 +222,20 @@ def job_definitions(settings: SchedulerSettings) -> tuple[JobDefinition, ...]:
             timeout,
             "启动及每小时恢复超过 60 分钟的 running 记录",
             hour=20,
+            minute=0,
+        ),
+        JobDefinition(
+            SHAREHOLDER_COUNT_DAILY_JOB_ID,
+            "股东人数每日增量同步",
+            "按滚动三十日公告窗口同步 Tushare 股东人数点时事实。",
+            "shareholder_count_daily",
+            "cron",
+            "每天 21:00",
+            timezone,
+            settings.shareholder_count_daily_enabled,
+            timeout,
+            "失败保持显式缺口; 下一日窗口重扫或手工命令重试",
+            hour=21,
             minute=0,
         ),
         JobDefinition(
@@ -296,6 +330,21 @@ def job_definitions(settings: SchedulerSettings) -> tuple[JobDefinition, ...]:
             minute=30,
         ),
         JobDefinition(
+            TRADING_BILLBOARD_JOB_ID,
+            "股票龙虎榜采集",
+            "采集东方财富每日上榜证券汇总及买入/卖出前五席位。",
+            "trading_billboard_daily",
+            "cron",
+            "周一至周五 20:30",
+            timezone,
+            settings.trading_billboard_enabled,
+            timeout,
+            "非交易日正常跳过; 失败保持显式缺口, 由下一次调度或显式日期命令重试",
+            day_of_week="mon-fri",
+            hour=20,
+            minute=30,
+        ),
+        JobDefinition(
             STALE_RUN_RECOVERY_JOB_ID,
             "陈旧运行恢复",
             "恢复中断的采集与 operations 记录。",
@@ -314,12 +363,12 @@ def job_definitions(settings: SchedulerSettings) -> tuple[JobDefinition, ...]:
             "有界探测节点能力, 成功时原子发布, 失败时保留 last-good。",
             "pytdx_pool_refresh",
             "interval",
-            "每 12 小时",
+            "每 1 小时",
             timezone,
             True,
             timeout,
             "刷新失败保留 last-good; 新旧池均无效时 Worker 启动失败",
-            interval_hours=12,
+            interval_hours=1,
         ),
     )
 

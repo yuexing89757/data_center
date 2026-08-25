@@ -133,6 +133,19 @@ batch code and bid/ask levels 1–5; a missing price with positive volume is pre
 fact. The retired limit-up-pool auction collector is not registered by the Worker, while its
 historical workflow and stored facts remain readable.
 
+Eastmoney trading-billboard collection is opt-in and remains disabled until source-rights review
+is recorded (`TRADING_BILLBOARD_ENABLED=false`). The explicit command requires
+`--confirm-eastmoney-source-terms-reviewed`; the Worker catalog slot is fixed at weekdays 20:30
+Asia/Shanghai. It captures only daily listed-security summaries and buy/sell top-five seat details,
+writes immutable JSONL Raw (`eastmoney.trading_billboard.v1`) before normalization, and does not
+derive investor identities or trading judgments.
+
+Authenticated reads are `GET /api/v1/trading-billboard/by-date`,
+`GET /api/v1/trading-billboard/by-symbol/{code}`, and
+`GET /api/v1/trading-billboard/seats`. Date queries never fall back or fetch live data; ranges are
+limited to 366 calendar days, pages to 500 records, and offsets to 10,000. Seat lookup accepts
+exactly one exact `seat_code` or trimmed exact `seat_name`, with optional `side=buy|sell`.
+
 Daily Bar bulk ingestion keeps one provider/Raw/ingestion lineage unit per security while writing
 validated facts in bounded PostgreSQL transactions. Configure `DAILY_BAR_WRITE_BATCH_SIZE`
 (default 100, range 1..500); see `docs/DailyBar批量写入与性能基线-2026-08-11.md`.
@@ -212,4 +225,4 @@ the current Shanghai trading date only. It remains disabled unless
 `--confirm-current-day-single-symbol` is supplied, is never scheduled, and stores virtual auction
 indicative/matching observations—not exchange trade ticks or order-by-order data.
 
-The CLI uses deterministic provider routing by default: BaoStock then AKShare for security/calendar, and pytdx only for Daily Bars. At startup and every 12 hours, the Worker probes a bounded candidate set and atomically publishes one versioned pool with quote, SSE, SZSE and BSE capability flags. Consumers filter that pool by capability, use bounded connection failover, and keep one endpoint for a successful batch. Missing or unavailable bars remain explicit gaps and are not filled from other providers. Public TDX nodes have no availability or rate-limit guarantee. Use `--provider baostock|akshare|pytdx` to bypass routing for reproducible diagnostics.
+The CLI uses deterministic provider routing by default: BaoStock then AKShare for security/calendar, and pytdx only for Daily Bars. At startup and every hour, the Worker probes a bounded candidate set and atomically publishes one versioned pool with quote, SSE, SZSE and BSE capability flags. Consumers filter that pool by capability, use bounded connection failover, and keep one endpoint for a successful batch. Missing or unavailable bars remain explicit gaps and are not filled from other providers. Public TDX nodes have no availability or rate-limit guarantee. Use `--provider baostock|akshare|pytdx` to bypass routing for reproducible diagnostics.

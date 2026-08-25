@@ -52,8 +52,34 @@ pytdx 还可从通达信 `T0002/hq_cache` 读取行业和概念完整快照，�
 20:30 执行 Tushare 每日指标，并每小时恢复超时停留在 `running` 的采集批次。单线程执行器
 保证任务不重叠，PostgreSQL advisory lock 保证同一时刻只有一个 Scheduler 实例持有主锁。
 
+龙虎榜任务在受控目录中固定为周一至周五 20:30，但默认
+`TRADING_BILLBOARD_ENABLED=false`，生产环境必须在东财来源权利审查留档后才可启用。显式手工采集为
+`market-data-center trading-billboard-collect --trade-date YYYY-MM-DD --confirm-eastmoney-source-terms-reviewed`；
+回填使用 `--start-date/--end-date` 且最长 366 个自然日。任务只采每日上榜证券汇总与买入/卖出前五
+席位，Raw 路径按 `eastmoney/trading_billboard/YYYY/MM/DD/<ingestion_id>.jsonl` 分区，schema 为
+`eastmoney.trading_billboard.v1`。非交易日以零行成功结束；失败不跨日期、不切换来源拼批次。
+
 每天 20:00（包括周末）执行扣非净利润增量同步。该任务按披露变化发现受影响证券，不按
 交易日触发，也不进行全市场历史回填；详见 ADR-0020。
+
+股东人数增量任务登记为每天 21:00（包括周末）运行，读取截至当天最近 30 个自然日的
+Tushare 公告窗口；`SHAREHOLDER_COUNT_DAILY_ENABLED=false` 为默认值，只有运维显式启用后
+Worker 才注册该任务。接口命中 3000 行上限时按公告日期递归拆分，单日全市场仍满额时改为
+逐证券查询；一次日增量的全部请求批次在同一事务发布，任何分支失败都不写入部分事实。
+该调度只做滚动增量，不自动启动全历史回填。
+
+全历史回填是单独的受控命令，按包含已退市股票的标准 symbol 排序逐证券提交，可用
+`--resume-after-symbol` 从已完成证券之后继续。交互运行会打印范围并要求输入确认；无人值守
+必须显式给出 `--yes`。以下命令只展示调用方式，不代表已对生产环境执行：
+
+Tushare 返回字段存在但 `holder_num` 为空的行时，Worker 保留 Raw、登记
+`shareholder_count.missing_source_value` 质量拒绝并跳过 Core 写入；同批合法行继续提交。
+零、负数、非整数字符串或字段缺失仍会硬失败。
+
+```bash
+uv run market-data-center shareholder-count-daily --as-of-date 2026-08-24 --provider tushare
+uv run market-data-center shareholder-count-backfill --cutoff-date 2026-08-24 --yes --provider tushare
+```
 
 周一至周五 21:00 构建沪深主板昨日涨停与昨日跌停两份不可变股票池。触发时间不是依赖
 完成的证明：任务还会检查 basis 当日 `daily_market`、`stock_daily_indicator` WorkflowRun
@@ -87,7 +113,7 @@ Manifest、质量结果和 ingestion lineage。
 验证原始冻结 SSE/SZSE listed-stock 全集的确定性身份后，才可通过后续接受决策重新启用。
 
 Worker 启动时先探测一个有界候选集，按 quote、SSE 日 K、SZSE 日 K 和 BSE 日 K 能力生成
-统一的版本化 PYTDX 节点池，之后每 12 小时刷新。刷新失败时继续使用最后一个有效池；首次
+统一的版本化 PYTDX 节点池，之后每 1 小时刷新。刷新失败时继续使用最后一个有效池；首次
 启动且新旧池均不可用时拒绝启动。消费者按能力筛选节点，建立会话时有限 failover，成功
 会话不切换 endpoint。公共节点无 SLA，可能限流、下线或缺少 BSE。Raw、节点池和 JobStore
 必须使用持久目录，例如：
@@ -100,7 +126,9 @@ SCHEDULER_STORE_PATH=/var/lib/market-data-center/scheduler/jobs.sqlite
 EOD_QUOTE_SNAPSHOT_ENABLED=true
 CALL_AUCTION_SNAPSHOT_ENABLED=true
 CALL_AUCTION_MARKET_SERIES_ENABLED=true
+TRADING_BILLBOARD_ENABLED=false
 BOARD_INDEX_DAILY_BAR_ENABLED=true
+SHAREHOLDER_COUNT_DAILY_ENABLED=false
 ```
 
 ### 竞价序列诊断与保留

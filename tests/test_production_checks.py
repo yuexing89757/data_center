@@ -24,6 +24,38 @@ VIEW_COUNT = cast(Any, SMOKE_CHECKS["_view_count"])
 PUBLISHED_FUNCTIONS = cast(tuple[str, ...], FASTAPI_CHECKS["PUBLISHED_FUNCTIONS"])
 
 
+def test_trading_billboard_migration_is_bounded_private_and_read_only() -> None:
+    migration = (
+        (MIGRATION_DIR / "20260824000200_create_trading_billboard.sql")
+        .read_text(encoding="utf-8")
+        .lower()
+    )
+
+    assert "create schema if not exists billboard" in migration
+    assert "create table billboard.entry" in migration
+    assert "create table billboard.seat" in migration
+    assert "'trading_billboard'" in migration
+    assert "'trading_billboard_daily'" in migration
+    assert "enable row level security" in migration
+    assert "content_hash ~ '^[0-9a-f]{64}$'" in migration
+    assert "foreign key (entry_id, source_code, source_event_id, symbol, trade_date)" in migration
+    assert "query_trading_billboard_by_date" in migration
+    assert "query_trading_billboard_by_symbol" in migration
+    assert "query_trading_billboard_by_seat" in migration
+    assert migration.count("security definer") == 3
+    assert migration.count("set statement_timeout = '5s'") == 3
+    assert migration.count("using errcode = '22023'") >= 3
+    assert "p_limit > 500" in migration
+    assert "p_offset > 10000" in migration
+    assert "p_end_date - p_start_date > 365" in migration
+    assert "from public, anon, authenticated" in migration
+    assert "to market_data_api" in migration
+    assert "grant select, insert, update on billboard.entry" in migration
+    assert "grant select, insert, delete on billboard.seat" in migration
+    assert "grant delete on billboard.entry" not in migration
+    assert all(token not in migration for token in ("schtasks", "crontab", "oncalendar"))
+
+
 def test_auction_series_five_level_migration_is_bounded_and_preserves_history() -> None:
     migration = (
         (MIGRATION_DIR / "20260818000100_enrich_call_auction_market_series.sql")
@@ -125,6 +157,46 @@ def test_latest_stock_daily_indicator_rpc_is_private_and_bounded() -> None:
     assert "from anon" in migration
     assert "from authenticated" in migration
     assert "to market_data_api" in migration
+
+
+def test_shareholder_count_migration_is_append_only_bitemporal_and_bounded() -> None:
+    migration = (MIGRATION_DIR / "20260824000100_create_shareholder_count.sql").read_text(
+        encoding="utf-8"
+    )
+    normalized = migration.lower()
+
+    assert "create table core.shareholder_count" in normalized
+    assert "primary key (symbol, statistics_date, revision_key)" in normalized
+    assert "statistics_date <= announcement_date" in normalized
+    assert "shareholder_count > 0" in normalized
+    assert "source_code = 'tushare'" in normalized
+    assert "first_observed_at timestamptz not null default now()" in normalized
+    assert "grant select, insert on core.shareholder_count to market_data_worker" in normalized
+    assert "grant update" not in normalized
+    assert "grant delete" not in normalized
+    for function_name in (
+        "query_shareholder_counts_as_of",
+        "query_shareholder_count_history_as_of",
+        "query_shareholder_count_history_latest",
+    ):
+        assert f"function api_v1.{function_name}" in normalized
+    assert normalized.count("language plpgsql") == 3
+    assert normalized.count("stable") >= 3
+    assert normalized.count("security definer") == 3
+    assert normalized.count("set statement_timeout = '5s'") == 3
+    assert "errcode = '22023'" in normalized
+    assert "cardinality(p_symbols) > 500" in normalized
+    assert "greatest(1, least(coalesce(p_limit, 500), 2000))" in normalized
+    assert "first_observed_at <" in normalized
+    assert "at time zone 'asia/shanghai'" in normalized
+    assert "row_number() over" in normalized
+    assert "lag(" in normalized
+    assert "return query" in normalized
+    assert "from public" in normalized
+    assert "to anon" in normalized
+    assert "to authenticated" in normalized
+    assert "to market_data_api" in normalized
+    assert not re.search(r"(?im)^grant\s+(update|delete|all).*core\.shareholder_count", normalized)
 
 
 def test_fastapi_preflight_and_docs_publish_realtime_auction_limits() -> None:
@@ -784,3 +856,12 @@ def test_active_release_files_do_not_reference_legacy_pytdx_settings() -> None:
     release_text = "\n".join(path.read_text(encoding="utf-8") for path in files if path.is_file())
 
     assert all(setting not in release_text for setting in legacy_settings)
+
+
+def test_trading_billboard_rpcs_reject_null_pagination_bounds() -> None:
+    migration = (
+        PROJECT_ROOT / "supabase/migrations/20260824000200_create_trading_billboard.sql"
+    ).read_text(encoding="utf-8")
+
+    assert migration.count("p_limit is null") == 3
+    assert migration.count("p_offset is null") == 3

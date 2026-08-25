@@ -18,6 +18,8 @@ ADR 记录已经接受的架构决策。其优先级低于项目宪法，高于�
 
 ## 当前 ADR
 
+- `ADR-0047-股东人数点时事实与Tushare采集.md`：新增 ShareholderCount 追加式点时事实，以 Tushare `stk_holdernumber` 受控回填并由 Worker 每日增量采集，区分严格 as-of 与 current-known 查询。
+- `ADR-0046-东方财富股票龙虎榜采集与只读契约.md`：新增独立 TradingBillboard 领域，以东方财富采集 A 股每日上榜汇总和买卖前五席位，提供按日期、股票和席位的有界只读契约。
 - `ADR-0045-腾讯实时五档API请求时直连且不落库.md`：实时五档 FastAPI 在请求时有界直连腾讯且不落库；仅对该接口替代 ADR-0044 的持久化读取边界。
 - `ADR-0044-腾讯批量实时五档Provider与只读契约.md`：其 Provider 字段、单位、Raw replay 与显式采集决定继续有效；持久化 FastAPI 读取边界已由 ADR-0045 替代。
 - `ADR-0043-六位股票代码集合最新每日指标只读契约.md`：按 1–500 个六位股票代码解析标准 symbol，逐股票返回 Core 热数据中最新每日指标的有界 FastAPI 只读契约。
@@ -29,7 +31,7 @@ ADR 记录已经接受的架构决策。其优先级低于项目宪法，高于�
 - `ADR-0035-883423板块MA5乖离率只读契约.md`：其数据库唯一读取决定已由 ADR-0036 替代；MA5、BIAS5、前日方向及 30 日极值公式继续有效。
 - `ADR-0028-暂停全市场竞价Raw重放与移除自动最终化.md`：保留 09:25:30 五档来源采集和 Raw，暂停缺少原冻结全集身份的 replay，并移除 21:30 自动最终化及旧 JobStore 残留；不增加替代计划。
 - `ADR-0027-沪深全市场开盘竞价快照与涨停池最终化.md`：接受单 endpoint 沪深 listed-stock 来源快照；其 Raw replay、调度时点与 21:30 自动最终化部分已由 ADR-0028 及其澄清替代。
-- `ADR-0026-统一PYTDX能力节点池.md`：Daily Bar 与五档行情共用带能力标记的本地节点池，由 Worker 启动时及每 12 小时有界刷新，失败时保留 last-good。
+- `ADR-0026-统一PYTDX能力节点池.md`：Daily Bar 与五档行情共用带能力标记的本地节点池，由 Worker 启动时及每 1 小时有界刷新，失败时保留 last-good。
 - `ADR-0023-可转债领域.md`：新增 `convertible_bond` 独立 schema（基础条款/每日行情/转股价调整/赎回事件），复用 core.security 但不复用 core.daily_bar；Tushare cb_* 主源。
 - `ADR-0022-集合竞价涨停池五档快照采集.md`：冻结当日涨停池，由单个 Worker 会话在 09:15–09:25 有界采样，并以 live validation 门禁防止误解竞价档位。
 - `ADR-0021-沪深主板涨跌停事实与通用股票池.md`：内部未复权日 K 与每日指标确定性计算对称涨跌停事实和不可变股票池，不依赖第三方榜单。

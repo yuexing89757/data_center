@@ -101,6 +101,11 @@ from market_data_center.domain.records import (
     TradeStatus,
     TradingDayRecord,
 )
+from market_data_center.domain.shareholder_count import (
+    ShareholderCountRecord,
+    shareholder_count_revision_key,
+    validate_shareholder_counts,
+)
 from market_data_center.domain.stock_daily_indicator import (
     PriceLimitStatus,
     StockDailyIndicatorFinding,
@@ -124,6 +129,16 @@ from market_data_center.domain.stock_pool import (
     StockPoolDefinition,
     StockPoolMember,
     StockPoolSnapshot,
+)
+from market_data_center.domain.trading_billboard import (
+    TradingBillboardFinding,
+    TradingBillboardRecord,
+    TradingBillboardSeatRecord,
+    TradingBillboardSide,
+    TradingBillboardValidationResult,
+    trading_billboard_content_hash,
+    trading_billboard_natural_key,
+    validate_trading_billboards,
 )
 from market_data_center.domain.validation import (
     ValidationFinding,
@@ -205,6 +220,7 @@ __all__ = [
     "SecurityStatus",
     "SecurityType",
     "ShareCapitalRecord",
+    "ShareholderCountRecord",
     "StockDailyIndicatorFinding",
     "StockDailyIndicatorSnapshotRecord",
     "StockDailyIndicatorValidationResult",
@@ -215,6 +231,11 @@ __all__ = [
     "StockPoolMember",
     "StockPoolSnapshot",
     "TradeStatus",
+    "TradingBillboardFinding",
+    "TradingBillboardRecord",
+    "TradingBillboardSeatRecord",
+    "TradingBillboardSide",
+    "TradingBillboardValidationResult",
     "TradingDayRecord",
     "ValidationFinding",
     "ValidationRule",
@@ -227,8 +248,11 @@ __all__ = [
     "deducted_profit_revision_key",
     "realtime_quote_natural_key",
     "realtime_quote_natural_key_json",
+    "shareholder_count_revision_key",
     "stock_daily_indicator_natural_key",
     "stock_daily_indicator_natural_key_json",
+    "trading_billboard_content_hash",
+    "trading_billboard_natural_key",
     "validate_board_index_constituent_snapshot",
     "validate_board_index_daily_bars",
     "validate_capital",
@@ -238,5 +262,7 @@ __all__ = [
     "validate_deducted_profits",
     "validate_member_snapshot",
     "validate_realtime_quotes",
+    "validate_shareholder_counts",
     "validate_stock_daily_indicators",
+    "validate_trading_billboards",
 ]

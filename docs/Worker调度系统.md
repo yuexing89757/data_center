@@ -58,7 +58,7 @@
 5. **锁内依次**：
    - **立即同步执行一次** `run_stale_recovery_job`（清理上次进程残留的 running 记录）
    - **刷新 PYTDX 节点池**：探测并原子发布；失败时使用 last-good；新旧池均无效则拒绝启动
-   - 构建调度器 `build_scheduler()`，注册每 12 小时刷新任务和其他启用任务
+   - 构建调度器 `build_scheduler()`，注册每 1 小时刷新任务和其他启用任务
    - 启动 Worker Admin Page（`127.0.0.1:8765`）
    - `scheduler.start()`（**阻塞**，直到收到 shutdown）
 6. **退出时**（finally）：关 admin page、关调度器、释放锁、释放连接池
@@ -99,7 +99,7 @@ BlockingScheduler
 | 9 | `close-price-new-highs-120d-daily` | 沪深120交易日收盘新高快照 | `close_price_new_highs_120d` | cron 周一至周五 | 21:30 | ✅ |
 | 9 | `today-limit-up-snapshot-daily` | 同日涨停不可变快照 | `today_limit_up_snapshot` | cron 周一至周五 | 22:00 | 默认关闭 |
 | 10 | `recover-stale-ingestion-runs` | 陈旧运行恢复 | `stale_run_recovery` | interval | 每 1 小时 | ✅ |
-| 11 | `pytdx-pool-refresh` | PYTDX 节点池刷新 | `pytdx_pool_refresh` | interval | 每 12 小时 | ✅ |
+| 11 | `pytdx-pool-refresh` | PYTDX 节点池刷新 | `pytdx_pool_refresh` | interval | 每 1 小时 | ✅ |
 
 > 时间与调度策略固定在 `scheduling_catalog.py`，不能通过 `.env` 覆盖。全市场序列固定 09:15:00--09:25:20 每 20 秒一轮，共 32 轮、每批最多 80 只。09:25:30 单次快照继续使用 `default` executor，与序列表和会话完全隔离。其他任务仍在单线程 `default` executor 串行执行。
 

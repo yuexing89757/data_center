@@ -42,9 +42,15 @@ from market_data_center.persistence.close_price_new_highs_postgres import (
 )
 from market_data_center.persistence.operations_postgres import PostgreSQLOperationsPersistence
 from market_data_center.persistence.stock_pool_postgres import PostgreSQLStockPoolPersistence
+from market_data_center.persistence.trading_billboard_postgres import (
+    PostgreSQLTradingBillboardPersistence,
+)
 from market_data_center.pipeline import BoardIndexIngestionPipeline, IngestionPipeline
-from market_data_center.providers import create_board_index_provider
+from market_data_center.providers import create_board_index_provider, create_provider
 from market_data_center.providers.contracts import ProviderError
+from market_data_center.providers.eastmoney_trading_billboard import (
+    EastmoneyTradingBillboardProvider,
+)
 from market_data_center.providers.pytdx_hq import PytdxHqProvider
 from market_data_center.providers.pytdx_pool import (
     PytdxCapability,
@@ -65,10 +71,12 @@ from market_data_center.scheduling_catalog import (
     EOD_QUOTE_SNAPSHOT_JOB_ID,
     PYTDX_POOL_REFRESH_JOB_ID,
     SCHEDULER_TIMEZONE,
+    SHAREHOLDER_COUNT_DAILY_JOB_ID,
     STALE_RUN_RECOVERY_JOB_ID,
     STOCK_DAILY_INDICATOR_JOB_ID,
     STOCK_POOL_JOB_ID,
     TODAY_LIMIT_UP_SNAPSHOT_JOB_ID,
+    TRADING_BILLBOARD_JOB_ID,
     JobDefinition,
     job_definition,
     job_definitions,
@@ -79,7 +87,9 @@ from market_data_center.settings import (
     SchedulerSettings,
     WorkerSettings,
 )
+from market_data_center.shareholder_count_service import ShareholderCountService
 from market_data_center.stock_pool_service import StockPoolService
+from market_data_center.trading_billboard_service import TradingBillboardService
 
 SCHEDULER_LOCK_KEY = "market-data-center:scheduler"
 LOGGER = getLogger(__name__)
@@ -429,6 +439,49 @@ def run_deducted_profit_job() -> None:
         engine.dispose()
 
 
+def run_shareholder_count_daily_job() -> None:
+    """Synchronize the rolling shareholder-count disclosure window inside the Worker."""
+    settings = WorkerSettings()  # type: ignore[call-arg]
+    scheduling = SchedulerSettings()
+    engine = create_engine(
+        sqlalchemy_url(settings.database_url.get_secret_value()), pool_pre_ping=True
+    )
+    scheduled_for = _scheduled_job_fire_time(
+        SHAREHOLDER_COUNT_DAILY_JOB_ID,
+        scheduling,
+        weekdays_only=False,
+    )
+    as_of_date = datetime.now(ZoneInfo(SCHEDULER_TIMEZONE)).date()
+    try:
+        persistence = PostgreSQLPersistence(engine)
+        execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
+            WorkflowCode.SHAREHOLDER_COUNT_DAILY,
+            scheduled_for,
+            TriggerSource.SCHEDULED,
+        )
+        try:
+            with create_provider("tushare") as provider:
+                service = ShareholderCountService(
+                    IngestionPipeline(
+                        provider=provider,
+                        persistence=persistence,
+                        raw_store=LocalRawStore(settings.raw_data_root),
+                    ),
+                    persistence,
+                )
+                execution.step(
+                    "shareholder_count_daily",
+                    1,
+                    lambda: service.sync_daily(as_of_date),
+                )
+        except BaseException as error:
+            execution.fail(error)
+            raise
+        execution.succeed()
+    finally:
+        engine.dispose()
+
+
 def run_stock_pool_job() -> None:
     """Build exact next-trading-day main-board limit-up/down pools."""
     settings = WorkerSettings()  # type: ignore[call-arg]
@@ -598,6 +651,40 @@ def run_today_limit_up_snapshot_job() -> None:
         engine.dispose()
 
 
+def run_trading_billboard_job() -> None:
+    """Collect one exact Shanghai trading-date billboard batch when opt-in is enabled."""
+    settings = WorkerSettings()  # type: ignore[call-arg]
+    scheduling = SchedulerSettings()
+    engine = create_engine(
+        sqlalchemy_url(settings.database_url.get_secret_value()), pool_pre_ping=True
+    )
+    try:
+        fire_time = _scheduled_job_fire_time(TRADING_BILLBOARD_JOB_ID, scheduling)
+        trade_date = fire_time.astimezone(ZoneInfo(SCHEDULER_TIMEZONE)).date()
+        persistence = PostgreSQLTradingBillboardPersistence(engine)
+        execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
+            WorkflowCode.TRADING_BILLBOARD_DAILY,
+            fire_time,
+            TriggerSource.SCHEDULED,
+        )
+        try:
+            if persistence.is_trading_day(trade_date):
+                service = TradingBillboardService(
+                    persistence=persistence,
+                    raw_store=LocalRawStore(settings.raw_data_root),
+                    provider=EastmoneyTradingBillboardProvider(),
+                )
+                execution.step("collect_trading_billboard", 1, lambda: service.collect(trade_date))
+            else:
+                execution.step("collect_trading_billboard", 1, lambda: 0)
+        except BaseException as error:
+            execution.fail(error)
+            raise
+        execution.succeed()
+    finally:
+        engine.dispose()
+
+
 def _scheduled_fire_time(
     hour: int,
     minute: int,
@@ -667,6 +754,7 @@ def build_scheduler(settings: SchedulerSettings | None = None) -> BlockingSchedu
         STOCK_DAILY_INDICATOR_JOB_ID: run_stock_daily_indicator_job,
         STALE_RUN_RECOVERY_JOB_ID: run_stale_recovery_job,
         DEDUCTED_PROFIT_JOB_ID: run_deducted_profit_job,
+        SHAREHOLDER_COUNT_DAILY_JOB_ID: run_shareholder_count_daily_job,
         STOCK_POOL_JOB_ID: run_stock_pool_job,
         EOD_QUOTE_SNAPSHOT_JOB_ID: run_eod_quote_snapshot_job,
         CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID: run_call_auction_market_snapshot_job,
@@ -674,6 +762,7 @@ def build_scheduler(settings: SchedulerSettings | None = None) -> BlockingSchedu
         TODAY_LIMIT_UP_SNAPSHOT_JOB_ID: run_today_limit_up_snapshot_job,
         CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID: run_close_price_new_highs_120d_job,
         BOARD_INDEX_DAILY_BAR_JOB_ID: run_board_index_daily_bar_job,
+        TRADING_BILLBOARD_JOB_ID: run_trading_billboard_job,
         PYTDX_POOL_REFRESH_JOB_ID: run_pytdx_pool_refresh_job,
     }
     for definition in job_definitions(settings):
