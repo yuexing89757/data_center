@@ -52,7 +52,8 @@ ShareholderCountRecord(
 
 - `symbol` 必须是 `core.security` 中已知的沪、深或北 A 股标准代码。
 - `statistics_date <= announcement_date`。
-- `shareholder_count` 必须为正整数；缺失、零和负数均为硬错误。
+- `shareholder_count` 标准记录必须为正整数。Tushare `holder_num` 字段存在但值为空时保留 Raw、
+  登记质量拒绝且不生成标准记录；字段缺失以及非空的零、负数和非整数字符串仍为硬错误。
 - 首期 `source_code` 只能为 `tushare`。
 - 同一标准事实的确定性修订键为
   `SHA-256(symbol, statistics_date, announcement_date, shareholder_count)`；字段使用无歧义的
@@ -102,6 +103,10 @@ schema 为：
 ```text
 tushare.shareholder_count.v1
 ```
+
+当 `holder_num` 为 NULL、空字符串或纯空白时，Raw 保留该行及空值证据，Adapter 省略对应标准记录；
+Pipeline 用 `shareholder_count.missing_source_value` 记录聚合拒绝数。合法事实和质量结果在同一
+事务发布，Operations 将有接受也有拒绝的执行标记为 `partial`。
 
 每个来源请求保存不可变 Raw 对象、请求参数、SHA-256 和 manifest。Raw 保留来源字段名；从 Raw
 重放时由版本化 normalizer 生成相同标准记录。`TUSHARE_TOKEN` 只从环境变量读取，不进入请求
@@ -271,7 +276,8 @@ FastAPI 路由，因此不修改 `contracts/fastapi-openapi-v1.json`；消费者
 
 - Provider 请求失败、权限不足或限流：IngestionRun/WorkflowRun 失败，保留诊断信息但不包含 Token。
 - Raw 成功保存、标准化失败：保留 Raw 和失败质量结果，不写 Core。
-- 未知证券、日期倒置、非正人数、字段缺失、修订键不匹配或批内重复：硬质量失败。
+- 未知证券、日期倒置、非正人数、非空非整数、字段缺失、修订键不匹配或批内重复：硬质量失败。
+- 字段存在但 `holder_num` 为空：Raw 保留、质量拒绝、Core 跳过，其余合法行继续。
 - 恰好 3000 行且无法继续证明完整：硬质量失败，不降级为警告。
 - 每日窗口合法空响应：成功并记录零事实，不伪造股东人数记录。
 - Core 写入异常：回滚当次数据库事务，IngestionRun 标记失败；Raw 保持不可变。

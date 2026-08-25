@@ -74,7 +74,10 @@ from market_data_center.providers.contracts import (
     ShareholderCountProvider,
 )
 from market_data_center.raw_store import LocalRawStore, StoredRawObject
-from market_data_center.shareholder_count_batch import PreparedShareholderCountBatch
+from market_data_center.shareholder_count_batch import (
+    PreparedShareholderCountBatch,
+    shareholder_count_missing_source_quality_result,
+)
 
 
 class PipelinePersistence(Protocol):
@@ -450,11 +453,24 @@ class IngestionPipeline:
                         {record.symbol for record in records}
                     ),
                 )
-                completed = self._completed_run(run, fetched_rows, len(validated), 0)
+                rejected_rows = fetched_rows - len(validated)
+                quality_results = (
+                    (
+                        shareholder_count_missing_source_quality_result(
+                            quality_result_id=self._uuid_factory(),
+                            ingestion_id=run.ingestion_id,
+                            rejected_rows=rejected_rows,
+                        ),
+                    )
+                    if rejected_rows
+                    else ()
+                )
+                completed = self._completed_run(run, fetched_rows, len(validated), rejected_rows)
                 return PreparedShareholderCountBatch(
                     run=completed,
                     manifest=manifest,
                     records=tuple(self._envelopes(run.ingestion_id, validated)),
+                    quality_results=quality_results,
                 )
             except _RecordedProviderError:
                 raise

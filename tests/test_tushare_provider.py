@@ -333,7 +333,48 @@ def test_shareholder_count_all_market_request_can_succeed_empty() -> None:
     assert batch.records == ()
 
 
-@pytest.mark.parametrize("holder_num", [None, "", "1.5", "0"])
+@pytest.mark.parametrize("missing_count", [None, "", " \t "])
+def test_shareholder_count_keeps_missing_counts_in_raw_but_omits_records(
+    missing_count: object,
+) -> None:
+    class MissingCountClient(FakeClient):
+        def query(
+            self, api_name: str, *, params: Mapping[str, str], fields: Sequence[str]
+        ) -> Sequence[Mapping[str, object]]:
+            if api_name == "stk_holdernumber":
+                return (
+                    {
+                        "ts_code": "600000.SH",
+                        "ann_date": "20260820",
+                        "end_date": "20260630",
+                        "holder_num": "12001",
+                    },
+                    {
+                        "ts_code": "600000.SH",
+                        "ann_date": "20260821",
+                        "end_date": "20260731",
+                        "holder_num": missing_count,
+                    },
+                )
+            return super().query(api_name, params=params, fields=fields)
+
+    batch = TushareProvider(MissingCountClient()).fetch_shareholder_counts(
+        "SSE:600000", date(2026, 8, 1), date(2026, 8, 24)
+    )
+
+    assert len(batch.raw_rows) == 2
+    assert not batch.raw_rows[1]["holder_num"].strip()
+    assert [record.shareholder_count for record in batch.records] == [12001]
+    replayed = normalize_tushare_raw(
+        DatasetCode.SHAREHOLDER_COUNT,
+        batch.schema_version,
+        batch.raw_rows,
+        batch.request_params,
+    )
+    assert replayed == batch.records
+
+
+@pytest.mark.parametrize("holder_num", ["1.5", "0"])
 def test_shareholder_count_rejects_invalid_integer_counts(holder_num: object) -> None:
     class InvalidCountClient(FakeClient):
         def query(
@@ -376,6 +417,24 @@ def test_shareholder_count_rejects_missing_count_field() -> None:
     with pytest.raises(ProviderError, match="missing fields: holder_num"):
         TushareProvider(MissingCountClient()).fetch_shareholder_counts(
             "SSE:600000", date(2026, 8, 1), date(2026, 8, 24)
+        )
+
+    with pytest.raises(ProviderError, match="missing fields: holder_num"):
+        normalize_tushare_raw(
+            DatasetCode.SHAREHOLDER_COUNT,
+            "tushare.shareholder_count.v1",
+            (
+                {
+                    "ts_code": "600000.SH",
+                    "ann_date": "20260820",
+                    "end_date": "20260630",
+                },
+            ),
+            {
+                "source_symbol": "600000.SH",
+                "start_date": "20260801",
+                "end_date": "20260824",
+            },
         )
 
 

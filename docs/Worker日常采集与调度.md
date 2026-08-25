@@ -72,6 +72,10 @@ Worker 才注册该任务。接口命中 3000 行上限时按公告日期递归�
 `--resume-after-symbol` 从已完成证券之后继续。交互运行会打印范围并要求输入确认；无人值守
 必须显式给出 `--yes`。以下命令只展示调用方式，不代表已对生产环境执行：
 
+Tushare 返回字段存在但 `holder_num` 为空的行时，Worker 保留 Raw、登记
+`shareholder_count.missing_source_value` 质量拒绝并跳过 Core 写入；同批合法行继续提交。
+零、负数、非整数字符串或字段缺失仍会硬失败。
+
 ```bash
 uv run market-data-center shareholder-count-daily --as-of-date 2026-08-24 --provider tushare
 uv run market-data-center shareholder-count-backfill --cutoff-date 2026-08-24 --yes --provider tushare
