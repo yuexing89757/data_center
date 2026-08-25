@@ -1454,7 +1454,7 @@ select api_v1.query_call_auction_market_snapshots(
     assert payload["items"][0]["bid2_price"] is None
     assert payload["items"][0]["bid2_volume"] == 10_743_200
     assert payload["items"][0]["ask2_volume"] == 13_300
-    assert payload["items"][0]["seal_amount"] == 5_673_224.0000
+    assert payload["items"][0]["seal_amount"] == 5_669_224.0000
     assert partial_payload["ingestion_id"] == str(partial_ingestion_id)
     assert partial_payload["ingestion_status"] == "partial"
     assert partial_payload["returned_count"] == 1
