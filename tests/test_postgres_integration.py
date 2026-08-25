@@ -1382,7 +1382,7 @@ insert into realtime.call_auction_market_snapshot (
 ) values
     (:succeeded_id, 'SSE:600000', :trade_date, :observed_at,
      10.1200, 10.0000, 10.1500, 9.9800, 123400, 1248808.0000,
-     10.1200, 560200, 10743200, 10.1300, 0, 13300, 5673224.0000, 'pytdx_hq'),
+     10.1200, 560200, 10743200, 10.1300, 0, 13300, 5669224.0000, 'pytdx_hq'),
     (:succeeded_id, 'SZSE:600000', :trade_date, :observed_at,
      20.1200, 20.0000, 20.1500, 19.9800, 223400, 4494808.0000,
      null, null, null, null, null, null, null, 'pytdx_hq'),
@@ -3796,7 +3796,12 @@ def test_close_price_new_highs_rpc_requires_complete_history_and_strict_breakout
             name="邯郸钢铁",
         ),
     ]
-    security_run = _running_run(DatasetCode.SECURITY)
+    security_observed_at = datetime(2026, 1, 1, tzinfo=UTC)
+    security_run = replace(
+        _running_run(DatasetCode.SECURITY),
+        requested_at=security_observed_at,
+        started_at=security_observed_at,
+    )
     persistence.create_ingestion_run(security_run)
     persistence.commit_security_batch(
         _completed_run(security_run, len(securities)),
