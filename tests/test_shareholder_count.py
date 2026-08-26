@@ -45,7 +45,26 @@ def test_nonpositive_shareholder_count_is_rejected() -> None:
         )
 
 
-def test_future_announcement_order_and_unknown_symbol_are_rejected() -> None:
+def test_announcement_up_to_two_days_before_statistics_date_is_allowed() -> None:
+    record = _record()
+    values = {
+        "symbol": record.symbol,
+        "statistics_date": date(2026, 7, 17),
+        "announcement_date": date(2026, 7, 15),
+        "shareholder_count": record.shareholder_count,
+    }
+    tolerated = replace(
+        record,
+        **values,
+        revision_key=shareholder_count_revision_key(**values),
+    )
+
+    assert validate_shareholder_counts((tolerated,), known_symbols={tolerated.symbol}) == (
+        tolerated,
+    )
+
+
+def test_announcement_three_days_before_statistics_date_and_unknown_symbol_are_rejected() -> None:
     record = _record()
 
     with pytest.raises(ValueError, match="announcement precedes"):
@@ -53,7 +72,7 @@ def test_future_announcement_order_and_unknown_symbol_are_rejected() -> None:
             (
                 replace(
                     record,
-                    statistics_date=date(2026, 7, 16),
+                    statistics_date=date(2026, 7, 18),
                     announcement_date=date(2026, 7, 15),
                 ),
             ),

@@ -117,10 +117,49 @@ def test_validation_accepts_repeated_institution_only_seats() -> None:
     assert [seat.seat_code for seat in record.buy_seats] == [None, None]
 
 
+def test_validation_skips_bse_and_unknown_security_without_blocking_known_records() -> None:
+    known_shenzhen = _record()
+    known_bse = replace(
+        known_shenzhen,
+        symbol="BSE:920176",
+        source_event_id="100401578",
+        buy_seats=tuple(
+            replace(seat, symbol="BSE:920176", source_event_id="100401578")
+            for seat in known_shenzhen.buy_seats
+        ),
+        sell_seats=tuple(
+            replace(seat, symbol="BSE:920176", source_event_id="100401578")
+            for seat in known_shenzhen.sell_seats
+        ),
+    )
+    unknown_shanghai = replace(
+        known_bse,
+        symbol="SSE:600999",
+        source_event_id="unknown-event",
+        buy_seats=tuple(
+            replace(seat, symbol="SSE:600999", source_event_id="unknown-event")
+            for seat in known_bse.buy_seats
+        ),
+        sell_seats=tuple(
+            replace(seat, symbol="SSE:600999", source_event_id="unknown-event")
+            for seat in known_bse.sell_seats
+        ),
+    )
+
+    result = validate_trading_billboards(
+        (known_shenzhen, known_bse, unknown_shanghai),
+        known_symbols={"SZSE:000711", "BSE:920176"},
+        known_trading_dates={TRADE_DATE},
+    )
+
+    assert result.accepted == (known_shenzhen,)
+    assert result.findings == ()
+    assert result.rejected_rows == 2
+
+
 @pytest.mark.parametrize(
     ("changes", "rule_suffix"),
     [
-        ({"symbol": "SSE:600000"}, "unknown_symbol"),
         ({"trade_date": date(2026, 8, 16)}, "unknown_trading_date"),
         ({"buy_amount": Decimal("601.00")}, "invalid_deal_amount"),
         ({"net_amount": Decimal("201.00")}, "invalid_net_amount"),

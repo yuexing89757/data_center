@@ -46,7 +46,8 @@ str(shareholder_count)
 不变量：
 
 - symbol 必须存在于 `core.security`；
-- `statistics_date <= announcement_date`；
+- `announcement_date >= statistics_date - 2 days`；公告日早 1 至 2 个自然日允许，早 3 个自然日
+  及以上硬失败；
 - `shareholder_count > 0`；
 - 首期 `source_code = 'tushare'`；
 - 修订键必须重新计算一致；

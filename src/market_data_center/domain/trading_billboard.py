@@ -139,9 +139,14 @@ def validate_trading_billboards(
     known_symbols: Collection[str],
     known_trading_dates: Collection[date],
 ) -> TradingBillboardValidationResult:
+    accepted_universe = tuple(
+        record
+        for record in records
+        if not record.symbol.startswith("BSE:") and record.symbol in known_symbols
+    )
     source_groups: dict[tuple[str, str], list[TradingBillboardRecord]] = {}
     semantic_groups: dict[tuple[str, date, str], list[TradingBillboardRecord]] = {}
-    for record in records:
+    for record in accepted_universe:
         source_groups.setdefault(trading_billboard_natural_key(record), []).append(record)
         semantic_groups.setdefault(
             (record.symbol, record.trade_date, record.reason_code), []
@@ -163,7 +168,15 @@ def validate_trading_billboards(
 
     accepted: list[TradingBillboardRecord] = []
     findings: list[TradingBillboardFinding] = []
-    rejected_rows = 0
+    rejected_rows = len(records) - len(accepted_universe)
+    if records and not accepted_universe:
+        findings.append(
+            _finding(
+                "no_known_security",
+                "trading billboard contains no known supported securities",
+                {"source_record_count": len(records)},
+            )
+        )
     for source_key, group in source_groups.items():
         record = group[0]
         natural_key = _natural_key_json(record)
@@ -198,7 +211,7 @@ def validate_trading_billboards(
                 )
             )
             continue
-        rule = _validate_record(record, known_symbols, known_trading_dates)
+        rule = _validate_record(record, known_trading_dates)
         if rule is not None:
             rejected_rows += len(group)
             findings.append(_finding(rule[0], rule[1], natural_key))
@@ -214,11 +227,8 @@ def validate_trading_billboards(
 
 def _validate_record(
     record: TradingBillboardRecord,
-    known_symbols: Collection[str],
     known_trading_dates: Collection[date],
 ) -> tuple[str, str] | None:
-    if record.symbol not in known_symbols:
-        return "unknown_symbol", "trading billboard references an unknown stock symbol"
     if record.trade_date not in known_trading_dates:
         return "unknown_trading_date", "trading billboard date is not a known trading date"
     if not _equal_at_cent(record.deal_amount, record.buy_amount + record.sell_amount):
