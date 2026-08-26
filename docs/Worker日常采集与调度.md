@@ -57,7 +57,10 @@ pytdx 还可从通达信 `T0002/hq_cache` 读取行业和概念完整快照，�
 `market-data-center trading-billboard-collect --trade-date YYYY-MM-DD --confirm-eastmoney-source-terms-reviewed`；
 回填使用 `--start-date/--end-date` 且最长 366 个自然日。任务只采每日上榜证券汇总与买入/卖出前五
 席位，Raw 路径按 `eastmoney/trading_billboard/YYYY/MM/DD/<ingestion_id>.jsonl` 分区，schema 为
-`eastmoney.trading_billboard.v1`。非交易日以零行成功结束；失败不跨日期、不切换来源拼批次。
+`eastmoney.trading_billboard.v1`。不在当日 `core.security` 中的北交所及其他未知证券只保留 Raw、
+计入过滤数量，不阻断已知沪深证券入库；整批过滤后无标准事实时禁止空成功。非交易日以零行成功
+结束；其他硬校验失败不跨日期、不切换
+来源拼批次。
 
 每天 20:00（包括周末）执行扣非净利润增量同步。该任务按披露变化发现受影响证券，不按
 交易日触发，也不进行全市场历史回填；详见 ADR-0020。

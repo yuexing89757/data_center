@@ -491,7 +491,7 @@ def test_trading_billboard_replay_rejects_raw_date_mismatching_request(tmp_path:
     assert persistence.trading_billboard_commits == []
 
 
-def test_trading_billboard_replay_rejects_non_stock_or_inactive_symbol(tmp_path: Path) -> None:
+def test_trading_billboard_replay_rejects_an_all_filtered_batch(tmp_path: Path) -> None:
     store = LocalRawStore(tmp_path)
     source = _trading_billboard_source(store, request_date="2026-07-29")
     persistence = StubReliabilityPersistence(source)
