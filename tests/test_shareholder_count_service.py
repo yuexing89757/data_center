@@ -306,7 +306,7 @@ def test_backfill_targets_are_deterministic_and_validate_requested_symbols() -> 
     assert targets == (ShareholderCountBackfillTarget("SZSE:000001", date(1991, 4, 3)),)
     statement = str(engine.connection.executions[0][0])
     assert "security_type = 'stock'" in statement
-    assert "exchange in ('SSE', 'SZSE', 'BSE')" in statement
+    assert "exchange in ('SSE', 'SZSE')" in statement
 
     engine.connection.rows = []
     with pytest.raises(ValueError, match="unknown shareholder-count backfill symbols"):

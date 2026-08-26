@@ -66,3 +66,20 @@ def shareholder_count_missing_source_quality_result(
         message="Source rows with missing shareholder count were omitted from Core",
         details={"rejected_rows": rejected_rows},
     )
+
+
+def shareholder_count_unsupported_exchange_quality_result(
+    *, quality_result_id: UUID, ingestion_id: UUID, rejected_rows: int
+) -> QualityResult:
+    if rejected_rows <= 0:
+        raise ValueError("unsupported-exchange shareholder-count rows must be positive")
+    return QualityResult(
+        quality_result_id=quality_result_id,
+        ingestion_id=ingestion_id,
+        dataset_code=DatasetCode.SHAREHOLDER_COUNT,
+        rule_code="shareholder_count.unsupported_exchange",
+        severity=QualitySeverity.INFO,
+        status=QualityStatus.PASSED,
+        message="BSE shareholder-count rows were retained in Raw and omitted from Core",
+        details={"exchange": "BSE", "rejected_rows": rejected_rows},
+    )

@@ -884,7 +884,7 @@ returning ingestion_id
 select symbol, coalesce(ipo_date, date '1990-12-19') as start_date
 from core.security
 where security_type = 'stock'
-  and exchange in ('SSE', 'SZSE', 'BSE')
+  and exchange in ('SSE', 'SZSE')
   and (:all_symbols or symbol in :symbols)
 order by symbol
 """).bindparams(bindparam("symbols", expanding=True))

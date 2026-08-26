@@ -10,6 +10,9 @@
 `ShareholderCount` 只表达某标准证券在统计截止日披露的股东户数。它依赖 Security 和
 Ingestion，不依赖 Trading Calendar、Market、Capital 或 StockDailyIndicator。
 
+标准事实首期只覆盖 `SSE` 和 `SZSE` 股票。来源中的 `BSE` 行保留在 Raw，以
+`shareholder_count.unsupported_exchange` 记录过滤数量，不进入 Core。
+
 ```text
 Ingestion ───────────────► ShareholderCount
 Security ────────────────► ShareholderCount
@@ -115,7 +118,7 @@ Raw manifest；所有切片准备完成并完成整批自然键校验后，在�
 同时存在合法记录和空值时请求状态为 `partial`；全部来源行均为空时请求状态为 `failed`，但历史
 回填按证券隔离，继续处理下一目标。汇总和 Operations 同步累计 fetched、accepted、rejected。
 
-历史回填由显式 CLI 启动，按 symbol 升序处理沪深北所有 stock 状态。起始日为 `ipo_date`，
+历史回填由显式 CLI 启动，按 symbol 升序处理沪深所有 stock 状态。起始日为 `ipo_date`，
 缺失时使用 1990-12-19；截止日必须显式指定且不晚于当前上海自然日。每只证券单独原子提交，
 支持显式 symbol 子集和 `resume-after-symbol`。回填及全历史重新核验都不注册定时 Job。
 

@@ -77,6 +77,7 @@ from market_data_center.raw_store import LocalRawStore, StoredRawObject
 from market_data_center.shareholder_count_batch import (
     PreparedShareholderCountBatch,
     shareholder_count_missing_source_quality_result,
+    shareholder_count_unsupported_exchange_quality_result,
 )
 
 
@@ -446,24 +447,37 @@ class IngestionPipeline:
                     raise ProviderError(
                         "shareholder-count request normalized to an unexpected record"
                     )
-                records = normalized
+                records = tuple(
+                    record for record in normalized if not record.symbol.startswith("BSE:")
+                )
+                unsupported_exchange_rows = len(normalized) - len(records)
                 validated = validate_shareholder_counts(
                     records,
                     known_symbols=self._persistence.known_symbols(
                         {record.symbol for record in records}
                     ),
                 )
-                rejected_rows = fetched_rows - len(validated)
-                quality_results = (
-                    (
+                missing_source_rows = fetched_rows - len(normalized)
+                rejected_rows = missing_source_rows + unsupported_exchange_rows
+                quality_results = tuple(
+                    result
+                    for result in (
                         shareholder_count_missing_source_quality_result(
                             quality_result_id=self._uuid_factory(),
                             ingestion_id=run.ingestion_id,
-                            rejected_rows=rejected_rows,
-                        ),
+                            rejected_rows=missing_source_rows,
+                        )
+                        if missing_source_rows
+                        else None,
+                        shareholder_count_unsupported_exchange_quality_result(
+                            quality_result_id=self._uuid_factory(),
+                            ingestion_id=run.ingestion_id,
+                            rejected_rows=unsupported_exchange_rows,
+                        )
+                        if unsupported_exchange_rows
+                        else None,
                     )
-                    if rejected_rows
-                    else ()
+                    if result is not None
                 )
                 completed = self._completed_run(run, fetched_rows, len(validated), rejected_rows)
                 return PreparedShareholderCountBatch(

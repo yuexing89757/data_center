@@ -78,6 +78,7 @@ from market_data_center.raw_store import LocalRawStore, RawIntegrityError
 from market_data_center.shareholder_count_batch import (
     PreparedShareholderCountBatch,
     shareholder_count_missing_source_quality_result,
+    shareholder_count_unsupported_exchange_quality_result,
 )
 
 
@@ -565,18 +566,23 @@ class RawReplayService:
 
         if source.dataset_code is DatasetCode.SHAREHOLDER_COUNT:
             shareholder_records = cast(tuple[ShareholderCountRecord, ...], records)
+            supported_shareholder_records = tuple(
+                record for record in shareholder_records if not record.symbol.startswith("BSE:")
+            )
+            unsupported_exchange_rows = len(shareholder_records) - len(
+                supported_shareholder_records
+            )
             validated_shareholder_records = validate_shareholder_counts(
-                shareholder_records,
+                supported_shareholder_records,
                 known_symbols=self._persistence.known_symbols(
-                    {record.symbol for record in shareholder_records}
+                    {record.symbol for record in supported_shareholder_records}
                 ),
             )
             fetched_shareholder_rows = (
                 source.manifest.row_count if source.manifest is not None else len(records)
             )
-            rejected_shareholder_rows = fetched_shareholder_rows - len(
-                validated_shareholder_records
-            )
+            missing_source_rows = fetched_shareholder_rows - len(shareholder_records)
+            rejected_shareholder_rows = missing_source_rows + unsupported_exchange_rows
             completed = self._completed(
                 run,
                 fetched_shareholder_rows,
@@ -584,16 +590,25 @@ class RawReplayService:
                 rejected_shareholder_rows,
             )
             if completed is not None:
-                shareholder_quality = (
-                    (
+                shareholder_quality = tuple(
+                    result
+                    for result in (
                         shareholder_count_missing_source_quality_result(
                             quality_result_id=self._uuid_factory(),
                             ingestion_id=completed.ingestion_id,
-                            rejected_rows=rejected_shareholder_rows,
-                        ),
+                            rejected_rows=missing_source_rows,
+                        )
+                        if missing_source_rows
+                        else None,
+                        shareholder_count_unsupported_exchange_quality_result(
+                            quality_result_id=self._uuid_factory(),
+                            ingestion_id=completed.ingestion_id,
+                            rejected_rows=unsupported_exchange_rows,
+                        )
+                        if unsupported_exchange_rows
+                        else None,
                     )
-                    if rejected_shareholder_rows
-                    else ()
+                    if result is not None
                 )
                 self._persistence.commit_shareholder_count_batches(
                     (

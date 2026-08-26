@@ -1,5 +1,6 @@
 from collections.abc import Collection, Sequence
 from contextlib import AbstractContextManager, nullcontext
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -818,6 +819,38 @@ def test_shareholder_count_request_rejects_missing_source_values_without_losing_
     assert len(prepared.quality_results) == 1
     assert prepared.quality_results[0].rule_code == "shareholder_count.missing_source_value"
     assert prepared.quality_results[0].details == {"rejected_rows": 1}
+
+
+def test_shareholder_count_request_keeps_bse_in_raw_but_omits_it_from_core(
+    tmp_path: Path,
+) -> None:
+    class ProviderWithBSE(StubShareholderCountProvider):
+        def fetch_shareholder_counts(
+            self, source_symbol: str | None, start_date: date, end_date: date
+        ) -> ProviderBatch[ShareholderCountRecord]:
+            sse = _shareholder_count()
+            bse = replace(sse, symbol="BSE:920000")
+            return ProviderBatch(
+                records=[sse, bse],
+                raw_rows=[{"ts_code": "600000.SH"}, {"ts_code": "920000.BJ"}],
+                request_params={"source_symbol": source_symbol},
+                schema_version="tushare.shareholder_count.v1",
+            )
+
+    persistence = StubPersistence()
+    pipeline = IngestionPipeline(
+        provider=ProviderWithBSE(),
+        raw_store=LocalRawStore(tmp_path),
+        persistence=persistence,
+    )
+
+    prepared = pipeline.prepare_shareholder_count_request(None, date(2026, 7, 1), date(2026, 7, 28))
+
+    assert prepared.run.status is IngestionStatus.PARTIAL
+    assert [item.record.symbol for item in prepared.records] == ["SSE:600000"]
+    assert prepared.run.rejected_rows == 1
+    assert prepared.quality_results[0].rule_code == "shareholder_count.unsupported_exchange"
+    assert prepared.quality_results[0].details == {"exchange": "BSE", "rejected_rows": 1}
 
 
 def test_shareholder_count_request_with_only_missing_values_is_failed_and_retained(
