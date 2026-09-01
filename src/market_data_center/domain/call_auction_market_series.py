@@ -293,14 +293,17 @@ class MarketSeriesSnapshotRecord:
             and self.high_price < self.low_price
         ):
             raise ValueError("high_price must not be lower than low_price")
-        if (
-            self.last_price is not None
-            and self.high_price is not None
-            and self.last_price > self.high_price
-        ) or (
-            self.last_price is not None
-            and self.low_price is not None
-            and self.last_price < self.low_price
+        if self.value_semantics is not MarketSeriesValueSemantics.AUCTION_INDICATIVE and (
+            (
+                self.last_price is not None
+                and self.high_price is not None
+                and self.last_price > self.high_price
+            )
+            or (
+                self.last_price is not None
+                and self.low_price is not None
+                and self.last_price < self.low_price
+            )
         ):
             raise ValueError("last_price must be within supplied price bounds")
 

@@ -174,9 +174,14 @@ def test_snapshot_requires_exact_round_window_and_price_invariants() -> None:
         _snapshot(observed_at=SLOTS[0] + timedelta(seconds=20))
     with pytest.raises(ValueError, match="price bounds"):
         _snapshot(
+            sample_seq=30,
+            batch_code="092500",
+            scheduled_at=SLOTS[30],
+            observed_at=SLOTS[30] + timedelta(seconds=2),
             last_price=Decimal("10.20"),
             high_price=Decimal("10.10"),
             cumulative_amount=Decimal("1258680.00"),
+            value_semantics=MarketSeriesValueSemantics.OPENING_TRADE,
         )
     with pytest.raises(TypeError, match="Decimal"):
         _snapshot(cumulative_amount=1.0)
@@ -220,6 +225,19 @@ def test_auction_indicative_snapshot_requires_consistent_bid1_values() -> None:
             cumulative_amount=Decimal("1"),
             value_semantics=MarketSeriesValueSemantics.AUCTION_INDICATIVE,
         )
+
+
+def test_auction_indicative_price_is_not_bounded_by_source_trade_range() -> None:
+    snapshot = _snapshot(
+        last_price=Decimal("9.99"),
+        low_price=Decimal("10.00"),
+        high_price=Decimal("10.10"),
+        cumulative_volume=1200,
+        cumulative_amount=Decimal("11988.00"),
+    )
+
+    assert snapshot.last_price == Decimal("9.99")
+    assert snapshot.low_price == Decimal("10.00")
 
 
 def test_snapshot_semantics_follow_the_scheduled_0925_boundary() -> None:

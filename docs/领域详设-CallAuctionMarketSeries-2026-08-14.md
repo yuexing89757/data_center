@@ -61,8 +61,13 @@ round deadline(seq=31) = 09:25:40
 
 包含symbol、trade date、batch code、scheduled/observed time、价格、累计量额、买卖各五档和
 source code。价格/金额使用Decimal，数量为股，missing保持None，zero不等同missing。OHLC和
-非负约束与现有09:26来源事实一致。档位价格为零且数量为正时保存为 `price=NULL`、
-`volume=实际股数`；价格和数量均为零时两者均为 `NULL`。
+非负约束与现有09:26来源事实一致。09:25前的 `auction_indicative` 语义以买一价作为
+`last_price`、买一量作为累计量，并以二者乘积作为累计额；provider 的 `high_price`、
+`low_price` 仍按来源事实保存，但它们是已成交区间，不约束尚未成交的竞价指示价。
+`opening_trade` 和 legacy 语义仍要求 `last_price` 位于来源最高价、最低价区间内。
+
+档位价格为零且数量为正时保存为 `price=NULL`、`volume=实际股数`；价格和数量均为零时
+两者均为 `NULL`。
 
 ## 5. 服务流程
 
@@ -72,9 +77,11 @@ source code。价格/金额使用Decimal，数量为股，missing保持None，ze
 4. 等待当前slot，不提前请求。
 5. 为endpoint attempt创建running IngestionRun。
 6. Provider按80只批次和deadline读取全集。
-7. 保存不可变Raw，复制五档事实，标准化并执行全集、时间、symbol、数值、档位和基数校验。
+7. Provider响应返回后立即保存不可变Raw，再复制五档事实并执行全集、时间、symbol、数值、
+   档位和基数校验；单条事实构造失败转为该symbol质量拒绝，不中断其余证券处理。
 8. 在一个事务中完成IngestionRun、Manifest、质量结果和Snapshot事实。
-9. 成功则选择该ingestion并结束Round；partial且预算足够则从第二endpoint全量重试。
+9. 成功则选择该ingestion并结束Round；partial且剩余时间至少覆盖配置的最小重试预算与
+   上一完整attempt实际总耗时二者较大值时，才从第二endpoint全量重试。
 10. 持久化Round终态，继续下一slot；最后聚合Session终态。
 
 进程恢复只读取持久化Session冻结全集并继续未来slot。已错过slot不调用Provider。
@@ -92,7 +99,9 @@ Snapshot 保存 `batch_code` 及 `bid/ask_price_1..5`、`bid/ask_volume_1..5`。
 
 ## 7. Raw与重放
 
-每个Attempt写一个独立JSONL对象和Manifest。Raw envelope记录标准symbol身份、provider原始字符串字段、worker observed time、session ID、sample sequence、scheduled time和endpoint request metadata。Raw对象不可覆盖。
+每个Attempt写一个独立JSONL对象和Manifest。Raw在领域事实构造和校验前落盘，因此单条标准化
+或领域构造异常不会丢失来源响应。Raw envelope记录标准symbol身份、provider原始字符串字段、
+worker observed time、session ID、sample sequence、scheduled time和endpoint request metadata。Raw对象不可覆盖。
 
 首版replay fail closed。未来若启用，必须从持久化Frozen Universe证明预期集合，并确保一个Raw对象只重建原Attempt，不能跨endpoint或跨Round拼接。
 

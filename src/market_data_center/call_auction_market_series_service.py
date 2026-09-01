@@ -228,11 +228,10 @@ class CallAuctionMarketSeriesService:
         for attempt_number, endpoint in enumerate(self._quote_endpoints, start=1):
             if _utc_clock_sample(self._clock) >= deadline:
                 break
-            if (
-                attempt_number > 1
-                and _utc_clock_sample(self._clock) + self._retry_budget >= deadline
-            ):
-                break
+            if attempt_number > 1 and last_attempt is not None:
+                required_budget = max(self._retry_budget, last_attempt.elapsed)
+                if _utc_clock_sample(self._clock) + required_budget >= deadline:
+                    break
             last_attempt = self._attempt(
                 session,
                 round_state,
@@ -309,6 +308,14 @@ class CallAuctionMarketSeriesService:
                 raw_observed_at=(),
             )
 
+        stored = self._raw_store.write_jsonl(
+            provider=ProviderCode.PYTDX_HQ.value,
+            dataset=DatasetCode.CALL_AUCTION_MARKET_SERIES.value,
+            partition_date=session.trade_date,
+            ingestion_id=run.ingestion_id,
+            rows=_raw_envelopes(fetch, session.session_id, round_state),
+            schema_version=CALL_AUCTION_MARKET_SERIES_RAW_SCHEMA_VERSION,
+        )
         expected = set(session.universe_symbols)
         counts = Counter(record.symbol for record in fetch.records)
         duplicates = {symbol for symbol, count in counts.items() if count > 1}
@@ -330,9 +337,14 @@ class CallAuctionMarketSeriesService:
             known_stock_symbols=expected,
             now=_utc_clock_sample(self._clock),
         )
-        records = tuple(
-            _to_snapshot(record, session, round_state) for record in validation.accepted
-        )
+        conversion_errors: list[tuple[str, str, str]] = []
+        records_list: list[MarketSeriesSnapshotRecord] = []
+        for quote in validation.accepted:
+            try:
+                records_list.append(_to_snapshot(quote, session, round_state))
+            except (TypeError, ValueError) as error:
+                conversion_errors.append((quote.symbol, type(error).__name__, str(error)))
+        records = tuple(records_list)
         missing = expected - {record.symbol for record in records}
         requested_mismatch = fetch.requested_symbols != session.universe_symbols
         raw_cardinality = len(fetch.raw_rows) != len(fetch.records)
@@ -348,14 +360,6 @@ class CallAuctionMarketSeriesService:
             and validation.rejected_rows == 0
             and len(records) == session.universe_count
         )
-        stored = self._raw_store.write_jsonl(
-            provider=ProviderCode.PYTDX_HQ.value,
-            dataset=DatasetCode.CALL_AUCTION_MARKET_SERIES.value,
-            partition_date=session.trade_date,
-            ingestion_id=run.ingestion_id,
-            rows=_raw_envelopes(fetch, session.session_id, round_state),
-            schema_version=CALL_AUCTION_MARKET_SERIES_RAW_SCHEMA_VERSION,
-        )
         quality_results = _quality_results(
             run.ingestion_id,
             validation.findings,
@@ -365,6 +369,7 @@ class CallAuctionMarketSeriesService:
             provider_error,
             requested_mismatch,
             raw_cardinality,
+            conversion_errors,
             fetch.normalization_errors,
         )
         completed = replace(
@@ -387,6 +392,7 @@ class CallAuctionMarketSeriesService:
             ingestion_id=run.ingestion_id,
             accepted_rows=len(records),
             succeeded=succeeded,
+            elapsed=_utc_clock_sample(self._clock) - started_at,
         )
 
 
@@ -396,6 +402,7 @@ class _AttemptSummary:
     ingestion_id: UUID
     accepted_rows: int
     succeeded: bool
+    elapsed: timedelta
 
 
 def _to_snapshot(
@@ -494,6 +501,7 @@ def _quality_results(
     provider_error: str | None,
     requested_mismatch: bool,
     raw_cardinality: bool,
+    conversion_errors: Sequence[tuple[str, str, str]],
     normalization_errors: Sequence[RealtimeQuoteNormalizationError],
 ) -> tuple[QualityResult, ...]:
     results = [
@@ -542,6 +550,16 @@ def _quality_results(
             {"raw_row_index": error.raw_row_index, "reason": error.reason},
         )
         for error in normalization_errors
+    )
+    results.extend(
+        _quality(
+            ingestion_id,
+            "domain_record",
+            "validated quote could not become a market-series fact",
+            {"symbol": symbol},
+            {"error_type": error_type, "reason": reason},
+        )
+        for symbol, error_type, reason in conversion_errors
     )
     results.extend(
         QualityResult(

@@ -50,8 +50,16 @@ class MutableClock:
 
 
 class FakePersistence:
-    def __init__(self, recovery_universe: tuple[str, ...] | None = None) -> None:
+    def __init__(
+        self,
+        recovery_universe: tuple[str, ...] | None = None,
+        *,
+        clock: MutableClock | None = None,
+        commit_delay_seconds: float = 0,
+    ) -> None:
         self.recovery_universe = recovery_universe
+        self.clock = clock
+        self.commit_delay_seconds = commit_delay_seconds
         self.core_universe_calls = 0
         self.session: MarketSeriesSession | None = None
         self.rounds: list[MarketSeriesRound] = []
@@ -88,6 +96,8 @@ class FakePersistence:
         quality_results: Sequence[QualityResult],
     ) -> None:
         assert manifest.row_count >= len(records)  # type: ignore[attr-defined]
+        if self.clock is not None:
+            self.clock.sleep(self.commit_delay_seconds)
         self.completed_runs.append(run)
         self.records.append(tuple(records))
         self.quality.extend(quality_results)
@@ -176,8 +186,13 @@ class FakeProvider(AbstractContextManager["FakeProvider"]):
         self.deadlines.append(deadline)
         if isinstance(self.behavior, Exception):
             raise self.behavior
-        returned = requested if self.behavior == "full" else requested[:1]
+        returned = requested if self.behavior in {"full", "invalid_source"} else requested[:1]
         records = tuple(_quote(symbol, self.clock()) for symbol in returned)
+        if self.behavior == "invalid_source":
+            records = (
+                *records[:-1],
+                replace(records[-1], source_code="unexpected"),
+            )
         return RealtimeQuoteFetch(
             raw_rows=tuple({"symbol": symbol} for symbol in returned),
             records=records,
@@ -235,13 +250,15 @@ def _service(
     clock: MutableClock,
     factory: FakeProviderFactory,
     raw_store: FakeRawStore,
+    *,
+    retry_budget_seconds: float = 5,
 ) -> CallAuctionMarketSeriesService:
     return CallAuctionMarketSeriesService(
         persistence=persistence,
         raw_store=raw_store,
         quote_endpoints=ENDPOINTS,
         provider_factory=factory,
-        retry_budget_seconds=5,
+        retry_budget_seconds=retry_budget_seconds,
         clock=clock,
         sleeper=clock.sleep,
     )
@@ -318,6 +335,53 @@ def test_partial_attempt_retries_entire_universe_on_second_endpoint() -> None:
     ]
     assert persistence.rounds[0].attempt_count == 2
     assert persistence.rounds[0].selected_ingestion_id == persistence.completed_runs[1].ingestion_id
+    assert summary.status == "succeeded"
+
+
+def test_retry_reserves_the_previous_complete_attempt_duration() -> None:
+    clock = MutableClock(SLOTS[0])
+    persistence = FakePersistence(clock=clock, commit_delay_seconds=16)
+    raw_store = FakeRawStore()
+    factory = FakeProviderFactory(clock, ("partial",))
+
+    summary = _service(
+        persistence,
+        clock,
+        factory,
+        raw_store,
+        retry_budget_seconds=2,
+    ).collect(TRADE_DATE, uuid4())
+
+    assert factory.endpoints[:2] == [ENDPOINTS[0], ENDPOINTS[0]]
+    assert persistence.rounds[0].status is MarketSeriesStatus.PARTIAL
+    assert persistence.rounds[0].attempt_count == 1
+    assert summary.status == "partial"
+
+
+def test_record_conversion_error_preserves_raw_and_rejects_only_that_record() -> None:
+    clock = MutableClock(SLOTS[0])
+    persistence = FakePersistence()
+    raw_store = FakeRawStore()
+    factory = FakeProviderFactory(clock, ("invalid_source", "full"))
+
+    summary = _service(persistence, clock, factory, raw_store).collect(TRADE_DATE, uuid4())
+
+    first_run = persistence.completed_runs[0]
+    assert len(raw_store.rows[0]) == 2
+    assert (
+        first_run.status.value,
+        first_run.fetched_rows,
+        first_run.accepted_rows,
+        first_run.rejected_rows,
+    ) == ("partial", 2, 1, 1)
+    assert [record.symbol for record in persistence.records[0]] == ["SSE:600000"]
+    failed = next(
+        result
+        for result in persistence.quality
+        if result.rule_code == "call_auction_market_series.domain_record"
+    )
+    assert failed.natural_key == {"symbol": "SZSE:000001"}
+    assert persistence.rounds[0].status is MarketSeriesStatus.SUCCEEDED
     assert summary.status == "succeeded"
 
 
