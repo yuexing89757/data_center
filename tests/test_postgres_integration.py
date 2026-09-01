@@ -883,12 +883,12 @@ def test_market_series_persistence_commits_attempt_and_finishes_partial_session(
             value_semantics=MarketSeriesValueSemantics.AUCTION_INDICATIVE,
             bid_levels=_market_series_levels("10.00", 10_743_200),
             ask_levels=_market_series_levels("10.01", 13_300),
-            last_price=Decimal("10.10"),
+            last_price=Decimal("9.99"),
             previous_close=Decimal("10.00"),
             high_price=Decimal("10.10"),
             low_price=Decimal("10.00"),
             cumulative_volume=100,
-            cumulative_amount=Decimal("1010.00"),
+            cumulative_amount=Decimal("999.00"),
         ),
     )
     persistence.commit_attempt(
@@ -934,9 +934,9 @@ def test_market_series_persistence_commits_attempt_and_finishes_partial_session(
             )
         ).one()
         assert tuple(stored) == (
-            Decimal("10.1000"),
+            Decimal("9.9900"),
             100,
-            Decimal("1010.0000"),
+            Decimal("999.0000"),
             "auction_indicative",
             "091500",
             None,
@@ -950,6 +950,18 @@ def test_market_series_persistence_commits_attempt_and_finishes_partial_session(
                 {"id": ingestion_id},
             )
             == "partial"
+        )
+
+    with pytest.raises(IntegrityError), database_engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                update realtime.call_auction_market_series_snapshot
+                set value_semantics='opening_trade'
+                where ingestion_id=:ingestion_id
+                """
+            ),
+            {"ingestion_id": ingestion_id},
         )
 
     invalid_updates = (
