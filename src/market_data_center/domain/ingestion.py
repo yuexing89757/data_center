@@ -44,6 +44,7 @@ class DatasetCode(StrEnum):
     CONVERTIBLE_BOND = "convertible_bond"
     CONVERTIBLE_BOND_DAILY_BAR = "convertible_bond_daily_bar"
     TRADING_BILLBOARD = "trading_billboard"
+    DRAGON_TIGER = "dragon_tiger"
 
 
 class IngestionStatus(StrEnum):

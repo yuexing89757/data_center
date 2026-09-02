@@ -133,18 +133,18 @@ batch code and bid/ask levels 1–5; a missing price with positive volume is pre
 fact. The retired limit-up-pool auction collector is not registered by the Worker, while its
 historical workflow and stored facts remain readable.
 
-Eastmoney trading-billboard collection is opt-in and remains disabled until source-rights review
-is recorded (`TRADING_BILLBOARD_ENABLED=false`). The explicit command requires
+DragonTiger collection is opt-in and remains disabled until source-rights review is recorded
+(`DRAGON_TIGER_ENABLED=false`). The `dragon-tiger-collect` command requires
 `--confirm-eastmoney-source-terms-reviewed`; the Worker catalog slot is fixed at weekdays 20:30
-Asia/Shanghai. It captures only daily listed-security summaries and buy/sell top-five seat details,
-writes immutable JSONL Raw (`eastmoney.trading_billboard.v1`) before normalization, and does not
-derive investor identities or trading judgments.
+Asia/Shanghai. It writes immutable JSONL Raw (`eastmoney.dragon_tiger.v2`) before normalization;
+historical `eastmoney.trading_billboard.v1` Raw remains replayable through the new normalizer.
 
-Authenticated reads are `GET /api/v1/trading-billboard/by-date`,
-`GET /api/v1/trading-billboard/by-symbol/{code}`, and
-`GET /api/v1/trading-billboard/seats`. Date queries never fall back or fetch live data; ranges are
-limited to 366 calendar days, pages to 500 records, and offsets to 10,000. Seat lookup accepts
-exactly one exact `seat_code` or trimmed exact `seat_name`, with optional `side=buy|sell`.
+Authenticated reads are `GET /api/v1/dragon-tiger/events/by-date`,
+`GET /api/v1/dragon-tiger/events/by-symbol/{code}`,
+`GET /api/v1/dragon-tiger/seats/{seat_id}/trades`, and
+`GET /api/v1/dragon-tiger/events/{event_id}/metrics`. Queries are bounded and never fall back to
+another date. Metrics are deterministic objective amounts/counts/concentrations; no subjective
+score or strategy label is published.
 
 Daily Bar bulk ingestion keeps one provider/Raw/ingestion lineage unit per security while writing
 validated facts in bounded PostgreSQL transactions. Configure `DAILY_BAR_WRITE_BATCH_SIZE`

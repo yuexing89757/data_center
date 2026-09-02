@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from datetime import date
 from secrets import compare_digest
 from typing import Annotated, Literal, cast
+from uuid import UUID
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Path, Query, Request, Security
@@ -45,6 +46,9 @@ from market_data_center.public_api.models import (
     ClosePriceNewHighs120dResponse,
     DailyBarResponse,
     DailyLimitUpListResponse,
+    DragonTigerCapitalMetricsItem,
+    DragonTigerEventPageResponse,
+    DragonTigerSeatTradePageResponse,
     ErrorDetail,
     ErrorResponse,
     HealthResponse,
@@ -55,8 +59,6 @@ from market_data_center.public_api.models import (
     LimitUpPoolResponse,
     SecuritySearchResponse,
     TopGainers20dResponse,
-    TradingBillboardPageResponse,
-    TradingBillboardSeatPageResponse,
 )
 from market_data_center.public_api.openapi_zh import localize_openapi
 from market_data_center.public_api.queries import (
@@ -237,29 +239,33 @@ def create_app(
         return service.daily_bars(symbol, trade_date, limit)
 
     @app.get(
-        "/api/v1/trading-billboard/by-date",
-        response_model=TradingBillboardPageResponse,
+        "/api/v1/dragon-tiger/events/by-date",
+        response_model=DragonTigerEventPageResponse,
         responses={
             401: {"model": ErrorResponse},
             422: {"model": ErrorResponse},
             503: {"model": ErrorResponse},
         },
         tags=["市场数据"],
-        summary="按交易日查询龙虎榜证券与前五席位",
-        description="按指定交易日精确查询龙虎榜汇总及买入、卖出前五席位，不回退其他日期。",
+        summary="按交易日查询龙虎榜事件与席位行为",
+        description="按指定交易日精确查询普通榜或三日榜事件及合并后的席位行为，不回退其他日期。",
     )
-    def trading_billboard_by_date(
+    def dragon_tiger_events_by_date(
         _: ApiKeyDependency,
         service: QueryServiceDependency,
-        trade_date: Annotated[date, Query()],
-        limit: Annotated[int, Query(ge=1, le=500)] = 100,
-        offset: Annotated[int, Query(ge=0, le=10000)] = 0,
-    ) -> TradingBillboardPageResponse:
-        return service.trading_billboard_by_date(trade_date, limit, offset)
+        trade_date: Annotated[date, Query(description="需要精确查询的交易日。")],
+        period_type: Annotated[
+            Literal["DAY", "THREE_DAY"] | None,
+            Query(description="可选统计周期；空值返回普通榜和三日榜。"),
+        ] = None,
+        limit: Annotated[int, Query(ge=1, le=500, description="单页事件数上限。")] = 100,
+        offset: Annotated[int, Query(ge=0, le=10000, description="分页偏移量。")] = 0,
+    ) -> DragonTigerEventPageResponse:
+        return service.dragon_tiger_events_by_date(trade_date, period_type, limit, offset)
 
     @app.get(
-        "/api/v1/trading-billboard/by-symbol/{code}",
-        response_model=TradingBillboardPageResponse,
+        "/api/v1/dragon-tiger/events/by-symbol/{code}",
+        response_model=DragonTigerEventPageResponse,
         responses={
             401: {"model": ErrorResponse},
             404: {"model": ErrorResponse},
@@ -270,54 +276,69 @@ def create_app(
         summary="按股票代码查询龙虎榜历史",
         description="先通过公开证券查询解析六位股票代码，再查询最长三百六十六日的龙虎榜历史。",
     )
-    def trading_billboard_by_symbol(
+    def dragon_tiger_events_by_symbol(
         _: ApiKeyDependency,
         service: QueryServiceDependency,
-        code: Annotated[str, Path(pattern=STOCK_CODE_PATTERN)],
-        start_date: Annotated[date, Query()],
-        end_date: Annotated[date, Query()],
-        limit: Annotated[int, Query(ge=1, le=500)] = 100,
-        offset: Annotated[int, Query(ge=0, le=10000)] = 0,
-    ) -> TradingBillboardPageResponse:
+        code: Annotated[str, Path(pattern=STOCK_CODE_PATTERN, description="六位股票代码。")],
+        start_date: Annotated[date, Query(description="查询起始交易日（含）。")],
+        end_date: Annotated[date, Query(description="查询结束交易日（含）。")],
+        period_type: Annotated[
+            Literal["DAY", "THREE_DAY"] | None,
+            Query(description="可选统计周期；空值返回普通榜和三日榜。"),
+        ] = None,
+        limit: Annotated[int, Query(ge=1, le=500, description="单页事件数上限。")] = 100,
+        offset: Annotated[int, Query(ge=0, le=10000, description="分页偏移量。")] = 0,
+    ) -> DragonTigerEventPageResponse:
         _require_bounded_date_range(start_date, end_date)
-        return service.trading_billboard_by_code(code, start_date, end_date, limit, offset)
+        return service.dragon_tiger_events_by_code(
+            code, start_date, end_date, period_type, limit, offset
+        )
 
     @app.get(
-        "/api/v1/trading-billboard/seats",
-        response_model=TradingBillboardSeatPageResponse,
+        "/api/v1/dragon-tiger/seats/{seat_id}/trades",
+        response_model=DragonTigerSeatTradePageResponse,
         responses={
             401: {"model": ErrorResponse},
             422: {"model": ErrorResponse},
             503: {"model": ErrorResponse},
         },
         tags=["市场数据"],
-        summary="查询营业部席位龙虎榜记录",
-        description="按席位代码或席位名称精确查询，可选买入或卖出方向；两个席位参数必须且只能提供一个。",
+        summary="按稳定席位查询龙虎榜行为",
+        description="按标准化稳定席位 UUID 查询最长三百六十六日的客观买卖披露。",
     )
-    def trading_billboard_by_seat(
+    def dragon_tiger_trades_by_seat(
         _: ApiKeyDependency,
         service: QueryServiceDependency,
-        start_date: Annotated[date, Query()],
-        end_date: Annotated[date, Query()],
-        seat_code: Annotated[str | None, Query(max_length=100)] = None,
-        seat_name: Annotated[str | None, Query(max_length=300)] = None,
-        side: Annotated[Literal["buy", "sell"] | None, Query()] = None,
-        limit: Annotated[int, Query(ge=1, le=500)] = 100,
-        offset: Annotated[int, Query(ge=0, le=10000)] = 0,
-    ) -> TradingBillboardSeatPageResponse:
+        seat_id: Annotated[UUID, Path(description="标准化后的稳定席位 UUID。")],
+        start_date: Annotated[date, Query(description="查询起始交易日（含）。")],
+        end_date: Annotated[date, Query(description="查询结束交易日（含）。")],
+        limit: Annotated[int, Query(ge=1, le=500, description="单页席位行为数上限。")] = 100,
+        offset: Annotated[int, Query(ge=0, le=10000, description="分页偏移量。")] = 0,
+    ) -> DragonTigerSeatTradePageResponse:
         _require_bounded_date_range(start_date, end_date)
-        normalized_code = seat_code.strip() if seat_code is not None else None
-        normalized_name = seat_name.strip() if seat_name is not None else None
-        if (normalized_code is None) == (normalized_name is None) or not (
-            normalized_code or normalized_name
-        ):
-            raise HTTPException(
-                status_code=422,
-                detail="exactly one non-blank seat_code or seat_name is required",
-            )
-        return service.trading_billboard_by_seat(
-            normalized_code, normalized_name, start_date, end_date, side, limit, offset
+        return service.dragon_tiger_trades_by_seat(
+            str(seat_id), start_date, end_date, limit, offset
         )
+
+    @app.get(
+        "/api/v1/dragon-tiger/events/{event_id}/metrics",
+        response_model=DragonTigerCapitalMetricsItem,
+        responses={
+            401: {"model": ErrorResponse},
+            404: {"model": ErrorResponse},
+            422: {"model": ErrorResponse},
+            503: {"model": ErrorResponse},
+        },
+        tags=["市场数据"],
+        summary="查询龙虎榜事件客观资金结构指标",
+        description="按事件 UUID 即时计算净额、席位数量和买卖集中度；不返回主观评分。",
+    )
+    def dragon_tiger_event_metrics(
+        _: ApiKeyDependency,
+        service: QueryServiceDependency,
+        event_id: Annotated[UUID, Path(description="龙虎榜事件 UUID。")],
+    ) -> DragonTigerCapitalMetricsItem:
+        return service.dragon_tiger_event_metrics(str(event_id))
 
     @app.post(
         "/api/v1/stock-daily-indicators/latest/query",

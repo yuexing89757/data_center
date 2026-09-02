@@ -1,5 +1,7 @@
 # 领域详设：TradingBillboard 股票龙虎榜 v0
 
+> 状态：Superseded。当前实现与契约见 `领域详设-DragonTiger-2026-09-02.md` 和 ADR-0049；本文仅保留历史背景。
+
 > 状态：有效，待实施
 > 日期：2026-08-24
 > 关联 Issue：#65

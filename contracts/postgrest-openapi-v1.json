@@ -6,37 +6,61 @@
     "description": "Stable, bounded read contracts implemented by Supabase PostgREST RPC."
   },
   "servers": [
-    {"url": "/rest/v1"}
+    {
+      "url": "/rest/v1"
+    }
   ],
   "security": [
-    {"publishableKey": []},
-    {"bearerAuth": []}
+    {
+      "publishableKey": []
+    },
+    {
+      "bearerAuth": []
+    }
   ],
   "paths": {
     "/rpc/query_securities": {
       "post": {
         "operationId": "querySecurities",
         "summary": "Search the Security master",
-        "requestBody": {"$ref": "#/components/requestBodies/SecuritySearch"},
-        "responses": {"200": {"description": "Bounded Security matches"}}
+        "requestBody": {
+          "$ref": "#/components/requestBodies/SecuritySearch"
+        },
+        "responses": {
+          "200": {
+            "description": "Bounded Security matches"
+          }
+        }
       }
     },
     "/rpc/query_daily_bars": {
       "post": {
         "operationId": "queryDailyBars",
         "summary": "Read unadjusted Daily Bars",
-        "requestBody": {"$ref": "#/components/requestBodies/DailyBars"},
-        "responses": {"200": {"description": "Unadjusted bars ordered by trade date"}}
+        "requestBody": {
+          "$ref": "#/components/requestBodies/DailyBars"
+        },
+        "responses": {
+          "200": {
+            "description": "Unadjusted bars ordered by trade date"
+          }
+        }
       }
     },
     "/rpc/query_adjusted_daily_bars": {
       "post": {
         "operationId": "queryAdjustedDailyBars",
         "summary": "Read one coherent adjusted-price calculation version",
-        "requestBody": {"$ref": "#/components/requestBodies/AdjustedDailyBars"},
+        "requestBody": {
+          "$ref": "#/components/requestBodies/AdjustedDailyBars"
+        },
         "responses": {
-          "200": {"description": "Adjusted bars from one calculation ID"},
-          "404": {"description": "No compatible successful calculation exists"}
+          "200": {
+            "description": "Adjusted bars from one calculation ID"
+          },
+          "404": {
+            "description": "No compatible successful calculation exists"
+          }
         }
       }
     },
@@ -44,10 +68,16 @@
       "post": {
         "operationId": "queryMarketSnapshot",
         "summary": "Read a coherent daily market snapshot",
-        "requestBody": {"$ref": "#/components/requestBodies/MarketSnapshot"},
+        "requestBody": {
+          "$ref": "#/components/requestBodies/MarketSnapshot"
+        },
         "responses": {
-          "200": {"description": "Raw close, objective metrics and market cap"},
-          "404": {"description": "No compatible successful calculation exists"}
+          "200": {
+            "description": "Raw close, objective metrics and market cap"
+          },
+          "404": {
+            "description": "No compatible successful calculation exists"
+          }
         }
       }
     },
@@ -55,10 +85,16 @@
       "post": {
         "operationId": "queryClassificationMembersAsOf",
         "summary": "Read the latest complete membership snapshot as of a date",
-        "requestBody": {"$ref": "#/components/requestBodies/ClassificationMembers"},
+        "requestBody": {
+          "$ref": "#/components/requestBodies/ClassificationMembers"
+        },
         "responses": {
-          "200": {"description": "One snapshot envelope, including an empty member list"},
-          "404": {"description": "No snapshot exists as of the requested date"}
+          "200": {
+            "description": "One snapshot envelope, including an empty member list"
+          },
+          "404": {
+            "description": "No snapshot exists as of the requested date"
+          }
         }
       }
     },
@@ -66,18 +102,30 @@
       "post": {
         "operationId": "queryDeductedProfitsAsOf",
         "summary": "Read latest point-in-time deducted-profit facts",
-        "requestBody": {"$ref": "#/components/requestBodies/DeductedProfitsAsOf"},
-        "responses": {"200": {"description": "Bounded latest announced profit facts"}}
+        "requestBody": {
+          "$ref": "#/components/requestBodies/DeductedProfitsAsOf"
+        },
+        "responses": {
+          "200": {
+            "description": "Bounded latest announced profit facts"
+          }
+        }
       }
     },
     "/rpc/query_stock_pool_snapshot": {
       "post": {
         "operationId": "queryStockPoolSnapshot",
         "summary": "Read one exact immutable ready stock-pool snapshot",
-        "requestBody": {"$ref": "#/components/requestBodies/StockPoolSnapshot"},
+        "requestBody": {
+          "$ref": "#/components/requestBodies/StockPoolSnapshot"
+        },
         "responses": {
-          "200": {"description": "Snapshot metadata and frozen member details"},
-          "404": {"description": "No exact ready snapshot exists; no date fallback"}
+          "200": {
+            "description": "Snapshot metadata and frozen member details"
+          },
+          "404": {
+            "description": "No exact ready snapshot exists; no date fallback"
+          }
         }
       }
     },
@@ -85,20 +133,40 @@
       "post": {
         "operationId": "queryAuctionQuotes",
         "summary": "Read bounded opening-auction quote samples",
-        "security": [{"bearerAuth": []}],
-        "requestBody": {"$ref": "#/components/requestBodies/AuctionQuotes"},
-        "responses": {"200": {"description": "Authenticated quote samples and safe metrics"}}
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/AuctionQuotes"
+        },
+        "responses": {
+          "200": {
+            "description": "Authenticated quote samples and safe metrics"
+          }
+        }
       }
     },
     "/rpc/query_call_auction_market_snapshots": {
       "post": {
         "operationId": "queryCallAuctionMarketSnapshots",
         "summary": "Read one exact-date opening-auction market batch",
-        "security": [{"bearerAuth": []}],
-        "requestBody": {"$ref": "#/components/requestBodies/CallAuctionMarketSnapshots"},
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/CallAuctionMarketSnapshots"
+        },
         "responses": {
-          "200": {"description": "One succeeded or partial batch with explicit missing codes"},
-          "404": {"description": "No eligible batch exists for the exact date"}
+          "200": {
+            "description": "One succeeded or partial batch with explicit missing codes"
+          },
+          "404": {
+            "description": "No eligible batch exists for the exact date"
+          }
         }
       }
     },
@@ -106,49 +174,40 @@
       "post": {
         "operationId": "queryCallAuctionMarketSeriesSnapshots",
         "summary": "Read one exact-date opening-auction market series session",
-        "security": [{"bearerAuth": []}],
-        "requestBody": {"$ref": "#/components/requestBodies/CallAuctionMarketSeriesSnapshots"},
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/CallAuctionMarketSeriesSnapshots"
+        },
         "responses": {
-          "200": {"description": "One succeeded or partial session with time-ordered rounds, batch codes, and bid/ask five-level price-volume facts"},
-          "404": {"description": "No eligible session exists for the exact date"}
+          "200": {
+            "description": "One succeeded or partial session with time-ordered rounds, batch codes, and bid/ask five-level price-volume facts"
+          },
+          "404": {
+            "description": "No eligible session exists for the exact date"
+          }
         }
-      }
-    },
-    "/rpc/query_trading_billboard_by_date": {
-      "post": {
-        "operationId": "queryTradingBillboardByDate",
-        "summary": "Read one exact-date trading billboard with top-five seats",
-        "security": [{"bearerAuth": []}],
-        "requestBody": {"$ref": "#/components/requestBodies/TradingBillboardByDate"},
-        "responses": {"200": {"description": "Bounded exact-date entries and seats"}}
-      }
-    },
-    "/rpc/query_trading_billboard_by_symbol": {
-      "post": {
-        "operationId": "queryTradingBillboardBySymbol",
-        "summary": "Read bounded trading billboard history for one standard symbol",
-        "security": [{"bearerAuth": []}],
-        "requestBody": {"$ref": "#/components/requestBodies/TradingBillboardBySymbol"},
-        "responses": {"200": {"description": "Bounded symbol history and seats"}}
-      }
-    },
-    "/rpc/query_trading_billboard_by_seat": {
-      "post": {
-        "operationId": "queryTradingBillboardBySeat",
-        "summary": "Read exact seat occurrences with parent billboard totals",
-        "security": [{"bearerAuth": []}],
-        "requestBody": {"$ref": "#/components/requestBodies/TradingBillboardBySeat"},
-        "responses": {"200": {"description": "Bounded exact seat occurrences"}}
       }
     },
     "/rpc/query_close_price_new_highs_120d": {
       "post": {
         "operationId": "queryClosePriceNewHighs120d",
-          "summary": "Read the latest ready materialized SSE and SZSE strict 120-session closing-price breakout snapshot",
-        "security": [{"bearerAuth": []}],
+        "summary": "Read the latest ready materialized SSE and SZSE strict 120-session closing-price breakout snapshot",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "responses": {
-            "200": {"description": "All qualifying strict breakouts from the latest ready daily snapshot"},
-            "404": {"description": "No ready materialized 120-session closing-high snapshot exists"}
+          "200": {
+            "description": "All qualifying strict breakouts from the latest ready daily snapshot"
+          },
+          "404": {
+            "description": "No ready materialized 120-session closing-high snapshot exists"
+          }
         }
       }
     },
@@ -156,10 +215,18 @@
       "post": {
         "operationId": "queryBoardIndexBiasLatest",
         "summary": "Read the latest THS 883423 MA5 bias metrics",
-        "security": [{"bearerAuth": []}],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "responses": {
-          "200": {"description": "Latest fresh stored board close, MA5 bias, direction, and 30-session extrema"},
-          "404": {"description": "THS 883423 history is missing, shorter than 34 sessions, or stale"}
+          "200": {
+            "description": "Latest fresh stored board close, MA5 bias, direction, and 30-session extrema"
+          },
+          "404": {
+            "description": "THS 883423 history is missing, shorter than 34 sessions, or stale"
+          }
         }
       }
     },
@@ -167,14 +234,22 @@
       "post": {
         "operationId": "queryShareholderCountsAsOf",
         "summary": "Read strict point-in-time latest shareholder counts",
-        "requestBody": {"$ref": "#/components/requestBodies/ShareholderCountsAsOf"},
+        "requestBody": {
+          "$ref": "#/components/requestBodies/ShareholderCountsAsOf"
+        },
         "responses": {
           "200": {
             "description": "Bounded latest shareholder-count facts strictly visible at the requested knowledge date",
-            "content": {"application/json": {"schema": {
-              "type": "array",
-              "items": {"$ref": "#/components/schemas/ShareholderCountItem"}
-            }}}
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ShareholderCountItem"
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -183,14 +258,22 @@
       "post": {
         "operationId": "queryShareholderCountHistoryAsOf",
         "summary": "Read strict point-in-time shareholder-count history",
-        "requestBody": {"$ref": "#/components/requestBodies/ShareholderCountHistoryAsOf"},
+        "requestBody": {
+          "$ref": "#/components/requestBodies/ShareholderCountHistoryAsOf"
+        },
         "responses": {
           "200": {
             "description": "Bounded shareholder-count history strictly visible at the requested knowledge date",
-            "content": {"application/json": {"schema": {
-              "type": "array",
-              "items": {"$ref": "#/components/schemas/ShareholderCountItem"}
-            }}}
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ShareholderCountItem"
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -199,14 +282,98 @@
       "post": {
         "operationId": "queryShareholderCountHistoryLatest",
         "summary": "Read current-known shareholder-count history; not a strict no-future-data view",
-        "requestBody": {"$ref": "#/components/requestBodies/ShareholderCountHistoryLatest"},
+        "requestBody": {
+          "$ref": "#/components/requestBodies/ShareholderCountHistoryLatest"
+        },
         "responses": {
           "200": {
             "description": "Bounded current-known shareholder-count history",
-            "content": {"application/json": {"schema": {
-              "type": "array",
-              "items": {"$ref": "#/components/schemas/ShareholderCountItem"}
-            }}}
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ShareholderCountItem"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rpc/query_dragon_tiger_events_by_date": {
+      "post": {
+        "operationId": "queryDragonTigerEventsByDate",
+        "summary": "Read exact-date DragonTiger events with merged seat trades",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/DragonTigerEventsByDate"
+        },
+        "responses": {
+          "200": {
+            "description": "Bounded exact-date DragonTiger events"
+          }
+        }
+      }
+    },
+    "/rpc/query_dragon_tiger_events_by_symbol": {
+      "post": {
+        "operationId": "queryDragonTigerEventsBySymbol",
+        "summary": "Read bounded DragonTiger event history for one standard symbol",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/DragonTigerEventsBySymbol"
+        },
+        "responses": {
+          "200": {
+            "description": "Bounded symbol event history"
+          }
+        }
+      }
+    },
+    "/rpc/query_dragon_tiger_trades_by_seat": {
+      "post": {
+        "operationId": "queryDragonTigerTradesBySeat",
+        "summary": "Read bounded DragonTiger trades for one stable seat UUID",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/DragonTigerTradesBySeat"
+        },
+        "responses": {
+          "200": {
+            "description": "Bounded stable-seat trade history"
+          }
+        }
+      }
+    },
+    "/rpc/query_dragon_tiger_event_metrics": {
+      "post": {
+        "operationId": "queryDragonTigerEventMetrics",
+        "summary": "Read deterministic objective metrics for one DragonTiger event",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/DragonTigerEventMetrics"
+        },
+        "responses": {
+          "200": {
+            "description": "Objective event capital metrics"
           }
         }
       }
@@ -214,18 +381,42 @@
   },
   "components": {
     "securitySchemes": {
-      "publishableKey": {"type": "apiKey", "in": "header", "name": "apikey"},
-      "bearerAuth": {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"}
+      "publishableKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "apikey"
+      },
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
     },
     "schemas": {
       "StandardSymbol": {
         "type": "string",
         "pattern": "^(SSE|SZSE|BSE):[0-9]{6}$",
-        "examples": ["SSE:600000"]
+        "examples": [
+          "SSE:600000"
+        ]
       },
-      "Date": {"type": "string", "format": "date"},
-      "Limit5000": {"type": "integer", "minimum": 1, "maximum": 5000, "default": 1000},
-      "CalculationId": {"type": ["string", "null"], "format": "uuid"},
+      "Date": {
+        "type": "string",
+        "format": "date"
+      },
+      "Limit5000": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 5000,
+        "default": 1000
+      },
+      "CalculationId": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "uuid"
+      },
       "ShareholderCountItem": {
         "type": "object",
         "additionalProperties": false,
@@ -240,280 +431,683 @@
           "change_ratio"
         ],
         "properties": {
-          "symbol": {"$ref": "#/components/schemas/StandardSymbol"},
-          "statistics_date": {"$ref": "#/components/schemas/Date"},
-          "announcement_date": {"$ref": "#/components/schemas/Date"},
-          "shareholder_count": {"type": "integer", "format": "int64", "minimum": 1},
-          "previous_statistics_date": {"type": ["string", "null"], "format": "date"},
-          "previous_shareholder_count": {"type": ["integer", "null"], "format": "int64", "minimum": 1},
-          "change_count": {"type": ["integer", "null"], "format": "int64"},
-          "change_ratio": {"type": ["number", "null"]}
+          "symbol": {
+            "$ref": "#/components/schemas/StandardSymbol"
+          },
+          "statistics_date": {
+            "$ref": "#/components/schemas/Date"
+          },
+          "announcement_date": {
+            "$ref": "#/components/schemas/Date"
+          },
+          "shareholder_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "previous_statistics_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "previous_shareholder_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          },
+          "change_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "change_ratio": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
         }
       }
     },
     "requestBodies": {
       "SecuritySearch": {
         "required": true,
-        "content": {"application/json": {"schema": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["p_query"],
-          "properties": {
-            "p_query": {"type": "string", "minLength": 1},
-            "p_limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20}
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "p_query"
+              ],
+              "properties": {
+                "p_query": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "p_limit": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 100,
+                  "default": 20
+                }
+              }
+            }
           }
-        }}}
+        }
       },
       "DailyBars": {
         "required": true,
-        "content": {"application/json": {"schema": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["p_symbol", "p_start_date", "p_end_date"],
-          "properties": {
-            "p_symbol": {"$ref": "#/components/schemas/StandardSymbol"},
-            "p_start_date": {"$ref": "#/components/schemas/Date"},
-            "p_end_date": {"$ref": "#/components/schemas/Date"},
-            "p_limit": {"$ref": "#/components/schemas/Limit5000"}
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "p_symbol",
+                "p_start_date",
+                "p_end_date"
+              ],
+              "properties": {
+                "p_symbol": {
+                  "$ref": "#/components/schemas/StandardSymbol"
+                },
+                "p_start_date": {
+                  "$ref": "#/components/schemas/Date"
+                },
+                "p_end_date": {
+                  "$ref": "#/components/schemas/Date"
+                },
+                "p_limit": {
+                  "$ref": "#/components/schemas/Limit5000"
+                }
+              }
+            }
           }
-        }}}
+        }
       },
       "AdjustedDailyBars": {
         "required": true,
-        "content": {"application/json": {"schema": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["p_symbol", "p_start_date", "p_end_date"],
-          "properties": {
-            "p_symbol": {"$ref": "#/components/schemas/StandardSymbol"},
-            "p_start_date": {"$ref": "#/components/schemas/Date"},
-            "p_end_date": {"$ref": "#/components/schemas/Date"},
-            "p_adjustment_type": {"type": "string", "enum": ["forward", "backward"], "default": "forward"},
-            "p_algorithm_version": {"type": "string", "default": "1.1.0"},
-            "p_calculation_id": {"$ref": "#/components/schemas/CalculationId"},
-            "p_limit": {"$ref": "#/components/schemas/Limit5000"}
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "p_symbol",
+                "p_start_date",
+                "p_end_date"
+              ],
+              "properties": {
+                "p_symbol": {
+                  "$ref": "#/components/schemas/StandardSymbol"
+                },
+                "p_start_date": {
+                  "$ref": "#/components/schemas/Date"
+                },
+                "p_end_date": {
+                  "$ref": "#/components/schemas/Date"
+                },
+                "p_adjustment_type": {
+                  "type": "string",
+                  "enum": [
+                    "forward",
+                    "backward"
+                  ],
+                  "default": "forward"
+                },
+                "p_algorithm_version": {
+                  "type": "string",
+                  "default": "1.1.0"
+                },
+                "p_calculation_id": {
+                  "$ref": "#/components/schemas/CalculationId"
+                },
+                "p_limit": {
+                  "$ref": "#/components/schemas/Limit5000"
+                }
+              }
+            }
           }
-        }}}
+        }
       },
       "MarketSnapshot": {
         "required": true,
-        "content": {"application/json": {"schema": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["p_trade_date"],
-          "properties": {
-            "p_trade_date": {"$ref": "#/components/schemas/Date"},
-            "p_algorithm_version": {"type": "string", "default": "1.1.0"},
-            "p_calculation_id": {"$ref": "#/components/schemas/CalculationId"},
-            "p_limit": {"$ref": "#/components/schemas/Limit5000"}
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "p_trade_date"
+              ],
+              "properties": {
+                "p_trade_date": {
+                  "$ref": "#/components/schemas/Date"
+                },
+                "p_algorithm_version": {
+                  "type": "string",
+                  "default": "1.1.0"
+                },
+                "p_calculation_id": {
+                  "$ref": "#/components/schemas/CalculationId"
+                },
+                "p_limit": {
+                  "$ref": "#/components/schemas/Limit5000"
+                }
+              }
+            }
           }
-        }}}
+        }
       },
       "ClassificationMembers": {
         "required": true,
-        "content": {"application/json": {"schema": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["p_namespace", "p_classification_type", "p_classification_code", "p_as_of_date"],
-          "properties": {
-            "p_namespace": {"type": "string", "minLength": 1},
-            "p_classification_type": {"type": "string", "enum": ["industry", "concept", "index"]},
-            "p_classification_code": {"type": "string", "minLength": 1},
-            "p_as_of_date": {"$ref": "#/components/schemas/Date"},
-            "p_limit": {"$ref": "#/components/schemas/Limit5000"}
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "p_namespace",
+                "p_classification_type",
+                "p_classification_code",
+                "p_as_of_date"
+              ],
+              "properties": {
+                "p_namespace": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "p_classification_type": {
+                  "type": "string",
+                  "enum": [
+                    "industry",
+                    "concept",
+                    "index"
+                  ]
+                },
+                "p_classification_code": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "p_as_of_date": {
+                  "$ref": "#/components/schemas/Date"
+                },
+                "p_limit": {
+                  "$ref": "#/components/schemas/Limit5000"
+                }
+              }
+            }
           }
-        }}}
+        }
       },
       "DeductedProfitsAsOf": {
         "required": true,
-        "content": {"application/json": {"schema": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["p_as_of_date"],
-          "properties": {
-            "p_as_of_date": {"$ref": "#/components/schemas/Date"},
-            "p_symbols": {
-              "type": ["array", "null"],
-              "items": {"$ref": "#/components/schemas/StandardSymbol"},
-              "maxItems": 500
-            },
-            "p_limit": {"type": "integer", "minimum": 1, "maximum": 2000, "default": 500}
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "p_as_of_date"
+              ],
+              "properties": {
+                "p_as_of_date": {
+                  "$ref": "#/components/schemas/Date"
+                },
+                "p_symbols": {
+                  "type": [
+                    "array",
+                    "null"
+                  ],
+                  "items": {
+                    "$ref": "#/components/schemas/StandardSymbol"
+                  },
+                  "maxItems": 500
+                },
+                "p_limit": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2000,
+                  "default": 500
+                }
+              }
+            }
           }
-        }}}
+        }
       },
       "ShareholderCountsAsOf": {
         "required": true,
-        "content": {"application/json": {"schema": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["p_as_of_date"],
-          "properties": {
-            "p_as_of_date": {"$ref": "#/components/schemas/Date"},
-            "p_symbols": {
-              "type": ["array", "null"],
-              "items": {"$ref": "#/components/schemas/StandardSymbol"},
-              "maxItems": 500
-            },
-            "p_limit": {"type": "integer", "minimum": 1, "maximum": 2000, "default": 500}
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "p_as_of_date"
+              ],
+              "properties": {
+                "p_as_of_date": {
+                  "$ref": "#/components/schemas/Date"
+                },
+                "p_symbols": {
+                  "type": [
+                    "array",
+                    "null"
+                  ],
+                  "items": {
+                    "$ref": "#/components/schemas/StandardSymbol"
+                  },
+                  "maxItems": 500
+                },
+                "p_limit": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2000,
+                  "default": 500
+                }
+              }
+            }
           }
-        }}}
+        }
       },
       "ShareholderCountHistoryAsOf": {
         "required": true,
-        "content": {"application/json": {"schema": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "p_symbol",
-            "p_as_of_date",
-            "p_start_statistics_date",
-            "p_end_statistics_date"
-          ],
-          "properties": {
-            "p_symbol": {"$ref": "#/components/schemas/StandardSymbol"},
-            "p_as_of_date": {"$ref": "#/components/schemas/Date"},
-            "p_start_statistics_date": {"$ref": "#/components/schemas/Date"},
-            "p_end_statistics_date": {"$ref": "#/components/schemas/Date"},
-            "p_limit": {"type": "integer", "minimum": 1, "maximum": 2000, "default": 500}
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "p_symbol",
+                "p_as_of_date",
+                "p_start_statistics_date",
+                "p_end_statistics_date"
+              ],
+              "properties": {
+                "p_symbol": {
+                  "$ref": "#/components/schemas/StandardSymbol"
+                },
+                "p_as_of_date": {
+                  "$ref": "#/components/schemas/Date"
+                },
+                "p_start_statistics_date": {
+                  "$ref": "#/components/schemas/Date"
+                },
+                "p_end_statistics_date": {
+                  "$ref": "#/components/schemas/Date"
+                },
+                "p_limit": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2000,
+                  "default": 500
+                }
+              }
+            }
           }
-        }}}
+        }
       },
       "ShareholderCountHistoryLatest": {
         "required": true,
-        "content": {"application/json": {"schema": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["p_symbol", "p_start_statistics_date", "p_end_statistics_date"],
-          "properties": {
-            "p_symbol": {"$ref": "#/components/schemas/StandardSymbol"},
-            "p_start_statistics_date": {"$ref": "#/components/schemas/Date"},
-            "p_end_statistics_date": {"$ref": "#/components/schemas/Date"},
-            "p_limit": {"type": "integer", "minimum": 1, "maximum": 2000, "default": 500}
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "p_symbol",
+                "p_start_statistics_date",
+                "p_end_statistics_date"
+              ],
+              "properties": {
+                "p_symbol": {
+                  "$ref": "#/components/schemas/StandardSymbol"
+                },
+                "p_start_statistics_date": {
+                  "$ref": "#/components/schemas/Date"
+                },
+                "p_end_statistics_date": {
+                  "$ref": "#/components/schemas/Date"
+                },
+                "p_limit": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2000,
+                  "default": 500
+                }
+              }
+            }
           }
-        }}}
+        }
       },
       "StockPoolSnapshot": {
         "required": true,
-        "content": {"application/json": {"schema": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["p_pool_code", "p_effective_trade_date"],
-          "properties": {
-            "p_pool_code": {
-              "type": "string",
-              "enum": [
-                "CN_A_PREVIOUS_DAY_MAINBOARD_LIMIT_UP",
-                "CN_A_PREVIOUS_DAY_MAINBOARD_LIMIT_DOWN"
-              ]
-            },
-            "p_effective_trade_date": {"$ref": "#/components/schemas/Date"},
-            "p_version": {"type": ["integer", "null"], "minimum": 1, "default": null},
-            "p_limit": {"$ref": "#/components/schemas/Limit5000"}
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "p_pool_code",
+                "p_effective_trade_date"
+              ],
+              "properties": {
+                "p_pool_code": {
+                  "type": "string",
+                  "enum": [
+                    "CN_A_PREVIOUS_DAY_MAINBOARD_LIMIT_UP",
+                    "CN_A_PREVIOUS_DAY_MAINBOARD_LIMIT_DOWN"
+                  ]
+                },
+                "p_effective_trade_date": {
+                  "$ref": "#/components/schemas/Date"
+                },
+                "p_version": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 1,
+                  "default": null
+                },
+                "p_limit": {
+                  "$ref": "#/components/schemas/Limit5000"
+                }
+              }
+            }
           }
-        }}}
+        }
       },
       "AuctionQuotes": {
         "required": true,
-        "content": {"application/json": {"schema": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "p_trade_date": {"type": ["string", "null"], "format": "date"},
-            "p_session_id": {"type": ["string", "null"], "format": "uuid"},
-            "p_symbol": {"type": ["string", "null"], "pattern": "^(SSE|SZSE):[0-9]{6}$"},
-            "p_start": {"type": ["string", "null"], "format": "date-time"},
-            "p_end": {"type": ["string", "null"], "format": "date-time"},
-            "p_limit": {"type": "integer", "minimum": 1, "maximum": 5000, "default": 1000}
-          },
-          "anyOf": [{"required": ["p_trade_date"]}, {"required": ["p_session_id"]}]
-        }}}
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "p_trade_date": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date"
+                },
+                "p_session_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                },
+                "p_symbol": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^(SSE|SZSE):[0-9]{6}$"
+                },
+                "p_start": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time"
+                },
+                "p_end": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time"
+                },
+                "p_limit": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 5000,
+                  "default": 1000
+                }
+              },
+              "anyOf": [
+                {
+                  "required": [
+                    "p_trade_date"
+                  ]
+                },
+                {
+                  "required": [
+                    "p_session_id"
+                  ]
+                }
+              ]
+            }
+          }
+        }
       },
       "CallAuctionMarketSnapshots": {
         "required": true,
-        "content": {"application/json": {"schema": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["p_trade_date", "p_codes"],
-          "properties": {
-            "p_trade_date": {"$ref": "#/components/schemas/Date"},
-            "p_codes": {
-              "type": "array",
-              "items": {"type": "string", "pattern": "^[0-9]{6}$"},
-              "minItems": 1,
-              "maxItems": 500
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "p_trade_date",
+                "p_codes"
+              ],
+              "properties": {
+                "p_trade_date": {
+                  "$ref": "#/components/schemas/Date"
+                },
+                "p_codes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[0-9]{6}$"
+                  },
+                  "minItems": 1,
+                  "maxItems": 500
+                }
+              }
             }
           }
-        }}}
+        }
       },
       "CallAuctionMarketSeriesSnapshots": {
         "required": true,
-        "content": {"application/json": {"schema": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["p_trade_date", "p_codes"],
-          "properties": {
-            "p_trade_date": {"$ref": "#/components/schemas/Date"},
-            "p_codes": {
-              "type": "array",
-              "items": {"type": "string", "pattern": "^[0-9]{6}$"},
-              "minItems": 1,
-              "maxItems": 500
-            },
-            "p_batch_code": {
-              "type": ["string", "null"],
-              "pattern": "^[0-9]{6}$"
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "p_trade_date",
+                "p_codes"
+              ],
+              "properties": {
+                "p_trade_date": {
+                  "$ref": "#/components/schemas/Date"
+                },
+                "p_codes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[0-9]{6}$"
+                  },
+                  "minItems": 1,
+                  "maxItems": 500
+                },
+                "p_batch_code": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^[0-9]{6}$"
+                }
+              }
             }
           }
-        }}}
+        }
       },
-      "TradingBillboardByDate": {
+      "DragonTigerEventsByDate": {
         "required": true,
-        "content": {"application/json": {"schema": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["p_trade_date"],
-          "properties": {
-            "p_trade_date": {"$ref": "#/components/schemas/Date"},
-            "p_limit": {"type": "integer", "minimum": 1, "maximum": 500, "default": 100},
-            "p_offset": {"type": "integer", "minimum": 0, "maximum": 10000, "default": 0}
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "p_trade_date"
+              ],
+              "properties": {
+                "p_trade_date": {
+                  "$ref": "#/components/schemas/Date"
+                },
+                "p_period_type": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "DAY",
+                    "THREE_DAY",
+                    null
+                  ]
+                },
+                "p_limit": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 500,
+                  "default": 100
+                },
+                "p_offset": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 10000,
+                  "default": 0
+                }
+              }
+            }
           }
-        }}}
+        }
       },
-      "TradingBillboardBySymbol": {
+      "DragonTigerEventsBySymbol": {
         "required": true,
-        "content": {"application/json": {"schema": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["p_symbol", "p_start_date", "p_end_date"],
-          "properties": {
-            "p_symbol": {"$ref": "#/components/schemas/StandardSymbol"},
-            "p_start_date": {"$ref": "#/components/schemas/Date"},
-            "p_end_date": {"$ref": "#/components/schemas/Date"},
-            "p_limit": {"type": "integer", "minimum": 1, "maximum": 500, "default": 100},
-            "p_offset": {"type": "integer", "minimum": 0, "maximum": 10000, "default": 0}
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "p_symbol",
+                "p_start_date",
+                "p_end_date"
+              ],
+              "properties": {
+                "p_symbol": {
+                  "$ref": "#/components/schemas/StandardSymbol"
+                },
+                "p_start_date": {
+                  "$ref": "#/components/schemas/Date"
+                },
+                "p_end_date": {
+                  "$ref": "#/components/schemas/Date"
+                },
+                "p_period_type": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "DAY",
+                    "THREE_DAY",
+                    null
+                  ]
+                },
+                "p_limit": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 500,
+                  "default": 100
+                },
+                "p_offset": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 10000,
+                  "default": 0
+                }
+              }
+            }
           }
-        }}}
+        }
       },
-      "TradingBillboardBySeat": {
+      "DragonTigerTradesBySeat": {
         "required": true,
-        "content": {"application/json": {"schema": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["p_start_date", "p_end_date"],
-          "properties": {
-            "p_seat_code": {"type": ["string", "null"], "minLength": 1},
-            "p_seat_name": {"type": ["string", "null"], "minLength": 1},
-            "p_start_date": {"$ref": "#/components/schemas/Date"},
-            "p_end_date": {"$ref": "#/components/schemas/Date"},
-            "p_side": {"type": ["string", "null"], "enum": ["buy", "sell", null]},
-            "p_limit": {"type": "integer", "minimum": 1, "maximum": 500, "default": 100},
-            "p_offset": {"type": "integer", "minimum": 0, "maximum": 10000, "default": 0}
-          },
-          "oneOf": [
-            {"required": ["p_seat_code"], "not": {"required": ["p_seat_name"]}},
-            {"required": ["p_seat_name"], "not": {"required": ["p_seat_code"]}}
-          ]
-        }}}
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "p_seat_id",
+                "p_start_date",
+                "p_end_date"
+              ],
+              "properties": {
+                "p_seat_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "p_start_date": {
+                  "$ref": "#/components/schemas/Date"
+                },
+                "p_end_date": {
+                  "$ref": "#/components/schemas/Date"
+                },
+                "p_limit": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 500,
+                  "default": 100
+                },
+                "p_offset": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 10000,
+                  "default": 0
+                }
+              }
+            }
+          }
+        }
+      },
+      "DragonTigerEventMetrics": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "p_event_id"
+              ],
+              "properties": {
+                "p_event_id": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          }
+        }
       }
     }
   }

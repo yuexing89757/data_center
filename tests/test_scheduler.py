@@ -27,13 +27,13 @@ from market_data_center.scheduling_catalog import (
     CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID,
     DAILY_RUN_JOB_ID,
     DEDUCTED_PROFIT_JOB_ID,
+    DRAGON_TIGER_JOB_ID,
     EOD_QUOTE_SNAPSHOT_JOB_ID,
     PYTDX_POOL_REFRESH_JOB_ID,
     SHAREHOLDER_COUNT_DAILY_JOB_ID,
     STALE_RUN_RECOVERY_JOB_ID,
     STOCK_DAILY_INDICATOR_JOB_ID,
     STOCK_POOL_JOB_ID,
-    TRADING_BILLBOARD_JOB_ID,
 )
 from market_data_center.settings import SchedulerSettings
 
@@ -193,7 +193,7 @@ def test_scheduler_registers_hourly_pytdx_pool_refresh(tmp_path: Path) -> None:
     assert refresh.coalesce
 
 
-def test_trading_billboard_schedule_is_opt_in_and_fixed_at_2030(tmp_path: Path) -> None:
+def test_dragon_tiger_schedule_is_opt_in_and_fixed_at_2030(tmp_path: Path) -> None:
     disabled = build_scheduler(
         SchedulerSettings(
             scheduler_store_path=tmp_path / "billboard-disabled.sqlite",
@@ -203,13 +203,13 @@ def test_trading_billboard_schedule_is_opt_in_and_fixed_at_2030(tmp_path: Path) 
     enabled = build_scheduler(
         SchedulerSettings(
             scheduler_store_path=tmp_path / "billboard-enabled.sqlite",
-            trading_billboard_enabled=True,
+            dragon_tiger_enabled=True,
             _env_file=None,
         )
     )
 
-    assert disabled.get_job(TRADING_BILLBOARD_JOB_ID) is None
-    job = enabled.get_job(TRADING_BILLBOARD_JOB_ID)
+    assert disabled.get_job(DRAGON_TIGER_JOB_ID) is None
+    job = enabled.get_job(DRAGON_TIGER_JOB_ID)
     assert job is not None
     assert str(job.trigger) == "cron[day_of_week='mon-fri', hour='20', minute='30']"
     assert job.max_instances == 1
@@ -714,9 +714,9 @@ def test_call_auction_morning_job_is_absent_when_disabled(tmp_path: Path) -> Non
     assert scheduler.get_job("call-auction-snapshot-daily") is None
 
 
-def test_scheduler_removes_persisted_retired_call_auction_job(tmp_path: Path) -> None:
+def test_scheduler_removes_persisted_retired_jobs(tmp_path: Path) -> None:
     store_path = tmp_path / "retired.sqlite"
-    _create_job_store(store_path, ("call-auction-snapshot-daily",))
+    _create_job_store(store_path, ("call-auction-snapshot-daily", "trading-billboard-daily"))
 
     build_scheduler(
         SchedulerSettings(  # type: ignore[call-arg]

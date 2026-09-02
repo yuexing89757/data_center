@@ -40,7 +40,7 @@ class SchedulerSettings(BaseSettings):
     board_index_daily_bar_enabled: bool = True
     shareholder_count_daily_enabled: bool = False
     # Opt-in until source-rights and protected deployment review are complete.
-    trading_billboard_enabled: bool = False
+    dragon_tiger_enabled: bool = False
     # Opt-in until benchmark coverage and the ordered migration are deployed.
     regulation_daily_enabled: bool = False
 

@@ -33,8 +33,8 @@ def test_pysnowball_is_a_distinct_provider_identity() -> None:
     assert ProviderCode("pysnowball") is ProviderCode.PYSNOWBALL
 
 
-def test_trading_billboard_is_a_distinct_dataset_identity() -> None:
-    assert DatasetCode("trading_billboard") is DatasetCode.TRADING_BILLBOARD
+def test_dragon_tiger_is_a_distinct_dataset_identity() -> None:
+    assert DatasetCode("dragon_tiger") is DatasetCode.DRAGON_TIGER
 
 
 def test_raw_manifest_rejects_path_traversal() -> None:

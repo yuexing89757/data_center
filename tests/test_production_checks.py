@@ -54,35 +54,42 @@ def test_regulation_migration_is_private_typed_and_has_26_official_rules() -> No
     assert "jsonb" not in migration
 
 
-def test_trading_billboard_migration_is_bounded_private_and_read_only() -> None:
+def test_dragon_tiger_replacement_migration_is_bounded_private_and_read_only() -> None:
     migration = (
-        (MIGRATION_DIR / "20260824000200_create_trading_billboard.sql")
+        (MIGRATION_DIR / "20260902000300_replace_trading_billboard_with_dragon_tiger.sql")
         .read_text(encoding="utf-8")
         .lower()
     )
 
-    assert "create schema if not exists billboard" in migration
-    assert "create table billboard.entry" in migration
-    assert "create table billboard.seat" in migration
-    assert "'trading_billboard'" in migration
-    assert "'trading_billboard_daily'" in migration
+    assert "drop table if exists billboard.entry" in migration
+    assert "drop table if exists billboard.seat" in migration
+    assert "create table billboard.dragon_tiger_event" in migration
+    assert "create table billboard.seat_trade" in migration
+    assert "create table billboard.trading_seat" in migration
+    assert "'dragon_tiger'" in migration
+    assert "'dragon_tiger_daily'" in migration
     assert "enable row level security" in migration
     assert "content_hash ~ '^[0-9a-f]{64}$'" in migration
-    assert "foreign key (entry_id, source_code, source_event_id, symbol, trade_date)" in migration
-    assert "query_trading_billboard_by_date" in migration
-    assert "query_trading_billboard_by_symbol" in migration
-    assert "query_trading_billboard_by_seat" in migration
-    assert migration.count("security definer") == 3
-    assert migration.count("set statement_timeout = '5s'") == 3
-    assert migration.count("using errcode = '22023'") >= 3
+    assert (
+        "foreign key (\n        event_id, source_code, source_event_id, symbol, trade_date"
+        in migration
+    )
+    assert migration.count("drop function if exists api_v1.query_trading_billboard") == 3
+    assert "query_dragon_tiger_events_by_date" in migration
+    assert "query_dragon_tiger_events_by_symbol" in migration
+    assert "query_dragon_tiger_trades_by_seat" in migration
+    assert "query_dragon_tiger_event_metrics" in migration
+    assert migration.count("security definer") == 5
+    assert migration.count("set statement_timeout = '5s'") == 5
+    assert migration.count("using errcode = '22023'") >= 4
     assert "p_limit > 500" in migration
     assert "p_offset > 10000" in migration
     assert "p_end_date - p_start_date > 365" in migration
     assert "from public, anon, authenticated" in migration
     assert "to market_data_api" in migration
-    assert "grant select, insert, update on billboard.entry" in migration
-    assert "grant select, insert, delete on billboard.seat" in migration
-    assert "grant delete on billboard.entry" not in migration
+    assert "grant select, insert, update, delete on billboard.dragon_tiger_event" in migration
+    assert "grant select, insert, update, delete on billboard.seat_trade" in migration
+    assert "overall_score" not in migration
     assert all(token not in migration for token in ("schtasks", "crontab", "oncalendar"))
 
 
@@ -338,6 +345,7 @@ def test_auction_series_value_semantics_migration_is_bounded() -> None:
 def test_production_schema_expectations_follow_all_migrations() -> None:
     sql = _migration_sql()
     tables = set(re.findall(r"(?im)^create table ([a-z0-9_]+)\.([a-z0-9_]+)", sql))
+    tables -= set(re.findall(r"(?im)^drop table if exists ([a-z0-9_]+)\.([a-z0-9_]+)", sql))
     views = set(
         re.findall(
             r"(?im)^create (?:or replace )?view ([a-z0-9_]+)\.([a-z0-9_]+)",
@@ -901,9 +909,10 @@ def test_active_release_files_do_not_reference_legacy_pytdx_settings() -> None:
     assert all(setting not in release_text for setting in legacy_settings)
 
 
-def test_trading_billboard_rpcs_reject_null_pagination_bounds() -> None:
+def test_dragon_tiger_rpcs_reject_null_pagination_bounds() -> None:
     migration = (
-        PROJECT_ROOT / "supabase/migrations/20260824000200_create_trading_billboard.sql"
+        PROJECT_ROOT
+        / "supabase/migrations/20260902000300_replace_trading_billboard_with_dragon_tiger.sql"
     ).read_text(encoding="utf-8")
 
     assert migration.count("p_limit is null") == 3

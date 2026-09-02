@@ -39,6 +39,10 @@ from market_data_center.domain import (
     DatasetCode,
     DeductedProfitRecord,
     DistributionRecord,
+    DragonTigerEventRecord,
+    DragonTigerPeriodType,
+    DragonTigerReason,
+    DragonTigerReasonType,
     Exchange,
     IngestionEnvelope,
     IngestionRun,
@@ -53,17 +57,14 @@ from market_data_center.domain import (
     RawFileFormat,
     RawManifest,
     RightsIssueRecord,
+    SeatTradeRecord,
     SecurityRecord,
     SecurityStatus,
     SecurityType,
     ShareCapitalRecord,
     StockDailyIndicatorSnapshotRecord,
     TradeStatus,
-    TradingBillboardRecord,
-    TradingBillboardSeatRecord,
-    TradingBillboardSide,
     deducted_profit_revision_key,
-    trading_billboard_content_hash,
 )
 from market_data_center.domain.call_auction_market_series import (
     MarketSeriesRound,
@@ -84,12 +85,12 @@ from market_data_center.persistence.call_auction_market_series_postgres import (
 from market_data_center.persistence.close_price_new_highs_postgres import (
     PostgreSQLClosePriceNewHighsPersistence,
 )
+from market_data_center.persistence.dragon_tiger_postgres import (
+    PostgreSQLDragonTigerPersistence,
+)
 from market_data_center.persistence.operations_postgres import PostgreSQLOperationsPersistence
 from market_data_center.persistence.regulation_postgres import (
     PostgreSQLRegulationPersistence,
-)
-from market_data_center.persistence.trading_billboard_postgres import (
-    PostgreSQLTradingBillboardPersistence,
 )
 from market_data_center.quality_audit import audit_daily_bars
 from market_data_center.recovery import (
@@ -6470,431 +6471,289 @@ def _prepare_query_contract_data(engine: Engine) -> UUID:
     return summary.calculation_id
 
 
-def test_trading_billboard_constraints_and_bounded_rpcs(database_engine: Engine) -> None:
+def test_dragon_tiger_persistence_and_replacement_rpcs(database_engine: Engine) -> None:
     _prepare_api_data(database_engine)
     ingestion_id = uuid4()
-    entry_id = uuid4()
-    with database_engine.begin() as connection:
-        connection.execute(
-            text("""
-                insert into ingestion.ingestion_run (
-                    ingestion_id, provider_code, dataset_code, status,
-                    requested_at, started_at, finished_at,
-                    fetched_rows, accepted_rows, rejected_rows
-                ) values (
-                    :ingestion_id, 'eastmoney', 'trading_billboard', 'succeeded',
-                    now(), now(), now(), 11, 1, 0
-                )
-            """),
-            {"ingestion_id": ingestion_id},
-        )
-        connection.execute(
-            text("""
-                insert into billboard.entry (
-                    entry_id, symbol, trade_date, source_event_id,
-                    reason_code, reason_text, close_price, change_rate_pct,
-                    turnover_rate_pct, market_amount, buy_amount, sell_amount,
-                    net_amount, deal_amount, deal_to_market_pct,
-                    net_to_market_pct, free_float_market_value,
-                    source_code, ingestion_id, content_hash
-                ) values (
-                    :entry_id, :symbol, :trade_date, 'event-1',
-                    '106001', '测试上榜原因', 10.50, 9.9,
-                    12.5, 10000, 600, 400,
-                    200, 1000, 10, 2, 50000,
-                    'eastmoney', :ingestion_id, :content_hash
-                )
-            """),
-            {
-                "entry_id": entry_id,
-                "symbol": SYMBOL,
-                "trade_date": TRADE_DATE,
-                "ingestion_id": ingestion_id,
-                "content_hash": "a" * 64,
-            },
-        )
-        for side in ("buy", "sell"):
-            for rank in range(1, 6):
-                connection.execute(
-                    text("""
-                        insert into billboard.seat (
-                            entry_id, source_code, source_event_id, symbol, trade_date,
-                            side, rank, seat_code, seat_name,
-                            buy_amount, sell_amount, net_amount,
-                            buy_to_market_pct, sell_to_market_pct, ingestion_id
-                        ) values (
-                            :entry_id, 'eastmoney', 'event-1', :symbol, :trade_date,
-                            :side, :rank, :seat_code, :seat_name,
-                            120, 20, 100, 1.2, 0.2, :ingestion_id
-                        )
-                    """),
-                    {
-                        "entry_id": entry_id,
-                        "symbol": SYMBOL,
-                        "trade_date": TRADE_DATE,
-                        "side": side,
-                        "rank": rank,
-                        "seat_code": "80000001" if rank == 1 else None,
-                        "seat_name": "测试营业部" if rank == 1 else "机构专用",
-                        "ingestion_id": ingestion_id,
-                    },
-                )
+    source_event_id = f"dragon-{ingestion_id}"
+    reason = DragonTigerReason(
+        reason_code="PRICE_DEVIATION_DAY_TEST",
+        reason_name="日涨幅偏离值达到7%",
+        reason_type=DragonTigerReasonType.PRICE_DEVIATION,
+        period_type=DragonTigerPeriodType.DAY,
+        source_code="eastmoney",
+        source_reason_code="106001",
+        source_reason_name="日涨幅偏离值达到7%",
+    )
+    event = DragonTigerEventRecord(
+        source_record_id=source_event_id,
+        symbol=SYMBOL,
+        trade_date=TRADE_DATE,
+        period_type=DragonTigerPeriodType.DAY,
+        period_start_date=TRADE_DATE,
+        period_end_date=TRADE_DATE,
+        reason=reason,
+        reason_name_raw=reason.reason_name,
+        close_price=Decimal("10.50"),
+        change_pct=Decimal("9.90"),
+        turnover_amount=Decimal("10000"),
+        turnover_rate=Decimal("12.50"),
+        amplitude=Decimal("11.00"),
+        lhb_buy_amount=Decimal("600"),
+        lhb_sell_amount=Decimal("400"),
+        seat_trades=(
+            SeatTradeRecord(
+                source_record_id=f"{source_event_id}:seat:A123",
+                source_event_id=source_event_id,
+                symbol=SYMBOL,
+                trade_date=TRADE_DATE,
+                seat_id=None,
+                seat_source_key="A123",
+                seat_name_raw="某机构席位",
+                buy_amount=Decimal("120"),
+                sell_amount=Decimal("20"),
+                buy_rank=1,
+                sell_rank=1,
+                is_institution=True,
+                is_northbound=False,
+                source_code="eastmoney",
+            ),
+        ),
+        source_code="eastmoney",
+    )
+    run = IngestionRun(
+        ingestion_id=ingestion_id,
+        provider_code=ProviderCode.EASTMONEY,
+        dataset_code=DatasetCode.DRAGON_TIGER,
+        status=IngestionStatus.SUCCEEDED,
+        requested_at=NOW,
+        started_at=NOW,
+        finished_at=NOW,
+        request_params={"trade_date": TRADE_DATE.isoformat()},
+        fetched_rows=2,
+        accepted_rows=2,
+    )
+    manifest = RawManifest(
+        raw_id=uuid4(),
+        ingestion_id=ingestion_id,
+        object_path=f"eastmoney/dragon_tiger/{ingestion_id}.jsonl",
+        file_format=RawFileFormat.JSONL,
+        content_sha256="a" * 64,
+        byte_size=100,
+        row_count=2,
+        schema_version="eastmoney.dragon_tiger.v2",
+    )
 
+    persistence = PostgreSQLDragonTigerPersistence(database_engine)
+    summary = persistence.commit_success(run, manifest, (), (event,))
+    repeated_ingestion_id = uuid4()
+    repeated = persistence.commit_success(
+        replace(run, ingestion_id=repeated_ingestion_id),
+        replace(
+            manifest,
+            raw_id=uuid4(),
+            ingestion_id=repeated_ingestion_id,
+            object_path=f"eastmoney/dragon_tiger/{repeated_ingestion_id}.jsonl",
+            content_sha256="b" * 64,
+        ),
+        (),
+        (event,),
+    )
+    renamed_ingestion_id = uuid4()
+    renamed_event = replace(
+        event,
+        seat_trades=(replace(event.seat_trades[0], seat_name_raw="某机构席位(更名)"),),
+    )
+    persistence.commit_success(
+        replace(run, ingestion_id=renamed_ingestion_id),
+        replace(
+            manifest,
+            raw_id=uuid4(),
+            ingestion_id=renamed_ingestion_id,
+            object_path=f"eastmoney/dragon_tiger/{renamed_ingestion_id}.jsonl",
+            content_sha256="c" * 64,
+        ),
+        (),
+        (renamed_event,),
+    )
+
+    assert summary.accepted_events == 1
+    assert repeated.unchanged_events == 1
     with database_engine.connect() as connection:
-        assert not connection.scalar(
-            text("select has_table_privilege('market_data_api', 'billboard.entry', 'select')")
-        )
-        connection.execute(text("set local role market_data_api"))
-        by_date = cast(
+        page = cast(
             Mapping[str, object],
             connection.scalar(
-                text("select api_v1.query_trading_billboard_by_date(:day, 100, 0)"),
+                text("select api_v1.query_dragon_tiger_events_by_date(:day, null, 100, 0)"),
                 {"day": TRADE_DATE},
             ),
         )
-        no_fallback = cast(
-            Mapping[str, object],
+        assert page["total_count"] == 1
+        assert (
             connection.scalar(
-                text("select api_v1.query_trading_billboard_by_date(:day, 100, 0)"),
-                {"day": TRADE_DATE + timedelta(days=1)},
-            ),
-        )
-        by_symbol = cast(
-            Mapping[str, object],
-            connection.scalar(
-                text("""
-                    select api_v1.query_trading_billboard_by_symbol(
-                        :symbol, :start_date, :end_date, 100, 0
-                    )
-                """),
-                {"symbol": SYMBOL, "start_date": TRADE_DATE, "end_date": TRADE_DATE},
-            ),
-        )
-        by_code = cast(
-            Mapping[str, object],
-            connection.scalar(
-                text("""
-                    select api_v1.query_trading_billboard_by_seat(
-                        '80000001', null, :start_date, :end_date, null, 100, 0
-                    )
-                """),
-                {"start_date": TRADE_DATE, "end_date": TRADE_DATE},
-            ),
-        )
-        by_name = cast(
-            Mapping[str, object],
-            connection.scalar(
-                text("""
-                    select api_v1.query_trading_billboard_by_seat(
-                        null, '机构专用', :start_date, :end_date, 'buy', 100, 0
-                    )
-                """),
-                {"start_date": TRADE_DATE, "end_date": TRADE_DATE},
-            ),
-        )
-
-        assert by_date["total_count"] == 1
-        assert len(cast(list[object], by_date["items"])) == 1
-        assert no_fallback["items"] == []
-        assert by_symbol["total_count"] == 1
-        assert by_code["total_count"] == 2
-        assert by_name["total_count"] == 4
-        assert connection.scalar(
-            text("""
-                select has_function_privilege(
-                    'market_data_api',
-                    'api_v1.query_trading_billboard_by_seat(text,text,date,date,text,integer,integer)',
-                    'execute'
-                )
-            """)
-        )
-        with pytest.raises(DBAPIError), connection.begin_nested():
-            connection.execute(text("select * from billboard.entry"))
-        with pytest.raises(DBAPIError) as invalid:
-            connection.execute(
-                text("""
-                    select api_v1.query_trading_billboard_by_seat(
-                        '80000001', '机构专用', :start_date, :end_date, null, 100, 0
-                    )
-                """),
-                {"start_date": TRADE_DATE, "end_date": TRADE_DATE},
+                text("select count(*) from billboard.seat_trade where source_event_id=:event"),
+                {"event": source_event_id},
             )
-        assert getattr(invalid.value.orig, "sqlstate", None) == "22023"
+            == 1
+        )
+        seat_id = connection.scalar(
+            text("""
+                select seat_id from billboard.seat_trade
+                where source_event_id=:event
+            """),
+            {"event": source_event_id},
+        )
+        assert isinstance(seat_id, UUID)
+        assert (
+            connection.scalar(
+                text("""
+                    select count(*) from billboard.trading_seat_alias
+                    where source_code='eastmoney' and source_seat_key='A123'
+                      and alias_name='某机构席位(更名)' and seat_id=:seat_id
+                """),
+                {"seat_id": seat_id},
+            )
+            == 1
+        )
+        metrics = cast(
+            Mapping[str, object],
+            connection.scalar(
+                text("select api_v1.query_dragon_tiger_event_metrics(:event_id)"),
+                {"event_id": cast(list[Mapping[str, object]], page["items"])[0]["event_id"]},
+            ),
+        )
+        assert metrics["institution_buy_amount"] == "120"
+        assert metrics["institution_sell_amount"] == "20"
+        assert metrics["institution_net_amount"] == "100"
+        assert (
+            connection.scalar(
+                text(
+                    "select to_regprocedure("
+                    "'api_v1.query_trading_billboard_by_date(date,integer,integer)')"
+                )
+            )
+            is None
+        )
+        assert not connection.scalar(
+            text(
+                "select has_table_privilege("
+                "'market_data_api','billboard.dragon_tiger_event','select')"
+            )
+        )
 
 
-def test_trading_billboard_seat_composite_parent_key_is_enforced(
+def test_dragon_tiger_resolves_a_keyless_trade_only_through_an_explicit_alias(
     database_engine: Engine,
 ) -> None:
     _prepare_api_data(database_engine)
-    ingestion_id = uuid4()
-    entry_id = uuid4()
     with database_engine.begin() as connection:
-        connection.execute(
+        seat_id = connection.scalar(
             text("""
-                insert into ingestion.ingestion_run (
-                    ingestion_id, provider_code, dataset_code, status,
-                    requested_at, started_at, finished_at
-                ) values (
-                    :ingestion_id, 'eastmoney', 'trading_billboard', 'succeeded',
-                    now(), now(), now()
-                )
+                insert into billboard.trading_seat (
+                    canonical_name, seat_type, first_seen_date, last_seen_date
+                ) values ('标准营业部', 'BROKER', :initial_day, :initial_day)
+                returning seat_id
             """),
-            {"ingestion_id": ingestion_id},
+            {"initial_day": TRADE_DATE + timedelta(days=5)},
         )
         connection.execute(
             text("""
-                insert into billboard.entry (
-                    entry_id, symbol, trade_date, source_event_id,
-                    reason_code, reason_text, buy_amount, sell_amount,
-                    net_amount, deal_amount, source_code, ingestion_id, content_hash
-                ) values (
-                    :entry_id, :symbol, :trade_date, 'event-parent',
-                    '106001', '测试上榜原因', 60, 40,
-                    20, 100, 'eastmoney', :ingestion_id, :content_hash
-                )
+                insert into billboard.trading_seat_alias (
+                    seat_id, source_code, source_seat_key, alias_name
+                ) values (:seat_id, 'tushare', null, '来源精确别名')
             """),
-            {
-                "entry_id": entry_id,
-                "symbol": SYMBOL,
-                "trade_date": TRADE_DATE,
-                "ingestion_id": ingestion_id,
-                "content_hash": "b" * 64,
-            },
+            {"seat_id": seat_id},
         )
-        connection.execute(
-            text("""
-                insert into billboard.seat (
-                    entry_id, source_code, source_event_id, symbol, trade_date,
-                    side, rank, seat_name, ingestion_id
-                ) values (
-                    :entry_id, 'eastmoney', 'event-parent', :symbol, :trade_date,
-                    'buy', 1, '测试营业部', :ingestion_id
-                )
-            """),
-            {
-                "entry_id": entry_id,
-                "symbol": SYMBOL,
-                "trade_date": TRADE_DATE,
-                "ingestion_id": ingestion_id,
-            },
-        )
-        with pytest.raises(IntegrityError), connection.begin_nested():
-            connection.execute(
-                text("""
-                    insert into billboard.seat (
-                        entry_id, source_code, source_event_id, symbol, trade_date,
-                        side, rank, seat_name, ingestion_id
-                    ) values (
-                        :entry_id, 'eastmoney', 'event-parent', :symbol, :trade_date,
-                        'buy', 1, '重复名次营业部', :ingestion_id
-                    )
-                """),
-                {
-                    "entry_id": entry_id,
-                    "symbol": SYMBOL,
-                    "trade_date": TRADE_DATE,
-                    "ingestion_id": ingestion_id,
-                },
-            )
+    assert isinstance(seat_id, UUID)
 
-        with pytest.raises(IntegrityError), connection.begin_nested():
-            connection.execute(
-                text("""
-                    insert into billboard.seat (
-                        entry_id, source_code, source_event_id, symbol, trade_date,
-                        side, rank, seat_name, ingestion_id
-                    ) values (
-                        :entry_id, 'eastmoney', 'wrong-event', :symbol, :trade_date,
-                        'buy', 2, '测试营业部', :ingestion_id
-                    )
-                """),
-                {
-                    "entry_id": entry_id,
-                    "symbol": SYMBOL,
-                    "trade_date": TRADE_DATE,
-                    "ingestion_id": ingestion_id,
-                },
-            )
-
-
-@pytest.mark.parametrize(
-    "statement",
-    [
-        "select api_v1.query_trading_billboard_by_date(:day, null, 0)",
-        "select api_v1.query_trading_billboard_by_date(:day, 100, null)",
-        "select api_v1.query_trading_billboard_by_symbol(:symbol, :day, :day, null, 0)",
-        "select api_v1.query_trading_billboard_by_symbol(:symbol, :day, :day, 100, null)",
-        "select api_v1.query_trading_billboard_by_seat("
-        "null, '机构专用', :day, :day, null, null, 0)",
-        "select api_v1.query_trading_billboard_by_seat("
-        "null, '机构专用', :day, :day, null, 100, null)",
-    ],
-)
-def test_trading_billboard_rpcs_reject_null_pagination(
-    database_engine: Engine, statement: str
-) -> None:
-    with database_engine.connect() as connection:
-        connection.execute(text("set local role market_data_api"))
-        with pytest.raises(DBAPIError) as invalid:
-            connection.execute(
-                text(statement),
-                {"day": TRADE_DATE, "symbol": SYMBOL},
-            )
-
-    assert getattr(invalid.value.orig, "sqlstate", None) == "22023"
-
-
-def test_trading_billboard_persistence_is_idempotent_and_revision_is_atomic(
-    database_engine: Engine,
-) -> None:
-    _prepare_api_data(database_engine)
-    persistence = PostgreSQLTradingBillboardPersistence(database_engine)
-
-    def seat(
-        side: TradingBillboardSide, rank: int, name: str = "机构专用"
-    ) -> TradingBillboardSeatRecord:
-        return TradingBillboardSeatRecord(
-            source_event_id="persist-event",
-            symbol=SYMBOL,
-            trade_date=TRADE_DATE,
-            side=side,
-            rank=rank,
-            seat_code=None,
-            seat_name=name,
-            buy_amount=Decimal("120"),
-            sell_amount=Decimal("20"),
-            net_amount=Decimal("100"),
-            buy_to_market_pct=Decimal("1.2"),
-            sell_to_market_pct=Decimal("0.2"),
-        )
-
-    original = TradingBillboardRecord(
+    ingestion_id = uuid4()
+    source_event_id = f"tushare-dragon-{ingestion_id}"
+    reason = DragonTigerReason(
+        reason_code="PRICE_DEVIATION_DAY_TUSHARE_TEST",
+        reason_name="日涨幅偏离值达到7%",
+        reason_type=DragonTigerReasonType.PRICE_DEVIATION,
+        period_type=DragonTigerPeriodType.DAY,
+        source_code="tushare",
+        source_reason_code="tushare-test",
+        source_reason_name="日涨幅偏离值达到7%",
+    )
+    event = DragonTigerEventRecord(
+        source_record_id=source_event_id,
         symbol=SYMBOL,
         trade_date=TRADE_DATE,
-        source_event_id="persist-event",
-        reason_code="106001",
-        reason_text="原始原因",
-        close_price=Decimal("10.5"),
-        change_rate_pct=Decimal("9.9"),
-        turnover_rate_pct=Decimal("12.5"),
-        market_amount=Decimal("10000"),
-        buy_amount=Decimal("600"),
-        sell_amount=Decimal("400"),
-        net_amount=Decimal("200"),
-        deal_amount=Decimal("1000"),
-        deal_to_market_pct=Decimal("10"),
-        net_to_market_pct=Decimal("2"),
-        free_float_market_value=Decimal("50000"),
-        buy_seats=tuple(seat(TradingBillboardSide.BUY, rank) for rank in range(1, 6)),
-        sell_seats=tuple(seat(TradingBillboardSide.SELL, rank) for rank in range(1, 6)),
+        period_type=DragonTigerPeriodType.DAY,
+        period_start_date=TRADE_DATE,
+        period_end_date=TRADE_DATE,
+        reason=reason,
+        reason_name_raw=reason.reason_name,
+        close_price=Decimal("10.50"),
+        change_pct=Decimal("9.90"),
+        turnover_amount=Decimal("10000"),
+        turnover_rate=Decimal("12.50"),
+        amplitude=None,
+        lhb_buy_amount=Decimal("100"),
+        lhb_sell_amount=Decimal("20"),
+        seat_trades=(
+            SeatTradeRecord(
+                source_record_id=f"{source_event_id}:buy:1",
+                source_event_id=source_event_id,
+                symbol=SYMBOL,
+                trade_date=TRADE_DATE,
+                seat_id=None,
+                seat_source_key=None,
+                seat_name_raw="来源精确别名",
+                buy_amount=Decimal("100"),
+                sell_amount=Decimal("20"),
+                buy_rank=1,
+                sell_rank=None,
+                is_institution=False,
+                is_northbound=False,
+                source_code="tushare",
+            ),
+        ),
+        source_code="tushare",
+    )
+    run = IngestionRun(
+        ingestion_id=ingestion_id,
+        provider_code=ProviderCode.TUSHARE,
+        dataset_code=DatasetCode.DRAGON_TIGER,
+        status=IngestionStatus.SUCCEEDED,
+        requested_at=NOW,
+        started_at=NOW,
+        finished_at=NOW,
+        request_params={"trade_date": TRADE_DATE.isoformat()},
+        fetched_rows=2,
+        accepted_rows=2,
+    )
+    manifest = RawManifest(
+        raw_id=uuid4(),
+        ingestion_id=ingestion_id,
+        object_path=f"tushare/dragon_tiger/{ingestion_id}.jsonl",
+        file_format=RawFileFormat.JSONL,
+        content_sha256="d" * 64,
+        byte_size=100,
+        row_count=2,
+        schema_version="tushare.dragon_tiger.v1",
     )
 
-    def completed_run(ingestion_id: UUID) -> IngestionRun:
-        return IngestionRun(
-            ingestion_id=ingestion_id,
-            provider_code=ProviderCode.EASTMONEY,
-            dataset_code=DatasetCode.TRADING_BILLBOARD,
-            status=IngestionStatus.SUCCEEDED,
-            requested_at=NOW,
-            started_at=NOW,
-            finished_at=NOW,
-            request_params={"trade_date": TRADE_DATE.isoformat()},
-            fetched_rows=11,
-            accepted_rows=11,
-        )
+    PostgreSQLDragonTigerPersistence(database_engine).commit_success(run, manifest, (), (event,))
 
-    def manifest(ingestion_id: UUID, suffix: str) -> RawManifest:
-        return RawManifest(
-            raw_id=uuid4(),
-            ingestion_id=ingestion_id,
-            object_path=f"eastmoney/trading_billboard/{suffix}.jsonl",
-            file_format=RawFileFormat.JSONL,
-            content_sha256=suffix[0] * 64,
-            byte_size=100,
-            row_count=11,
-            schema_version="eastmoney.trading_billboard.v1",
-        )
-
-    first_id = uuid4()
-    persistence.commit_success(
-        completed_run(first_id), manifest(first_id, "a-first"), (), (original,)
-    )
     with database_engine.connect() as connection:
-        first = connection.execute(
-            text("""
-                select entry_id, ingestion_id, content_hash, created_at, updated_at
-                from billboard.entry where source_event_id='persist-event'
-            """)
-        ).one()
-
-    identical_id = uuid4()
-    identical = persistence.commit_success(
-        completed_run(identical_id), manifest(identical_id, "b-identical"), (), (original,)
-    )
-    with database_engine.connect() as connection:
-        second = connection.execute(
-            text("""
-                select entry_id, ingestion_id, content_hash, created_at, updated_at
-                from billboard.entry where source_event_id='persist-event'
-            """)
-        ).one()
-    assert second == first
-    assert identical.unchanged_entries == 1
-
-    revised = replace(
-        original,
-        reason_text="修订原因",
-        buy_seats=tuple(replace(item, seat_name="修订营业部") for item in original.buy_seats),
-        sell_seats=tuple(replace(item, seat_name="修订营业部") for item in original.sell_seats),
-    )
-    revision_id = uuid4()
-    persistence.commit_success(
-        completed_run(revision_id), manifest(revision_id, "c-revision"), (), (revised,)
-    )
-    with database_engine.connect() as connection:
-        revision = connection.execute(
-            text("""
-                select entry_id, ingestion_id, content_hash
-                from billboard.entry where source_event_id='persist-event'
-            """)
-        ).one()
-        names = (
-            connection.execute(
-                text("select distinct seat_name from billboard.seat where entry_id=:entry_id"),
-                {"entry_id": first.entry_id},
+        assert (
+            connection.scalar(
+                text("""
+                    select seat_id from billboard.seat_trade
+                    where source_event_id=:event
+                """),
+                {"event": source_event_id},
             )
-            .scalars()
-            .all()
+            == seat_id
         )
-    assert revision.entry_id == first.entry_id
-    assert revision.ingestion_id == revision_id
-    assert revision.content_hash == trading_billboard_content_hash(revised)
-    assert names == ["修订营业部"]
-
-    broken = replace(
-        revised,
-        reason_text="不得提交的修订",
-        buy_seats=(replace(revised.buy_seats[0], symbol="SSE:600001"),),
-    )
-    broken_id = uuid4()
-    with pytest.raises(IntegrityError):
-        persistence.commit_success(
-            completed_run(broken_id), manifest(broken_id, "d-broken"), (), (broken,)
-        )
-    with database_engine.connect() as connection:
-        after_failure = connection.execute(
+        assert connection.execute(
             text("""
-                select ingestion_id, content_hash
-                from billboard.entry where source_event_id='persist-event'
-            """)
-        ).one()
-        broken_run_count = connection.scalar(
-            text("select count(*) from ingestion.ingestion_run where ingestion_id=:id"),
-            {"id": broken_id},
-        )
-    assert after_failure.ingestion_id == revision_id
-    assert after_failure.content_hash == trading_billboard_content_hash(revised)
-    assert broken_run_count == 0
+                select first_seen_date, last_seen_date
+                from billboard.trading_seat where seat_id=:seat_id
+            """),
+            {"seat_id": seat_id},
+        ).one() == (TRADE_DATE, TRADE_DATE + timedelta(days=5))
 
 
 def test_replay_stock_lookup_enforces_type_and_lifecycle(database_engine: Engine) -> None:

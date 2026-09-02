@@ -19,6 +19,7 @@ from market_data_center.domain import (
     ClassificationType,
     DailyBarRecord,
     DatasetCode,
+    DragonTigerEventRecord,
     IngestionEnvelope,
     IngestionRun,
     IngestionStatus,
@@ -28,7 +29,6 @@ from market_data_center.domain import (
     RawManifest,
     SecurityRecord,
     ShareholderCountRecord,
-    TradingBillboardRecord,
 )
 from market_data_center.domain.ingestion import ReplaySource
 from market_data_center.providers.contracts import ProviderError
@@ -104,18 +104,18 @@ class StubReliabilityPersistence:
         self.rejected_commits: list[
             tuple[IngestionRun, RawManifest | None, Sequence[QualityResult]]
         ] = []
-        self.trading_billboard_commits: list[
+        self.dragon_tiger_commits: list[
             tuple[
                 IngestionRun,
                 RawManifest | None,
-                Sequence[TradingBillboardRecord],
+                Sequence[DragonTigerEventRecord],
                 Sequence[QualityResult],
             ]
         ] = []
         self.stale_ids = [UUID("948c4e5b-97a1-4706-a1de-09c14670108a")]
         self.recovery_args: tuple[datetime, datetime, str] | None = None
-        self.trading_billboard_stock_queries: list[tuple[set[str], date]] = []
-        self.trading_billboard_known_symbols: set[str] | None = None
+        self.dragon_tiger_stock_queries: list[tuple[set[str], date]] = []
+        self.dragon_tiger_known_symbols: set[str] | None = None
 
     def create_ingestion_run(self, run: IngestionRun) -> None:
         self.created.append(run)
@@ -134,12 +134,16 @@ class StubReliabilityPersistence:
 
     def known_stock_symbols_for_date(self, symbols: Collection[str], trade_date: date) -> set[str]:
         symbol_set = set(symbols)
-        self.trading_billboard_stock_queries.append((symbol_set, trade_date))
+        self.dragon_tiger_stock_queries.append((symbol_set, trade_date))
         return (
             symbol_set
-            if self.trading_billboard_known_symbols is None
-            else self.trading_billboard_known_symbols & symbol_set
+            if self.dragon_tiger_known_symbols is None
+            else self.dragon_tiger_known_symbols & symbol_set
         )
+
+    def dragon_tiger_period_start_date(self, trade_date: date, session_count: int) -> date:
+        assert session_count == 3
+        return trade_date - timedelta(days=2)
 
     def known_trading_dates(self, dates: Collection[date]) -> set[date]:
         return set(dates)
@@ -248,14 +252,14 @@ class StubReliabilityPersistence:
     ) -> None:
         self.rejected_commits.append((run, manifest, quality_results))
 
-    def commit_trading_billboard_batch(
+    def commit_dragon_tiger_batch(
         self,
         run: IngestionRun,
         manifest: RawManifest | None,
-        records: Sequence[TradingBillboardRecord],
+        records: Sequence[DragonTigerEventRecord],
         quality_results: Sequence[QualityResult],
     ) -> None:
-        self.trading_billboard_commits.append((run, manifest, records, quality_results))
+        self.dragon_tiger_commits.append((run, manifest, records, quality_results))
 
     def stale_ingestion_run_ids(self, stale_before: datetime) -> Sequence[UUID]:
         return self.stale_ids
@@ -398,7 +402,7 @@ def test_raw_replay_dry_run_validates_without_database_writes(tmp_path: Path) ->
     assert persistence.security_commits == []
 
 
-def test_trading_billboard_raw_replay_reuses_v1_without_http_or_new_manifest(
+def test_dragon_tiger_raw_replay_reuses_v1_without_http_or_new_manifest(
     tmp_path: Path,
 ) -> None:
     store = LocalRawStore(tmp_path)
@@ -471,36 +475,37 @@ def test_trading_billboard_raw_replay_reuses_v1_without_http_or_new_manifest(
 
     assert replay.status == "succeeded"
     assert persistence.created[0].replayed_from_raw_id == RAW_ID
-    completed, replay_manifest, records, findings = persistence.trading_billboard_commits[0]
+    completed, replay_manifest, records, findings = persistence.dragon_tiger_commits[0]
     assert completed.ingestion_id == REPLAY_RUN_ID
+    assert completed.dataset_code is DatasetCode.DRAGON_TIGER
     assert replay_manifest is None
     assert findings == ()
     assert records[0].symbol == "SSE:600000"
-    assert records[0].buy_seats[0].seat_code is None
-    assert persistence.trading_billboard_stock_queries == [({"SSE:600000"}, date(2026, 7, 29))]
+    assert records[0].seat_trades[0].seat_source_key is None
+    assert persistence.dragon_tiger_stock_queries == [({"SSE:600000"}, date(2026, 7, 29))]
 
 
-def test_trading_billboard_replay_rejects_raw_date_mismatching_request(tmp_path: Path) -> None:
+def test_dragon_tiger_replay_rejects_raw_date_mismatching_request(tmp_path: Path) -> None:
     store = LocalRawStore(tmp_path)
-    source = _trading_billboard_source(store, request_date="2026-07-28")
+    source = _dragon_tiger_source(store, request_date="2026-07-28")
     persistence = StubReliabilityPersistence(source)
 
     with pytest.raises(ProviderError, match="request trade_date"):
         RawReplayService(raw_store=store, persistence=persistence).replay(SOURCE_RUN_ID)
 
-    assert persistence.trading_billboard_commits == []
+    assert persistence.dragon_tiger_commits == []
 
 
-def test_trading_billboard_replay_rejects_an_all_filtered_batch(tmp_path: Path) -> None:
+def test_dragon_tiger_replay_rejects_an_all_filtered_batch(tmp_path: Path) -> None:
     store = LocalRawStore(tmp_path)
-    source = _trading_billboard_source(store, request_date="2026-07-29")
+    source = _dragon_tiger_source(store, request_date="2026-07-29")
     persistence = StubReliabilityPersistence(source)
-    persistence.trading_billboard_known_symbols = set()
+    persistence.dragon_tiger_known_symbols = set()
 
     replay = RawReplayService(raw_store=store, persistence=persistence).replay(SOURCE_RUN_ID)
 
     assert replay.status == "failed"
-    assert persistence.trading_billboard_commits == []
+    assert persistence.dragon_tiger_commits == []
     assert len(persistence.rejected_commits) == 1
 
 
@@ -840,7 +845,7 @@ def test_cross_source_comparison_reports_differences_without_writes(tmp_path: Pa
     assert persistence.daily_commits == []
 
 
-def _trading_billboard_source(store: LocalRawStore, *, request_date: str) -> ReplaySource:
+def _dragon_tiger_source(store: LocalRawStore, *, request_date: str) -> ReplaySource:
     common = {
         "TRADE_ID": "replay-event",
         "SECUCODE": "600000.SH",

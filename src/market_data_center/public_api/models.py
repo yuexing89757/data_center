@@ -74,45 +74,47 @@ class DailyBarResponse(ApiModel):
     items: list[DailyBarItem]
 
 
-class TradingBillboardSeatItem(ApiModel):
-    symbol: str
-    trade_date: date
-    source_event_id: str
-    side: Literal["buy", "sell"]
-    rank: int = Field(ge=1, le=5)
-    seat_code: str | None
-    seat_name: str
+class DragonTigerSeatTradeItem(ApiModel):
+    seat_trade_id: UUID
+    seat_id: UUID | None
+    seat_name_raw: str
     buy_amount: Decimal | None
     sell_amount: Decimal | None
     net_amount: Decimal | None
-    buy_to_market_pct: Decimal | None
-    sell_to_market_pct: Decimal | None
+    buy_rank: int | None = Field(default=None, ge=1, le=5)
+    sell_rank: int | None = Field(default=None, ge=1, le=5)
+    is_institution: bool
+    is_northbound: bool
 
 
-class TradingBillboardItem(ApiModel):
+class DragonTigerEventItem(ApiModel):
+    event_id: UUID
     symbol: str
     trade_date: date
-    source_event_id: str
+    period_type: Literal["DAY", "THREE_DAY"]
+    period_start_date: date
+    period_end_date: date
     reason_code: str
-    reason_text: str
+    reason_name: str
+    reason_type: Literal[
+        "PRICE_DEVIATION", "TURNOVER", "AMPLITUDE", "CONTINUOUS_LIMIT", "ST", "OTHER"
+    ]
+    reason_name_raw: str
     close_price: Decimal | None
-    change_rate_pct: Decimal | None
-    turnover_rate_pct: Decimal | None
-    market_amount: Decimal | None
-    buy_amount: Decimal
-    sell_amount: Decimal
-    net_amount: Decimal
-    deal_amount: Decimal
-    deal_to_market_pct: Decimal | None
-    net_to_market_pct: Decimal | None
-    free_float_market_value: Decimal | None
-    source_code: Literal["eastmoney"]
-    buy_seats: list[TradingBillboardSeatItem]
-    sell_seats: list[TradingBillboardSeatItem]
+    change_pct: Decimal | None
+    turnover_amount: Decimal | None
+    turnover_rate: Decimal | None
+    amplitude: Decimal | None
+    lhb_buy_amount: Decimal | None
+    lhb_sell_amount: Decimal | None
+    net_amount: Decimal | None
+    source_code: Literal["eastmoney", "tushare"]
+    source_record_id: str
+    seat_trades: list[DragonTigerSeatTradeItem]
 
 
-class TradingBillboardPageResponse(ApiModel):
-    items: list[TradingBillboardItem]
+class DragonTigerEventPageResponse(ApiModel):
+    items: list[DragonTigerEventItem]
     returned_count: int = Field(ge=0)
     total_count: int = Field(ge=0)
     has_more: bool
@@ -120,23 +122,45 @@ class TradingBillboardPageResponse(ApiModel):
     offset: int = Field(ge=0, le=10000)
 
 
-class TradingBillboardSeatOccurrenceItem(TradingBillboardSeatItem):
+class DragonTigerSeatTradeOccurrenceItem(DragonTigerSeatTradeItem):
+    event_id: UUID
+    symbol: str
+    trade_date: date
+    period_type: Literal["DAY", "THREE_DAY"]
     reason_code: str
-    reason_text: str
-    summary_buy_amount: Decimal
-    summary_sell_amount: Decimal
-    summary_net_amount: Decimal
-    summary_deal_amount: Decimal
-    source_code: Literal["eastmoney"]
+    reason_name: str
 
 
-class TradingBillboardSeatPageResponse(ApiModel):
-    items: list[TradingBillboardSeatOccurrenceItem]
+class DragonTigerSeatTradePageResponse(ApiModel):
+    items: list[DragonTigerSeatTradeOccurrenceItem]
     returned_count: int = Field(ge=0)
     total_count: int = Field(ge=0)
     has_more: bool
     limit: int = Field(ge=1, le=500)
     offset: int = Field(ge=0, le=10000)
+
+
+class DragonTigerCapitalMetricsItem(ApiModel):
+    event_id: UUID
+    net_amount: Decimal | None
+    net_buy_strength: Decimal | None
+    buy_seat_count: int = Field(ge=0, le=5)
+    sell_seat_count: int = Field(ge=0, le=5)
+    pure_buy_seat_count: int = Field(ge=0, le=10)
+    pure_sell_seat_count: int = Field(ge=0, le=10)
+    buy_sell_overlap_count: int = Field(ge=0, le=5)
+    top1_buy_concentration: Decimal | None
+    top3_buy_concentration: Decimal | None
+    top5_buy_concentration: Decimal | None
+    top1_sell_concentration: Decimal | None
+    top3_sell_concentration: Decimal | None
+    top5_sell_concentration: Decimal | None
+    institution_buy_amount: Decimal | None
+    institution_sell_amount: Decimal | None
+    institution_net_amount: Decimal | None
+    northbound_buy_amount: Decimal | None
+    northbound_sell_amount: Decimal | None
+    northbound_net_amount: Decimal | None
 
 
 class ClassificationMembersResponse(ApiModel):

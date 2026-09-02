@@ -31,9 +31,15 @@ from market_data_center.domain.stock_pool import (
     MAINBOARD_LIMIT_DOWN_POOL,
     MAINBOARD_LIMIT_UP_POOL,
 )
+from market_data_center.dragon_tiger_service import (
+    DragonTigerBackfillSummary,
+    DragonTigerCollectionSummary,
+    DragonTigerService,
+)
 from market_data_center.operations_service import WorkflowExecution, WorkflowExecutionService
 from market_data_center.persistence import (
     PostgreSQLDerivedPersistence,
+    PostgreSQLDragonTigerPersistence,
     PostgreSQLOperationsPersistence,
     PostgreSQLPersistence,
     PostgreSQLRegulationPersistence,
@@ -43,17 +49,14 @@ from market_data_center.persistence.auction_postgres import PostgreSQLAuctionPer
 from market_data_center.persistence.close_price_new_highs_postgres import (
     PostgreSQLClosePriceNewHighsPersistence,
 )
-from market_data_center.persistence.trading_billboard_postgres import (
-    PostgreSQLTradingBillboardPersistence,
-)
 from market_data_center.pipeline import BoardIndexIngestionPipeline, IngestionPipeline
 from market_data_center.providers import (
+    DragonTigerProvider,
     ManagedMarketDataProvider,
     ProviderRequestUnavailable,
     ProviderRouter,
     ProviderRoutingError,
     RoutedResult,
-    TradingBillboardProvider,
     available_board_index_provider_codes,
     available_provider_codes,
     create_board_index_provider,
@@ -73,11 +76,6 @@ from market_data_center.shareholder_count_service import (
     ShareholderCountService,
 )
 from market_data_center.stock_pool_service import StockPoolService
-from market_data_center.trading_billboard_service import (
-    TradingBillboardBackfillSummary,
-    TradingBillboardCollectionSummary,
-    TradingBillboardService,
-)
 
 AUTO_PROVIDER_CODE = "auto"
 DEFAULT_BOARD_INDEX_PROVIDER_CODE = "akshare_ths"
@@ -100,9 +98,9 @@ class StockDailyIndicatorWorkflowResult:
     deleted_rows: int
 
 
-class _TradingBillboardBackfillStopped(RuntimeError):
-    def __init__(self, summary: TradingBillboardBackfillSummary) -> None:
-        super().__init__("trading billboard backfill stopped at the first failed date")
+class _DragonTigerBackfillStopped(RuntimeError):
+    def __init__(self, summary: DragonTigerBackfillSummary) -> None:
+        super().__init__("DragonTiger backfill stopped at the first failed date")
         self.summary = summary
 
 
@@ -119,8 +117,8 @@ def main() -> None:
             today=datetime.now(SHANGHAI_TIME_ZONE).date(),
             interactive=stdin.isatty(),
         )
-    if args.dataset == "trading-billboard-collect":
-        _run_trading_billboard_command(args)
+    if args.dataset == "dragon-tiger-collect":
+        _run_dragon_tiger_command(args)
         return
     settings = WorkerSettings()  # type: ignore[call-arg]
     engine = create_engine(
@@ -1151,7 +1149,7 @@ def _execute(args: Namespace, pipeline: IngestionPipeline) -> IngestionRun:
     return pipeline.ingest_daily_bars(args.source_symbol, start_date, end_date)
 
 
-def _validate_trading_billboard_args(
+def _validate_dragon_tiger_args(
     args: Namespace,
 ) -> tuple[date | None, date | None, date | None]:
     if not args.confirm_eastmoney_source_terms_reviewed:
@@ -1168,52 +1166,50 @@ def _validate_trading_billboard_args(
     if start > end:
         raise ValueError("start_date must not follow end_date")
     if (end - start).days > 365:
-        raise ValueError("trading billboard range is bounded to 366 calendar days")
+        raise ValueError("DragonTiger range is bounded to 366 calendar days")
     return None, start, end
 
 
-def _run_trading_billboard_command(args: Namespace) -> None:
-    exact, start, end = _validate_trading_billboard_args(args)
+def _run_dragon_tiger_command(args: Namespace) -> None:
+    exact, start, end = _validate_dragon_tiger_args(args)
     settings = WorkerSettings()  # type: ignore[call-arg]
     engine = create_engine(
         sqlalchemy_url(settings.database_url.get_secret_value()), pool_pre_ping=True
     )
     try:
         execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
-            WorkflowCode.TRADING_BILLBOARD_DAILY,
+            WorkflowCode.DRAGON_TIGER_DAILY,
             datetime.now(UTC).replace(second=0, microsecond=0),
             TriggerSource.MANUAL,
         )
-        service = TradingBillboardService(
-            persistence=PostgreSQLTradingBillboardPersistence(engine),
+        service = DragonTigerService(
+            persistence=PostgreSQLDragonTigerPersistence(engine),
             raw_store=LocalRawStore(settings.raw_data_root),
-            provider=_eastmoney_trading_billboard_provider(),
+            provider=_eastmoney_dragon_tiger_provider(),
         )
         try:
-            result: TradingBillboardCollectionSummary | TradingBillboardBackfillSummary
+            result: DragonTigerCollectionSummary | DragonTigerBackfillSummary
             if exact is not None:
-                result = execution.step(
-                    "collect_trading_billboard", 1, lambda: service.collect(exact)
-                )
+                result = execution.step("collect_dragon_tiger", 1, lambda: service.collect(exact))
             else:
                 if start is None or end is None:  # pragma: no cover - validator invariant
-                    raise AssertionError("validated trading billboard range is missing")
+                    raise AssertionError("validated DragonTiger range is missing")
 
-                def collect_range() -> TradingBillboardBackfillSummary:
+                def collect_range() -> DragonTigerBackfillSummary:
                     summary = service.backfill(start, end)
                     if summary.failed_date is not None:
-                        raise _TradingBillboardBackfillStopped(summary)
+                        raise _DragonTigerBackfillStopped(summary)
                     return summary
 
-                result = execution.step("collect_trading_billboard", 1, collect_range)
+                result = execution.step("collect_dragon_tiger", 1, collect_range)
         except BaseException as error:
             execution.fail(error)
             payload: object = (
                 asdict(error.summary)
-                if isinstance(error, _TradingBillboardBackfillStopped)
+                if isinstance(error, _DragonTigerBackfillStopped)
                 else {
                     "status": "failed",
-                    "operation": "trading-billboard-collect",
+                    "operation": "dragon-tiger-collect",
                     "error_type": type(error).__name__,
                 }
             )
@@ -1228,12 +1224,12 @@ def _run_trading_billboard_command(args: Namespace) -> None:
         engine.dispose()
 
 
-def _eastmoney_trading_billboard_provider() -> TradingBillboardProvider:
-    from market_data_center.providers.eastmoney_trading_billboard import (
-        EastmoneyTradingBillboardProvider,
+def _eastmoney_dragon_tiger_provider() -> DragonTigerProvider:
+    from market_data_center.providers.eastmoney_dragon_tiger import (
+        EastmoneyDragonTigerAdapter,
     )
 
-    return EastmoneyTradingBillboardProvider()
+    return EastmoneyDragonTigerAdapter()
 
 
 def _parser() -> ArgumentParser:
@@ -1249,15 +1245,15 @@ def _parser() -> ArgumentParser:
         help="automatic routing or an explicit data provider (default: auto)",
     )
     subparsers = parser.add_subparsers(dest="dataset", required=True)
-    billboard = subparsers.add_parser(
-        "trading-billboard-collect",
-        help="collect exact-day Eastmoney A-share trading billboard facts",
+    dragon_tiger = subparsers.add_parser(
+        "dragon-tiger-collect",
+        help="collect exact-day Eastmoney A-share DragonTiger facts",
     )
-    billboard_mode = billboard.add_mutually_exclusive_group(required=True)
-    billboard_mode.add_argument("--trade-date", help="one exact date YYYY-MM-DD")
-    billboard_mode.add_argument("--start-date", help="bounded range start YYYY-MM-DD")
-    billboard.add_argument("--end-date", help="bounded range end YYYY-MM-DD")
-    billboard.add_argument(
+    dragon_tiger_mode = dragon_tiger.add_mutually_exclusive_group(required=True)
+    dragon_tiger_mode.add_argument("--trade-date", help="one exact date YYYY-MM-DD")
+    dragon_tiger_mode.add_argument("--start-date", help="bounded range start YYYY-MM-DD")
+    dragon_tiger.add_argument("--end-date", help="bounded range end YYYY-MM-DD")
+    dragon_tiger.add_argument(
         "--confirm-eastmoney-source-terms-reviewed",
         action="store_true",
         required=True,

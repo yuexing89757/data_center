@@ -31,6 +31,7 @@ from market_data_center.cli import run_daily_workflow, run_stock_daily_indicator
 from market_data_center.close_price_new_highs_service import ClosePriceNewHighsService
 from market_data_center.database_urls import sqlalchemy_url
 from market_data_center.domain.operations import TriggerSource, WorkflowCode
+from market_data_center.dragon_tiger_service import DragonTigerService
 from market_data_center.operations_service import WorkflowExecutionService
 from market_data_center.persistence import PostgreSQLPersistence
 from market_data_center.persistence.auction_postgres import PostgreSQLAuctionPersistence
@@ -40,19 +41,19 @@ from market_data_center.persistence.call_auction_market_series_postgres import (
 from market_data_center.persistence.close_price_new_highs_postgres import (
     PostgreSQLClosePriceNewHighsPersistence,
 )
+from market_data_center.persistence.dragon_tiger_postgres import (
+    PostgreSQLDragonTigerPersistence,
+)
 from market_data_center.persistence.operations_postgres import PostgreSQLOperationsPersistence
 from market_data_center.persistence.regulation_postgres import (
     PostgreSQLRegulationPersistence,
 )
 from market_data_center.persistence.stock_pool_postgres import PostgreSQLStockPoolPersistence
-from market_data_center.persistence.trading_billboard_postgres import (
-    PostgreSQLTradingBillboardPersistence,
-)
 from market_data_center.pipeline import BoardIndexIngestionPipeline, IngestionPipeline
 from market_data_center.providers import create_board_index_provider, create_provider
 from market_data_center.providers.contracts import ProviderError
-from market_data_center.providers.eastmoney_trading_billboard import (
-    EastmoneyTradingBillboardProvider,
+from market_data_center.providers.eastmoney_dragon_tiger import (
+    EastmoneyDragonTigerAdapter,
 )
 from market_data_center.providers.pytdx_hq import PytdxHqProvider
 from market_data_center.providers.pytdx_pool import (
@@ -73,6 +74,7 @@ from market_data_center.scheduling_catalog import (
     CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID,
     DAILY_RUN_JOB_ID,
     DEDUCTED_PROFIT_JOB_ID,
+    DRAGON_TIGER_JOB_ID,
     EOD_QUOTE_SNAPSHOT_JOB_ID,
     PYTDX_POOL_REFRESH_JOB_ID,
     REGULATION_DAILY_CALCULATION_JOB_ID,
@@ -82,7 +84,6 @@ from market_data_center.scheduling_catalog import (
     STOCK_DAILY_INDICATOR_JOB_ID,
     STOCK_POOL_JOB_ID,
     TODAY_LIMIT_UP_SNAPSHOT_JOB_ID,
-    TRADING_BILLBOARD_JOB_ID,
     JobDefinition,
     job_definition,
     job_definitions,
@@ -95,11 +96,14 @@ from market_data_center.settings import (
 )
 from market_data_center.shareholder_count_service import ShareholderCountService
 from market_data_center.stock_pool_service import StockPoolService
-from market_data_center.trading_billboard_service import TradingBillboardService
 
 SCHEDULER_LOCK_KEY = "market-data-center:scheduler"
 LOGGER = getLogger(__name__)
-_RETIRED_JOB_IDS = ("call-auction-snapshot-daily", "opening-auction-limit-up-quotes")
+_RETIRED_JOB_IDS = (
+    "call-auction-snapshot-daily",
+    "opening-auction-limit-up-quotes",
+    "trading-billboard-daily",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -657,7 +661,7 @@ def run_today_limit_up_snapshot_job() -> None:
         engine.dispose()
 
 
-def run_trading_billboard_job() -> None:
+def run_dragon_tiger_job() -> None:
     """Collect one exact Shanghai trading-date billboard batch when opt-in is enabled."""
     settings = WorkerSettings()  # type: ignore[call-arg]
     scheduling = SchedulerSettings()
@@ -665,24 +669,24 @@ def run_trading_billboard_job() -> None:
         sqlalchemy_url(settings.database_url.get_secret_value()), pool_pre_ping=True
     )
     try:
-        fire_time = _scheduled_job_fire_time(TRADING_BILLBOARD_JOB_ID, scheduling)
+        fire_time = _scheduled_job_fire_time(DRAGON_TIGER_JOB_ID, scheduling)
         trade_date = fire_time.astimezone(ZoneInfo(SCHEDULER_TIMEZONE)).date()
-        persistence = PostgreSQLTradingBillboardPersistence(engine)
+        persistence = PostgreSQLDragonTigerPersistence(engine)
         execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
-            WorkflowCode.TRADING_BILLBOARD_DAILY,
+            WorkflowCode.DRAGON_TIGER_DAILY,
             fire_time,
             TriggerSource.SCHEDULED,
         )
         try:
             if persistence.is_trading_day(trade_date):
-                service = TradingBillboardService(
+                service = DragonTigerService(
                     persistence=persistence,
                     raw_store=LocalRawStore(settings.raw_data_root),
-                    provider=EastmoneyTradingBillboardProvider(),
+                    provider=EastmoneyDragonTigerAdapter(),
                 )
-                execution.step("collect_trading_billboard", 1, lambda: service.collect(trade_date))
+                execution.step("collect_dragon_tiger", 1, lambda: service.collect(trade_date))
             else:
-                execution.step("collect_trading_billboard", 1, lambda: 0)
+                execution.step("collect_dragon_tiger", 1, lambda: 0)
         except BaseException as error:
             execution.fail(error)
             raise
@@ -817,7 +821,7 @@ def build_scheduler(settings: SchedulerSettings | None = None) -> BlockingSchedu
         TODAY_LIMIT_UP_SNAPSHOT_JOB_ID: run_today_limit_up_snapshot_job,
         CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID: run_close_price_new_highs_120d_job,
         BOARD_INDEX_DAILY_BAR_JOB_ID: run_board_index_daily_bar_job,
-        TRADING_BILLBOARD_JOB_ID: run_trading_billboard_job,
+        DRAGON_TIGER_JOB_ID: run_dragon_tiger_job,
         REGULATION_DAILY_CALCULATION_JOB_ID: run_regulation_daily_calculation_job,
         PYTDX_POOL_REFRESH_JOB_ID: run_pytdx_pool_refresh_job,
     }

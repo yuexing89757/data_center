@@ -5,16 +5,16 @@ from market_data_center.providers.akshare_ths import AKShareTHSProvider
 from market_data_center.providers.baostock import BaoStockProvider
 from market_data_center.providers.contracts import (
     BoardIndexProvider,
+    DragonTigerProvider,
     ManagedBoardIndexProvider,
     ManagedMarketDataProvider,
     MarketDataProvider,
     ProviderBatch,
     ProviderError,
     ProviderRequestUnavailable,
-    TradingBillboardProvider,
 )
-from market_data_center.providers.eastmoney_trading_billboard import (
-    EastmoneyTradingBillboardProvider,
+from market_data_center.providers.eastmoney_dragon_tiger import (
+    EastmoneyDragonTigerAdapter,
 )
 from market_data_center.providers.pytdx import PytdxProvider
 from market_data_center.providers.registry import (
@@ -38,7 +38,8 @@ __all__ = [
     "AKShareTHSProvider",
     "BaoStockProvider",
     "BoardIndexProvider",
-    "EastmoneyTradingBillboardProvider",
+    "DragonTigerProvider",
+    "EastmoneyDragonTigerAdapter",
     "ManagedBoardIndexProvider",
     "ManagedMarketDataProvider",
     "MarketDataProvider",
@@ -50,7 +51,6 @@ __all__ = [
     "PytdxProvider",
     "RoutedResult",
     "RoutingAttempt",
-    "TradingBillboardProvider",
     "TushareProvider",
     "available_board_index_provider_codes",
     "available_provider_codes",

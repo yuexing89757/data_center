@@ -27,8 +27,12 @@ TARGET_SCHEMAS = (
 )
 EXPECTED_TABLES = {
     ("audit", "quality_result"),
-    ("billboard", "entry"),
-    ("billboard", "seat"),
+    ("billboard", "dragon_tiger_event"),
+    ("billboard", "dragon_tiger_reason"),
+    ("billboard", "reason_source_alias"),
+    ("billboard", "seat_trade"),
+    ("billboard", "trading_seat"),
+    ("billboard", "trading_seat_alias"),
     ("capital", "distribution"),
     ("capital", "rights_issue"),
     ("capital", "share_capital"),

@@ -25,9 +25,10 @@ EXPECTED_ENDPOINTS = {
     "query_shareholder_counts_as_of",
     "query_shareholder_count_history_as_of",
     "query_shareholder_count_history_latest",
-    "query_trading_billboard_by_date",
-    "query_trading_billboard_by_symbol",
-    "query_trading_billboard_by_seat",
+    "query_dragon_tiger_events_by_date",
+    "query_dragon_tiger_events_by_symbol",
+    "query_dragon_tiger_trades_by_seat",
+    "query_dragon_tiger_event_metrics",
 }
 
 
@@ -299,36 +300,39 @@ def test_latest_stock_daily_indicator_contract_is_bounded_and_decimal_safe() -> 
     assert {"401", "422", "503"}.issubset(operation["responses"])
 
 
-def test_trading_billboard_contracts_are_bounded_exact_and_decimal_safe() -> None:
+def test_dragon_tiger_replaces_trading_billboard_contracts() -> None:
     postgrest = _load("postgrest-openapi-v1.json")
     agent = _load("agent-tools-v1.json")
     fastapi = _load("fastapi-openapi-v1.json")
 
     for endpoint in (
-        "query_trading_billboard_by_date",
-        "query_trading_billboard_by_symbol",
-        "query_trading_billboard_by_seat",
+        "query_dragon_tiger_events_by_date",
+        "query_dragon_tiger_events_by_symbol",
+        "query_dragon_tiger_trades_by_seat",
+        "query_dragon_tiger_event_metrics",
     ):
         assert f"/rpc/{endpoint}" in postgrest["paths"]
         assert any(tool["endpoint"] == endpoint for tool in agent["tools"])
 
     paths = fastapi["paths"]
-    assert "/api/v1/trading-billboard/by-date" in paths
-    assert "/api/v1/trading-billboard/by-symbol/{code}" in paths
-    seat_operation = paths["/api/v1/trading-billboard/seats"]["get"]
+    assert "/api/v1/dragon-tiger/events/by-date" in paths
+    assert "/api/v1/dragon-tiger/events/by-symbol/{code}" in paths
+    seat_operation = paths["/api/v1/dragon-tiger/seats/{seat_id}/trades"]["get"]
     parameters = {item["name"]: item["schema"] for item in seat_operation["parameters"]}
     assert parameters["limit"]["maximum"] == 500
     assert parameters["offset"]["maximum"] == 10000
-    assert parameters["side"]["anyOf"][0]["enum"] == ["buy", "sell"]
-    assert "只能提供一个" in seat_operation["description"]
+    assert parameters["seat_id"]["format"] == "uuid"
 
-    item = fastapi["components"]["schemas"]["TradingBillboardItem"]
+    item = fastapi["components"]["schemas"]["DragonTigerEventItem"]
     assert item["properties"]["close_price"]["anyOf"][0]["type"] == "string"
-    assert "buy_seats" in item["properties"]
-    occurrence = fastapi["components"]["schemas"]["TradingBillboardSeatOccurrenceItem"]
-    assert occurrence["properties"]["summary_net_amount"]["type"] == "string"
+    assert "seat_trades" in item["properties"]
+    metrics = fastapi["components"]["schemas"]["DragonTigerCapitalMetricsItem"]
+    assert metrics["properties"]["top5_buy_concentration"]["anyOf"][0]["type"] == "string"
 
     serialized = dumps([postgrest, agent, fastapi], ensure_ascii=False).lower()
+    assert "query_trading_billboard_by_date" not in serialized
+    assert "/api/v1/trading-billboard" not in serialized
+    assert "tradingbillboarditem" not in serialized
     assert "billboard.entry" not in serialized
     assert "billboard.seat" not in serialized
     assert "payload_json" not in serialized

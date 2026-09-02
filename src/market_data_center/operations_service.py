@@ -23,6 +23,10 @@ from market_data_center.domain.regulation import (
     RegulationRunStatus,
 )
 from market_data_center.domain.stock_pool import StockPoolBuildSummary
+from market_data_center.dragon_tiger_service import (
+    DragonTigerBackfillSummary,
+    DragonTigerCollectionSummary,
+)
 from market_data_center.persistence.operations_postgres import PostgreSQLOperationsPersistence
 from market_data_center.persistence.today_limit_up_postgres import TodayLimitUpFillSummary
 from market_data_center.providers.pytdx_pool import PytdxPoolRefreshResult
@@ -30,10 +34,6 @@ from market_data_center.regulation_benchmark_service import (
     RegulationBenchmarkCollectionSummary,
 )
 from market_data_center.shareholder_count_batch import ShareholderCountSyncSummary
-from market_data_center.trading_billboard_service import (
-    TradingBillboardBackfillSummary,
-    TradingBillboardCollectionSummary,
-)
 
 T = TypeVar("T")
 
@@ -161,16 +161,16 @@ def _result_statistics(result: object) -> tuple[int, int, int, ExecutionStatus]:
             result.rejected_rows,
             status,
         )
-    if isinstance(result, TradingBillboardCollectionSummary):
+    if isinstance(result, DragonTigerCollectionSummary):
         return (
             result.fetched_rows,
-            result.accepted_entries + result.accepted_seats,
+            result.accepted_events + result.accepted_seat_trades,
             result.filtered_rows,
             ExecutionStatus.SUCCEEDED,
         )
-    if isinstance(result, TradingBillboardBackfillSummary):
+    if isinstance(result, DragonTigerBackfillSummary):
         fetched = sum(item.fetched_rows for item in result.results)
-        accepted = sum(item.accepted_entries + item.accepted_seats for item in result.results)
+        accepted = sum(item.accepted_events + item.accepted_seat_trades for item in result.results)
         rejected = sum(item.filtered_rows for item in result.results)
         status = (
             ExecutionStatus.FAILED if result.failed_date is not None else ExecutionStatus.SUCCEEDED

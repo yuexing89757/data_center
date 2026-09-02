@@ -20,12 +20,13 @@ from market_data_center.public_api.models import (
     ClosePriceNewHighs120dResponse,
     DailyBarResponse,
     DailyLimitUpListResponse,
+    DragonTigerCapitalMetricsItem,
+    DragonTigerEventPageResponse,
+    DragonTigerSeatTradePageResponse,
     LatestStockDailyIndicatorResponse,
     LimitUpPoolResponse,
     SecurityItem,
     TopGainers20dResponse,
-    TradingBillboardPageResponse,
-    TradingBillboardSeatPageResponse,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -43,25 +44,30 @@ select api_v1.query_recent_daily_bars(
 ) as payload
 """)
 
-QUERY_TRADING_BILLBOARD_BY_DATE = text("""
-select api_v1.query_trading_billboard_by_date(
-    p_trade_date => :trade_date, p_limit => :limit, p_offset => :offset
+QUERY_DRAGON_TIGER_EVENTS_BY_DATE = text("""
+select api_v1.query_dragon_tiger_events_by_date(
+    p_trade_date => :trade_date, p_period_type => :period_type,
+    p_limit => :limit, p_offset => :offset
 ) as payload
 """)
 
-QUERY_TRADING_BILLBOARD_BY_SYMBOL = text("""
-select api_v1.query_trading_billboard_by_symbol(
+QUERY_DRAGON_TIGER_EVENTS_BY_SYMBOL = text("""
+select api_v1.query_dragon_tiger_events_by_symbol(
     p_symbol => :symbol, p_start_date => :start_date, p_end_date => :end_date,
+    p_period_type => :period_type,
     p_limit => :limit, p_offset => :offset
 ) as payload
 """)
 
-QUERY_TRADING_BILLBOARD_BY_SEAT = text("""
-select api_v1.query_trading_billboard_by_seat(
-    p_seat_code => :seat_code, p_seat_name => :seat_name,
-    p_start_date => :start_date, p_end_date => :end_date, p_side => :side,
+QUERY_DRAGON_TIGER_TRADES_BY_SEAT = text("""
+select api_v1.query_dragon_tiger_trades_by_seat(
+    p_seat_id => :seat_id, p_start_date => :start_date, p_end_date => :end_date,
     p_limit => :limit, p_offset => :offset
 ) as payload
+""")
+
+QUERY_DRAGON_TIGER_EVENT_METRICS = text("""
+select api_v1.query_dragon_tiger_event_metrics(p_event_id => :event_id) as payload
 """)
 
 QUERY_LATEST_STOCK_DAILY_INDICATORS = text("""
@@ -176,24 +182,25 @@ class PublicQueryService(Protocol):
 
     def daily_bars(self, code: str, trade_date: date, limit: int) -> DailyBarResponse: ...
 
-    def trading_billboard_by_date(
-        self, trade_date: date, limit: int, offset: int
-    ) -> TradingBillboardPageResponse: ...
+    def dragon_tiger_events_by_date(
+        self, trade_date: date, period_type: str | None, limit: int, offset: int
+    ) -> DragonTigerEventPageResponse: ...
 
-    def trading_billboard_by_code(
-        self, code: str, start_date: date, end_date: date, limit: int, offset: int
-    ) -> TradingBillboardPageResponse: ...
-
-    def trading_billboard_by_seat(
+    def dragon_tiger_events_by_code(
         self,
-        seat_code: str | None,
-        seat_name: str | None,
+        code: str,
         start_date: date,
         end_date: date,
-        side: str | None,
+        period_type: str | None,
         limit: int,
         offset: int,
-    ) -> TradingBillboardSeatPageResponse: ...
+    ) -> DragonTigerEventPageResponse: ...
+
+    def dragon_tiger_trades_by_seat(
+        self, seat_id: str, start_date: date, end_date: date, limit: int, offset: int
+    ) -> DragonTigerSeatTradePageResponse: ...
+
+    def dragon_tiger_event_metrics(self, event_id: str) -> DragonTigerCapitalMetricsItem: ...
 
     def latest_stock_daily_indicators(
         self, codes: tuple[str, ...]
@@ -259,19 +266,30 @@ class PostgreSQLPublicQueryService:
         )
         return DailyBarResponse.model_validate(rows[0]["payload"])
 
-    def trading_billboard_by_date(
-        self, trade_date: date, limit: int, offset: int
-    ) -> TradingBillboardPageResponse:
+    def dragon_tiger_events_by_date(
+        self, trade_date: date, period_type: str | None, limit: int, offset: int
+    ) -> DragonTigerEventPageResponse:
         rows = self._execute(
-            QUERY_TRADING_BILLBOARD_BY_DATE,
-            {"trade_date": trade_date, "limit": limit, "offset": offset},
+            QUERY_DRAGON_TIGER_EVENTS_BY_DATE,
+            {
+                "trade_date": trade_date,
+                "period_type": period_type,
+                "limit": limit,
+                "offset": offset,
+            },
             statement_timeout_ms=5_000,
         )
-        return TradingBillboardPageResponse.model_validate(rows[0]["payload"])
+        return DragonTigerEventPageResponse.model_validate(rows[0]["payload"])
 
-    def trading_billboard_by_code(
-        self, code: str, start_date: date, end_date: date, limit: int, offset: int
-    ) -> TradingBillboardPageResponse:
+    def dragon_tiger_events_by_code(
+        self,
+        code: str,
+        start_date: date,
+        end_date: date,
+        period_type: str | None,
+        limit: int,
+        offset: int,
+    ) -> DragonTigerEventPageResponse:
         matches = tuple(
             item
             for item in self.search_securities(code, 100)
@@ -282,42 +300,45 @@ class PostgreSQLPublicQueryService:
         if len(matches) != 1:
             raise PublicQueryAmbiguous("stock code is ambiguous across exchanges")
         rows = self._execute(
-            QUERY_TRADING_BILLBOARD_BY_SYMBOL,
+            QUERY_DRAGON_TIGER_EVENTS_BY_SYMBOL,
             {
                 "symbol": matches[0].symbol,
                 "start_date": start_date,
                 "end_date": end_date,
+                "period_type": period_type,
                 "limit": limit,
                 "offset": offset,
             },
             statement_timeout_ms=5_000,
         )
-        return TradingBillboardPageResponse.model_validate(rows[0]["payload"])
+        return DragonTigerEventPageResponse.model_validate(rows[0]["payload"])
 
-    def trading_billboard_by_seat(
-        self,
-        seat_code: str | None,
-        seat_name: str | None,
-        start_date: date,
-        end_date: date,
-        side: str | None,
-        limit: int,
-        offset: int,
-    ) -> TradingBillboardSeatPageResponse:
+    def dragon_tiger_trades_by_seat(
+        self, seat_id: str, start_date: date, end_date: date, limit: int, offset: int
+    ) -> DragonTigerSeatTradePageResponse:
         rows = self._execute(
-            QUERY_TRADING_BILLBOARD_BY_SEAT,
+            QUERY_DRAGON_TIGER_TRADES_BY_SEAT,
             {
-                "seat_code": seat_code,
-                "seat_name": seat_name,
+                "seat_id": seat_id,
                 "start_date": start_date,
                 "end_date": end_date,
-                "side": side,
                 "limit": limit,
                 "offset": offset,
             },
             statement_timeout_ms=5_000,
         )
-        return TradingBillboardSeatPageResponse.model_validate(rows[0]["payload"])
+        return DragonTigerSeatTradePageResponse.model_validate(rows[0]["payload"])
+
+    def dragon_tiger_event_metrics(self, event_id: str) -> DragonTigerCapitalMetricsItem:
+        rows = self._execute(
+            QUERY_DRAGON_TIGER_EVENT_METRICS,
+            {"event_id": event_id},
+            statement_timeout_ms=5_000,
+        )
+        payload = rows[0]["payload"]
+        if payload is None:
+            raise PublicQueryNotFound("DragonTiger event was not found")
+        return DragonTigerCapitalMetricsItem.model_validate(payload)
 
     def latest_stock_daily_indicators(
         self, codes: tuple[str, ...]

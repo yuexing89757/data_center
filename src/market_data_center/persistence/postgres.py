@@ -30,6 +30,7 @@ from market_data_center.domain.convertible_bond import (
     ConvertibleBondRecord,
 )
 from market_data_center.domain.deducted_profit import DeductedProfitRecord
+from market_data_center.domain.dragon_tiger import DragonTigerEventRecord
 from market_data_center.domain.entities import CalculatedTradingDay
 from market_data_center.domain.ingestion import (
     DatasetCode,
@@ -59,7 +60,6 @@ from market_data_center.domain.records import (
 )
 from market_data_center.domain.shareholder_count import ShareholderCountRecord
 from market_data_center.domain.stock_daily_indicator import StockDailyIndicatorSnapshotRecord
-from market_data_center.domain.trading_billboard import TradingBillboardRecord
 from market_data_center.shareholder_count_batch import PreparedShareholderCountBatch
 from market_data_center.shareholder_count_service import ShareholderCountBackfillTarget
 
@@ -933,6 +933,23 @@ where symbol in :symbols
                 ).scalars()
             )
 
+    def dragon_tiger_period_start_date(self, trade_date: date, session_count: int) -> date:
+        if session_count < 1:
+            raise ValueError("session_count must be positive")
+        with self._engine.connect() as connection:
+            dates = connection.scalars(
+                text("""
+                    select trade_date from core.trading_calendar
+                    where market='CN_A_SHARE' and is_trading_day=true
+                      and trade_date <= :trade_date
+                    order by trade_date desc limit :session_count
+                """),
+                {"trade_date": trade_date, "session_count": session_count},
+            ).all()
+        if len(dates) != session_count:
+            raise ValueError("trading calendar cannot resolve DragonTiger period")
+        return cast(date, min(dates))
+
     def known_board_ids(self, board_ids: Collection[str]) -> set[str]:
         if not board_ids:
             return set()
@@ -1725,22 +1742,20 @@ where board_id = :board_id and trade_date = :trade_date
                 connection.execute(INSERT_QUALITY_RESULT, self._quality_parameters(quality_results))
             connection.execute(UPDATE_INGESTION_RUN, self._run_update_parameters(run))
 
-    def commit_trading_billboard_batch(
+    def commit_dragon_tiger_batch(
         self,
         run: IngestionRun,
         manifest: RawManifest | None,
-        records: Sequence[TradingBillboardRecord],
+        records: Sequence[DragonTigerEventRecord],
         quality_results: Sequence[QualityResult],
     ) -> None:
         if manifest is not None:
-            raise ValueError("trading billboard replay must reuse the original Raw manifest")
-        from market_data_center.persistence.trading_billboard_postgres import (
-            PostgreSQLTradingBillboardPersistence,
+            raise ValueError("DragonTiger replay must reuse the original Raw manifest")
+        from market_data_center.persistence.dragon_tiger_postgres import (
+            PostgreSQLDragonTigerPersistence,
         )
 
-        PostgreSQLTradingBillboardPersistence(self._engine).commit_replay(
-            run, quality_results, records
-        )
+        PostgreSQLDragonTigerPersistence(self._engine).commit_replay(run, quality_results, records)
 
     @staticmethod
     def _run_update_parameters(run: IngestionRun) -> dict[str, object]:

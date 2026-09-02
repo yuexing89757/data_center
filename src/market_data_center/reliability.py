@@ -32,6 +32,13 @@ from market_data_center.domain.deducted_profit import (
     DeductedProfitRecord,
     validate_deducted_profits,
 )
+from market_data_center.domain.dragon_tiger import (
+    DragonTigerEventDraft,
+    DragonTigerEventRecord,
+    DragonTigerFinding,
+    DragonTigerPeriodType,
+    validate_dragon_tiger_events,
+)
 from market_data_center.domain.entities import CalculatedTradingDay
 from market_data_center.domain.ingestion import (
     DatasetCode,
@@ -59,21 +66,19 @@ from market_data_center.domain.stock_daily_indicator import (
     StockDailyIndicatorSnapshotRecord,
     validate_stock_daily_indicators,
 )
-from market_data_center.domain.trading_billboard import (
-    TradingBillboardFinding,
-    TradingBillboardRecord,
-    validate_trading_billboards,
-)
 from market_data_center.domain.validation import validate_daily_bars
 from market_data_center.providers.akshare import normalize_akshare_raw
 from market_data_center.providers.akshare_ths import normalize_akshare_ths_raw
 from market_data_center.providers.baostock import normalize_baostock_raw
 from market_data_center.providers.contracts import ProviderError, ProviderRecord
-from market_data_center.providers.eastmoney_trading_billboard import (
-    normalize_eastmoney_trading_billboard_raw,
+from market_data_center.providers.eastmoney_dragon_tiger import (
+    normalize_eastmoney_dragon_tiger_raw,
 )
 from market_data_center.providers.pytdx import normalize_pytdx_raw
 from market_data_center.providers.tushare import normalize_tushare_raw
+from market_data_center.providers.tushare_dragon_tiger import (
+    normalize_tushare_dragon_tiger_raw,
+)
 from market_data_center.raw_store import LocalRawStore, RawIntegrityError
 from market_data_center.shareholder_count_batch import (
     PreparedShareholderCountBatch,
@@ -141,6 +146,8 @@ class ReliabilityPersistence(Protocol):
     def known_stock_symbols_for_date(
         self, symbols: Collection[str], trade_date: date
     ) -> set[str]: ...
+
+    def dragon_tiger_period_start_date(self, trade_date: date, session_count: int) -> date: ...
 
     def known_trading_dates(self, dates: Collection[date]) -> set[date]: ...
 
@@ -249,11 +256,11 @@ class ReliabilityPersistence(Protocol):
         quality_results: Sequence[QualityResult],
     ) -> None: ...
 
-    def commit_trading_billboard_batch(
+    def commit_dragon_tiger_batch(
         self,
         run: IngestionRun,
         manifest: RawManifest | None,
-        records: Sequence[TradingBillboardRecord],
+        records: Sequence[DragonTigerEventRecord],
         quality_results: Sequence[QualityResult],
     ) -> None: ...
 
@@ -274,10 +281,14 @@ _NORMALIZERS: Mapping[ProviderCode, Normalizer] = {
     ProviderCode.AKSHARE_THS: normalize_akshare_ths_raw,
     ProviderCode.BAOSTOCK: normalize_baostock_raw,
     ProviderCode.PYTDX: normalize_pytdx_raw,
-    ProviderCode.TUSHARE: normalize_tushare_raw,
+    ProviderCode.TUSHARE: lambda dataset, schema, rows, params: (
+        _normalize_tushare_dragon_tiger_replay(schema, rows, params)
+        if dataset is DatasetCode.DRAGON_TIGER
+        else normalize_tushare_raw(dataset, schema, rows, params)
+    ),
     ProviderCode.EASTMONEY: lambda dataset, schema, rows, params: (
-        _normalize_eastmoney_trading_billboard_replay(schema, rows, params)
-        if dataset is DatasetCode.TRADING_BILLBOARD
+        _normalize_eastmoney_dragon_tiger_replay(schema, rows, params)
+        if dataset in {DatasetCode.TRADING_BILLBOARD, DatasetCode.DRAGON_TIGER}
         else _unsupported_eastmoney_replay(dataset)
     ),
 }
@@ -287,25 +298,39 @@ def _unsupported_eastmoney_replay(dataset: DatasetCode) -> tuple[ProviderRecord,
     raise ProviderError(f"Eastmoney Raw replay is unsupported for {dataset.value}")
 
 
-def _normalize_eastmoney_trading_billboard_replay(
+def _normalize_eastmoney_dragon_tiger_replay(
     schema: str,
     rows: Sequence[Mapping[str, str]],
     request_params: Mapping[str, object],
 ) -> tuple[ProviderRecord, ...]:
     requested_value = request_params.get("trade_date")
     if not isinstance(requested_value, str):
-        raise ProviderError("Eastmoney trading billboard replay request trade_date is missing")
+        raise ProviderError("Eastmoney DragonTiger replay request trade_date is missing")
     try:
         requested_date = date.fromisoformat(requested_value)
     except ValueError as error:
-        raise ProviderError(
-            "Eastmoney trading billboard replay request trade_date is invalid"
-        ) from error
-    records = normalize_eastmoney_trading_billboard_raw(rows, schema)
+        raise ProviderError("Eastmoney DragonTiger replay request trade_date is invalid") from error
+    records = normalize_eastmoney_dragon_tiger_raw(rows, schema)
     if any(record.trade_date != requested_date for record in records):
-        raise ProviderError(
-            "Eastmoney trading billboard Raw date does not match request trade_date"
-        )
+        raise ProviderError("Eastmoney DragonTiger Raw date does not match request trade_date")
+    return records
+
+
+def _normalize_tushare_dragon_tiger_replay(
+    schema: str,
+    rows: Sequence[Mapping[str, str]],
+    request_params: Mapping[str, object],
+) -> tuple[ProviderRecord, ...]:
+    requested_value = request_params.get("trade_date")
+    if not isinstance(requested_value, str):
+        raise ProviderError("Tushare DragonTiger replay request trade_date is missing")
+    try:
+        requested_date = date.fromisoformat(requested_value)
+    except ValueError as error:
+        raise ProviderError("Tushare DragonTiger replay request trade_date is invalid") from error
+    records = normalize_tushare_dragon_tiger_raw(rows, schema)
+    if any(record.trade_date != requested_date for record in records):
+        raise ProviderError("Tushare DragonTiger Raw date does not match request trade_date")
     return records
 
 
@@ -376,57 +401,61 @@ class RawReplayService:
         *,
         dry_run: bool,
     ) -> ReplaySummary:
-        if source.dataset_code is DatasetCode.TRADING_BILLBOARD:
-            billboard_records = cast(tuple[TradingBillboardRecord, ...], records)
-            billboard_trade_date = (
-                billboard_records[0].trade_date
-                if billboard_records
+        if source.dataset_code in {DatasetCode.TRADING_BILLBOARD, DatasetCode.DRAGON_TIGER}:
+            drafts = cast(tuple[DragonTigerEventDraft, ...], records)
+            dragon_tiger_records = tuple(
+                draft.resolve_period(
+                    draft.trade_date
+                    if draft.period_type is DragonTigerPeriodType.DAY
+                    else self._persistence.dragon_tiger_period_start_date(draft.trade_date, 3)
+                )
+                for draft in drafts
+            )
+            trade_date = (
+                dragon_tiger_records[0].trade_date
+                if dragon_tiger_records
                 else date.fromisoformat(cast(str, source.request_params["trade_date"]))
             )
-            billboard_validation = validate_trading_billboards(
-                billboard_records,
+            validation = validate_dragon_tiger_events(
+                dragon_tiger_records,
                 known_symbols=self._persistence.known_stock_symbols_for_date(
-                    {record.symbol for record in billboard_records},
-                    billboard_trade_date,
+                    {record.symbol for record in dragon_tiger_records},
+                    trade_date,
                 ),
                 known_trading_dates=self._persistence.known_trading_dates(
-                    {record.trade_date for record in billboard_records}
+                    {
+                        candidate
+                        for record in dragon_tiger_records
+                        for candidate in (record.trade_date, record.period_start_date)
+                    }
                 ),
             )
-            billboard_rejected_count = (
-                len(billboard_records) if billboard_validation.findings else 0
-            )
-            billboard_accepted_count = (
-                0 if billboard_validation.findings else len(billboard_validation.accepted)
-            )
-            billboard_completed = self._completed(
+            rejected_count = len(dragon_tiger_records) if validation.findings else 0
+            accepted_count = 0 if validation.findings else len(validation.accepted)
+            completed = self._completed(
                 run,
-                len(billboard_records),
-                billboard_accepted_count,
-                billboard_rejected_count,
+                len(dragon_tiger_records),
+                accepted_count,
+                rejected_count,
             )
-            billboard_quality = self._trading_billboard_quality(
-                billboard_completed, billboard_validation.findings
-            )
-            if billboard_completed is not None:
-                if billboard_validation.findings:
-                    self._persistence.commit_rejected_batch(
-                        billboard_completed, None, billboard_quality
-                    )
+            quality = self._dragon_tiger_quality(completed, validation.findings)
+            if completed is not None:
+                if validation.findings:
+                    self._persistence.commit_rejected_batch(completed, None, quality)
                 else:
-                    self._persistence.commit_trading_billboard_batch(
-                        billboard_completed,
+                    self._persistence.commit_dragon_tiger_batch(
+                        completed,
                         None,
-                        billboard_validation.accepted,
-                        billboard_quality,
+                        validation.accepted,
+                        quality,
                     )
             return self._summary(
                 source,
-                billboard_completed,
+                completed,
                 dry_run,
-                len(billboard_records),
-                billboard_accepted_count,
-                billboard_rejected_count,
+                len(dragon_tiger_records),
+                accepted_count,
+                rejected_count,
             )
 
         if source.dataset_code is DatasetCode.SECURITY:
@@ -465,12 +494,12 @@ class RawReplayService:
             known_symbols = self._persistence.known_symbols(
                 {record.symbol for record in capital_records}
             )
-            validation = validate_capital(capital_records, known_symbols=known_symbols)
+            capital_validation = validate_capital(capital_records, known_symbols=known_symbols)
             completed = self._completed(
                 run,
                 len(records),
-                len(validation.accepted),
-                validation.rejected_rows,
+                len(capital_validation.accepted),
+                capital_validation.rejected_rows,
             )
             if completed is not None:
                 quality_results = tuple(
@@ -484,12 +513,12 @@ class RawReplayService:
                         message=finding.message,
                         natural_key=finding.natural_key,
                     )
-                    for finding in validation.findings
+                    for finding in capital_validation.findings
                 )
                 self._persistence.commit_capital_batch(
                     completed,
                     None,
-                    self._envelopes(completed.ingestion_id, validation.accepted),
+                    self._envelopes(completed.ingestion_id, capital_validation.accepted),
                     quality_results,
                 )
             return self._summary(
@@ -497,8 +526,8 @@ class RawReplayService:
                 completed,
                 dry_run,
                 len(records),
-                len(validation.accepted),
-                validation.rejected_rows,
+                len(capital_validation.accepted),
+                capital_validation.rejected_rows,
             )
 
         if source.dataset_code is DatasetCode.STOCK_DAILY_INDICATOR:
@@ -840,7 +869,11 @@ class RawReplayService:
         return IngestionRun(
             ingestion_id=self._uuid_factory(),
             provider_code=source.provider_code,
-            dataset_code=source.dataset_code,
+            dataset_code=(
+                DatasetCode.DRAGON_TIGER
+                if source.dataset_code is DatasetCode.TRADING_BILLBOARD
+                else source.dataset_code
+            ),
             status=IngestionStatus.RUNNING,
             requested_at=now,
             started_at=now,
@@ -882,10 +915,10 @@ class RawReplayService:
             for finding in findings
         )
 
-    def _trading_billboard_quality(
+    def _dragon_tiger_quality(
         self,
         run: IngestionRun | None,
-        findings: Sequence[TradingBillboardFinding],
+        findings: Sequence[DragonTigerFinding],
     ) -> tuple[QualityResult, ...]:
         if run is None:
             return ()
@@ -893,7 +926,7 @@ class RawReplayService:
             QualityResult(
                 quality_result_id=self._uuid_factory(),
                 ingestion_id=run.ingestion_id,
-                dataset_code=DatasetCode.TRADING_BILLBOARD,
+                dataset_code=DatasetCode.DRAGON_TIGER,
                 rule_code=finding.rule_code,
                 severity=QualitySeverity.ERROR,
                 status=QualityStatus.FAILED,

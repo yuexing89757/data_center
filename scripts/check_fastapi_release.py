@@ -21,9 +21,10 @@ PUBLISHED_FUNCTIONS = (
     "api_v1.persist_call_auction_indicative_details(uuid,uuid,text,date,timestamptz,text,text,text,bigint,integer,jsonb)",
     "api_v1.query_close_price_new_highs_120d()",
     "api_v1.query_board_index_bias_latest()",
-    "api_v1.query_trading_billboard_by_date(date,integer,integer)",
-    "api_v1.query_trading_billboard_by_symbol(text,date,date,integer,integer)",
-    "api_v1.query_trading_billboard_by_seat(text,text,date,date,text,integer,integer)",
+    "api_v1.query_dragon_tiger_events_by_date(date,text,integer,integer)",
+    "api_v1.query_dragon_tiger_events_by_symbol(text,date,date,text,integer,integer)",
+    "api_v1.query_dragon_tiger_trades_by_seat(uuid,date,date,integer,integer)",
+    "api_v1.query_dragon_tiger_event_metrics(uuid)",
 )
 
 

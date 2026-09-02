@@ -14,10 +14,20 @@
       "input_schema": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["p_query"],
+        "required": [
+          "p_query"
+        ],
         "properties": {
-          "p_query": {"type": "string", "minLength": 1},
-          "p_limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20}
+          "p_query": {
+            "type": "string",
+            "minLength": 1
+          },
+          "p_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
         }
       }
     },
@@ -29,12 +39,30 @@
       "input_schema": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["p_symbol", "p_start_date", "p_end_date"],
+        "required": [
+          "p_symbol",
+          "p_start_date",
+          "p_end_date"
+        ],
         "properties": {
-          "p_symbol": {"type": "string", "pattern": "^(SSE|SZSE|BSE):[0-9]{6}$"},
-          "p_start_date": {"type": "string", "format": "date"},
-          "p_end_date": {"type": "string", "format": "date"},
-          "p_limit": {"type": "integer", "minimum": 1, "maximum": 5000, "default": 1000}
+          "p_symbol": {
+            "type": "string",
+            "pattern": "^(SSE|SZSE|BSE):[0-9]{6}$"
+          },
+          "p_start_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "p_end_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "p_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 1000
+          }
         }
       }
     },
@@ -46,15 +74,50 @@
       "input_schema": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["p_symbol", "p_start_date", "p_end_date"],
+        "required": [
+          "p_symbol",
+          "p_start_date",
+          "p_end_date"
+        ],
         "properties": {
-          "p_symbol": {"type": "string", "pattern": "^(SSE|SZSE|BSE):[0-9]{6}$"},
-          "p_start_date": {"type": "string", "format": "date"},
-          "p_end_date": {"type": "string", "format": "date"},
-          "p_adjustment_type": {"type": "string", "enum": ["forward", "backward"], "default": "forward"},
-          "p_algorithm_version": {"type": "string", "default": "1.1.0"},
-          "p_calculation_id": {"type": ["string", "null"], "format": "uuid", "default": null},
-          "p_limit": {"type": "integer", "minimum": 1, "maximum": 5000, "default": 1000}
+          "p_symbol": {
+            "type": "string",
+            "pattern": "^(SSE|SZSE|BSE):[0-9]{6}$"
+          },
+          "p_start_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "p_end_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "p_adjustment_type": {
+            "type": "string",
+            "enum": [
+              "forward",
+              "backward"
+            ],
+            "default": "forward"
+          },
+          "p_algorithm_version": {
+            "type": "string",
+            "default": "1.1.0"
+          },
+          "p_calculation_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "default": null
+          },
+          "p_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 1000
+          }
         }
       }
     },
@@ -66,12 +129,32 @@
       "input_schema": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["p_trade_date"],
+        "required": [
+          "p_trade_date"
+        ],
         "properties": {
-          "p_trade_date": {"type": "string", "format": "date"},
-          "p_algorithm_version": {"type": "string", "default": "1.1.0"},
-          "p_calculation_id": {"type": ["string", "null"], "format": "uuid", "default": null},
-          "p_limit": {"type": "integer", "minimum": 1, "maximum": 5000, "default": 5000}
+          "p_trade_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "p_algorithm_version": {
+            "type": "string",
+            "default": "1.1.0"
+          },
+          "p_calculation_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "default": null
+          },
+          "p_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 5000
+          }
         }
       }
     },
@@ -83,13 +166,39 @@
       "input_schema": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["p_namespace", "p_classification_type", "p_classification_code", "p_as_of_date"],
+        "required": [
+          "p_namespace",
+          "p_classification_type",
+          "p_classification_code",
+          "p_as_of_date"
+        ],
         "properties": {
-          "p_namespace": {"type": "string", "minLength": 1},
-          "p_classification_type": {"type": "string", "enum": ["industry", "concept", "index"]},
-          "p_classification_code": {"type": "string", "minLength": 1},
-          "p_as_of_date": {"type": "string", "format": "date"},
-          "p_limit": {"type": "integer", "minimum": 1, "maximum": 5000, "default": 5000}
+          "p_namespace": {
+            "type": "string",
+            "minLength": 1
+          },
+          "p_classification_type": {
+            "type": "string",
+            "enum": [
+              "industry",
+              "concept",
+              "index"
+            ]
+          },
+          "p_classification_code": {
+            "type": "string",
+            "minLength": 1
+          },
+          "p_as_of_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "p_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 5000
+          }
         }
       }
     },
@@ -101,15 +210,31 @@
       "input_schema": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["p_as_of_date"],
+        "required": [
+          "p_as_of_date"
+        ],
         "properties": {
-          "p_as_of_date": {"type": "string", "format": "date"},
+          "p_as_of_date": {
+            "type": "string",
+            "format": "date"
+          },
           "p_symbols": {
-            "type": ["array", "null"],
-            "items": {"type": "string", "pattern": "^(SSE|SZSE|BSE):[0-9]{6}$"},
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string",
+              "pattern": "^(SSE|SZSE|BSE):[0-9]{6}$"
+            },
             "maxItems": 500
           },
-          "p_limit": {"type": "integer", "minimum": 1, "maximum": 2000, "default": 500}
+          "p_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000,
+            "default": 500
+          }
         }
       }
     },
@@ -121,7 +246,10 @@
       "input_schema": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["p_pool_code", "p_effective_trade_date"],
+        "required": [
+          "p_pool_code",
+          "p_effective_trade_date"
+        ],
         "properties": {
           "p_pool_code": {
             "type": "string",
@@ -130,9 +258,24 @@
               "CN_A_PREVIOUS_DAY_MAINBOARD_LIMIT_DOWN"
             ]
           },
-          "p_effective_trade_date": {"type": "string", "format": "date"},
-          "p_version": {"type": ["integer", "null"], "minimum": 1, "default": null},
-          "p_limit": {"type": "integer", "minimum": 1, "maximum": 5000, "default": 5000}
+          "p_effective_trade_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "p_version": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "default": null
+          },
+          "p_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 5000
+          }
         }
       }
     },
@@ -145,14 +288,60 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "p_trade_date": {"type": ["string", "null"], "format": "date"},
-          "p_session_id": {"type": ["string", "null"], "format": "uuid"},
-          "p_symbol": {"type": ["string", "null"], "pattern": "^(SSE|SZSE):[0-9]{6}$"},
-          "p_start": {"type": ["string", "null"], "format": "date-time"},
-          "p_end": {"type": ["string", "null"], "format": "date-time"},
-          "p_limit": {"type": "integer", "minimum": 1, "maximum": 5000, "default": 1000}
+          "p_trade_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "p_session_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "p_symbol": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^(SSE|SZSE):[0-9]{6}$"
+          },
+          "p_start": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "p_end": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "p_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 1000
+          }
         },
-        "anyOf": [{"required": ["p_trade_date"]}, {"required": ["p_session_id"]}]
+        "anyOf": [
+          {
+            "required": [
+              "p_trade_date"
+            ]
+          },
+          {
+            "required": [
+              "p_session_id"
+            ]
+          }
+        ]
       }
     },
     {
@@ -163,12 +352,21 @@
       "input_schema": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["p_trade_date", "p_codes"],
+        "required": [
+          "p_trade_date",
+          "p_codes"
+        ],
         "properties": {
-          "p_trade_date": {"type": "string", "format": "date"},
+          "p_trade_date": {
+            "type": "string",
+            "format": "date"
+          },
           "p_codes": {
             "type": "array",
-            "items": {"type": "string", "pattern": "^[0-9]{6}$"},
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]{6}$"
+            },
             "minItems": 1,
             "maxItems": 500
           }
@@ -183,17 +381,29 @@
       "input_schema": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["p_trade_date", "p_codes"],
+        "required": [
+          "p_trade_date",
+          "p_codes"
+        ],
         "properties": {
-          "p_trade_date": {"type": "string", "format": "date"},
+          "p_trade_date": {
+            "type": "string",
+            "format": "date"
+          },
           "p_codes": {
             "type": "array",
-            "items": {"type": "string", "pattern": "^[0-9]{6}$"},
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]{6}$"
+            },
             "minItems": 1,
             "maxItems": 500
           },
           "p_batch_code": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "pattern": "^[0-9]{6}$"
           }
         }
@@ -208,64 +418,6 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {}
-      }
-    },
-    {
-      "name": "market_trading_billboard_by_date",
-      "description": "Read exact-date trading billboard summaries with buy/sell top-five seats; no date fallback.",
-      "endpoint": "query_trading_billboard_by_date",
-      "read_only": true,
-      "input_schema": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["p_trade_date"],
-        "properties": {
-          "p_trade_date": {"type": "string", "format": "date"},
-          "p_limit": {"type": "integer", "minimum": 1, "maximum": 500, "default": 100},
-          "p_offset": {"type": "integer", "minimum": 0, "maximum": 10000, "default": 0}
-        }
-      }
-    },
-    {
-      "name": "market_trading_billboard_by_symbol",
-      "description": "Read up to 366 calendar days of trading billboard history for one standard symbol.",
-      "endpoint": "query_trading_billboard_by_symbol",
-      "read_only": true,
-      "input_schema": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["p_symbol", "p_start_date", "p_end_date"],
-        "properties": {
-          "p_symbol": {"type": "string", "pattern": "^(SSE|SZSE|BSE):[0-9]{6}$"},
-          "p_start_date": {"type": "string", "format": "date"},
-          "p_end_date": {"type": "string", "format": "date"},
-          "p_limit": {"type": "integer", "minimum": 1, "maximum": 500, "default": 100},
-          "p_offset": {"type": "integer", "minimum": 0, "maximum": 10000, "default": 0}
-        }
-      }
-    },
-    {
-      "name": "market_trading_billboard_by_seat",
-      "description": "Read exact seat-code or seat-name occurrences with parent billboard reason and totals.",
-      "endpoint": "query_trading_billboard_by_seat",
-      "read_only": true,
-      "input_schema": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["p_start_date", "p_end_date"],
-        "properties": {
-          "p_seat_code": {"type": ["string", "null"], "minLength": 1},
-          "p_seat_name": {"type": ["string", "null"], "minLength": 1},
-          "p_start_date": {"type": "string", "format": "date"},
-          "p_end_date": {"type": "string", "format": "date"},
-          "p_side": {"type": ["string", "null"], "enum": ["buy", "sell", null]},
-          "p_limit": {"type": "integer", "minimum": 1, "maximum": 500, "default": 100},
-          "p_offset": {"type": "integer", "minimum": 0, "maximum": 10000, "default": 0}
-        },
-        "oneOf": [
-          {"required": ["p_seat_code"], "not": {"required": ["p_seat_name"]}},
-          {"required": ["p_seat_name"], "not": {"required": ["p_seat_code"]}}
-        ]
       }
     },
     {
@@ -287,15 +439,31 @@
       "input_schema": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["p_as_of_date"],
+        "required": [
+          "p_as_of_date"
+        ],
         "properties": {
-          "p_as_of_date": {"type": "string", "format": "date"},
+          "p_as_of_date": {
+            "type": "string",
+            "format": "date"
+          },
           "p_symbols": {
-            "type": ["array", "null"],
-            "items": {"type": "string", "pattern": "^(SSE|SZSE|BSE):[0-9]{6}$"},
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string",
+              "pattern": "^(SSE|SZSE|BSE):[0-9]{6}$"
+            },
             "maxItems": 500
           },
-          "p_limit": {"type": "integer", "minimum": 1, "maximum": 2000, "default": 500}
+          "p_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000,
+            "default": 500
+          }
         }
       }
     },
@@ -314,11 +482,28 @@
           "p_end_statistics_date"
         ],
         "properties": {
-          "p_symbol": {"type": "string", "pattern": "^(SSE|SZSE|BSE):[0-9]{6}$"},
-          "p_as_of_date": {"type": "string", "format": "date"},
-          "p_start_statistics_date": {"type": "string", "format": "date"},
-          "p_end_statistics_date": {"type": "string", "format": "date"},
-          "p_limit": {"type": "integer", "minimum": 1, "maximum": 2000, "default": 500}
+          "p_symbol": {
+            "type": "string",
+            "pattern": "^(SSE|SZSE|BSE):[0-9]{6}$"
+          },
+          "p_as_of_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "p_start_statistics_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "p_end_statistics_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "p_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000,
+            "default": 500
+          }
         }
       }
     },
@@ -330,12 +515,184 @@
       "input_schema": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["p_symbol", "p_start_statistics_date", "p_end_statistics_date"],
+        "required": [
+          "p_symbol",
+          "p_start_statistics_date",
+          "p_end_statistics_date"
+        ],
         "properties": {
-          "p_symbol": {"type": "string", "pattern": "^(SSE|SZSE|BSE):[0-9]{6}$"},
-          "p_start_statistics_date": {"type": "string", "format": "date"},
-          "p_end_statistics_date": {"type": "string", "format": "date"},
-          "p_limit": {"type": "integer", "minimum": 1, "maximum": 2000, "default": 500}
+          "p_symbol": {
+            "type": "string",
+            "pattern": "^(SSE|SZSE|BSE):[0-9]{6}$"
+          },
+          "p_start_statistics_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "p_end_statistics_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "p_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000,
+            "default": 500
+          }
+        }
+      }
+    },
+    {
+      "name": "market_dragon_tiger_events_by_date",
+      "description": "Read one exact trading date of DAY and/or THREE_DAY DragonTiger events with merged seat trades.",
+      "endpoint": "query_dragon_tiger_events_by_date",
+      "read_only": true,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "p_trade_date"
+        ],
+        "properties": {
+          "p_trade_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "p_period_type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "DAY",
+              "THREE_DAY",
+              null
+            ]
+          },
+          "p_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 100
+          },
+          "p_offset": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10000,
+            "default": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "market_dragon_tiger_events_by_symbol",
+      "description": "Read up to 366 calendar days of DragonTiger event history for one standard symbol.",
+      "endpoint": "query_dragon_tiger_events_by_symbol",
+      "read_only": true,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "p_symbol",
+          "p_start_date",
+          "p_end_date"
+        ],
+        "properties": {
+          "p_symbol": {
+            "type": "string",
+            "pattern": "^(SSE|SZSE|BSE):[0-9]{6}$"
+          },
+          "p_start_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "p_end_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "p_period_type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "DAY",
+              "THREE_DAY",
+              null
+            ]
+          },
+          "p_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 100
+          },
+          "p_offset": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10000,
+            "default": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "market_dragon_tiger_trades_by_seat",
+      "description": "Read up to 366 calendar days of disclosed trades for one stable seat UUID.",
+      "endpoint": "query_dragon_tiger_trades_by_seat",
+      "read_only": true,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "p_seat_id",
+          "p_start_date",
+          "p_end_date"
+        ],
+        "properties": {
+          "p_seat_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "p_start_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "p_end_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "p_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 100
+          },
+          "p_offset": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10000,
+            "default": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "market_dragon_tiger_event_metrics",
+      "description": "Read deterministic net amount, seat counts and concentration metrics for one DragonTiger event UUID.",
+      "endpoint": "query_dragon_tiger_event_metrics",
+      "read_only": true,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "p_event_id"
+        ],
+        "properties": {
+          "p_event_id": {
+            "type": "string",
+            "format": "uuid"
+          }
         }
       }
     }

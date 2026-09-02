@@ -17,7 +17,7 @@ TODAY_LIMIT_UP_SNAPSHOT_JOB_ID = "today-limit-up-snapshot-daily"
 PYTDX_POOL_REFRESH_JOB_ID = "pytdx-pool-refresh"
 CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID = "close-price-new-highs-120d-daily"
 BOARD_INDEX_DAILY_BAR_JOB_ID = "board-index-883423-daily-bar"
-TRADING_BILLBOARD_JOB_ID = "trading-billboard-daily"
+DRAGON_TIGER_JOB_ID = "dragon-tiger-daily"
 REGULATION_DAILY_CALCULATION_JOB_ID = "regulation-daily-calculation"
 SCHEDULER_TIMEZONE = "Asia/Shanghai"
 JOB_TIMEOUT_SECONDS = 21_600
@@ -154,10 +154,10 @@ WORKFLOW_DEFINITIONS = (
         ("collect_board_index_daily_bars",),
     ),
     WorkflowDefinition(
-        "trading_billboard_daily",
+        "dragon_tiger_daily",
         "股票龙虎榜采集",
         "采集东方财富每日上榜证券汇总及买入/卖出前五席位。",
-        ("collect_trading_billboard",),
+        ("collect_dragon_tiger",),
     ),
     WorkflowDefinition(
         "regulation_daily_calculation",
@@ -337,14 +337,14 @@ def job_definitions(settings: SchedulerSettings) -> tuple[JobDefinition, ...]:
             minute=30,
         ),
         JobDefinition(
-            TRADING_BILLBOARD_JOB_ID,
+            DRAGON_TIGER_JOB_ID,
             "股票龙虎榜采集",
             "采集东方财富每日上榜证券汇总及买入/卖出前五席位。",
-            "trading_billboard_daily",
+            "dragon_tiger_daily",
             "cron",
             "周一至周五 20:30",
             timezone,
-            settings.trading_billboard_enabled,
+            settings.dragon_tiger_enabled,
             timeout,
             "非交易日正常跳过; 失败保持显式缺口, 由下一次调度或显式日期命令重试",
             day_of_week="mon-fri",

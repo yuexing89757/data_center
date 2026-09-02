@@ -2,6 +2,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from types import SimpleNamespace
 from typing import Literal
+from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
@@ -149,11 +150,10 @@ class FakeQueryService:
         self.classification_error: Exception | None = None
         self.security_calls: list[tuple[str, int]] = []
         self.daily_bar_calls: list[tuple[str, date, int]] = []
-        self.trading_billboard_date_calls: list[tuple[date, int, int]] = []
-        self.trading_billboard_code_calls: list[tuple[str, date, date, int, int]] = []
-        self.trading_billboard_seat_calls: list[
-            tuple[str | None, str | None, date, date, str | None, int, int]
-        ] = []
+        self.dragon_tiger_date_calls: list[tuple[date, str | None, int, int]] = []
+        self.dragon_tiger_code_calls: list[tuple[str, date, date, str | None, int, int]] = []
+        self.dragon_tiger_seat_calls: list[tuple[str, date, date, int, int]] = []
+        self.dragon_tiger_metrics_calls: list[str] = []
         self.latest_stock_daily_indicator_calls: list[tuple[str, ...]] = []
         self.latest_stock_daily_indicator_error: Exception | None = None
         self.latest_stock_quote_calls: list[tuple[tuple[str, ...], int]] = []
@@ -218,53 +218,54 @@ class FakeQueryService:
             ],
         )
 
-    def trading_billboard_by_date(
-        self, trade_date: date, limit: int, offset: int
-    ) -> api_models.TradingBillboardPageResponse:
-        self.trading_billboard_date_calls.append((trade_date, limit, offset))
-        return _trading_billboard_page(limit=limit, offset=offset)
+    def dragon_tiger_events_by_date(
+        self, trade_date: date, period_type: str | None, limit: int, offset: int
+    ) -> api_models.DragonTigerEventPageResponse:
+        self.dragon_tiger_date_calls.append((trade_date, period_type, limit, offset))
+        return _dragon_tiger_page(limit=limit, offset=offset)
 
-    def trading_billboard_by_code(
-        self, code: str, start_date: date, end_date: date, limit: int, offset: int
-    ) -> api_models.TradingBillboardPageResponse:
-        self.trading_billboard_code_calls.append((code, start_date, end_date, limit, offset))
-        return _trading_billboard_page(limit=limit, offset=offset)
-
-    def trading_billboard_by_seat(
+    def dragon_tiger_events_by_code(
         self,
-        seat_code: str | None,
-        seat_name: str | None,
+        code: str,
         start_date: date,
         end_date: date,
-        side: str | None,
+        period_type: str | None,
         limit: int,
         offset: int,
-    ) -> api_models.TradingBillboardSeatPageResponse:
-        self.trading_billboard_seat_calls.append(
-            (seat_code, seat_name, start_date, end_date, side, limit, offset)
+    ) -> api_models.DragonTigerEventPageResponse:
+        self.dragon_tiger_code_calls.append(
+            (code, start_date, end_date, period_type, limit, offset)
         )
-        return api_models.TradingBillboardSeatPageResponse(
+        return _dragon_tiger_page(limit=limit, offset=offset)
+
+    def dragon_tiger_trades_by_seat(
+        self,
+        seat_id: str,
+        start_date: date,
+        end_date: date,
+        limit: int,
+        offset: int,
+    ) -> api_models.DragonTigerSeatTradePageResponse:
+        self.dragon_tiger_seat_calls.append((seat_id, start_date, end_date, limit, offset))
+        return api_models.DragonTigerSeatTradePageResponse(
             items=[
-                api_models.TradingBillboardSeatOccurrenceItem(
+                api_models.DragonTigerSeatTradeOccurrenceItem(
+                    event_id=UUID("11111111-1111-1111-1111-111111111111"),
+                    seat_trade_id=UUID("22222222-2222-2222-2222-222222222222"),
+                    seat_id=UUID(seat_id),
                     symbol="SSE:600000",
                     trade_date=date(2026, 8, 17),
-                    source_event_id="event-1",
-                    side="buy",
-                    rank=1,
-                    seat_code="A123",
-                    seat_name="机构专用",
+                    period_type="DAY",
+                    reason_code="R1",
+                    reason_name="日涨幅偏离值达到7%",
+                    seat_name_raw="机构专用",
                     buy_amount=Decimal("100.00"),
                     sell_amount=Decimal("10.00"),
                     net_amount=Decimal("90.00"),
-                    buy_to_market_pct=Decimal("1.25"),
-                    sell_to_market_pct=Decimal("0.125"),
-                    reason_code="R1",
-                    reason_text="日涨幅偏离值达到7%",
-                    summary_buy_amount=Decimal("500.00"),
-                    summary_sell_amount=Decimal("300.00"),
-                    summary_net_amount=Decimal("200.00"),
-                    summary_deal_amount=Decimal("800.00"),
-                    source_code="eastmoney",
+                    buy_rank=1,
+                    sell_rank=None,
+                    is_institution=True,
+                    is_northbound=False,
                 )
             ],
             returned_count=1,
@@ -272,6 +273,31 @@ class FakeQueryService:
             has_more=False,
             limit=limit,
             offset=offset,
+        )
+
+    def dragon_tiger_event_metrics(self, event_id: str) -> api_models.DragonTigerCapitalMetricsItem:
+        self.dragon_tiger_metrics_calls.append(event_id)
+        return api_models.DragonTigerCapitalMetricsItem(
+            event_id=UUID(event_id),
+            net_amount=Decimal("200.00"),
+            net_buy_strength=Decimal("0.25"),
+            buy_seat_count=1,
+            sell_seat_count=1,
+            pure_buy_seat_count=0,
+            pure_sell_seat_count=0,
+            buy_sell_overlap_count=1,
+            top1_buy_concentration=Decimal("0.20"),
+            top3_buy_concentration=Decimal("0.20"),
+            top5_buy_concentration=Decimal("0.20"),
+            top1_sell_concentration=Decimal("0.033333"),
+            top3_sell_concentration=Decimal("0.033333"),
+            top5_sell_concentration=Decimal("0.033333"),
+            institution_buy_amount=Decimal("100.00"),
+            institution_sell_amount=Decimal("10.00"),
+            institution_net_amount=Decimal("90.00"),
+            northbound_buy_amount=None,
+            northbound_sell_amount=None,
+            northbound_net_amount=None,
         )
 
     def latest_stock_daily_indicators(
@@ -872,45 +898,45 @@ def _headers() -> dict[str, str]:
     return {"X-API-Key": API_KEY}
 
 
-def _trading_billboard_page(
+def _dragon_tiger_page(
     *, limit: int = 100, offset: int = 0
-) -> api_models.TradingBillboardPageResponse:
-    seat = api_models.TradingBillboardSeatItem(
-        symbol="SSE:600000",
-        trade_date=date(2026, 8, 17),
-        source_event_id="event-1",
-        side="buy",
-        rank=1,
-        seat_code="A123",
-        seat_name="机构专用",
+) -> api_models.DragonTigerEventPageResponse:
+    seat = api_models.DragonTigerSeatTradeItem(
+        seat_trade_id=UUID("22222222-2222-2222-2222-222222222222"),
+        seat_id=UUID("33333333-3333-3333-3333-333333333333"),
+        seat_name_raw="机构专用",
         buy_amount=Decimal("100.00"),
         sell_amount=Decimal("10.00"),
         net_amount=Decimal("90.00"),
-        buy_to_market_pct=Decimal("1.25"),
-        sell_to_market_pct=Decimal("0.125"),
+        buy_rank=1,
+        sell_rank=1,
+        is_institution=True,
+        is_northbound=False,
     )
-    return api_models.TradingBillboardPageResponse(
+    return api_models.DragonTigerEventPageResponse(
         items=[
-            api_models.TradingBillboardItem(
+            api_models.DragonTigerEventItem(
+                event_id=UUID("11111111-1111-1111-1111-111111111111"),
                 symbol="SSE:600000",
                 trade_date=date(2026, 8, 17),
-                source_event_id="event-1",
+                period_type="DAY",
+                period_start_date=date(2026, 8, 17),
+                period_end_date=date(2026, 8, 17),
                 reason_code="R1",
-                reason_text="日涨幅偏离值达到7%",
+                reason_name="日涨幅偏离值达到7%",
+                reason_type="PRICE_DEVIATION",
+                reason_name_raw="日涨幅偏离值达到7%",
                 close_price=Decimal("12.3400"),
-                change_rate_pct=Decimal("7.12"),
-                turnover_rate_pct=Decimal("3.45"),
-                market_amount=Decimal("1000.00"),
-                buy_amount=Decimal("500.00"),
-                sell_amount=Decimal("300.00"),
+                change_pct=Decimal("7.12"),
+                turnover_amount=Decimal("1000.00"),
+                turnover_rate=Decimal("3.45"),
+                amplitude=Decimal("8.00"),
+                lhb_buy_amount=Decimal("500.00"),
+                lhb_sell_amount=Decimal("300.00"),
                 net_amount=Decimal("200.00"),
-                deal_amount=Decimal("800.00"),
-                deal_to_market_pct=Decimal("80.00"),
-                net_to_market_pct=Decimal("20.00"),
-                free_float_market_value=Decimal("5000.00"),
                 source_code="eastmoney",
-                buy_seats=[seat],
-                sell_seats=[],
+                source_record_id="event-1",
+                seat_trades=[seat],
             )
         ],
         returned_count=1,
@@ -1054,69 +1080,77 @@ def test_daily_bar_validation_does_not_call_the_service() -> None:
     assert service.daily_bar_calls == []
 
 
-def test_trading_billboard_routes_return_decimal_strings_and_forward_bounds() -> None:
+def test_dragon_tiger_routes_return_decimal_strings_and_forward_bounds() -> None:
     service = FakeQueryService()
     client = _client(service)
+    seat_id = "33333333-3333-3333-3333-333333333333"
+    event_id = "11111111-1111-1111-1111-111111111111"
 
     by_date = client.get(
-        "/api/v1/trading-billboard/by-date",
-        params={"trade_date": "2026-08-17", "limit": 10, "offset": 2},
+        "/api/v1/dragon-tiger/events/by-date",
+        params={
+            "trade_date": "2026-08-17",
+            "period_type": "DAY",
+            "limit": 10,
+            "offset": 2,
+        },
         headers=_headers(),
     )
     by_symbol = client.get(
-        "/api/v1/trading-billboard/by-symbol/600000",
+        "/api/v1/dragon-tiger/events/by-symbol/600000",
         params={"start_date": "2026-01-01", "end_date": "2026-08-17"},
         headers=_headers(),
     )
     by_seat = client.get(
-        "/api/v1/trading-billboard/seats",
+        f"/api/v1/dragon-tiger/seats/{seat_id}/trades",
         params={
-            "seat_name": " 机构专用 ",
             "start_date": "2026-01-01",
             "end_date": "2026-08-17",
-            "side": "buy",
         },
         headers=_headers(),
     )
+    metrics = client.get(f"/api/v1/dragon-tiger/events/{event_id}/metrics", headers=_headers())
 
     assert by_date.status_code == 200
     assert by_date.json()["items"][0]["close_price"] == "12.3400"
-    assert by_date.json()["items"][0]["buy_seats"][0]["buy_amount"] == "100.00"
-    assert service.trading_billboard_date_calls == [(date(2026, 8, 17), 10, 2)]
+    assert by_date.json()["items"][0]["seat_trades"][0]["buy_amount"] == "100.00"
+    assert service.dragon_tiger_date_calls == [(date(2026, 8, 17), "DAY", 10, 2)]
     assert by_symbol.status_code == 200
-    assert service.trading_billboard_code_calls == [
-        ("600000", date(2026, 1, 1), date(2026, 8, 17), 100, 0)
+    assert service.dragon_tiger_code_calls == [
+        ("600000", date(2026, 1, 1), date(2026, 8, 17), None, 100, 0)
     ]
     assert by_seat.status_code == 200
-    assert by_seat.json()["items"][0]["summary_net_amount"] == "200.00"
-    assert service.trading_billboard_seat_calls == [
-        (None, "机构专用", date(2026, 1, 1), date(2026, 8, 17), "buy", 100, 0)
+    assert by_seat.json()["items"][0]["net_amount"] == "90.00"
+    assert service.dragon_tiger_seat_calls == [
+        (seat_id, date(2026, 1, 1), date(2026, 8, 17), 100, 0)
     ]
+    assert metrics.status_code == 200
+    assert metrics.json()["net_buy_strength"] == "0.25"
+    assert metrics.json()["institution_net_amount"] == "90.00"
+    assert service.dragon_tiger_metrics_calls == [event_id]
 
 
 @pytest.mark.parametrize(
     ("path", "params"),
     [
         (
-            "/api/v1/trading-billboard/by-symbol/600000",
+            "/api/v1/dragon-tiger/events/by-symbol/600000",
             {"start_date": "2025-01-01", "end_date": "2026-08-17"},
         ),
         (
-            "/api/v1/trading-billboard/seats",
+            "/api/v1/dragon-tiger/seats/not-a-uuid/trades",
             {"start_date": "2026-01-01", "end_date": "2026-08-17"},
         ),
         (
-            "/api/v1/trading-billboard/seats",
+            "/api/v1/dragon-tiger/seats/33333333-3333-3333-3333-333333333333/trades",
             {
-                "seat_code": "A123",
-                "seat_name": "机构专用",
-                "start_date": "2026-01-01",
+                "start_date": "2026-08-18",
                 "end_date": "2026-08-17",
             },
         ),
     ],
 )
-def test_trading_billboard_route_validation_is_422_without_query(
+def test_dragon_tiger_route_validation_is_422_without_query(
     path: str, params: dict[str, str]
 ) -> None:
     service = FakeQueryService()
@@ -1124,19 +1158,20 @@ def test_trading_billboard_route_validation_is_422_without_query(
     response = _client(service).get(path, params=params, headers=_headers())
 
     assert response.status_code == 422
-    assert service.trading_billboard_code_calls == []
-    assert service.trading_billboard_seat_calls == []
+    assert service.dragon_tiger_code_calls == []
+    assert service.dragon_tiger_seat_calls == []
 
 
-def test_trading_billboard_routes_require_api_key() -> None:
+def test_dragon_tiger_routes_require_api_key() -> None:
     response = _client(FakeQueryService()).get(
-        "/api/v1/trading-billboard/by-date", params={"trade_date": "2026-08-17"}
+        "/api/v1/dragon-tiger/events/by-date",
+        params={"trade_date": "2026-08-17"},
     )
 
     assert response.status_code == 401
 
 
-def test_trading_billboard_code_query_resolves_public_security_before_rpc(
+def test_dragon_tiger_code_query_resolves_public_security_before_rpc(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = PostgreSQLPublicQueryService(object())  # type: ignore[arg-type]
@@ -1161,16 +1196,16 @@ def test_trading_billboard_code_query_resolves_public_security_before_rpc(
         statement_timeout_ms: int | None = None,
     ) -> list[dict[str, object]]:
         calls.append((str(statement), parameters, statement_timeout_ms))
-        return [{"payload": _trading_billboard_page().model_dump(mode="json")}]
+        return [{"payload": _dragon_tiger_page().model_dump(mode="json")}]
 
     monkeypatch.setattr(service, "_execute", execute)
 
-    result = service.trading_billboard_by_code(
-        "600000", date(2026, 1, 1), date(2026, 8, 17), 100, 0
+    result = service.dragon_tiger_events_by_code(
+        "600000", date(2026, 1, 1), date(2026, 8, 17), None, 100, 0
     )
 
     assert result.total_count == 1
-    assert "query_trading_billboard_by_symbol" in calls[0][0]
+    assert "query_dragon_tiger_events_by_symbol" in calls[0][0]
     assert calls[0][1]["symbol"] == "SSE:600000"
     assert calls[0][2] == 5_000
 
@@ -1352,7 +1387,7 @@ def test_limit_up_pool_is_api_key_protected_and_bounded() -> None:
     assert service.limit_up_calls == []
 
 
-def test_openapi_only_contains_the_active_non_derived_routes() -> None:
+def test_openapi_contains_only_active_routes() -> None:
     schema = _client(FakeQueryService()).get("/openapi.json").json()
 
     assert "/api/v1/securities" in schema["paths"]
@@ -1363,7 +1398,8 @@ def test_openapi_only_contains_the_active_non_derived_routes() -> None:
     assert "/api/v1/daily-limit-up-list" in schema["paths"]
     assert "/api/v1/call-auction-market-snapshots/query" in schema["paths"]
     assert "/api/v1/call-auction-market-series-snapshots/query" in schema["paths"]
-    assert not any("adjusted" in path or "metric" in path for path in schema["paths"])
+    assert "/api/v1/dragon-tiger/events/{event_id}/metrics" in schema["paths"]
+    assert not any("adjusted" in path for path in schema["paths"])
 
 
 def test_daily_limit_up_list_returns_items() -> None:

@@ -12,7 +12,7 @@ from market_data_center.cli import (
     AUTO_PROVIDER_CODE,
     _one_month_before,
     _parser,
-    _validate_trading_billboard_args,
+    _validate_dragon_tiger_args,
     run_daily_workflow,
     run_stock_daily_indicator_workflow,
 )
@@ -46,10 +46,10 @@ def test_cli_still_accepts_an_explicit_provider() -> None:
     assert args.provider == "pytdx"
 
 
-def test_trading_billboard_cli_accepts_exact_date_or_complete_range() -> None:
+def test_dragon_tiger_cli_accepts_exact_date_or_complete_range() -> None:
     exact = _parser().parse_args(
         [
-            "trading-billboard-collect",
+            "dragon-tiger-collect",
             "--trade-date",
             "2026-08-17",
             "--confirm-eastmoney-source-terms-reviewed",
@@ -57,7 +57,7 @@ def test_trading_billboard_cli_accepts_exact_date_or_complete_range() -> None:
     )
     ranged = _parser().parse_args(
         [
-            "trading-billboard-collect",
+            "dragon-tiger-collect",
             "--start-date",
             "2026-08-01",
             "--end-date",
@@ -66,25 +66,25 @@ def test_trading_billboard_cli_accepts_exact_date_or_complete_range() -> None:
         ]
     )
 
-    assert _validate_trading_billboard_args(exact) == (
+    assert _validate_dragon_tiger_args(exact) == (
         date(2026, 8, 17),
         None,
         None,
     )
-    assert _validate_trading_billboard_args(ranged) == (
+    assert _validate_dragon_tiger_args(ranged) == (
         None,
         date(2026, 8, 1),
         date(2026, 8, 17),
     )
 
 
-def test_trading_billboard_cli_rejects_missing_confirmation_or_mixed_dates() -> None:
+def test_dragon_tiger_cli_rejects_missing_confirmation_or_mixed_dates() -> None:
     with pytest.raises(SystemExit):
-        _parser().parse_args(["trading-billboard-collect", "--trade-date", "2026-08-17"])
+        _parser().parse_args(["dragon-tiger-collect", "--trade-date", "2026-08-17"])
     with pytest.raises(SystemExit):
         _parser().parse_args(
             [
-                "trading-billboard-collect",
+                "dragon-tiger-collect",
                 "--trade-date",
                 "2026-08-17",
                 "--start-date",
@@ -94,7 +94,7 @@ def test_trading_billboard_cli_rejects_missing_confirmation_or_mixed_dates() -> 
         )
     mixed = _parser().parse_args(
         [
-            "trading-billboard-collect",
+            "dragon-tiger-collect",
             "--trade-date",
             "2026-08-17",
             "--end-date",
@@ -103,13 +103,13 @@ def test_trading_billboard_cli_rejects_missing_confirmation_or_mixed_dates() -> 
         ]
     )
     with pytest.raises(ValueError, match="cannot combine"):
-        _validate_trading_billboard_args(mixed)
+        _validate_dragon_tiger_args(mixed)
 
 
-def test_trading_billboard_cli_rejects_incomplete_or_unbounded_range() -> None:
+def test_dragon_tiger_cli_rejects_incomplete_or_unbounded_range() -> None:
     incomplete = _parser().parse_args(
         [
-            "trading-billboard-collect",
+            "dragon-tiger-collect",
             "--start-date",
             "2026-08-01",
             "--confirm-eastmoney-source-terms-reviewed",
@@ -117,7 +117,7 @@ def test_trading_billboard_cli_rejects_incomplete_or_unbounded_range() -> None:
     )
     unbounded = _parser().parse_args(
         [
-            "trading-billboard-collect",
+            "dragon-tiger-collect",
             "--start-date",
             "2025-08-17",
             "--end-date",
@@ -127,9 +127,9 @@ def test_trading_billboard_cli_rejects_incomplete_or_unbounded_range() -> None:
     )
 
     with pytest.raises(ValueError, match="both"):
-        _validate_trading_billboard_args(incomplete)
+        _validate_dragon_tiger_args(incomplete)
     with pytest.raises(ValueError, match="366"):
-        _validate_trading_billboard_args(unbounded)
+        _validate_dragon_tiger_args(unbounded)
 
 
 def test_stock_daily_indicator_bulk_parses_one_trade_date() -> None:

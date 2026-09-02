@@ -19,7 +19,7 @@ def test_optional_scheduled_tasks_default_enabled() -> None:
     assert settings.call_auction_market_series_enabled is True
     assert settings.close_price_new_highs_120d_enabled is True
     assert settings.shareholder_count_daily_enabled is False
-    assert settings.trading_billboard_enabled is False
+    assert settings.dragon_tiger_enabled is False
 
 
 def test_optional_scheduled_tasks_can_be_disabled_by_environment(monkeypatch) -> None:
@@ -36,10 +36,10 @@ def test_optional_scheduled_tasks_can_be_disabled_by_environment(monkeypatch) ->
     assert settings.close_price_new_highs_120d_enabled is False
 
 
-def test_trading_billboard_schedule_requires_explicit_opt_in(monkeypatch) -> None:
-    monkeypatch.setenv("TRADING_BILLBOARD_ENABLED", "true")
+def test_dragon_tiger_schedule_requires_explicit_opt_in(monkeypatch) -> None:
+    monkeypatch.setenv("DRAGON_TIGER_ENABLED", "true")
 
-    assert SchedulerSettings(_env_file=None).trading_billboard_enabled is True
+    assert SchedulerSettings(_env_file=None).dragon_tiger_enabled is True
 
 
 def test_task_timing_is_not_part_of_environment_settings() -> None:
@@ -70,8 +70,8 @@ def test_task_timing_is_not_part_of_environment_settings() -> None:
         "call_auction_market_series_batch_size",
         "close_price_new_highs_120d_hour",
         "close_price_new_highs_120d_minute",
-        "trading_billboard_hour",
-        "trading_billboard_minute",
+        "dragon_tiger_hour",
+        "dragon_tiger_minute",
     )
     assert all(not hasattr(scheduler, field) for field in removed_fields)
     assert not hasattr(pool, "pytdx_pool_refresh_hours")
