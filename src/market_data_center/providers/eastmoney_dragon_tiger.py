@@ -249,6 +249,14 @@ def _merge_seat_rows(
     buy_rows: tuple[SourceRow, ...],
     sell_rows: tuple[SourceRow, ...],
 ) -> tuple[SeatTradeRecord, ...]:
+    names_by_code: dict[str, set[str]] = {}
+    for row in (*buy_rows, *sell_rows):
+        name = _required_text(row, "OPERATEDEPT_NAME")
+        code = _optional_text(row.get("OPERATEDEPT_CODE"))
+        if code not in {None, "0"} and not _is_placeholder_seat_name(name):
+            names_by_code.setdefault(code, set()).add(name)
+    ambiguous_codes = {code for code, names in names_by_code.items() if len(names) > 1}
+
     builders: dict[str, dict[str, object]] = {}
     order: list[str] = []
     for side, rows in (("buy", buy_rows), ("sell", sell_rows)):
@@ -258,7 +266,11 @@ def _merge_seat_rows(
             name = _required_text(row, "OPERATEDEPT_NAME")
             code = _optional_text(row.get("OPERATEDEPT_CODE"))
             reliable_code = (
-                code if code not in {None, "0"} and not _is_placeholder_seat_name(name) else None
+                code
+                if code not in {None, "0"}
+                and code not in ambiguous_codes
+                and not _is_placeholder_seat_name(name)
+                else None
             )
             fingerprint = sha256(_canonical_json(row).encode("utf-8")).hexdigest()[:16]
             key = (

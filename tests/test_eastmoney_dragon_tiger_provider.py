@@ -117,6 +117,21 @@ def test_adapter_never_merges_placeholder_institutions_even_with_a_nonzero_code(
     assert all(trade.seat_source_key is None for trade in institutions)
 
 
+def test_adapter_keeps_rows_separate_when_one_seat_code_has_conflicting_names() -> None:
+    reports = _reports()
+    reports[SELL_REPORT][0]["OPERATEDEPT_NAME"] = "另一证券营业部"
+
+    trades = _adapter(reports).fetch_dragon_tiger(TRADE_DATE).records[0].seat_trades
+    conflicting = [
+        trade for trade in trades if trade.seat_name_raw in {"某证券营业部", "另一证券营业部"}
+    ]
+
+    assert len(conflicting) == 2
+    assert all(trade.seat_source_key is None for trade in conflicting)
+    assert {trade.buy_rank for trade in conflicting} == {1, None}
+    assert {trade.sell_rank for trade in conflicting} == {1, None}
+
+
 def test_adapter_preserves_missing_opposing_amount_instead_of_source_net() -> None:
     event = _adapter().fetch_dragon_tiger(TRADE_DATE).records[0]
     buy_institution = next(trade for trade in event.seat_trades if trade.buy_rank == 2)
