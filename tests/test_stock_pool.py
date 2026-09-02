@@ -44,12 +44,14 @@ def test_price_limit_catalog_rejects_wrong_exchange_board_or_date() -> None:
 
 
 def test_price_limit_range_preserves_half_up_and_minimum_one_tick_semantics() -> None:
-    assert calculate_price_limit_range(
-        Decimal("10.05"), Decimal("0.10"), Decimal("0.01")
-    ) == (Decimal("9.05"), Decimal("11.06"))
-    assert calculate_price_limit_range(
-        Decimal("0.01"), Decimal("0.10"), Decimal("0.01")
-    ) == (Decimal("0.01"), Decimal("0.02"))
+    assert calculate_price_limit_range(Decimal("10.05"), Decimal("0.10"), Decimal("0.01")) == (
+        Decimal("9.05"),
+        Decimal("11.06"),
+    )
+    assert calculate_price_limit_range(Decimal("0.01"), Decimal("0.10"), Decimal("0.01")) == (
+        Decimal("0.01"),
+        Decimal("0.02"),
+    )
 
 
 def _candidate(

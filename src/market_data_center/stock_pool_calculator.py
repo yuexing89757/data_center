@@ -136,12 +136,8 @@ def calculate_price_limit_range(
     """Return exchange-rounded lower and upper limits for one trading session."""
     if previous_close <= 0 or ratio <= 0 or price_tick <= 0:
         raise ValueError("previous close, limit ratio, and price tick must be positive")
-    upper = _round_limit(
-        previous_close * (Decimal(1) + ratio), previous_close, 1, price_tick
-    )
-    lower = _round_limit(
-        previous_close * (Decimal(1) - ratio), previous_close, -1, price_tick
-    )
+    upper = _round_limit(previous_close * (Decimal(1) + ratio), previous_close, 1, price_tick)
+    lower = _round_limit(previous_close * (Decimal(1) - ratio), previous_close, -1, price_tick)
     return lower, upper
 
 

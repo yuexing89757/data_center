@@ -157,9 +157,7 @@ def test_validate_regulation_rules_rejects_duplicate_active_dimension() -> None:
         source_clause="5.4.2(1)-duplicate",
     )
     with pytest.raises(ValueError, match="active rule dimension"):
-        validate_regulation_rules(
-            (_deviation_rule(), duplicate_dimension), date(2026, 9, 2)
-        )
+        validate_regulation_rules((_deviation_rule(), duplicate_dimension), date(2026, 9, 2))
 
 
 def test_validate_regulation_rules_allows_distinct_official_windows() -> None:

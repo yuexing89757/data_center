@@ -140,8 +140,7 @@ def test_regulation_schema_catalog_constraints_and_private_grants(
         ]
         assert connection.execute(
             text(
-                "select count(distinct rule_set_version) = 1 "
-                "and count(*) = 26 from regulation.rule"
+                "select count(distinct rule_set_version) = 1 and count(*) = 26 from regulation.rule"
             )
         ).scalar_one()
 

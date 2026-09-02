@@ -26,9 +26,7 @@ PUBLISHED_FUNCTIONS = cast(tuple[str, ...], FASTAPI_CHECKS["PUBLISHED_FUNCTIONS"
 
 def test_regulation_migration_is_private_typed_and_has_26_official_rules() -> None:
     migration = (
-        (MIGRATION_DIR / "20260902000100_create_regulation.sql")
-        .read_text(encoding="utf-8")
-        .lower()
+        (MIGRATION_DIR / "20260902000100_create_regulation.sql").read_text(encoding="utf-8").lower()
     )
 
     assert "create schema if not exists regulation" in migration
