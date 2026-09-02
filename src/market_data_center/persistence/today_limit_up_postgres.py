@@ -183,7 +183,6 @@ from stock_pool.snapshot
 where pool_code='CN_A_PREVIOUS_DAY_MAINBOARD_LIMIT_UP'
   and basis_trade_date=:trade_date and status='ready'
 order by version desc limit 1
-for share
 """),
                     {"trade_date": trade_date},
                 )

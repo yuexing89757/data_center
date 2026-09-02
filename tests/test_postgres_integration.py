@@ -77,6 +77,7 @@ from market_data_center.domain.call_auction_market_series import (
     universe_hash,
 )
 from market_data_center.domain.operations import ExecutionStatus, TriggerSource, WorkflowCode
+from market_data_center.domain.today_limit_up import TodayLimitUpSnapshotStatus
 from market_data_center.migrations import MIGRATION_DIR, apply_migrations
 from market_data_center.persistence import PostgreSQLDerivedPersistence, PostgreSQLPersistence
 from market_data_center.persistence.call_auction_market_series_postgres import (
@@ -91,6 +92,9 @@ from market_data_center.persistence.dragon_tiger_postgres import (
 from market_data_center.persistence.operations_postgres import PostgreSQLOperationsPersistence
 from market_data_center.persistence.regulation_postgres import (
     PostgreSQLRegulationPersistence,
+)
+from market_data_center.persistence.today_limit_up_postgres import (
+    PostgreSQLTodayLimitUpPersistence,
 )
 from market_data_center.quality_audit import audit_daily_bars
 from market_data_center.recovery import (
@@ -1548,6 +1552,54 @@ select has_schema_privilege('public','today_limit_up','usage')
  or has_table_privilege('public','today_limit_up.snapshot','select')
 """)
         )
+
+
+def test_today_limit_up_fill_reads_ready_pool_with_append_only_worker_role(
+    migrated_database_url: str,
+    database_engine: Engine,
+) -> None:
+    with database_engine.begin() as connection:
+        _insert_ready_limit_up_pool(connection, TRADE_DATE + timedelta(days=1), [])
+        assert connection.scalar(
+            text(
+                "select has_table_privilege('market_data_worker', 'stock_pool.snapshot', 'select')"
+            )
+        )
+        assert not connection.scalar(
+            text(
+                "select has_table_privilege('market_data_worker', 'stock_pool.snapshot', 'update')"
+            )
+        )
+
+    worker_engine = create_engine(
+        _sqlalchemy_url(migrated_database_url),
+        connect_args={"options": "-c role=market_data_worker"},
+    )
+    try:
+        persistence = PostgreSQLTodayLimitUpPersistence(worker_engine)
+        running = _running_run(DatasetCode.TODAY_LIMIT_UP_SOURCE, ProviderCode.AKSHARE)
+        persistence.create_ingestion_run(running)
+
+        summary = persistence.commit_snapshot(
+            trade_date=TRADE_DATE,
+            requested_status=TodayLimitUpSnapshotStatus.READY,
+            run=_completed_run(running, row_count=0),
+            manifest=_manifest(
+                running.ingestion_id,
+                "today_limit_up_source",
+                row_count=0,
+                provider="akshare",
+            ),
+            source_records=(),
+            ingestion_quality=(),
+        )
+    finally:
+        worker_engine.dispose()
+
+    assert summary.status == "ready"
+    assert summary.trade_date == TRADE_DATE
+    assert summary.candidate_count == 0
+    assert summary.member_count == 0
 
 
 def test_daily_limit_up_list_rpc_exposes_only_bounded_domain_projection(
