@@ -41,6 +41,9 @@ from market_data_center.persistence.close_price_new_highs_postgres import (
     PostgreSQLClosePriceNewHighsPersistence,
 )
 from market_data_center.persistence.operations_postgres import PostgreSQLOperationsPersistence
+from market_data_center.persistence.regulation_postgres import (
+    PostgreSQLRegulationPersistence,
+)
 from market_data_center.persistence.stock_pool_postgres import PostgreSQLStockPoolPersistence
 from market_data_center.persistence.trading_billboard_postgres import (
     PostgreSQLTradingBillboardPersistence,
@@ -60,6 +63,8 @@ from market_data_center.providers.pytdx_pool import (
     refresh_endpoint_pool,
 )
 from market_data_center.raw_store import LocalRawStore
+from market_data_center.regulation_benchmark_service import RegulationBenchmarkService
+from market_data_center.regulation_service import RegulationService
 from market_data_center.reliability import recover_stale_runs
 from market_data_center.scheduling_catalog import (
     BOARD_INDEX_DAILY_BAR_JOB_ID,
@@ -70,6 +75,7 @@ from market_data_center.scheduling_catalog import (
     DEDUCTED_PROFIT_JOB_ID,
     EOD_QUOTE_SNAPSHOT_JOB_ID,
     PYTDX_POOL_REFRESH_JOB_ID,
+    REGULATION_DAILY_CALCULATION_JOB_ID,
     SCHEDULER_TIMEZONE,
     SHAREHOLDER_COUNT_DAILY_JOB_ID,
     STALE_RUN_RECOVERY_JOB_ID,
@@ -685,6 +691,55 @@ def run_trading_billboard_job() -> None:
         engine.dispose()
 
 
+def run_regulation_daily_calculation_job() -> None:
+    """Calculate exact-date regulation status and T+1 condition warnings."""
+    settings = WorkerSettings()  # type: ignore[call-arg]
+    scheduling = SchedulerSettings()
+    engine = create_engine(
+        sqlalchemy_url(settings.database_url.get_secret_value()), pool_pre_ping=True
+    )
+    try:
+        fire_time = _scheduled_job_fire_time(REGULATION_DAILY_CALCULATION_JOB_ID, scheduling)
+        trade_date = fire_time.astimezone(ZoneInfo(SCHEDULER_TIMEZONE)).date()
+        facts = PostgreSQLPersistence(engine)
+        execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
+            WorkflowCode.REGULATION_DAILY_CALCULATION,
+            fire_time,
+            TriggerSource.SCHEDULED,
+        )
+        try:
+            if facts.is_trading_day(trade_date):
+                with create_provider("baostock") as provider:
+                    execution.step(
+                        "collect_regulation_benchmarks",
+                        1,
+                        lambda: RegulationBenchmarkService(
+                            IngestionPipeline(
+                                provider=provider,
+                                persistence=facts,
+                                raw_store=LocalRawStore(settings.raw_data_root),
+                            )
+                        ).collect(trade_date),
+                    )
+                execution.step(
+                    "calculate_regulation_warnings",
+                    2,
+                    lambda: RegulationService(
+                        PostgreSQLRegulationPersistence(engine),
+                        clock=lambda: datetime.now(UTC),
+                    ).calculate(trade_date),
+                )
+            else:
+                execution.step("collect_regulation_benchmarks", 1, lambda: 0)
+                execution.step("calculate_regulation_warnings", 2, lambda: 0)
+        except BaseException as error:
+            execution.fail(error)
+            raise
+        execution.succeed()
+    finally:
+        engine.dispose()
+
+
 def _scheduled_fire_time(
     hour: int,
     minute: int,
@@ -763,6 +818,7 @@ def build_scheduler(settings: SchedulerSettings | None = None) -> BlockingSchedu
         CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID: run_close_price_new_highs_120d_job,
         BOARD_INDEX_DAILY_BAR_JOB_ID: run_board_index_daily_bar_job,
         TRADING_BILLBOARD_JOB_ID: run_trading_billboard_job,
+        REGULATION_DAILY_CALCULATION_JOB_ID: run_regulation_daily_calculation_job,
         PYTDX_POOL_REFRESH_JOB_ID: run_pytdx_pool_refresh_job,
     }
     for definition in job_definitions(settings):

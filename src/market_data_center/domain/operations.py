@@ -37,6 +37,7 @@ class WorkflowCode(StrEnum):
     SHAREHOLDER_COUNT_DAILY = "shareholder_count_daily"
     SHAREHOLDER_COUNT_BACKFILL = "shareholder_count_backfill"
     TRADING_BILLBOARD_DAILY = "trading_billboard_daily"
+    REGULATION_DAILY_CALCULATION = "regulation_daily_calculation"
 
 
 @dataclass(frozen=True, slots=True)

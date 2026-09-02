@@ -29,6 +29,8 @@ from market_data_center.domain.regulation import (
 
 _ONE = Decimal(1)
 _HUNDRED = Decimal(100)
+REGULATION_ALGORITHM_VERSION = "regulation-calculator.v1"
+REGULATION_SCENARIO_CONFIG_VERSION = "regulation-scenarios.v1"
 _SCENARIOS = {
     RegulationScenarioCode.INDEX_DOWN_2: Decimal("-0.02"),
     RegulationScenarioCode.INDEX_FLAT: Decimal(0),
@@ -378,15 +380,26 @@ def _status(
         if abnormal
         else CalculatedRegulationState.NORMAL
     )
+    status_applicability = candidate.applicability
+    status_reason = candidate.applicability_reason
     completeness = {
         RegulationApplicability.APPLICABLE: RegulationDataCompleteness.COMPLETE,
         RegulationApplicability.INSUFFICIENT_DATA: RegulationDataCompleteness.INCOMPLETE,
         RegulationApplicability.NOT_APPLICABLE: RegulationDataCompleteness.NOT_APPLICABLE,
     }[candidate.applicability]
-    if any(
-        item.result.data_completeness is RegulationDataCompleteness.INCOMPLETE for item in evaluated
-    ):
+    incomplete_result = next(
+        (
+            item.result
+            for item in evaluated
+            if item.result.data_completeness is RegulationDataCompleteness.INCOMPLETE
+        ),
+        None,
+    )
+    if incomplete_result is not None:
         completeness = RegulationDataCompleteness.INCOMPLETE
+        if candidate.applicability is RegulationApplicability.APPLICABLE:
+            status_applicability = RegulationApplicability.INSUFFICIENT_DATA
+            status_reason = incomplete_result.incomplete_reason
     stock_return_pct = (
         target.stock_return * _HUNDRED
         if target is not None and target.stock_return is not None
@@ -410,8 +423,8 @@ def _status(
         symbol=candidate.symbol,
         exchange=candidate.exchange,
         segment=candidate.segment,
-        applicability=candidate.applicability,
-        applicability_reason=candidate.applicability_reason,
+        applicability=status_applicability,
+        applicability_reason=status_reason,
         data_completeness=completeness,
         calculated_state=state,
         announced_state=_announcement_state(source, candidate),

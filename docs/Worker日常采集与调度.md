@@ -1,5 +1,25 @@
 # Worker 日常采集与调度
 
+## 监管异动每日测算
+
+`regulation_daily_calculation` 是默认关闭的 Worker 工作流。设置
+`REGULATION_DAILY_ENABLED=true` 后，APScheduler 在周一至周五 22:30（Asia/Shanghai）依次：
+
+1. 通过 BaoStock 白名单精确采集 `SSE:000002`、`SZSE:399107`、`SZSE:399102` 当日日线；
+2. 从同一数据库快照装载股票日K、每日换手率、公司行动、正式监管事件及26条有效规则；
+3. 计算当前规则状态，并按指数 -2%、0%、+2% 三种情景反解 T+1 触发价格；
+4. 原子发布 `regulation.calculation_run`、`status`、`rule_result` 和 `warning`。
+
+非交易日正常跳过。行情、指数、名称历史、公司行动或适用性输入缺失时保持显式不完整，
+不得以旧日期结果回退。该结果是规则条件测算，不是价格预测，也不表示必然停牌或必然采取监管措施。
+一次性手工重算使用：
+
+```powershell
+uv run market-data-center regulation-calculate --trade-date YYYY-MM-DD
+```
+
+该任务只注册在 Worker 内，不创建 cron、Windows Task Scheduler 或其他操作系统级触发器。
+
 Daily Bar 的 Provider 请求与 Raw lineage 仍逐证券独立，但验证后的数据库事实按
 `DAILY_BAR_WRITE_BATCH_SIZE`（默认 100，1..500）有界成批提交。每批单事务，失败整批回滚并让
 工作流失败；日志中的 `daily_bar_commit` 给出位置、run/row 数和提交耗时。不要用超大批次绕过

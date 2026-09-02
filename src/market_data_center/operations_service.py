@@ -18,10 +18,17 @@ from market_data_center.domain.operations import (
     WorkflowCode,
     WorkflowRun,
 )
+from market_data_center.domain.regulation import (
+    RegulationCalculationSummary,
+    RegulationRunStatus,
+)
 from market_data_center.domain.stock_pool import StockPoolBuildSummary
 from market_data_center.persistence.operations_postgres import PostgreSQLOperationsPersistence
 from market_data_center.persistence.today_limit_up_postgres import TodayLimitUpFillSummary
 from market_data_center.providers.pytdx_pool import PytdxPoolRefreshResult
+from market_data_center.regulation_benchmark_service import (
+    RegulationBenchmarkCollectionSummary,
+)
 from market_data_center.shareholder_count_batch import ShareholderCountSyncSummary
 from market_data_center.trading_billboard_service import (
     TradingBillboardBackfillSummary,
@@ -120,6 +127,26 @@ def safe_error_summary(error: BaseException) -> str:
 
 
 def _result_statistics(result: object) -> tuple[int, int, int, ExecutionStatus]:
+    if isinstance(result, RegulationBenchmarkCollectionSummary):
+        return (
+            result.expected_count,
+            result.accepted_count,
+            result.expected_count - result.accepted_count,
+            ExecutionStatus.SUCCEEDED,
+        )
+    if isinstance(result, RegulationCalculationSummary):
+        status = {
+            RegulationRunStatus.SUCCEEDED: ExecutionStatus.SUCCEEDED,
+            RegulationRunStatus.PARTIAL: ExecutionStatus.PARTIAL,
+            RegulationRunStatus.FAILED: ExecutionStatus.FAILED,
+            RegulationRunStatus.RUNNING: ExecutionStatus.FAILED,
+        }[result.status]
+        return (
+            result.coverage.expected_count,
+            result.coverage.complete_count + result.coverage.not_applicable_count,
+            result.coverage.incomplete_count,
+            status,
+        )
     if isinstance(result, ShareholderCountSyncSummary):
         status = (
             ExecutionStatus.FAILED

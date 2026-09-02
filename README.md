@@ -207,6 +207,13 @@ immutable Raw data. See [ADR-0003](docs/adr/ADR-0003-同花顺动态板块指数
 
 The daily local-TDX workflow and cross-platform APScheduler deployment are documented in [docs/Worker日常采集与调度.md](docs/Worker日常采集与调度.md).
 
+The opt-in Regulation workflow runs inside the Worker at 22:30 Asia/Shanghai on weekdays. It
+collects the three allowlisted official benchmark indices, evaluates the configured exchange rules,
+and persists deterministic next-session trigger scenarios. Enable it only after applying the ordered
+migration with `REGULATION_DAILY_ENABLED=true`; run one exact date manually with
+`market-data-center regulation-calculate --trade-date YYYY-MM-DD`. Its output is a rules-based
+condition calculation, not a prediction or a statement that suspension or another action is certain.
+
 Run PostgreSQL integration tests against a disposable local database (never production):
 
 ```bash

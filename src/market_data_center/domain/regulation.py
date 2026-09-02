@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
+from uuid import UUID
 
 from market_data_center.domain.records import Exchange
 from market_data_center.domain.stock_pool import DailyPriceLimit
@@ -545,3 +546,67 @@ class RegulationCalculationOutput:
     warnings: tuple[RegulationWarningResult, ...]
     coverage: RegulationCoverage
     quality_findings: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class RegulationCalculationRun:
+    calculation_id: UUID
+    trade_date: date
+    next_trade_date: date
+    status: RegulationRunStatus
+    algorithm_version: str
+    rule_set_version: str
+    rule_set_hash: str
+    scenario_config_version: str
+    input_hash: str
+    market_watermark: str
+    capital_watermark: str
+    event_watermark: datetime
+    coverage: RegulationCoverage
+    started_at: datetime
+    completed_at: datetime | None
+
+    def __post_init__(self) -> None:
+        if self.next_trade_date <= self.trade_date:
+            raise ValueError("next trade date must follow trade date")
+        for field_name in (
+            "algorithm_version",
+            "rule_set_version",
+            "scenario_config_version",
+            "market_watermark",
+            "capital_watermark",
+        ):
+            _require_nonblank(getattr(self, field_name), field_name.replace("_", " "))
+        for value, field_name in (
+            (self.rule_set_hash, "rule set hash"),
+            (self.input_hash, "input hash"),
+        ):
+            if not _LOWERCASE_SHA256.fullmatch(value):
+                raise ValueError(f"{field_name} must be lowercase SHA-256")
+        _require_timezone_aware(self.event_watermark, "event watermark")
+        _require_timezone_aware(self.started_at, "started at")
+        if self.completed_at is not None:
+            _require_timezone_aware(self.completed_at, "completed at")
+            if self.completed_at < self.started_at:
+                raise ValueError("completed at must not precede started at")
+        if self.status is RegulationRunStatus.RUNNING and self.completed_at is not None:
+            raise ValueError("running calculation must not have completed at")
+        if self.status is not RegulationRunStatus.RUNNING and self.completed_at is None:
+            raise ValueError("completed at is required for terminal calculation")
+
+
+@dataclass(frozen=True, slots=True)
+class RegulationCalculationSummary:
+    calculation_id: UUID
+    trade_date: date
+    next_trade_date: date
+    status: RegulationRunStatus
+    coverage: RegulationCoverage
+    warning_count: int
+    reused: bool
+
+    def __post_init__(self) -> None:
+        if self.next_trade_date <= self.trade_date:
+            raise ValueError("next trade date must follow trade date")
+        if self.warning_count < 0:
+            raise ValueError("warning count must not be negative")

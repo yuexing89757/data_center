@@ -18,6 +18,7 @@ PYTDX_POOL_REFRESH_JOB_ID = "pytdx-pool-refresh"
 CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID = "close-price-new-highs-120d-daily"
 BOARD_INDEX_DAILY_BAR_JOB_ID = "board-index-883423-daily-bar"
 TRADING_BILLBOARD_JOB_ID = "trading-billboard-daily"
+REGULATION_DAILY_CALCULATION_JOB_ID = "regulation-daily-calculation"
 SCHEDULER_TIMEZONE = "Asia/Shanghai"
 JOB_TIMEOUT_SECONDS = 21_600
 
@@ -157,6 +158,12 @@ WORKFLOW_DEFINITIONS = (
         "股票龙虎榜采集",
         "采集东方财富每日上榜证券汇总及买入/卖出前五席位。",
         ("collect_trading_billboard",),
+    ),
+    WorkflowDefinition(
+        "regulation_daily_calculation",
+        "监管异动每日测算",
+        "按官方规则计算收盘状态、T+1指数情景触发价和客观预警。",
+        ("collect_regulation_benchmarks", "calculate_regulation_warnings"),
     ),
 )
 
@@ -342,6 +349,21 @@ def job_definitions(settings: SchedulerSettings) -> tuple[JobDefinition, ...]:
             "非交易日正常跳过; 失败保持显式缺口, 由下一次调度或显式日期命令重试",
             day_of_week="mon-fri",
             hour=20,
+            minute=30,
+        ),
+        JobDefinition(
+            REGULATION_DAILY_CALCULATION_JOB_ID,
+            "监管异动每日测算",
+            "生成版本化监管状态、逐规则结果和T+1条件预警。",
+            "regulation_daily_calculation",
+            "cron",
+            "周一至周五 22:30",
+            timezone,
+            settings.regulation_daily_enabled,
+            timeout,
+            "非交易日正常跳过; 输入缺失记录为部分完成, 不使用历史结果回退",
+            day_of_week="mon-fri",
+            hour=22,
             minute=30,
         ),
         JobDefinition(

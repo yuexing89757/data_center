@@ -26,6 +26,7 @@ from market_data_center.derivation import (
 from market_data_center.domain import CalculationMode
 from market_data_center.domain.ingestion import DatasetCode, IngestionRun, IngestionStatus
 from market_data_center.domain.operations import TriggerSource, WorkflowCode
+from market_data_center.domain.regulation import REGULATION_RULES_EFFECTIVE_FROM
 from market_data_center.domain.stock_pool import (
     MAINBOARD_LIMIT_DOWN_POOL,
     MAINBOARD_LIMIT_UP_POOL,
@@ -35,6 +36,7 @@ from market_data_center.persistence import (
     PostgreSQLDerivedPersistence,
     PostgreSQLOperationsPersistence,
     PostgreSQLPersistence,
+    PostgreSQLRegulationPersistence,
     PostgreSQLStockPoolPersistence,
 )
 from market_data_center.persistence.auction_postgres import PostgreSQLAuctionPersistence
@@ -58,6 +60,7 @@ from market_data_center.providers import (
     create_provider,
 )
 from market_data_center.raw_store import LocalRawStore
+from market_data_center.regulation_service import RegulationService
 from market_data_center.reliability import (
     RawReplayService,
     compare_daily_bar_sources,
@@ -347,6 +350,31 @@ def main() -> None:
             raise
         execution.succeed()
         print(dumps(asdict(closing_high_summary), default=str, sort_keys=True))
+        return
+
+    if args.dataset == "regulation-calculate":
+        trade_date = _validate_regulation_calculation_date(
+            args, today=datetime.now(SHANGHAI_TIME_ZONE).date()
+        )
+        execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
+            WorkflowCode.REGULATION_DAILY_CALCULATION,
+            datetime.now(UTC).replace(second=0, microsecond=0),
+            TriggerSource.MANUAL,
+        )
+        try:
+            regulation_summary = execution.step(
+                "calculate_regulation_warnings",
+                1,
+                lambda: RegulationService(
+                    PostgreSQLRegulationPersistence(engine),
+                    clock=lambda: datetime.now(UTC),
+                ).calculate(trade_date),
+            )
+        except BaseException as error:
+            execution.fail(error)
+            raise
+        execution.succeed()
+        print(dumps(asdict(regulation_summary), default=str, sort_keys=True))
         return
 
     if args.dataset in {"raw-replay", "recover-stale-runs", "compare-daily-bars"}:
@@ -1522,6 +1550,12 @@ def _parser() -> ArgumentParser:
     )
     closing_highs.add_argument("--trade-date", required=True, help="exact YYYY-MM-DD")
 
+    regulation = subparsers.add_parser(
+        "regulation-calculate",
+        help="calculate exact-date regulation conditions and next-session scenarios",
+    )
+    regulation.add_argument("--trade-date", required=True, help="exact YYYY-MM-DD")
+
     today_limit_up = subparsers.add_parser(
         "today-limit-up-snapshot",
         help="idempotently fill one exact-date immutable same-day limit-up snapshot",
@@ -1573,6 +1607,15 @@ def _parser() -> ArgumentParser:
     comparison.add_argument("--symbol", required=True, help="standard symbol such as SSE:600000")
     _add_date_range(comparison)
     return parser
+
+
+def _validate_regulation_calculation_date(args: Namespace, *, today: date) -> date:
+    trade_date = date.fromisoformat(args.trade_date)
+    if trade_date < REGULATION_RULES_EFFECTIVE_FROM:
+        raise ValueError("regulation calculation cannot precede 2026-07-06")
+    if trade_date > today:
+        raise ValueError("regulation calculation trade date cannot be in the future")
+    return trade_date
 
 
 def _add_date_range(parser: ArgumentParser) -> None:

@@ -98,6 +98,7 @@ BlockingScheduler
 | 8 | `eod-quote-snapshot-daily` | 收盘五档快照 | `eod_quote_snapshot` | cron 周一至周五 | 21:10 | ✅ |
 | 9 | `close-price-new-highs-120d-daily` | 沪深120交易日收盘新高快照 | `close_price_new_highs_120d` | cron 周一至周五 | 21:30 | ✅ |
 | 9 | `today-limit-up-snapshot-daily` | 同日涨停不可变快照 | `today_limit_up_snapshot` | cron 周一至周五 | 22:00 | 默认关闭 |
+| 10 | `regulation-daily-calculation` | 监管异动规则与T+1预警测算 | `regulation_daily_calculation` | cron 周一至周五 | 22:30 | 默认关闭 |
 | 10 | `recover-stale-ingestion-runs` | 陈旧运行恢复 | `stale_run_recovery` | interval | 每 1 小时 | ✅ |
 | 11 | `pytdx-pool-refresh` | PYTDX 节点池刷新 | `pytdx_pool_refresh` | interval | 每 1 小时 | ✅ |
 
@@ -143,6 +144,7 @@ BlockingScheduler
 | `CALL_AUCTION_SNAPSHOT_ENABLED` | `true` | 只控制 09:25:30 沪深全市场开盘竞价来源采集 |
 | `CALL_AUCTION_MARKET_SERIES_ENABLED` | `true` | 只控制 09:15 全市场竞价序列任务 |
 | `TODAY_LIMIT_UP_SNAPSHOT_ENABLED` | `false` | 只控制 22:00 同日涨停快照；迁移和出站预检前保持关闭 |
+| `REGULATION_DAILY_ENABLED` | `false` | 只控制 22:30 监管异动规则计算；部署迁移并确认三个基准指数覆盖后再启用 |
 | `CLOSE_PRICE_NEW_HIGHS_120D_ENABLED` | `true` | 只控制 21:30 收盘新高物化任务 |
 | `BOARD_INDEX_DAILY_BAR_ENABLED` | `true` | 只控制 883423 板块日线收盘采集任务 |
 | `PYTDX_POOL_PATH` | `data/pytdx_pool.json` | 统一版本化能力节点池路径；生产使用持久化绝对路径 |

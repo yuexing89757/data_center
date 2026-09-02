@@ -85,6 +85,9 @@ from market_data_center.persistence.close_price_new_highs_postgres import (
     PostgreSQLClosePriceNewHighsPersistence,
 )
 from market_data_center.persistence.operations_postgres import PostgreSQLOperationsPersistence
+from market_data_center.persistence.regulation_postgres import (
+    PostgreSQLRegulationPersistence,
+)
 from market_data_center.persistence.trading_billboard_postgres import (
     PostgreSQLTradingBillboardPersistence,
 )
@@ -95,6 +98,7 @@ from market_data_center.recovery import (
     restore_application_data,
     verify_restored_snapshot,
 )
+from market_data_center.regulation_service import RegulationService
 
 pytestmark = pytest.mark.integration
 
@@ -6916,6 +6920,171 @@ def test_replay_stock_lookup_enforces_type_and_lifecycle(database_engine: Engine
             {"symbol": SYMBOL},
         )
     assert persistence.known_stock_symbols_for_date({SYMBOL}, TRADE_DATE) == set()
+
+
+def test_regulation_service_publishes_calculation_in_disposable_database(
+    database_engine: Engine,
+) -> None:
+    market_ingestion_id = uuid4()
+    indicator_ingestion_id = uuid4()
+    trading_dates = (
+        date(2026, 8, 31),
+        date(2026, 9, 1),
+        date(2026, 9, 2),
+        date(2026, 9, 3),
+    )
+    symbols = (
+        ("SSE:600000", "600000", "stock", "Regulation Test"),
+        ("SSE:000002", "000002", "index", "SSE A Share Index"),
+        ("SZSE:399107", "399107", "index", "SZSE A Share Index"),
+        ("SZSE:399102", "399102", "index", "GEM Composite Index"),
+    )
+    with database_engine.begin() as connection:
+        connection.execute(
+            text("""
+insert into ingestion.ingestion_run (
+    ingestion_id, provider_code, dataset_code, status,
+    requested_at, started_at, finished_at
+) values
+    (:market_id, 'baostock', 'daily_bar', 'succeeded', :now, :now, :now),
+    (:indicator_id, 'tushare', 'stock_daily_indicator', 'succeeded', :now, :now, :now)
+"""),
+            {
+                "market_id": market_ingestion_id,
+                "indicator_id": indicator_ingestion_id,
+                "now": datetime(2026, 9, 2, 22, 30, tzinfo=UTC),
+            },
+        )
+        connection.execute(
+            text("""
+insert into core.security (
+    symbol, code, exchange, current_name, security_type, status,
+    ipo_date, source_code, ingestion_id
+) values (
+    :symbol, :code, :exchange, :name, :security_type, 'listed',
+    date '2000-01-01', 'baostock', :ingestion_id
+)
+"""),
+            [
+                {
+                    "symbol": symbol,
+                    "code": code,
+                    "exchange": symbol.split(":", maxsplit=1)[0],
+                    "name": name,
+                    "security_type": security_type,
+                    "ingestion_id": market_ingestion_id,
+                }
+                for symbol, code, security_type, name in symbols
+            ],
+        )
+        connection.execute(
+            text("""
+insert into core.security_name_history (
+    symbol, name, effective_from, source_code, ingestion_id
+) values (
+    'SSE:600000', 'Regulation Test', date '2000-01-01',
+    'baostock', :ingestion_id
+)
+"""),
+            {"ingestion_id": market_ingestion_id},
+        )
+        connection.execute(
+            text("""
+insert into core.trading_calendar (
+    market, trade_date, is_trading_day, previous_trading_day,
+    next_trading_day, source_code, ingestion_id
+) values (
+    'CN_A_SHARE', :trade_date, true, :previous_date, :next_date,
+    'baostock', :ingestion_id
+)
+"""),
+            [
+                {
+                    "trade_date": day,
+                    "previous_date": trading_dates[index - 1] if index else None,
+                    "next_date": (
+                        trading_dates[index + 1] if index + 1 < len(trading_dates) else None
+                    ),
+                    "ingestion_id": market_ingestion_id,
+                }
+                for index, day in enumerate(trading_dates)
+            ],
+        )
+        bar_rows = []
+        for day in trading_dates[:-1]:
+            for symbol, _, security_type, _ in symbols:
+                close = Decimal("10") if security_type == "stock" else Decimal("100")
+                bar_rows.append(
+                    {
+                        "symbol": symbol,
+                        "trade_date": day,
+                        "open": close,
+                        "high": close,
+                        "low": close,
+                        "close": close,
+                        "previous_close": close,
+                        "is_st": False if security_type == "stock" else None,
+                        "ingestion_id": market_ingestion_id,
+                    }
+                )
+        connection.execute(
+            text("""
+insert into core.daily_bar (
+    symbol, trade_date, market, open, high, low, close, previous_close,
+    volume, amount, trade_status, is_st, source_code, ingestion_id
+) values (
+    :symbol, :trade_date, 'CN_A_SHARE', :open, :high, :low, :close,
+    :previous_close, 1, 1, 'trading', :is_st, 'baostock', :ingestion_id
+)
+"""),
+            bar_rows,
+        )
+        connection.execute(
+            text("""
+insert into core.stock_daily_indicator (
+    symbol, trade_date, market, close, turnover_rate_pct,
+    price_limit_status, source_code, ingestion_id
+) values (
+    'SSE:600000', :trade_date, 'CN_A_SHARE', 10, 1,
+    'flat', 'tushare', :ingestion_id
+)
+"""),
+            [
+                {"trade_date": day, "ingestion_id": indicator_ingestion_id}
+                for day in trading_dates[:-1]
+            ],
+        )
+
+    summary = RegulationService(
+        PostgreSQLRegulationPersistence(database_engine),
+        clock=lambda: datetime(2026, 9, 2, 23, tzinfo=UTC),
+    ).calculate(date(2026, 9, 2))
+
+    assert summary.status.value == "PARTIAL"
+    assert summary.coverage.expected_count == 1
+    assert summary.coverage.incomplete_count == 1
+    with database_engine.connect() as connection:
+        assert (
+            connection.execute(
+                text("select count(*) from regulation.status where calculation_id=:id"),
+                {"id": summary.calculation_id},
+            ).scalar_one()
+            == 1
+        )
+        assert (
+            connection.execute(
+                text("select count(*) from regulation.rule_result where calculation_id=:id"),
+                {"id": summary.calculation_id},
+            ).scalar_one()
+            == 9
+        )
+        assert (
+            connection.execute(
+                text("select count(*) from regulation.warning where calculation_id=:id"),
+                {"id": summary.calculation_id},
+            ).scalar_one()
+            > 0
+        )
 
 
 def _envelopes[
