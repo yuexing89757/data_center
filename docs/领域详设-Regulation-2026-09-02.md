@@ -265,7 +265,8 @@ Domain 对象不包含 `ingestion_id` 或 `calculation_id`；服务和持久化�
 - unique `(source_code, source_event_id)`；
 - unique `(source_code, symbol, period_start_date, period_end_date, event_level, direction)` 用于发现
   来源身份漂移；
-- 相同内容重放幂等；相同来源身份出现不同哈希时追加事件修订审计并触发新计算，不能静默覆盖。
+- 相同内容重放幂等；相同来源身份出现不同哈希时保留新Raw并使该次ingestion硬失败，既有事件不变。
+  交易所正式更正必须以新的官方来源事件身份追加，随后触发新计算。
 
 ### 6.3 `regulation.calculation_run`
 
@@ -538,8 +539,9 @@ szse/regulation_event/year=YYYY/month=MM/day=DD/<ingestion-id>.jsonl
 Raw 保留来源响应字段、文档 URL、来源发布时间、抓取页游标和内容哈希，不保存凭据。重放验证路径、
 字节数、SHA-256、行数和 schema version，创建新的 IngestionRun，引用原 manifest，不访问网络。
 
-相同事件重复抓取幂等。相同 `source_event_id` 内容改变时登记修订，重算受影响事件日至当前日期中
-最多30个交易日；旧 Raw 和旧 CalculationRun 保留。
+相同事件重复抓取幂等。相同 `source_event_id` 内容改变时保留新Raw、登记质量冲突并阻断标准事件
+发布；交易所使用新 `source_event_id` 发布正式更正时，追加新事件并重算受影响事件日至当前日期中
+最多30个交易日。旧Raw、旧事件和旧CalculationRun保留。
 
 ## 10. 基准指数日线采集
 
