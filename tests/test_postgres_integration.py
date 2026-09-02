@@ -115,6 +115,289 @@ TRADE_DATE = date(2026, 7, 28)
 SYMBOL = "SSE:600000"
 
 
+def test_regulation_schema_catalog_constraints_and_private_grants(
+    migrated_database_url: str, database_engine: Engine
+) -> None:
+    ingestion_id = uuid4()
+    calculation_id = uuid4()
+    second_calculation_id = uuid4()
+    with database_engine.begin() as connection:
+        catalog = connection.execute(
+            text(
+                """
+                select segment, count(*), min(effective_date),
+                       count(distinct rule_set_version)
+                from regulation.rule
+                group by segment
+                order by segment
+                """
+            )
+        ).all()
+        assert catalog == [
+            ("GEM", 8, date(2026, 7, 6), 1),
+            ("SSE_MAIN", 9, date(2026, 7, 6), 1),
+            ("SZSE_MAIN", 9, date(2026, 7, 6), 1),
+        ]
+        assert connection.execute(
+            text(
+                "select count(distinct rule_set_version) = 1 "
+                "and count(*) = 26 from regulation.rule"
+            )
+        ).scalar_one()
+
+        overlap = connection.begin_nested()
+        with pytest.raises(IntegrityError):
+            connection.execute(
+                text(
+                    """
+                    insert into regulation.rule (
+                        rule_code, exchange, segment, rule_name, level, kind, direction,
+                        window_days, threshold_pct, comparison_window_days, ratio_threshold,
+                        secondary_threshold_pct, count_window_days, required_count,
+                        counted_event_kind, reset_level, benchmark_symbol, rule_set_version,
+                        effective_date, expire_date, source_document, source_clause,
+                        source_url, enabled
+                    )
+                    select rule_code || '_OVERLAP', exchange, segment, rule_name, level,
+                           kind, direction, window_days, threshold_pct,
+                           comparison_window_days, ratio_threshold,
+                           secondary_threshold_pct, count_window_days, required_count,
+                           counted_event_kind, reset_level, benchmark_symbol,
+                           rule_set_version, effective_date, expire_date, source_document,
+                           source_clause, source_url, enabled
+                    from regulation.rule
+                    where rule_code = 'SSE_MAIN_ABNORMAL_3D_DEV_UP'
+                    """
+                )
+            )
+        overlap.rollback()
+
+        wrong_parameters = connection.begin_nested()
+        with pytest.raises(IntegrityError):
+            connection.execute(
+                text(
+                    """
+                    update regulation.rule
+                    set threshold_pct = -20, ratio_threshold = 30
+                    where rule_code = 'SSE_MAIN_ABNORMAL_3D_DEV_UP'
+                    """
+                )
+            )
+        wrong_parameters.rollback()
+
+        connection.execute(
+            text(
+                """
+                insert into ingestion.ingestion_run (
+                    ingestion_id, provider_code, dataset_code, status,
+                    requested_at, started_at, finished_at
+                ) values (
+                    :ingestion_id, 'baostock', 'security', 'succeeded',
+                    :observed_at, :observed_at, :observed_at
+                )
+                """
+            ),
+            {"ingestion_id": ingestion_id, "observed_at": NOW},
+        )
+        connection.execute(
+            text(
+                """
+                insert into core.security (
+                    symbol, code, exchange, current_name, security_type, status,
+                    ipo_date, source_code, ingestion_id
+                ) values (
+                    :symbol, '600000', 'SSE', 'Regulation Test', 'stock', 'listed',
+                    date '2000-01-01', 'baostock', :ingestion_id
+                )
+                """
+            ),
+            {"symbol": SYMBOL, "ingestion_id": ingestion_id},
+        )
+
+        invalid_event = connection.begin_nested()
+        with pytest.raises(IntegrityError):
+            connection.execute(
+                text(
+                    """
+                    insert into regulation.event (
+                        symbol, exchange, segment, event_type, event_level, direction,
+                        period_start_date, period_end_date, published_at,
+                        effective_reset_date, source_event_id, source_title, source_url,
+                        source_content_hash, source_code, observed_at, ingestion_id
+                    ) values (
+                        :symbol, 'SSE', 'SSE_MAIN', 'ABNORMAL_VOLATILITY', 'ABNORMAL',
+                        'UP', date '2026-09-03', date '2026-09-02', :observed_at,
+                        date '2026-09-04', 'invalid-period', 'Invalid period',
+                        'https://www.sse.com.cn/', :content_hash, 'sse_official',
+                        :observed_at, :ingestion_id
+                    )
+                    """
+                ),
+                {
+                    "symbol": SYMBOL,
+                    "observed_at": NOW,
+                    "content_hash": "a" * 64,
+                    "ingestion_id": ingestion_id,
+                },
+            )
+        invalid_event.rollback()
+
+        for run_id in (calculation_id, second_calculation_id):
+            connection.execute(
+                text(
+                    """
+                    insert into regulation.calculation_run (
+                        calculation_id, trade_date, next_trade_date, status,
+                        algorithm_version, rule_set_version, rule_set_hash,
+                        scenario_config_version, input_hash, market_watermark,
+                        capital_watermark, event_watermark, expected_count,
+                        complete_count, incomplete_count, not_applicable_count,
+                        started_at, completed_at
+                    ) values (
+                        :calculation_id, date '2026-09-02', date '2026-09-03',
+                        'SUCCEEDED', 'regulation-core.v1',
+                        'cn-a-share-regulation-2026-07-06.v1', :rule_set_hash,
+                        'regulation-scenarios.v1', :input_hash, 'market-v1',
+                        'capital-v1', :event_watermark, 1, 1, 0, 0,
+                        :event_watermark, :event_watermark
+                    )
+                    """
+                ),
+                {
+                    "calculation_id": run_id,
+                    "rule_set_hash": "b" * 64,
+                    "input_hash": str(run_id).replace("-", "") * 2,
+                    "event_watermark": NOW,
+                },
+            )
+        connection.execute(
+            text(
+                """
+                insert into regulation.status (
+                    calculation_id, trade_date, symbol, exchange, segment,
+                    applicability, data_completeness, calculated_state,
+                    announced_state, close, abnormal_count_10d,
+                    abnormal_count_10d_up, abnormal_count_10d_down
+                ) values (
+                    :calculation_id, date '2026-09-02', :symbol, 'SSE', 'SSE_MAIN',
+                    'APPLICABLE', 'COMPLETE', 'NORMAL', 'NONE', 10, 0, 0, 0
+                )
+                """
+            ),
+            {"calculation_id": calculation_id, "symbol": SYMBOL},
+        )
+        rule_id = connection.execute(
+            text(
+                "select rule_id from regulation.rule "
+                "where rule_code = 'SSE_MAIN_ABNORMAL_3D_DEV_UP'"
+            )
+        ).scalar_one()
+
+        negative_distance = connection.begin_nested()
+        with pytest.raises(IntegrityError):
+            connection.execute(
+                text(
+                    """
+                    insert into regulation.rule_result (
+                        calculation_id, symbol, rule_id, evaluation_state,
+                        triggered, distance, data_completeness
+                    ) values (
+                        :calculation_id, :symbol, :rule_id, 'NOT_TRIGGERED',
+                        false, -1, 'COMPLETE'
+                    )
+                    """
+                ),
+                {
+                    "calculation_id": calculation_id,
+                    "symbol": SYMBOL,
+                    "rule_id": rule_id,
+                },
+            )
+        negative_distance.rollback()
+
+        connection.execute(
+            text(
+                """
+                insert into regulation.rule_result (
+                    calculation_id, symbol, rule_id, evaluation_state,
+                    triggered, distance, data_completeness
+                ) values (
+                    :calculation_id, :symbol, :rule_id, 'NOT_TRIGGERED',
+                    false, 5, 'COMPLETE'
+                )
+                """
+            ),
+            {"calculation_id": calculation_id, "symbol": SYMBOL, "rule_id": rule_id},
+        )
+
+        mixed_calculation = connection.begin_nested()
+        with pytest.raises(IntegrityError):
+            connection.execute(
+                text(
+                    """
+                    insert into regulation.warning (
+                        calculation_id, trade_date, next_trade_date, symbol, rule_id,
+                        warning_type, level, direction, distance, scenario_code,
+                        reachability, requires_official_event_confirmation,
+                        message_template_code, message
+                    ) values (
+                        :calculation_id, date '2026-09-02', date '2026-09-03',
+                        :symbol, :rule_id, 'ABNORMAL_RISK', 'ABNORMAL', 'UP', 5,
+                        'CURRENT', 'CURRENT', false, 'current.v1', 'rule measurement'
+                    )
+                    """
+                ),
+                {
+                    "calculation_id": second_calculation_id,
+                    "symbol": SYMBOL,
+                    "rule_id": rule_id,
+                },
+            )
+        mixed_calculation.rollback()
+
+        invalid_scenario = connection.begin_nested()
+        with pytest.raises(IntegrityError):
+            connection.execute(
+                text(
+                    """
+                    insert into regulation.warning (
+                        calculation_id, trade_date, next_trade_date, symbol, rule_id,
+                        warning_type, level, direction, distance, scenario_code,
+                        scenario_index_pct, reachability,
+                        requires_official_event_confirmation,
+                        message_template_code, message
+                    ) values (
+                        :calculation_id, date '2026-09-02', date '2026-09-03',
+                        :symbol, :rule_id, 'ABNORMAL_RISK', 'ABNORMAL', 'UP', 5,
+                        'INDEX_FLAT', 0, 'CURRENT', false, 'scenario.v1',
+                        'rule measurement'
+                    )
+                    """
+                ),
+                {
+                    "calculation_id": calculation_id,
+                    "symbol": SYMBOL,
+                    "rule_id": rule_id,
+                },
+            )
+        invalid_scenario.rollback()
+
+        assert connection.execute(
+            text("select has_table_privilege('market_data_worker', 'regulation.rule', 'select')")
+        ).scalar_one()
+        assert not connection.execute(
+            text("select has_table_privilege('market_data_worker', 'regulation.rule', 'update')")
+        ).scalar_one()
+        assert connection.execute(
+            text("select has_table_privilege('market_data_worker', 'regulation.event', 'insert')")
+        ).scalar_one()
+
+    with psycopg.connect(migrated_database_url, autocommit=True) as connection:
+        connection.execute("set role anon")
+        with pytest.raises(InsufficientPrivilege):
+            connection.execute("select count(*) from regulation.rule")
+
+
 @pytest.fixture
 def empty_database_url() -> Iterator[str]:
     admin_url = environ.get("TEST_DATABASE_URL")

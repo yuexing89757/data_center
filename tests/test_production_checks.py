@@ -24,6 +24,38 @@ VIEW_COUNT = cast(Any, SMOKE_CHECKS["_view_count"])
 PUBLISHED_FUNCTIONS = cast(tuple[str, ...], FASTAPI_CHECKS["PUBLISHED_FUNCTIONS"])
 
 
+def test_regulation_migration_is_private_typed_and_has_26_official_rules() -> None:
+    migration = (
+        (MIGRATION_DIR / "20260902000100_create_regulation.sql")
+        .read_text(encoding="utf-8")
+        .lower()
+    )
+
+    assert "create schema if not exists regulation" in migration
+    for table in ("rule", "event", "calculation_run", "status", "rule_result", "warning"):
+        assert f"create table regulation.{table}" in migration
+        assert f"alter table regulation.{table} enable row level security" in migration
+    assert migration.count("-- official-rule:") == 26
+    assert migration.count("'sse_main'") >= 9
+    assert migration.count("'szse_main'") >= 9
+    assert migration.count("'gem'") >= 8
+    assert "cn-a-share-regulation-2026-07-06.v1" in migration
+    assert "date '2026-07-06'" in migration
+    assert "c_20260424_10816492.shtml" in migration
+    assert "w020260424690713155663.pdf" in migration
+    assert "exclude using gist" in migration
+    assert "regulation_rule_kind_parameters_check" in migration
+    assert "regulation_warning_scenario_reachability_check" in migration
+    assert "grant select on regulation.rule to market_data_worker" in migration
+    assert "grant select, insert on regulation.event to market_data_worker" in migration
+    assert not re.search(
+        r"(?im)^grant\s+.*\bon\s+regulation\..*\bto\s+(public|anon|authenticated|market_data_api)",
+        migration,
+    )
+    assert all(token not in migration for token in ("ts_code", "'high'", "'medium'", "'low'"))
+    assert "jsonb" not in migration
+
+
 def test_trading_billboard_migration_is_bounded_private_and_read_only() -> None:
     migration = (
         (MIGRATION_DIR / "20260824000200_create_trading_billboard.sql")
