@@ -12,6 +12,7 @@ MAINBOARD_LIMIT_UP_POOL = "CN_A_PREVIOUS_DAY_MAINBOARD_LIMIT_UP"
 MAINBOARD_LIMIT_DOWN_POOL = "CN_A_PREVIOUS_DAY_MAINBOARD_LIMIT_DOWN"
 PRICE_LIMIT_ALGORITHM_VERSION = "1.0.0"
 PRICE_LIMIT_RULE_VERSION = "CN_MAINBOARD_2026_07_06"
+GEM_PRICE_LIMIT_RULE_VERSION = "CN_GEM_2026_07_06"
 PRICE_LIMIT_RULE_EFFECTIVE_FROM = date(2026, 7, 6)
 
 
@@ -43,28 +44,44 @@ class PriceLimitRule:
     initial_no_limit_trading_days: int
 
 
-PRICE_LIMIT_RULES = tuple(
+PRICE_LIMIT_RULES = (
+    *(
+        PriceLimitRule(
+            PRICE_LIMIT_RULE_VERSION,
+            exchange,
+            "mainboard",
+            PRICE_LIMIT_RULE_EFFECTIVE_FROM,
+            None,
+            Decimal("0.10"),
+            Decimal("0.10"),
+            Decimal("0.01"),
+            5,
+        )
+        for exchange in (Exchange.SSE, Exchange.SZSE)
+    ),
     PriceLimitRule(
-        PRICE_LIMIT_RULE_VERSION,
-        exchange,
-        "mainboard",
+        GEM_PRICE_LIMIT_RULE_VERSION,
+        Exchange.SZSE,
+        "gem",
         PRICE_LIMIT_RULE_EFFECTIVE_FROM,
         None,
-        Decimal("0.10"),
-        Decimal("0.10"),
+        Decimal("0.20"),
+        Decimal("0.20"),
         Decimal("0.01"),
         5,
-    )
-    for exchange in (Exchange.SSE, Exchange.SZSE)
+    ),
 )
 
 
-def price_limit_rule(exchange: Exchange, trade_date: date) -> PriceLimitRule:
+def price_limit_rule(
+    exchange: Exchange, trade_date: date, *, board: str = "mainboard"
+) -> PriceLimitRule:
     try:
         return next(
             rule
             for rule in PRICE_LIMIT_RULES
             if rule.exchange is exchange
+            and rule.board == board
             and rule.effective_from <= trade_date
             and (rule.effective_to is None or trade_date <= rule.effective_to)
         )

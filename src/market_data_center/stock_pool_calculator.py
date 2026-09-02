@@ -57,11 +57,10 @@ def calculate_mainboard_stock_pools(source: StockPoolBuildInput) -> StockPoolCal
         assert previous_close is not None and close is not None
         rule = price_limit_rule(candidate.exchange, source.basis_trade_date)
         ratio = rule.st_ratio if candidate.is_st else rule.regular_ratio
-        upper = _round_limit(
-            previous_close * (Decimal(1) + ratio), previous_close, 1, rule.price_tick
-        )
-        lower = _round_limit(
-            previous_close * (Decimal(1) - ratio), previous_close, -1, rule.price_tick
+        lower, upper = calculate_price_limit_range(
+            previous_close,
+            ratio,
+            rule.price_tick,
         )
         if (candidate.high is not None and candidate.high > upper) or (
             candidate.low is not None and candidate.low < lower
@@ -129,6 +128,21 @@ def stock_pool_content_hash(pool_code: str, members: tuple[StockPoolMember, ...]
         if item.pool_code == pool_code
     ]
     return sha256(dumps(payload, separators=(",", ":")).encode()).hexdigest()
+
+
+def calculate_price_limit_range(
+    previous_close: Decimal, ratio: Decimal, price_tick: Decimal
+) -> tuple[Decimal, Decimal]:
+    """Return exchange-rounded lower and upper limits for one trading session."""
+    if previous_close <= 0 or ratio <= 0 or price_tick <= 0:
+        raise ValueError("previous close, limit ratio, and price tick must be positive")
+    upper = _round_limit(
+        previous_close * (Decimal(1) + ratio), previous_close, 1, price_tick
+    )
+    lower = _round_limit(
+        previous_close * (Decimal(1) - ratio), previous_close, -1, price_tick
+    )
+    return lower, upper
 
 
 def _round_limit(

@@ -12,12 +12,44 @@ from market_data_center.domain.stock_pool import (
     MAINBOARD_LIMIT_UP_POOL,
     StockPoolBuildInput,
     StockPoolCandidate,
+    price_limit_rule,
 )
-from market_data_center.stock_pool_calculator import calculate_mainboard_stock_pools
+from market_data_center.stock_pool_calculator import (
+    calculate_mainboard_stock_pools,
+    calculate_price_limit_range,
+)
 from market_data_center.stock_pool_service import StockPoolService
 
 BASIS = date(2026, 7, 31)
 EFFECTIVE = date(2026, 8, 3)
+
+
+def test_versioned_price_limit_catalog_supports_mainboard_and_gem() -> None:
+    gem = price_limit_rule(Exchange.SZSE, date(2026, 9, 3), board="gem")
+    main = price_limit_rule(Exchange.SSE, date(2026, 9, 3))
+
+    assert gem.rule_version == "CN_GEM_2026_07_06"
+    assert gem.regular_ratio == Decimal("0.20")
+    assert gem.st_ratio == Decimal("0.20")
+    assert gem.price_tick == Decimal("0.01")
+    assert gem.initial_no_limit_trading_days == 5
+    assert main.regular_ratio == Decimal("0.10")
+
+
+def test_price_limit_catalog_rejects_wrong_exchange_board_or_date() -> None:
+    with pytest.raises(ValueError, match="no accepted price-limit rule"):
+        price_limit_rule(Exchange.SSE, date(2026, 9, 3), board="gem")
+    with pytest.raises(ValueError, match="no accepted price-limit rule"):
+        price_limit_rule(Exchange.SZSE, date(2026, 7, 5), board="gem")
+
+
+def test_price_limit_range_preserves_half_up_and_minimum_one_tick_semantics() -> None:
+    assert calculate_price_limit_range(
+        Decimal("10.05"), Decimal("0.10"), Decimal("0.01")
+    ) == (Decimal("9.05"), Decimal("11.06"))
+    assert calculate_price_limit_range(
+        Decimal("0.01"), Decimal("0.10"), Decimal("0.01")
+    ) == (Decimal("0.01"), Decimal("0.02"))
 
 
 def _candidate(
