@@ -325,10 +325,19 @@ def validate_regulation_rules(
             RegulationRuleLevel,
             RegulationRuleKind,
             RegulationDirection,
+            int | None,
+            int | None,
         ]
     ] = set()
     for rule in active:
-        dimension = (rule.segment, rule.level, rule.kind, rule.direction)
+        dimension = (
+            rule.segment,
+            rule.level,
+            rule.kind,
+            rule.direction,
+            rule.window_days if rule.window_days is not None else rule.count_window_days,
+            rule.comparison_window_days,
+        )
         if dimension in dimensions:
             raise ValueError("duplicate active rule dimension")
         dimensions.add(dimension)

@@ -145,7 +145,8 @@ cn-a-share-regulation-2026-07-06.v1
 规则迁移必须检查：
 
 - `rule_code` 全局唯一；
-- 相同 segment/level/kind/direction 的有效期不重叠；
+- 相同 segment/level/kind/direction/规则窗口/比较窗口 的有效期不重叠；窗口属于规则
+  维度，因此10日与30日规则可同时有效，同一窗口的语义版本不得重叠；
 - kind 所需参数完整，其他 kind 专属参数为空；
 - UP 阈值为正、DOWN 阈值为负；
 - `effective_date >= 2026-07-06`；

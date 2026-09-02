@@ -28,6 +28,12 @@ create table regulation.rule (
     source_clause text not null,
     source_url text not null,
     enabled boolean not null default true,
+    dimension_window_days integer generated always as (
+        coalesce(window_days, count_window_days, 0)
+    ) stored,
+    dimension_comparison_window_days integer generated always as (
+        coalesce(comparison_window_days, 0)
+    ) stored,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now(),
     constraint regulation_rule_exchange_segment_check check (
@@ -92,6 +98,8 @@ create table regulation.rule (
         level extensions.gist_text_ops with =,
         kind extensions.gist_text_ops with =,
         direction extensions.gist_text_ops with =,
+        dimension_window_days extensions.gist_int4_ops with =,
+        dimension_comparison_window_days extensions.gist_int4_ops with =,
         daterange(effective_date, expire_date, '[]') with &&
     ) where (enabled)
 );

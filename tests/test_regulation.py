@@ -162,6 +162,29 @@ def test_validate_regulation_rules_rejects_duplicate_active_dimension() -> None:
         )
 
 
+def test_validate_regulation_rules_allows_distinct_official_windows() -> None:
+    ten_day = _deviation_rule(
+        rule_code="SSE_MAIN_SERIOUS_10D_DEV_UP",
+        level=RegulationRuleLevel.SERIOUS_ABNORMAL,
+        window_days=10,
+        threshold_pct=Decimal("100"),
+        reset_level=RegulationResetLevel.SERIOUS_ABNORMAL,
+        source_clause="5.4.3(2)",
+    )
+    thirty_day = replace(
+        ten_day,
+        rule_code="SSE_MAIN_SERIOUS_30D_DEV_UP",
+        window_days=30,
+        threshold_pct=Decimal("200"),
+        source_clause="5.4.3(3)",
+    )
+
+    assert validate_regulation_rules((ten_day, thirty_day), date(2026, 9, 2)) == (
+        ten_day,
+        thirty_day,
+    )
+
+
 def _event(**changes: object) -> RegulationEventRecord:
     values: dict[str, object] = {
         "symbol": "SSE:600000",

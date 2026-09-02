@@ -85,7 +85,8 @@ Use `StrEnum` and `@dataclass(frozen=True, slots=True)`. Keep database IDs and l
 
 - no enabled rule covering the requested date;
 - duplicate rule codes;
-- duplicate `(segment, level, kind, direction)` for the same date;
+- duplicate `(segment, level, kind, direction, rule window, comparison window)` for the
+  same date; distinct official 10-day and 30-day windows must coexist;
 - benchmark missing on cumulative-deviation rules;
 - any rule before 2026-07-06;
 - turnover or event-count fields present on the wrong kind.
