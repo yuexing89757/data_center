@@ -19,6 +19,7 @@ CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID = "close-price-new-highs-120d-daily"
 BOARD_INDEX_DAILY_BAR_JOB_ID = "board-index-883423-daily-bar"
 DRAGON_TIGER_JOB_ID = "dragon-tiger-daily"
 REGULATION_DAILY_CALCULATION_JOB_ID = "regulation-daily-calculation"
+DATA_CLEANUP_JOB_ID = "data-cleanup-daily"
 SCHEDULER_TIMEZONE = "Asia/Shanghai"
 JOB_TIMEOUT_SECONDS = 21_600
 
@@ -164,6 +165,12 @@ WORKFLOW_DEFINITIONS = (
         "监管异动每日测算",
         "按官方规则计算收盘状态、T+1指数情景触发价和客观预警。",
         ("collect_regulation_benchmarks", "calculate_regulation_warnings"),
+    ),
+    WorkflowDefinition(
+        "data_cleanup",
+        "数据清理任务",
+        "仅清理早盘竞价序列明细, 保留最近三个已完成交易日。",
+        ("cleanup_call_auction_market_series_snapshots",),
     ),
 )
 
@@ -365,6 +372,20 @@ def job_definitions(settings: SchedulerSettings) -> tuple[JobDefinition, ...]:
             day_of_week="mon-fri",
             hour=22,
             minute=30,
+        ),
+        JobDefinition(
+            DATA_CLEANUP_JOB_ID,
+            "数据清理任务",
+            "清理三个已完成交易日以前的沪深全市场开盘竞价序列快照。",
+            "data_cleanup",
+            "cron",
+            "每天 03:00",
+            timezone,
+            settings.data_cleanup_enabled,
+            timeout,
+            "缺少三个已完成交易日时失败并保持数据不变; 下一日自动重试。",
+            hour=3,
+            minute=0,
         ),
         JobDefinition(
             STALE_RUN_RECOVERY_JOB_ID,

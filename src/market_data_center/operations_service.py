@@ -9,6 +9,7 @@ from market_data_center.call_auction_market_series_service import (
 )
 from market_data_center.call_auction_market_service import CallAuctionMarketCollectionSummary
 from market_data_center.daily_bar_batch import DailyBarBulkSummary
+from market_data_center.data_cleanup_service import DataCleanupSummary
 from market_data_center.domain.auction import AuctionCollectionSummary
 from market_data_center.domain.close_price_new_highs import ClosePriceNewHighBuildSummary
 from market_data_center.domain.ingestion import IngestionRun, IngestionStatus
@@ -127,6 +128,13 @@ def safe_error_summary(error: BaseException) -> str:
 
 
 def _result_statistics(result: object) -> tuple[int, int, int, ExecutionStatus]:
+    if isinstance(result, DataCleanupSummary):
+        return (
+            result.deleted_rows,
+            result.deleted_rows,
+            0,
+            ExecutionStatus.SUCCEEDED,
+        )
     if isinstance(result, RegulationBenchmarkCollectionSummary):
         return (
             result.expected_count,

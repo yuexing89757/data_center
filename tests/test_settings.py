@@ -18,6 +18,7 @@ def test_optional_scheduled_tasks_default_enabled() -> None:
     assert settings.call_auction_snapshot_enabled is True
     assert settings.call_auction_market_series_enabled is True
     assert settings.close_price_new_highs_120d_enabled is True
+    assert settings.data_cleanup_enabled is True
     assert settings.shareholder_count_daily_enabled is False
     assert settings.dragon_tiger_enabled is False
 
@@ -27,6 +28,7 @@ def test_optional_scheduled_tasks_can_be_disabled_by_environment(monkeypatch) ->
     monkeypatch.setenv("CALL_AUCTION_SNAPSHOT_ENABLED", "false")
     monkeypatch.setenv("CALL_AUCTION_MARKET_SERIES_ENABLED", "false")
     monkeypatch.setenv("CLOSE_PRICE_NEW_HIGHS_120D_ENABLED", "false")
+    monkeypatch.setenv("DATA_CLEANUP_ENABLED", "false")
 
     settings = SchedulerSettings(_env_file=None)
 
@@ -34,6 +36,7 @@ def test_optional_scheduled_tasks_can_be_disabled_by_environment(monkeypatch) ->
     assert settings.call_auction_snapshot_enabled is False
     assert settings.call_auction_market_series_enabled is False
     assert settings.close_price_new_highs_120d_enabled is False
+    assert settings.data_cleanup_enabled is False
 
 
 def test_dragon_tiger_schedule_requires_explicit_opt_in(monkeypatch) -> None:
@@ -72,6 +75,10 @@ def test_task_timing_is_not_part_of_environment_settings() -> None:
         "close_price_new_highs_120d_minute",
         "dragon_tiger_hour",
         "dragon_tiger_minute",
+        "data_cleanup_hour",
+        "data_cleanup_minute",
+        "data_cleanup_retained_days",
+        "data_cleanup_table",
     )
     assert all(not hasattr(scheduler, field) for field in removed_fields)
     assert not hasattr(pool, "pytdx_pool_refresh_hours")

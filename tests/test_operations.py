@@ -9,6 +9,7 @@ from market_data_center.call_auction_market_series_service import (
 )
 from market_data_center.call_auction_market_service import CallAuctionMarketCollectionSummary
 from market_data_center.daily_bar_batch import DailyBarBulkSummary
+from market_data_center.data_cleanup_service import DataCleanupSummary
 from market_data_center.domain.close_price_new_highs import ClosePriceNewHighBuildSummary
 from market_data_center.domain.operations import (
     ExecutionStatus,
@@ -130,6 +131,9 @@ def test_job_catalog_is_stable_and_references_defined_workflows() -> None:
     assert workflows["shareholder_count_daily"].step_codes == ("shareholder_count_daily",)
     assert workflows["shareholder_count_backfill"].step_codes == ("shareholder_count_backfill",)
     assert workflows["dragon_tiger_daily"].step_codes == ("collect_dragon_tiger",)
+    assert workflows["data_cleanup"].step_codes == (
+        "cleanup_call_auction_market_series_snapshots",
+    )
     assert all(job.timezone == "Asia/Shanghai" for job in jobs)
     assert {workflow.value for workflow in WorkflowCode} == set(workflows)
 
@@ -191,6 +195,12 @@ def test_job_catalog_owns_all_fixed_schedules() -> None:
     assert (shareholder_count.hour, shareholder_count.minute) == (21, 0)
     assert shareholder_count.timezone == "Asia/Shanghai"
     assert shareholder_count.enabled is False
+    cleanup = jobs["data-cleanup-daily"]
+    assert cleanup.display_name == "数据清理任务"
+    assert cleanup.workflow_code == "data_cleanup"
+    assert cleanup.day_of_week is None
+    assert (cleanup.hour, cleanup.minute) == (3, 0)
+    assert cleanup.enabled is True
 
 
 def test_catalog_registers_hourly_pytdx_pool_refresh() -> None:
@@ -361,6 +371,31 @@ def test_execution_service_records_integer_finalization_rows() -> None:
     assert (job.fetched_rows, job.accepted_rows, job.rejected_rows) == (2, 2, 0)
     assert job.status is ExecutionStatus.SUCCEEDED
     assert workflow.accepted_rows == 2
+
+
+def test_execution_service_records_data_cleanup_deleted_rows() -> None:
+    persistence = MemoryOperationsPersistence()
+    execution = WorkflowExecutionService(cast(PostgreSQLOperationsPersistence, persistence)).start(
+        WorkflowCode.DATA_CLEANUP, NOW, TriggerSource.SCHEDULED
+    )
+    summary = DataCleanupSummary(
+        cutoff_date=NOW.date(),
+        retained_trading_days=3,
+        deleted_rows=123,
+    )
+
+    execution.step(
+        "cleanup_call_auction_market_series_snapshots",
+        1,
+        lambda: summary,
+    )
+    execution.succeed()
+
+    job = persistence.finished_jobs[0]
+    workflow = persistence.finished_workflows[0]
+    assert (job.fetched_rows, job.accepted_rows, job.rejected_rows) == (123, 123, 0)
+    assert job.status is ExecutionStatus.SUCCEEDED
+    assert workflow.accepted_rows == 123
 
 
 def test_execution_service_records_close_price_new_high_snapshot_statistics() -> None:
