@@ -953,7 +953,6 @@ def test_auction_series_cleanup_migration_is_narrow_and_non_destructive() -> Non
         "data_cleanup",
     }
 
-    assert migration_path == max(MIGRATION_DIR.glob("*.sql"))
     assert all(f"'{workflow}'" in migration for workflow in controlled_workflows)
     normalized = " ".join(migration.split())
     assert "for delete to market_data_worker using (true)" in normalized

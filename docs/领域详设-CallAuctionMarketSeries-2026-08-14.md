@@ -2,8 +2,8 @@
 
 > 状态：有效，已实现
 > 日期：2026-08-14
-> GitHub Issue：#48、#54
-> 上级决策：`adr/ADR-0034-沪深全市场开盘竞价序列快照.md`（Accepted）
+> GitHub Issue：#48、#54、#72
+> 上级决策：`adr/ADR-0034-沪深全市场开盘竞价序列快照.md`、`adr/ADR-0051-竞价序列采集与单Writer解耦.md`（Accepted）
 
 ## 1. 领域职责
 
@@ -36,7 +36,7 @@ round deadline(seq<31) = scheduled_at(seq+1)
 round deadline(seq=31) = 09:25:40
 ```
 
-`scheduled_at` 表示计划点；每条 `observed_at` 表示Worker收到并标准化该证券响应的时间；Round `collected_at` 表示该轮规范attempt完成或截止的时间。三者不得互相伪造。
+`scheduled_at` 表示计划点；每条 `observed_at` 表示Worker收到并标准化该证券响应的时间；Round `collected_at` 表示该轮来源采集完成或截止的时间，与异步数据库事务的提交时间无关。三者不得互相伪造。
 
 每轮另保存由 `scheduled_at` 上海时间格式化得到的六位 `batch_code=HHMMSS`，例如
 09:15:00 为 `091500`、09:15:20 为 `091520`。它是展示和检索字段，不替代 Round 自然键。
@@ -71,18 +71,18 @@ source code。价格/金额使用Decimal，数量为股，missing保持None，ze
 
 ## 5. 服务流程
 
-1. 校验交易日、窗口和quote节点池。
-2. 冻结并持久化一次全集及哈希。
-3. 根据当前时间确定首个未错过seq；为过去seq写failed round。
-4. 等待当前slot，不提前请求。
-5. 为endpoint attempt创建running IngestionRun。
-6. Provider按80只批次和deadline读取全集。
-7. Provider响应返回后立即保存不可变Raw，再复制五档事实并执行全集、时间、symbol、数值、
+1. 校验交易日、窗口和quote节点池，并在进入采样循环前同步持久化Session、冻结全集及哈希。
+2. 根据当前时间确定首个未错过seq；过去seq形成内存中的failed Round，不调用Provider。
+3. Producer严格等待当前slot，不提前请求；按80只批次和deadline读取完整全集。
+4. Provider响应返回后立即保存不可变Raw v2，再复制五档事实并执行全集、时间、symbol、数值、
    档位和基数校验；单条事实构造失败转为该symbol质量拒绝，不中断其余证券处理。
-8. 在一个事务中完成IngestionRun、Manifest、质量结果和Snapshot事实。
-9. 成功则选择该ingestion并结束Round；partial且剩余时间至少覆盖配置的最小重试预算与
-   上一完整attempt实际总耗时二者较大值时，才从第二endpoint全量重试。
-10. 持久化Round终态，继续下一slot；最后聚合Session终态。
+5. Producer把该轮全部endpoint attempts和Round终态组成不可变 `CapturedRound`，按FIFO放入容量32
+   的进程内队列；数据库写入耗时不计入attempt重试预算，也不阻塞下一个20秒计划点。
+6. 单个非daemon Writer按sample sequence消费队列，每个CapturedRound使用一个数据库事务持久化
+   Round、全部IngestionRun、Manifest、质量结果和Snapshot事实。
+7. 成功则选择该ingestion；partial且剩余时间至少覆盖配置的最小重试预算与上一完整attempt的
+   Provider加Raw实际耗时二者较大值时，才从第二endpoint全量重试。
+8. 32个计划点生产完成后，Producer等待Writer排空，再根据已经持久化的Round聚合Session终态。
 
 进程恢复只读取持久化Session冻结全集并继续未来slot。已错过slot不调用Provider。
 
@@ -95,13 +95,17 @@ Snapshot父表按trade date月度Range Partition；初始migration创建当前�
 Snapshot 保存 `batch_code` 及 `bid/ask_price_1..5`、`bid/ask_volume_1..5`。迁移仅从历史
 `scheduled_at` 回填 `batch_code`；历史五档字段保持 `NULL`，不得从其他表或后续行情反推。
 
-同一attempt写入必须原子：任何Snapshot、Manifest或质量结果写入失败时，不能留下伪成功IngestionRun。Round selected ingestion只能引用已终态的同dataset attempt。
+同一CapturedRound（含该轮全部attempt）写入必须使用一个事务：任何Snapshot、Manifest、质量结果、
+IngestionRun或Round写入失败时，整轮回滚，不能留下部分lineage或伪成功事实。Round selected ingestion
+只能引用同一事务内已终态的同dataset attempt。Writer严格单线程、FIFO写入，不允许多个数据库写线程
+并发争用；Session最终化必须等待队列排空。
 
 ## 7. Raw与重放
 
-每个Attempt写一个独立JSONL对象和Manifest。Raw在领域事实构造和校验前落盘，因此单条标准化
-或领域构造异常不会丢失来源响应。Raw envelope记录标准symbol身份、provider原始字符串字段、
-worker observed time、session ID、sample sequence、scheduled time和endpoint request metadata。Raw对象不可覆盖。
+每个Attempt写一个独立JSONL对象和Manifest。Raw在领域事实构造、校验和数据库排队前落盘，因此
+数据库阻塞不影响下一个计划点，也不会令来源响应丢失。Raw v2 envelope记录标准symbol身份、provider
+原始字符串字段、worker observed time、ingestion ID、交易日、session ID、sample sequence、scheduled
+time、endpoint和attempt number。Raw对象不可覆盖。
 
 首版replay fail closed。未来若启用，必须从持久化Frozen Universe证明预期集合，并确保一个Raw对象只重建原Attempt，不能跨endpoint或跨Round拼接。
 
@@ -115,7 +119,13 @@ worker observed time、session ID、sample sequence、scheduled time和endpoint 
 - first attempt partial：仅在deadline预算允许时执行第二全量attempt。
 - 两次均partial：Round partial，selected ingestion指向最后attempt。
 - slot错过：Round failed，无IngestionRun。
+- Raw写入失败：该Round failed且不入队attempt；后续计划点继续采集，不在内存中伪造Raw lineage。
+- Writer持久化某轮失败：该轮事务回滚并记录失败sample sequence与异常类型；Writer继续消费后续轮次，
+  Producer仍按20秒节奏采集。Session最终化把数据库中缺失的Round计为failed并保存摘要。
 - 任一Round非succeeded：Session不得succeeded。
+
+当前实现不自动重放Writer失败轮次；Raw replay仍按第7节fail closed。进程在队列排空前不正常退出，
+但进程崩溃时尚未提交的内存队列不具备跨进程耐久性。
 
 ## 9. 调度边界
 

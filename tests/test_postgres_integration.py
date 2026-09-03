@@ -990,6 +990,20 @@ def test_call_auction_market_series_schema_is_partitioned_and_internal(
         assert constraints["call_auction_market_series_snapshot_pkey"] == (
             "PRIMARY KEY (trade_date, ingestion_id, symbol)"
         )
+        assert connection.scalar(
+            text("""
+                select col_description(
+                  'realtime.call_auction_market_series_round'::regclass,
+                  attnum
+                )
+                from pg_attribute
+                where attrelid='realtime.call_auction_market_series_round'::regclass
+                  and attname='collected_at'
+            """)
+        ) == (
+            "Source collection completion time; independent of asynchronous "
+            "persistence commit time."
+        )
         expected_quote_columns = {
             "batch_code",
             *(

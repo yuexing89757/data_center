@@ -117,12 +117,13 @@ uv run market-data-center shareholder-count-backfill --cutoff-date 2026-08-24 --
 `ready` 涨停池，保存原始 JSONL、Manifest、质量结果和标准快照。当天池缺失时失败，空池
 合法跳过；任务禁止把当前实时报价写成其他历史日期，也不会回退旧股票池。
 
-集合竞价涨停池五档默认启用，工作日 09:15 启动并按 30 秒节奏采样至 09:25，每只股票
-单独发起一次 PYTDX 请求。独立的沪深全市场竞价序列任务也在 09:15 启动，冻结当日 SSE/SZSE
+已退役的集合竞价涨停池五档任务不再注册。沪深全市场竞价序列任务在 09:15 启动，冻结当日 SSE/SZSE
 `stock`、`listed` 全集，从 09:15:00 到 09:25:20（含首尾）每 20 秒采一轮，共 32 轮；每批最多
 80 只，每轮最多使用两个 endpoint 做完整全集 attempt，partial 结果不跨 endpoint 拼接。错过的轮次
-显式记为 failed，最后一轮 deadline 为 09:25:40，不补采过去时槽。两个 09:15 任务只在专用
-`morning_auction` 两线程 executor 内并行，其他 Worker 任务仍使用单线程 executor。另有沪深全市场
+显式记为 failed，最后一轮 deadline 为 09:25:40，不补采过去时槽。任务由一个Producer严格按时采集
+行情并先写Raw v2，再送入容量32的进程内FIFO队列；单个非daemon Writer按轮次顺序事务写库。数据库
+延迟可以使Session在09:25:40后才完成，但不得阻塞下一个Provider计划点。该任务在专用
+`morning_auction` executor运行，其他 Worker 任务仍使用单线程default executor。另有沪深全市场
 开盘竞价来源采集任务在工作日 09:25:30 运行：只采集 `SSE`、`SZSE` 的 `stock`、`listed` 证券，BSE
 暂缓，ETF、可转债和指数不进入集合。每次尝试固定一个 quote-capable endpoint，按最多 80 只分批；
 每个 endpoint 只允许形成完整全集，至多进行两次完整尝试，绝不拼接 endpoint 的 partial 结果。新
@@ -161,20 +162,31 @@ attempt 选择，按月分区的 `snapshot` 保存来源事实。可先检查 se
 追踪 Raw、Manifest 和质量结果：
 
 ```sql
-select trade_date,status,expected_rounds,succeeded_rounds,partial_rounds,failed_rounds,
-       universe_count,error_summary
+select trade_date,status,expected_rounds,successful_rounds,partial_rounds,failed_rounds,
+       universe_count,started_at,finished_at,error_summary
 from realtime.call_auction_market_series_session
 order by started_at desc limit 5;
 
-select sample_seq,scheduled_at,status,attempt_count,successful_quotes,failed_quotes,error_summary
+select sample_seq,scheduled_at,collected_at,status,attempt_count,successful_quotes,failed_quotes,
+       error_summary
 from realtime.call_auction_market_series_round
 where session_id = :session_id order by sample_seq;
+
+select expected.sample_seq
+from generate_series(0, 31) as expected(sample_seq)
+left join realtime.call_auction_market_series_round as actual
+  on actual.session_id = :session_id
+ and actual.sample_seq = expected.sample_seq
+where actual.sample_seq is null
+order by expected.sample_seq;
 
 select to_regclass('realtime.call_auction_market_series_snapshot_' ||
                    to_char(current_date, 'YYYYMM')) as current_partition;
 ```
 
-`partial` 且 `attempt_count=2` 通常表示两个节点都未完整覆盖冻结全集；`missed_sampling_round` 表示
+缺失序号通常表示对应CapturedRound事务失败或进程在队列排空前异常退出；结合Worker日志中的
+`sample_seq`和异常类型定位，禁止补造Round。`collected_at`是来源采集完成时间，不是Writer提交时间，
+可用Session `finished_at`观察队列排空后的实际完成时刻。`partial` 且 `attempt_count=2` 通常表示两个节点都未完整覆盖冻结全集；`missed_sampling_round` 表示
 Worker 到达时已经越过该轮 deadline；节点池为空会在建立 Session 前失败；分区查询返回 null 时停止
 Worker 并走受保护 migration，Worker 自身不得执行 DDL。Raw 和 Manifest 长期保留。`数据清理任务`
 每天 03:00（Asia/Shanghai）读取当前上海日期以前最近三个 `CN_A_SHARE` 交易日，只删除
