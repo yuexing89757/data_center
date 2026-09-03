@@ -464,9 +464,7 @@ def test_slow_writer_does_not_delay_any_of_the_thirty_two_captures() -> None:
     def collect() -> None:
         try:
             results.append(
-                _service(persistence, clock, factory, FakeRawStore()).collect(
-                    TRADE_DATE, uuid4()
-                )
+                _service(persistence, clock, factory, FakeRawStore()).collect(TRADE_DATE, uuid4())
             )
         except BaseException as error:
             errors.append(error)

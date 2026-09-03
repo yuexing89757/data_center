@@ -276,6 +276,7 @@ Change `CALL_AUCTION_MARKET_SERIES_RAW_SCHEMA_VERSION` to `market_data_center.ca
 ```python
 def persist_captured_round(self, captured: CapturedRound) -> None: ...
 
+
 def finish_session(
     self,
     session_id: UUID,
@@ -479,8 +480,9 @@ git commit -m "feat: persist captured auction rounds atomically"
 Extend `test_call_auction_market_series_schema_is_partitioned_and_internal` with a catalog query:
 
 ```python
-assert connection.scalar(
-    text("""
+assert (
+    connection.scalar(
+        text("""
         select col_description(
           'realtime.call_auction_market_series_round'::regclass,
           attnum
@@ -489,7 +491,9 @@ assert connection.scalar(
         where attrelid='realtime.call_auction_market_series_round'::regclass
           and attname='collected_at'
     """)
-) == "Source collection completion time; independent of asynchronous persistence commit time."
+    )
+    == "Source collection completion time; independent of asynchronous persistence commit time."
+)
 ```
 
 Change the cleanup migration test so it no longer claims `20260903000100` is the newest migration. Do not replace that assertion with a source-text check for the new comment; the integration test exercises the applied schema behavior.
