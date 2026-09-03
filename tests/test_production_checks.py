@@ -836,6 +836,7 @@ def test_linux_worker_uses_the_shared_pool_runtime_contract() -> None:
     assert "EOD_QUOTE_SNAPSHOT_ENABLED=true" in template
     assert "CALL_AUCTION_SNAPSHOT_ENABLED=true" in template
     assert "CALL_AUCTION_MARKET_SERIES_ENABLED=true" in template
+    assert "DATA_CLEANUP_ENABLED=true" in template
     assert "scripts/check_pytdx_pool.py" in smoke
     assert "OnCalendar" not in unit
 
@@ -852,6 +853,7 @@ def test_release_templates_expose_task_switches_but_not_task_times() -> None:
         "EOD_QUOTE_SNAPSHOT_ENABLED=true",
         "CALL_AUCTION_SNAPSHOT_ENABLED=true",
         "CALL_AUCTION_MARKET_SERIES_ENABLED=true",
+        "DATA_CLEANUP_ENABLED=true",
     )
     forbidden = (
         "SCHEDULER_TIMEZONE",
@@ -876,6 +878,10 @@ def test_release_templates_expose_task_switches_but_not_task_times() -> None:
         "CALL_AUCTION_MARKET_SERIES_CADENCE_SECONDS",
         "CALL_AUCTION_MARKET_SERIES_BATCH_SIZE",
         "PYTDX_POOL_REFRESH_HOURS",
+        "DATA_CLEANUP_HOUR",
+        "DATA_CLEANUP_MINUTE",
+        "DATA_CLEANUP_RETAINED_DAYS",
+        "DATA_CLEANUP_TABLE",
     )
 
     assert all(templates.count(switch) == 2 for switch in switches)
@@ -917,3 +923,57 @@ def test_dragon_tiger_rpcs_reject_null_pagination_bounds() -> None:
 
     assert migration.count("p_limit is null") == 3
     assert migration.count("p_offset is null") == 3
+
+
+def test_auction_series_cleanup_migration_is_narrow_and_non_destructive() -> None:
+    migration_path = (
+        PROJECT_ROOT
+        / "supabase/migrations/20260903000100_add_auction_series_retention_cleanup.sql"
+    )
+    migration = migration_path.read_text(encoding="utf-8").lower()
+    controlled_workflows = {
+        "daily_market",
+        "stock_daily_indicator",
+        "stale_run_recovery",
+        "deducted_profit",
+        "shareholder_count_daily",
+        "shareholder_count_backfill",
+        "stock_pool",
+        "auction_collection",
+        "eod_quote_snapshot",
+        "call_auction_snapshot",
+        "call_auction_market_snapshot",
+        "call_auction_market_series",
+        "pytdx_pool_refresh",
+        "today_limit_up_snapshot",
+        "close_price_new_highs_120d",
+        "board_index_daily_bar",
+        "trading_billboard_daily",
+        "dragon_tiger_daily",
+        "regulation_daily_calculation",
+        "data_cleanup",
+    }
+
+    assert migration_path == max(MIGRATION_DIR.glob("*.sql"))
+    assert all(f"'{workflow}'" in migration for workflow in controlled_workflows)
+    normalized = " ".join(migration.split())
+    assert "for delete to market_data_worker using (true)" in normalized
+    assert (
+        "grant delete on realtime.call_auction_market_series_snapshot "
+        "to market_data_worker"
+    ) in normalized
+    assert "delete from" not in migration
+    assert all(
+        token not in migration
+        for token in (
+            "truncate",
+            "vacuum",
+            "drop table",
+            "detach partition",
+            "call_auction_market_series_session",
+            "call_auction_market_series_round",
+            "realtime.call_auction_market_snapshot ",
+            "ingestion.raw_manifest",
+            "audit.quality_result",
+        )
+    )

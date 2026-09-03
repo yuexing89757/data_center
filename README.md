@@ -28,7 +28,7 @@ Start the long-lived API and worker services with:
 .\serve.cmd
 ```
 
-This launches the FastAPI read-only API (`http://127.0.0.1:8000`) and the `market-data-center worker` process in separate console windows. The worker hosts an in-process APScheduler that drives every scheduled job — PYTDX pool refresh, daily-run, stock daily indicators, stock pools, deducted profit, stale-run recovery and quote snapshots. Job fire times are fixed in the controlled code catalog; `.env` may only enable or disable the three optional quote tasks. Stop each service with Ctrl+C in its window.
+This launches the FastAPI read-only API (`http://127.0.0.1:8000`) and the `market-data-center worker` process in separate console windows. The worker hosts an in-process APScheduler that drives every scheduled job — PYTDX pool refresh, daily-run, stock daily indicators, stock pools, deducted profit, stale-run recovery and quote snapshots. Job fire times are fixed in the controlled code catalog; `.env` may only enable or disable catalog jobs. Stop each service with Ctrl+C in its window.
 
 See [INSTALL-WINDOWS.md](INSTALL-WINDOWS.md) for the Chinese installation and verification guide.
 
@@ -132,6 +132,12 @@ PYTDX full-market series for 1–500 six-digit codes. Each item includes its det
 batch code and bid/ask levels 1–5; a missing price with positive volume is preserved as a source
 fact. The retired limit-up-pool auction collector is not registered by the Worker, while its
 historical workflow and stored facts remain readable.
+
+The default-enabled `data-cleanup-daily` Worker job runs every day at 03:00 Asia/Shanghai. It
+deletes only `realtime.call_auction_market_series_snapshot` details older than the latest three
+completed `CN_A_SHARE` trading days. Session/round metadata, Raw and lineage records, quality and
+operations history, the separate 09:25:30 snapshot, and monthly partitions are retained. Its time,
+retention count, and target table are code-owned; `.env` exposes only `DATA_CLEANUP_ENABLED`.
 
 DragonTiger collection is opt-in and remains disabled until source-rights review is recorded
 (`DRAGON_TIGER_ENABLED=false`). The `dragon-tiger-collect` command requires
