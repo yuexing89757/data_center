@@ -26,6 +26,7 @@ from market_data_center.scheduling_catalog import (
     CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID,
     CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID,
     DAILY_RUN_JOB_ID,
+    DATA_CLEANUP_JOB_ID,
     DEDUCTED_PROFIT_JOB_ID,
     DRAGON_TIGER_JOB_ID,
     EOD_QUOTE_SNAPSHOT_JOB_ID,
@@ -73,6 +74,12 @@ def test_scheduler_registers_persistent_single_instance_market_job(tmp_path: Pat
     board_bars = scheduler.get_job(BOARD_INDEX_DAILY_BAR_JOB_ID)
     assert board_bars is not None
     assert str(board_bars.trigger) == ("cron[day_of_week='mon-fri', hour='15-17', minute='30']")
+    cleanup = scheduler.get_job(DATA_CLEANUP_JOB_ID)
+    assert cleanup is not None
+    assert str(cleanup.trigger) == "cron[hour='3', minute='0']"
+    assert cleanup.executor == "default"
+    assert cleanup.coalesce
+    assert cleanup.max_instances == 1
     assert store_path.parent.is_dir()
     assert scheduler.get_job("opening-auction-limit-up-quotes") is None
     assert scheduler.get_job(SHAREHOLDER_COUNT_DAILY_JOB_ID) is None
@@ -405,6 +412,137 @@ def test_board_index_daily_bar_job_can_only_be_enabled_or_disabled(tmp_path: Pat
 
     assert scheduler.get_job(BOARD_INDEX_DAILY_BAR_JOB_ID) is None
     assert scheduler.get_job(DAILY_RUN_JOB_ID) is not None
+
+
+def test_data_cleanup_job_can_only_be_enabled_or_disabled(tmp_path: Path) -> None:
+    scheduler = build_scheduler(
+        SchedulerSettings(
+            scheduler_store_path=tmp_path / "no-cleanup.sqlite",
+            data_cleanup_enabled=False,
+            _env_file=None,
+        )
+    )
+
+    assert scheduler.get_job(DATA_CLEANUP_JOB_ID) is None
+    assert scheduler.get_job(DAILY_RUN_JOB_ID) is not None
+
+
+def _configure_data_cleanup_runner(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *,
+    error: BaseException | None = None,
+) -> tuple[dict[str, object], SimpleNamespace]:
+    fire_time = datetime(2026, 9, 2, 19, tzinfo=UTC)
+    engine = SimpleNamespace(disposed=False)
+    engine.dispose = lambda: setattr(engine, "disposed", True)
+    captured: dict[str, object] = {}
+
+    class FakeExecution:
+        def step(self, code, sequence, operation):
+            captured["step"] = (code, sequence)
+            return operation()
+
+        def succeed(self):
+            captured["succeeded"] = True
+
+        def fail(self, failure):
+            captured["failed"] = failure
+
+    class FakeExecutionService:
+        def __init__(self, operations):
+            captured["operations"] = operations
+
+        def start(self, workflow_code, scheduled_for, trigger_source):
+            captured["workflow"] = (workflow_code, scheduled_for, trigger_source)
+            return FakeExecution()
+
+    class FakeService:
+        def __init__(self, persistence):
+            captured["persistence"] = persistence
+
+        def run(self, reference_date):
+            captured["reference_date"] = reference_date
+            if error is not None:
+                raise error
+            return 12
+
+    monkeypatch.setattr(
+        scheduler_module,
+        "WorkerSettings",
+        lambda: SimpleNamespace(
+            database_url=SimpleNamespace(get_secret_value=lambda: "unused")
+        ),
+    )
+    monkeypatch.setattr(
+        scheduler_module,
+        "SchedulerSettings",
+        lambda: SchedulerSettings(_env_file=None),
+    )
+    monkeypatch.setattr(scheduler_module, "sqlalchemy_url", lambda value: value)
+    monkeypatch.setattr(scheduler_module, "create_engine", lambda *args, **kwargs: engine)
+    monkeypatch.setattr(
+        scheduler_module,
+        "PostgreSQLPersistence",
+        lambda actual_engine: ("facts", actual_engine),
+    )
+    monkeypatch.setattr(
+        scheduler_module,
+        "PostgreSQLOperationsPersistence",
+        lambda actual_engine: ("operations", actual_engine),
+    )
+    monkeypatch.setattr(scheduler_module, "WorkflowExecutionService", FakeExecutionService)
+
+    def scheduled_fire_time(*args, **kwargs):
+        captured["fire_time_request"] = (args, kwargs)
+        return fire_time
+
+    monkeypatch.setattr(scheduler_module, "_scheduled_job_fire_time", scheduled_fire_time)
+    monkeypatch.setattr(scheduler_module, "DataCleanupService", FakeService)
+    return captured, engine
+
+
+def test_data_cleanup_runner_uses_shanghai_reference_date_and_records_success(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    captured, engine = _configure_data_cleanup_runner(monkeypatch, tmp_path)
+
+    scheduler_module.run_data_cleanup_job()
+
+    assert captured["fire_time_request"] == (
+        (DATA_CLEANUP_JOB_ID, scheduler_module.SchedulerSettings()),
+        {"weekdays_only": False},
+    )
+    assert captured["workflow"] == (
+        scheduler_module.WorkflowCode.DATA_CLEANUP,
+        datetime(2026, 9, 2, 19, tzinfo=UTC),
+        scheduler_module.TriggerSource.SCHEDULED,
+    )
+    assert captured["persistence"] == ("facts", engine)
+    assert captured["step"] == ("cleanup_call_auction_market_series_snapshots", 1)
+    assert captured["reference_date"] == date(2026, 9, 3)
+    assert captured["succeeded"] is True
+    assert engine.disposed is True
+
+
+def test_data_cleanup_runner_records_failure_and_disposes_engine(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    failure = RuntimeError("cleanup failed")
+    captured, engine = _configure_data_cleanup_runner(
+        monkeypatch,
+        tmp_path,
+        error=failure,
+    )
+
+    with pytest.raises(RuntimeError, match="cleanup failed"):
+        scheduler_module.run_data_cleanup_job()
+
+    assert captured["failed"] is failure
+    assert "succeeded" not in captured
+    assert engine.disposed is True
 
 
 def test_board_index_daily_bar_runner_collects_missing_tail(
@@ -766,9 +904,10 @@ def test_scheduler_health_requires_jobs_fresh_snapshot_and_no_stale_runs(tmp_pat
             STALE_RUN_RECOVERY_JOB_ID,
             STOCK_DAILY_INDICATOR_JOB_ID,
             STOCK_POOL_JOB_ID,
-            CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID,
-            BOARD_INDEX_DAILY_BAR_JOB_ID,
-        ),
+                CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID,
+                BOARD_INDEX_DAILY_BAR_JOB_ID,
+                DATA_CLEANUP_JOB_ID,
+            ),
     )
     settings = SchedulerSettings(
         scheduler_store_path=store_path,

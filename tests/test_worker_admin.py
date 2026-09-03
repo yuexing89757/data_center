@@ -102,6 +102,8 @@ def test_admin_page_distinguishes_persistence_from_worker_liveness(tmp_path: Pat
     assert "立即执行" not in page
     assert "删除" not in page
     assert "股东人数每日增量同步" in page
+    assert "数据清理任务" in page
+    assert "每天 03:00 (Asia/Shanghai)" in page
 
 
 def test_admin_http_is_loopback_read_only_and_sets_security_headers(tmp_path: Path) -> None:

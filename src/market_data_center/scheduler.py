@@ -29,6 +29,7 @@ from market_data_center.call_auction_market_series_service import (
 from market_data_center.call_auction_market_service import CallAuctionMarketSnapshotService
 from market_data_center.cli import run_daily_workflow, run_stock_daily_indicator_workflow
 from market_data_center.close_price_new_highs_service import ClosePriceNewHighsService
+from market_data_center.data_cleanup_service import DataCleanupService
 from market_data_center.database_urls import sqlalchemy_url
 from market_data_center.domain.operations import TriggerSource, WorkflowCode
 from market_data_center.dragon_tiger_service import DragonTigerService
@@ -73,6 +74,7 @@ from market_data_center.scheduling_catalog import (
     CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID,
     CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID,
     DAILY_RUN_JOB_ID,
+    DATA_CLEANUP_JOB_ID,
     DEDUCTED_PROFIT_JOB_ID,
     DRAGON_TIGER_JOB_ID,
     EOD_QUOTE_SNAPSHOT_JOB_ID,
@@ -744,6 +746,40 @@ def run_regulation_daily_calculation_job() -> None:
         engine.dispose()
 
 
+def run_data_cleanup_job() -> None:
+    """Delete auction-series details older than three completed trading days."""
+    settings = WorkerSettings()  # type: ignore[call-arg]
+    scheduling = SchedulerSettings()
+    engine = create_engine(
+        sqlalchemy_url(settings.database_url.get_secret_value()), pool_pre_ping=True
+    )
+    try:
+        fire_time = _scheduled_job_fire_time(
+            DATA_CLEANUP_JOB_ID,
+            scheduling,
+            weekdays_only=False,
+        )
+        reference_date = fire_time.astimezone(ZoneInfo(SCHEDULER_TIMEZONE)).date()
+        execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
+            WorkflowCode.DATA_CLEANUP,
+            fire_time,
+            TriggerSource.SCHEDULED,
+        )
+        try:
+            service = DataCleanupService(PostgreSQLPersistence(engine))
+            execution.step(
+                "cleanup_call_auction_market_series_snapshots",
+                1,
+                lambda: service.run(reference_date),
+            )
+        except BaseException as error:
+            execution.fail(error)
+            raise
+        execution.succeed()
+    finally:
+        engine.dispose()
+
+
 def _scheduled_fire_time(
     hour: int,
     minute: int,
@@ -823,6 +859,7 @@ def build_scheduler(settings: SchedulerSettings | None = None) -> BlockingSchedu
         BOARD_INDEX_DAILY_BAR_JOB_ID: run_board_index_daily_bar_job,
         DRAGON_TIGER_JOB_ID: run_dragon_tiger_job,
         REGULATION_DAILY_CALCULATION_JOB_ID: run_regulation_daily_calculation_job,
+        DATA_CLEANUP_JOB_ID: run_data_cleanup_job,
         PYTDX_POOL_REFRESH_JOB_ID: run_pytdx_pool_refresh_job,
     }
     for definition in job_definitions(settings):
