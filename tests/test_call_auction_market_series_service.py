@@ -6,14 +6,17 @@ from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from json import loads
+from threading import Event, Thread, current_thread
 from typing import Self
 from uuid import UUID, uuid4
 
 from market_data_center.call_auction_market_series_service import (
     CALL_AUCTION_MARKET_SERIES_RAW_SCHEMA_VERSION,
     CallAuctionMarketSeriesService,
+    CallAuctionMarketSeriesSummary,
     _series_values,
 )
+from market_data_center.call_auction_market_series_writer import CapturedRound
 from market_data_center.domain.call_auction_market_series import (
     MarketSeriesRound,
     MarketSeriesSession,
@@ -54,19 +57,19 @@ class FakePersistence:
         self,
         recovery_universe: tuple[str, ...] | None = None,
         *,
-        clock: MutableClock | None = None,
-        commit_delay_seconds: float = 0,
+        fail_sequences: set[int] | None = None,
     ) -> None:
         self.recovery_universe = recovery_universe
-        self.clock = clock
-        self.commit_delay_seconds = commit_delay_seconds
+        self.fail_sequences = fail_sequences or set()
         self.core_universe_calls = 0
         self.session: MarketSeriesSession | None = None
+        self.captured_rounds: list[CapturedRound] = []
         self.rounds: list[MarketSeriesRound] = []
-        self.created_runs: list[IngestionRun] = []
         self.completed_runs: list[IngestionRun] = []
         self.records: list[tuple[MarketSeriesSnapshotRecord, ...]] = []
         self.quality: list[QualityResult] = []
+        self.persistence_thread_ids: list[int | None] = []
+        self.finish_error_summary: str | None = None
 
     def is_trading_day(self, trade_date: date) -> bool:
         return trade_date == TRADE_DATE
@@ -82,37 +85,32 @@ class FakePersistence:
     def create_session(self, session: MarketSeriesSession) -> None:
         self.session = session
 
-    def start_round(self, round_state: MarketSeriesRound) -> None:
-        self.rounds.append(round_state)
+    def persist_captured_round(self, captured: CapturedRound) -> None:
+        self.persistence_thread_ids.append(current_thread().ident)
+        if captured.completed_round.sample_seq in self.fail_sequences:
+            raise RuntimeError("database unavailable")
+        self.captured_rounds.append(captured)
+        self.rounds.append(captured.completed_round)
+        for attempt in captured.attempts:
+            self.completed_runs.append(attempt.run)
+            self.records.append(attempt.records)
+            self.quality.extend(attempt.quality_results)
 
-    def create_ingestion_run(self, run: IngestionRun) -> None:
-        self.created_runs.append(run)
-
-    def commit_attempt(
+    def finish_session(
         self,
-        run: IngestionRun,
-        records: Sequence[MarketSeriesSnapshotRecord],
-        manifest: object,
-        quality_results: Sequence[QualityResult],
-    ) -> None:
-        assert manifest.row_count >= len(records)  # type: ignore[attr-defined]
-        if self.clock is not None:
-            self.clock.sleep(self.commit_delay_seconds)
-        self.completed_runs.append(run)
-        self.records.append(tuple(records))
-        self.quality.extend(quality_results)
-
-    def finish_round(self, round_summary: MarketSeriesRound) -> None:
-        assert self.rounds[-1].sample_seq == round_summary.sample_seq
-        self.rounds[-1] = round_summary
-
-    def finish_session(self, session_id: UUID, finished_at: datetime) -> MarketSeriesSession:
+        session_id: UUID,
+        finished_at: datetime,
+        error_summary: str | None = None,
+    ) -> MarketSeriesSession:
         assert self.session is not None and self.session.session_id == session_id
+        self.finish_error_summary = error_summary
         successful = sum(item.status is MarketSeriesStatus.SUCCEEDED for item in self.rounds)
         partial = sum(item.status is MarketSeriesStatus.PARTIAL for item in self.rounds)
-        failed = 32 - successful - partial
+        explicit_failed = sum(item.status is MarketSeriesStatus.FAILED for item in self.rounds)
+        missing = self.session.expected_rounds - len(self.rounds)
+        failed = explicit_failed + missing
         successful_quotes = sum(item.successful_quotes for item in self.rounds)
-        failed_quotes = 64 - successful_quotes
+        failed_quotes = sum(item.failed_quotes for item in self.rounds) + missing * len(UNIVERSE)
         status = (
             MarketSeriesStatus.SUCCEEDED
             if successful == 32
@@ -129,12 +127,37 @@ class FakePersistence:
             failed_rounds=failed,
             successful_quotes=successful_quotes,
             failed_quotes=failed_quotes,
+            error_summary=error_summary or ("missed_sampling_rounds" if missing else None),
         )
         return self.session
 
 
-class FakeRawStore:
+class BlockingPersistence(FakePersistence):
     def __init__(self) -> None:
+        super().__init__()
+        self.writer_started = Event()
+        self.release_writer = Event()
+
+    def persist_captured_round(self, captured: CapturedRound) -> None:
+        if captured.completed_round.sample_seq == 0:
+            self.writer_started.set()
+            if not self.release_writer.wait(timeout=5):
+                raise TimeoutError("test did not release Writer")
+        super().persist_captured_round(captured)
+
+
+class FakeRawStore:
+    def __init__(
+        self,
+        *,
+        clock: MutableClock | None = None,
+        delayed_writes: Mapping[int, float] | None = None,
+        failed_writes: set[int] | None = None,
+    ) -> None:
+        self.clock = clock
+        self.delayed_writes = delayed_writes or {}
+        self.failed_writes = failed_writes or set()
+        self.write_attempts = 0
         self.rows: list[tuple[Mapping[str, str], ...]] = []
         self.schema_versions: list[str] = []
 
@@ -149,6 +172,12 @@ class FakeRawStore:
         schema_version: str,
     ) -> StoredRawObject:
         del provider, dataset, partition_date, ingestion_id
+        write_index = self.write_attempts
+        self.write_attempts += 1
+        if write_index in self.failed_writes:
+            raise OSError("Raw unavailable")
+        if self.clock is not None:
+            self.clock.sleep(self.delayed_writes.get(write_index, 0))
         captured = tuple(rows)
         self.rows.append(captured)
         self.schema_versions.append(schema_version)
@@ -166,11 +195,13 @@ class FakeProvider(AbstractContextManager["FakeProvider"]):
         clock: MutableClock,
         requested: list[tuple[str, ...]],
         deadlines: list[datetime | None],
+        all_provider_calls: Event,
     ) -> None:
         self.behavior = behavior
         self.clock = clock
         self.requested = requested
         self.deadlines = deadlines
+        self.all_provider_calls = all_provider_calls
 
     def __enter__(self) -> Self:
         return self
@@ -183,6 +214,8 @@ class FakeProvider(AbstractContextManager["FakeProvider"]):
     ) -> RealtimeQuoteFetch:
         requested = tuple(symbols)
         self.requested.append(requested)
+        if len(self.requested) >= 32:
+            self.all_provider_calls.set()
         self.deadlines.append(deadline)
         if isinstance(self.behavior, Exception):
             raise self.behavior
@@ -210,11 +243,18 @@ class FakeProviderFactory:
         self.endpoints: list[tuple[str, int]] = []
         self.requested: list[tuple[str, ...]] = []
         self.deadlines: list[datetime | None] = []
+        self.all_provider_calls = Event()
 
     def __call__(self, endpoint: tuple[str, int]) -> FakeProvider:
         self.endpoints.append(endpoint)
         behavior = self.behaviors.pop(0) if self.behaviors else "full"
-        return FakeProvider(behavior, self.clock, self.requested, self.deadlines)
+        return FakeProvider(
+            behavior,
+            self.clock,
+            self.requested,
+            self.deadlines,
+            self.all_provider_calls,
+        )
 
 
 def _quote(symbol: str, observed_at: datetime) -> FiveLevelQuoteSnapshotRecord:
@@ -310,8 +350,19 @@ def test_collects_thirty_two_exact_rounds_and_raw_lineage() -> None:
     assert (summary.expected_rows, summary.accepted_rows, summary.rejected_rows) == (64, 64, 0)
     assert raw_store.schema_versions == [CALL_AUCTION_MARKET_SERIES_RAW_SCHEMA_VERSION] * 32
     first_raw = raw_store.rows[0][0]
+    first_attempt = persistence.captured_rounds[0].attempts[0]
+    assert CALL_AUCTION_MARKET_SERIES_RAW_SCHEMA_VERSION == (
+        "market_data_center.call_auction_market_series.raw.v2"
+    )
+    assert first_raw["ingestion_id"] == str(first_attempt.run.ingestion_id)
+    assert first_raw["trade_date"] == TRADE_DATE.isoformat()
+    assert first_raw["session_id"] == str(summary.session_id)
     assert first_raw["sample_seq"] == "0"
     assert first_raw["scheduled_at"] == SLOTS[0].isoformat()
+    assert first_raw["endpoint"] == "first.quote:7709"
+    assert first_raw["attempt_number"] == "1"
+    assert first_raw["worker_observed_at"] == SLOTS[0].isoformat()
+    assert first_raw["provider_schema_version"] == "pytdx_hq.security_quotes.v1"
     assert loads(first_raw["provider_raw_json"]) == {"symbol": "SSE:600000"}
     first_snapshot = persistence.records[0][0]
     assert first_snapshot.batch_code == "091500"
@@ -340,8 +391,8 @@ def test_partial_attempt_retries_entire_universe_on_second_endpoint() -> None:
 
 def test_retry_reserves_the_previous_complete_attempt_duration() -> None:
     clock = MutableClock(SLOTS[0])
-    persistence = FakePersistence(clock=clock, commit_delay_seconds=16)
-    raw_store = FakeRawStore()
+    persistence = FakePersistence()
+    raw_store = FakeRawStore(clock=clock, delayed_writes={0: 16})
     factory = FakeProviderFactory(clock, ("partial",))
 
     summary = _service(
@@ -401,3 +452,71 @@ def test_recovery_universe_is_reused_and_elapsed_slots_are_failed_without_provid
     assert factory.requested == [UNIVERSE] * 30
     assert summary.status == "partial"
     assert (summary.accepted_rows, summary.rejected_rows) == (60, 4)
+
+
+def test_slow_writer_does_not_delay_any_of_the_thirty_two_captures() -> None:
+    clock = MutableClock(SLOTS[0])
+    persistence = BlockingPersistence()
+    factory = FakeProviderFactory(clock)
+    results: list[CallAuctionMarketSeriesSummary] = []
+    errors: list[BaseException] = []
+
+    def collect() -> None:
+        try:
+            results.append(
+                _service(persistence, clock, factory, FakeRawStore()).collect(
+                    TRADE_DATE, uuid4()
+                )
+            )
+        except BaseException as error:
+            errors.append(error)
+
+    collection = Thread(target=collect, name="test-auction-series-collector")
+    collection.start()
+    try:
+        assert factory.all_provider_calls.wait(timeout=5)
+        assert factory.requested == [UNIVERSE] * 32
+        assert persistence.writer_started.is_set()
+        assert collection.is_alive()
+    finally:
+        persistence.release_writer.set()
+        collection.join(timeout=5)
+
+    assert not collection.is_alive()
+    assert errors == []
+    assert results[0].status == "succeeded"
+
+
+def test_writer_failure_preserves_later_capture_and_marks_session_partial() -> None:
+    clock = MutableClock(SLOTS[0])
+    persistence = FakePersistence(fail_sequences={1})
+    raw_store = FakeRawStore()
+    factory = FakeProviderFactory(clock)
+
+    summary = _service(persistence, clock, factory, raw_store).collect(TRADE_DATE, uuid4())
+
+    assert factory.requested == [UNIVERSE] * 32
+    assert raw_store.write_attempts == 32
+    assert [item.completed_round.sample_seq for item in persistence.captured_rounds] == [
+        0,
+        *range(2, 32),
+    ]
+    assert persistence.finish_error_summary == "writer_persistence_error:RuntimeError"
+    assert summary.status == "partial"
+
+
+def test_raw_failure_marks_only_that_round_failed_and_continues_capture() -> None:
+    clock = MutableClock(SLOTS[0])
+    persistence = FakePersistence()
+    raw_store = FakeRawStore(failed_writes={0})
+    factory = FakeProviderFactory(clock)
+
+    summary = _service(persistence, clock, factory, raw_store).collect(TRADE_DATE, uuid4())
+
+    assert factory.requested == [UNIVERSE] * 32
+    assert raw_store.write_attempts == 32
+    assert len(raw_store.rows) == 31
+    assert persistence.captured_rounds[0].attempts == ()
+    assert persistence.rounds[0].status is MarketSeriesStatus.FAILED
+    assert persistence.rounds[0].error_summary == "raw_persistence_error"
+    assert summary.status == "partial"

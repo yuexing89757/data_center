@@ -14,6 +14,11 @@ from typing import Protocol, Self
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
+from market_data_center.call_auction_market_series_writer import (
+    CallAuctionMarketSeriesWriter,
+    CapturedAttempt,
+    CapturedRound,
+)
 from market_data_center.domain.call_auction_market_series import (
     SERIES_CADENCE_SECONDS,
     MarketSeriesRound,
@@ -49,7 +54,7 @@ from market_data_center.raw_store import StoredRawObject
 
 MAX_ENDPOINT_ATTEMPTS = 2
 CALL_AUCTION_MARKET_SERIES_RAW_SCHEMA_VERSION = (
-    "market_data_center.call_auction_market_series.raw.v1"
+    "market_data_center.call_auction_market_series.raw.v2"
 )
 
 
@@ -62,21 +67,14 @@ class CallAuctionMarketSeriesPersistence(Protocol):
 
     def create_session(self, session: MarketSeriesSession) -> None: ...
 
-    def start_round(self, round_state: MarketSeriesRound) -> None: ...
+    def persist_captured_round(self, captured: CapturedRound) -> None: ...
 
-    def create_ingestion_run(self, run: IngestionRun) -> None: ...
-
-    def commit_attempt(
+    def finish_session(
         self,
-        run: IngestionRun,
-        records: Sequence[MarketSeriesSnapshotRecord],
-        manifest: RawManifest,
-        quality_results: Sequence[QualityResult],
-    ) -> None: ...
-
-    def finish_round(self, round_summary: MarketSeriesRound) -> None: ...
-
-    def finish_session(self, session_id: UUID, finished_at: datetime) -> MarketSeriesSession: ...
+        session_id: UUID,
+        finished_at: datetime,
+        error_summary: str | None = None,
+    ) -> MarketSeriesSession: ...
 
 
 class CallAuctionMarketSeriesRawStore(Protocol):
@@ -169,45 +167,56 @@ class CallAuctionMarketSeriesService:
             started_at=now,
         )
         self._persistence.create_session(session)
-
-        for sample_seq, scheduled_at in enumerate(slots):
-            deadline = scheduled_at + timedelta(seconds=SERIES_CADENCE_SECONDS)
-            running_round = MarketSeriesRound(
-                session_id=session.session_id,
-                sample_seq=sample_seq,
-                scheduled_at=scheduled_at,
-                collected_at=None,
-                status=MarketSeriesStatus.RUNNING,
-                attempt_count=0,
-                expected_quotes=len(universe),
-                successful_quotes=0,
-                failed_quotes=0,
-                selected_ingestion_id=None,
-            )
-            self._persistence.start_round(running_round)
-            now = _utc_clock_sample(self._clock)
-            if now >= deadline:
-                self._persistence.finish_round(
-                    replace(
+        writer = CallAuctionMarketSeriesWriter(self._persistence)
+        try:
+            for sample_seq, scheduled_at in enumerate(slots):
+                deadline = scheduled_at + timedelta(seconds=SERIES_CADENCE_SECONDS)
+                running_round = MarketSeriesRound(
+                    session_id=session.session_id,
+                    sample_seq=sample_seq,
+                    scheduled_at=scheduled_at,
+                    collected_at=None,
+                    status=MarketSeriesStatus.RUNNING,
+                    attempt_count=0,
+                    expected_quotes=len(universe),
+                    successful_quotes=0,
+                    failed_quotes=0,
+                    selected_ingestion_id=None,
+                )
+                now = _utc_clock_sample(self._clock)
+                if now >= deadline:
+                    completed_round = replace(
                         running_round,
                         collected_at=now,
                         status=MarketSeriesStatus.FAILED,
                         failed_quotes=len(universe),
                         error_summary="missed_sampling_round",
                     )
+                    writer.submit(CapturedRound(running_round, completed_round, ()))
+                    continue
+                if now < scheduled_at:
+                    self._sleeper((scheduled_at - now).total_seconds())
+                writer.submit(
+                    self._collect_round(
+                        session,
+                        running_round,
+                        deadline,
+                    )
                 )
-                continue
-            if now < scheduled_at:
-                self._sleeper((scheduled_at - now).total_seconds())
-            completed_round = self._collect_round(
-                session,
-                running_round,
-                deadline,
-            )
-            self._persistence.finish_round(completed_round)
+        except BaseException:
+            writer.close_and_wait()
+            raise
 
+        outcome = writer.close_and_wait()
+        writer_error = (
+            f"writer_persistence_error:{outcome.first_error_type}"
+            if outcome.first_error_type is not None
+            else None
+        )
         finished = self._persistence.finish_session(
-            session.session_id, _utc_clock_sample(self._clock)
+            session.session_id,
+            _utc_clock_sample(self._clock),
+            writer_error,
         )
         expected_rows = finished.universe_count * finished.expected_rounds
         return CallAuctionMarketSeriesSummary(
@@ -223,8 +232,9 @@ class CallAuctionMarketSeriesService:
         session: MarketSeriesSession,
         round_state: MarketSeriesRound,
         deadline: datetime,
-    ) -> MarketSeriesRound:
-        last_attempt: _AttemptSummary | None = None
+    ) -> CapturedRound:
+        attempts: list[CapturedAttempt] = []
+        last_attempt: CapturedAttempt | None = None
         for attempt_number, endpoint in enumerate(self._quote_endpoints, start=1):
             if _utc_clock_sample(self._clock) >= deadline:
                 break
@@ -232,24 +242,36 @@ class CallAuctionMarketSeriesService:
                 required_budget = max(self._retry_budget, last_attempt.elapsed)
                 if _utc_clock_sample(self._clock) + required_budget >= deadline:
                     break
-            last_attempt = self._attempt(
-                session,
-                round_state,
-                endpoint,
-                deadline,
-                attempt_number,
-            )
+            try:
+                last_attempt = self._attempt(
+                    session,
+                    round_state,
+                    endpoint,
+                    deadline,
+                    attempt_number,
+                )
+            except OSError:
+                completed = replace(
+                    round_state,
+                    collected_at=_utc_clock_sample(self._clock),
+                    status=MarketSeriesStatus.FAILED,
+                    failed_quotes=round_state.expected_quotes,
+                    error_summary="raw_persistence_error",
+                )
+                return CapturedRound(round_state, completed, ())
+            attempts.append(last_attempt)
             if last_attempt.succeeded:
                 break
         if last_attempt is None:
-            return replace(
+            completed = replace(
                 round_state,
                 collected_at=_utc_clock_sample(self._clock),
                 status=MarketSeriesStatus.FAILED,
                 failed_quotes=round_state.expected_quotes,
                 error_summary="round_deadline_reached",
             )
-        return replace(
+            return CapturedRound(round_state, completed, ())
+        completed = replace(
             round_state,
             collected_at=_utc_clock_sample(self._clock),
             status=(
@@ -257,12 +279,13 @@ class CallAuctionMarketSeriesService:
                 if last_attempt.succeeded
                 else MarketSeriesStatus.PARTIAL
             ),
-            attempt_count=last_attempt.attempt_number,
-            successful_quotes=last_attempt.accepted_rows,
-            failed_quotes=round_state.expected_quotes - last_attempt.accepted_rows,
-            selected_ingestion_id=last_attempt.ingestion_id,
+            attempt_count=len(attempts),
+            successful_quotes=last_attempt.run.accepted_rows,
+            failed_quotes=round_state.expected_quotes - last_attempt.run.accepted_rows,
+            selected_ingestion_id=last_attempt.run.ingestion_id,
             error_summary=(None if last_attempt.succeeded else "incomplete_quote_response"),
         )
+        return CapturedRound(round_state, completed, tuple(attempts))
 
     def _attempt(
         self,
@@ -271,7 +294,7 @@ class CallAuctionMarketSeriesService:
         endpoint: tuple[str, int],
         deadline: datetime,
         attempt_number: int,
-    ) -> _AttemptSummary:
+    ) -> CapturedAttempt:
         started_at = _utc_clock_sample(self._clock)
         run = IngestionRun(
             ingestion_id=uuid4(),
@@ -289,7 +312,6 @@ class CallAuctionMarketSeriesService:
                 "expected_rows": session.universe_count,
             },
         )
-        self._persistence.create_ingestion_run(run)
         provider_error: str | None = None
         try:
             with self._provider_factory(endpoint) as provider:
@@ -313,7 +335,15 @@ class CallAuctionMarketSeriesService:
             dataset=DatasetCode.CALL_AUCTION_MARKET_SERIES.value,
             partition_date=session.trade_date,
             ingestion_id=run.ingestion_id,
-            rows=_raw_envelopes(fetch, session.session_id, round_state),
+            rows=_raw_envelopes(
+                fetch,
+                session.trade_date,
+                session.session_id,
+                round_state,
+                run.ingestion_id,
+                endpoint,
+                attempt_number,
+            ),
             schema_version=CALL_AUCTION_MARKET_SERIES_RAW_SCHEMA_VERSION,
         )
         expected = set(session.universe_symbols)
@@ -372,37 +402,24 @@ class CallAuctionMarketSeriesService:
             conversion_errors,
             fetch.normalization_errors,
         )
+        finished_at = _utc_clock_sample(self._clock)
         completed = replace(
             run,
             status=IngestionStatus.SUCCEEDED if succeeded else IngestionStatus.PARTIAL,
-            finished_at=_utc_clock_sample(self._clock),
+            finished_at=finished_at,
             fetched_rows=stored.row_count,
             accepted_rows=len(records),
             rejected_rows=max(stored.row_count - len(records), 0),
             error_summary=None if succeeded else "incomplete_quote_response",
         )
-        self._persistence.commit_attempt(
-            completed,
-            records,
-            _manifest(run.ingestion_id, stored),
-            quality_results,
-        )
-        return _AttemptSummary(
-            attempt_number=attempt_number,
-            ingestion_id=run.ingestion_id,
-            accepted_rows=len(records),
+        return CapturedAttempt(
+            run=completed,
+            records=records,
+            manifest=_manifest(run.ingestion_id, stored),
+            quality_results=quality_results,
+            elapsed=finished_at - started_at,
             succeeded=succeeded,
-            elapsed=_utc_clock_sample(self._clock) - started_at,
         )
-
-
-@dataclass(frozen=True, slots=True)
-class _AttemptSummary:
-    attempt_number: int
-    ingestion_id: UUID
-    accepted_rows: int
-    succeeded: bool
-    elapsed: timedelta
 
 
 def _to_snapshot(
@@ -458,14 +475,22 @@ def _series_values(
 
 def _raw_envelopes(
     fetch: RealtimeQuoteFetch,
+    trade_date: date,
     session_id: UUID,
     round_state: MarketSeriesRound,
+    ingestion_id: UUID,
+    endpoint: tuple[str, int],
+    attempt_number: int,
 ) -> tuple[Mapping[str, str], ...]:
     return tuple(
         {
+            "ingestion_id": str(ingestion_id),
+            "trade_date": trade_date.isoformat(),
             "session_id": str(session_id),
             "sample_seq": str(round_state.sample_seq),
             "scheduled_at": round_state.scheduled_at.isoformat(),
+            "endpoint": f"{endpoint[0]}:{endpoint[1]}",
+            "attempt_number": str(attempt_number),
             "worker_observed_at": fetch.raw_observed_at[index].isoformat(),
             "provider_schema_version": fetch.schema_version,
             "provider_raw_json": dumps(
