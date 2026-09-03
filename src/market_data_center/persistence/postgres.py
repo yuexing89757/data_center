@@ -263,6 +263,21 @@ delete from core.stock_daily_indicator
 where trade_date < :cutoff_date
 """)
 
+LATEST_COMPLETED_TRADING_DATES = text("""
+select trade_date
+from core.trading_calendar
+where market = 'CN_A_SHARE'
+  and is_trading_day
+  and trade_date < :reference_date
+order by trade_date desc
+limit :limit
+""")
+
+DELETE_CALL_AUCTION_MARKET_SERIES_SNAPSHOTS_BEFORE = text("""
+delete from realtime.call_auction_market_series_snapshot
+where trade_date < :cutoff_date
+""")
+
 INSERT_DEDUCTED_PROFIT = text("""
 insert into core.deducted_profit (
  symbol, report_period, announcement_date, actual_announcement_date,
@@ -1135,6 +1150,26 @@ group by trade_date
         with self._engine.begin() as connection:
             result = connection.execute(
                 DELETE_STOCK_DAILY_INDICATORS_BEFORE,
+                {"cutoff_date": cutoff_date},
+            )
+        return result.rowcount
+
+    def latest_completed_trading_dates(
+        self, reference_date: date, limit: int
+    ) -> tuple[date, ...]:
+        if limit < 1:
+            raise ValueError("limit must be positive")
+        with self._engine.connect() as connection:
+            rows = connection.execute(
+                LATEST_COMPLETED_TRADING_DATES,
+                {"reference_date": reference_date, "limit": limit},
+            ).scalars()
+            return tuple(rows)
+
+    def delete_call_auction_market_series_snapshots_before(self, cutoff_date: date) -> int:
+        with self._engine.begin() as connection:
+            result = connection.execute(
+                DELETE_CALL_AUCTION_MARKET_SERIES_SNAPSHOTS_BEFORE,
                 {"cutoff_date": cutoff_date},
             )
         return result.rowcount

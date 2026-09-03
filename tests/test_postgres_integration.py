@@ -1030,7 +1030,19 @@ def test_call_auction_market_series_schema_is_partitioned_and_internal(
             ("call_auction_market_series_round", "UPDATE"),
             ("call_auction_market_series_snapshot", "SELECT"),
             ("call_auction_market_series_snapshot", "INSERT"),
+            ("call_auction_market_series_snapshot", "DELETE"),
         }
+        assert connection.scalar(
+            text("""
+                select count(*) = 1
+                from pg_policies
+                where schemaname = 'realtime'
+                  and tablename = 'call_auction_market_series_snapshot'
+                  and policyname = 'call_auction_market_series_snapshot_worker_delete'
+                  and cmd = 'DELETE'
+                  and roles = array['market_data_worker']::name[]
+            """)
+        )
         assert (
             connection.scalar(
                 text("""
@@ -1083,6 +1095,116 @@ def test_call_auction_market_series_schema_is_partitioned_and_internal(
     assert inventory["call_auction_market_series_session"] == 0
     assert inventory["call_auction_market_series_round"] == 0
     assert inventory["call_auction_market_series_snapshot"] == 0
+
+
+def test_cleanup_persistence_selects_latest_completed_trading_dates(
+    database_engine: Engine,
+) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    with database_engine.begin() as connection:
+        for trading_date, is_trading_day in (
+            (date(2026, 8, 31), True),
+            (date(2026, 9, 1), True),
+            (date(2026, 9, 2), True),
+            (date(2026, 9, 3), True),
+            (date(2026, 9, 4), False),
+            (date(2026, 9, 7), True),
+        ):
+            _insert_trading_calendar_day(
+                connection,
+                trading_date,
+                is_trading_day=is_trading_day,
+            )
+
+    assert persistence.latest_completed_trading_dates(date(2026, 9, 7), 3) == (
+        date(2026, 9, 3),
+        date(2026, 9, 2),
+        date(2026, 9, 1),
+    )
+
+    with pytest.raises(ValueError, match="limit"):
+        persistence.latest_completed_trading_dates(date(2026, 9, 7), 0)
+
+
+def test_cleanup_persistence_deletes_only_old_series_details(
+    database_engine: Engine,
+) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    trading_dates = (
+        date(2026, 8, 31),
+        date(2026, 9, 1),
+        date(2026, 9, 2),
+        date(2026, 9, 3),
+    )
+    with database_engine.begin() as connection:
+        _insert_call_auction_security_universe(connection)
+        for trading_date in trading_dates:
+            _seed_cleanup_series_detail(connection, trading_date)
+
+    deleted = persistence.delete_call_auction_market_series_snapshots_before(
+        date(2026, 9, 2)
+    )
+
+    assert deleted == 2
+    with database_engine.begin() as connection:
+        assert connection.execute(
+            text("""
+                select trade_date
+                from realtime.call_auction_market_series_snapshot
+                order by trade_date
+            """)
+        ).scalars().all() == [date(2026, 9, 2), date(2026, 9, 3)]
+        assert connection.scalar(
+            text("select count(*) from realtime.call_auction_market_series_session")
+        ) == 4
+        assert connection.scalar(
+            text("select count(*) from realtime.call_auction_market_series_round")
+        ) == 4
+        assert connection.scalar(
+            text("""
+                select count(*) from ingestion.ingestion_run
+                where dataset_code = 'call_auction_market_series'
+            """)
+        ) == 4
+        assert connection.scalar(
+            text("""
+                select count(*) from operations.workflow_run
+                where workflow_code = 'call_auction_market_series'
+            """)
+        ) == 4
+
+        connection.execute(text("set local role market_data_api"))
+        payload = connection.scalar(
+            text("""
+                select api_v1.query_call_auction_market_series_snapshots(
+                    date '2026-08-31', array['600000']::text[]
+                )
+            """)
+        )
+
+    assert payload["returned_rounds"] == 1
+    assert payload["rounds"][0]["returned_count"] == 0
+    assert payload["rounds"][0]["missing_codes"] == ["600000"]
+    assert payload["rounds"][0]["items"] == []
+
+
+def test_only_worker_can_delete_series_snapshot_details(
+    migrated_database_url: str,
+) -> None:
+    with psycopg.connect(migrated_database_url, autocommit=True) as connection:
+        connection.execute("set role market_data_worker")
+        connection.execute(
+            "delete from realtime.call_auction_market_series_snapshot where false"
+        )
+        connection.execute("reset role")
+
+        for role in ("anon", "authenticated", "market_data_api"):
+            connection.execute(sql.SQL("set role {}").format(sql.Identifier(role)))
+            with pytest.raises(InsufficientPrivilege):
+                connection.execute(
+                    "delete from realtime.call_auction_market_series_snapshot where false"
+                )
+            connection.execute("rollback")
 
 
 def test_market_series_persistence_commits_attempt_and_finishes_partial_session(
@@ -5590,6 +5712,109 @@ def _insert_call_auction_security_universe(connection: Connection) -> None:
                 "ingestion_id": ingestion_id,
             },
         ],
+    )
+
+
+def _seed_cleanup_series_detail(connection: Connection, trade_date: date) -> None:
+    workflow_run_id = uuid4()
+    ingestion_id = uuid4()
+    session_id = uuid4()
+    scheduled_at = series_slots(trade_date)[0]
+    finished_at = scheduled_at + timedelta(seconds=2)
+    symbols = ("SSE:600000",)
+    connection.execute(
+        text("""
+insert into operations.workflow_run (
+    workflow_run_id, workflow_code, scheduled_for, trigger_source,
+    attempt, status, started_at, finished_at
+) values (
+    :workflow_run_id, 'call_auction_market_series', :scheduled_at, 'scheduled',
+    1, 'succeeded', :scheduled_at, :finished_at
+)
+"""),
+        {
+            "workflow_run_id": workflow_run_id,
+            "scheduled_at": scheduled_at,
+            "finished_at": finished_at,
+        },
+    )
+    connection.execute(
+        text("""
+insert into ingestion.ingestion_run (
+    ingestion_id, provider_code, dataset_code, status,
+    requested_at, started_at, finished_at, fetched_rows, accepted_rows
+) values (
+    :ingestion_id, 'pytdx_hq', 'call_auction_market_series', 'succeeded',
+    :scheduled_at, :scheduled_at, :finished_at, 1, 1
+)
+"""),
+        {
+            "ingestion_id": ingestion_id,
+            "scheduled_at": scheduled_at,
+            "finished_at": finished_at,
+        },
+    )
+    connection.execute(
+        text("""
+insert into realtime.call_auction_market_series_session (
+    session_id, workflow_run_id, trade_date, window_start, window_end,
+    cadence_seconds, expected_rounds, universe_symbols, universe_count,
+    universe_hash, status, started_at, finished_at, successful_rounds,
+    partial_rounds, failed_rounds, successful_quotes, failed_quotes
+) values (
+    :session_id, :workflow_run_id, :trade_date, :window_start, :window_end,
+    20, 32, :universe_symbols, 1, :universe_hash, 'succeeded',
+    :window_start, :finished_at, 1, 0, 0, 1, 0
+)
+"""),
+        {
+            "session_id": session_id,
+            "workflow_run_id": workflow_run_id,
+            "trade_date": trade_date,
+            "window_start": scheduled_at,
+            "window_end": series_slots(trade_date)[-1] + timedelta(seconds=20),
+            "universe_symbols": list(symbols),
+            "universe_hash": universe_hash(symbols),
+            "finished_at": finished_at,
+        },
+    )
+    connection.execute(
+        text("""
+insert into realtime.call_auction_market_series_round (
+    session_id, sample_seq, scheduled_at, collected_at, status,
+    attempt_count, expected_quotes, successful_quotes, failed_quotes,
+    selected_ingestion_id
+) values (
+    :session_id, 0, :scheduled_at, :finished_at, 'succeeded',
+    1, 1, 1, 0, :ingestion_id
+)
+"""),
+        {
+            "session_id": session_id,
+            "scheduled_at": scheduled_at,
+            "finished_at": finished_at,
+            "ingestion_id": ingestion_id,
+        },
+    )
+    connection.execute(
+        text("""
+insert into realtime.call_auction_market_series_snapshot (
+    trade_date, ingestion_id, session_id, sample_seq, batch_code,
+    scheduled_at, symbol, observed_at, last_price, previous_close,
+    source_code, value_semantics
+) values (
+    :trade_date, :ingestion_id, :session_id, 0, '091500',
+    :scheduled_at, 'SSE:600000', :observed_at, 10.0000, 9.9000,
+    'pytdx_hq', 'auction_indicative'
+)
+"""),
+        {
+            "trade_date": trade_date,
+            "ingestion_id": ingestion_id,
+            "session_id": session_id,
+            "scheduled_at": scheduled_at,
+            "observed_at": scheduled_at + timedelta(seconds=1),
+        },
     )
 
 
