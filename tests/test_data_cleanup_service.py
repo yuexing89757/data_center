@@ -16,9 +16,7 @@ class FakeCleanupPersistence:
         self.requested_dates: tuple[date, int] | None = None
         self.deleted_before: date | None = None
 
-    def latest_completed_trading_dates(
-        self, reference_date: date, limit: int
-    ) -> tuple[date, ...]:
+    def latest_completed_trading_dates(self, reference_date: date, limit: int) -> tuple[date, ...]:
         self.requested_dates = (reference_date, limit)
         return self.dates
 

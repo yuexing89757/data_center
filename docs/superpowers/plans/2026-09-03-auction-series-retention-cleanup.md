@@ -99,9 +99,7 @@ class DataCleanupPersistence(Protocol):
         self, reference_date: date, limit: int
     ) -> tuple[date, ...]: ...
 
-    def delete_call_auction_market_series_snapshots_before(
-        self, cutoff_date: date
-    ) -> int: ...
+    def delete_call_auction_market_series_snapshots_before(self, cutoff_date: date) -> int: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -233,9 +231,7 @@ where trade_date < :cutoff_date
 Implement:
 
 ```python
-def latest_completed_trading_dates(
-    self, reference_date: date, limit: int
-) -> tuple[date, ...]:
+def latest_completed_trading_dates(self, reference_date: date, limit: int) -> tuple[date, ...]:
     if limit < 1:
         raise ValueError("limit must be positive")
     with self._engine.connect() as connection:
@@ -245,9 +241,8 @@ def latest_completed_trading_dates(
         ).scalars()
         return tuple(rows)
 
-def delete_call_auction_market_series_snapshots_before(
-    self, cutoff_date: date
-) -> int:
+
+def delete_call_auction_market_series_snapshots_before(self, cutoff_date: date) -> int:
     with self._engine.begin() as connection:
         result = connection.execute(
             DELETE_CALL_AUCTION_MARKET_SERIES_SNAPSHOTS_BEFORE,
@@ -408,9 +403,7 @@ def run_data_cleanup_job() -> None:
         weekdays_only=False,
     )
     reference_date = fire_time.astimezone(ZoneInfo(SCHEDULER_TIMEZONE)).date()
-    execution = WorkflowExecutionService(
-        PostgreSQLOperationsPersistence(engine)
-    ).start(
+    execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
         WorkflowCode.DATA_CLEANUP,
         fire_time,
         TriggerSource.SCHEDULED,

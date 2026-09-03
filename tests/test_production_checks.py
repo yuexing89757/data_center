@@ -927,8 +927,7 @@ def test_dragon_tiger_rpcs_reject_null_pagination_bounds() -> None:
 
 def test_auction_series_cleanup_migration_is_narrow_and_non_destructive() -> None:
     migration_path = (
-        PROJECT_ROOT
-        / "supabase/migrations/20260903000100_add_auction_series_retention_cleanup.sql"
+        PROJECT_ROOT / "supabase/migrations/20260903000100_add_auction_series_retention_cleanup.sql"
     )
     migration = migration_path.read_text(encoding="utf-8").lower()
     controlled_workflows = {
@@ -959,8 +958,7 @@ def test_auction_series_cleanup_migration_is_narrow_and_non_destructive() -> Non
     normalized = " ".join(migration.split())
     assert "for delete to market_data_worker using (true)" in normalized
     assert (
-        "grant delete on realtime.call_auction_market_series_snapshot "
-        "to market_data_worker"
+        "grant delete on realtime.call_auction_market_series_snapshot to market_data_worker"
     ) in normalized
     assert "delete from" not in migration
     assert all(

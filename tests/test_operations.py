@@ -131,9 +131,7 @@ def test_job_catalog_is_stable_and_references_defined_workflows() -> None:
     assert workflows["shareholder_count_daily"].step_codes == ("shareholder_count_daily",)
     assert workflows["shareholder_count_backfill"].step_codes == ("shareholder_count_backfill",)
     assert workflows["dragon_tiger_daily"].step_codes == ("collect_dragon_tiger",)
-    assert workflows["data_cleanup"].step_codes == (
-        "cleanup_call_auction_market_series_snapshots",
-    )
+    assert workflows["data_cleanup"].step_codes == ("cleanup_call_auction_market_series_snapshots",)
     assert all(job.timezone == "Asia/Shanghai" for job in jobs)
     assert {workflow.value for workflow in WorkflowCode} == set(workflows)
 

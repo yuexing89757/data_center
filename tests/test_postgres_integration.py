@@ -1141,9 +1141,7 @@ def test_cleanup_persistence_deletes_only_old_series_details(
         for trading_date in trading_dates:
             _seed_cleanup_series_detail(connection, trading_date)
 
-    deleted = persistence.delete_call_auction_market_series_snapshots_before(
-        date(2026, 9, 2)
-    )
+    deleted = persistence.delete_call_auction_market_series_snapshots_before(date(2026, 9, 2))
 
     assert deleted == 2
     with database_engine.begin() as connection:
@@ -1154,24 +1152,36 @@ def test_cleanup_persistence_deletes_only_old_series_details(
                 order by trade_date
             """)
         ).scalars().all() == [date(2026, 9, 2), date(2026, 9, 3)]
-        assert connection.scalar(
-            text("select count(*) from realtime.call_auction_market_series_session")
-        ) == 4
-        assert connection.scalar(
-            text("select count(*) from realtime.call_auction_market_series_round")
-        ) == 4
-        assert connection.scalar(
-            text("""
+        assert (
+            connection.scalar(
+                text("select count(*) from realtime.call_auction_market_series_session")
+            )
+            == 4
+        )
+        assert (
+            connection.scalar(
+                text("select count(*) from realtime.call_auction_market_series_round")
+            )
+            == 4
+        )
+        assert (
+            connection.scalar(
+                text("""
                 select count(*) from ingestion.ingestion_run
                 where dataset_code = 'call_auction_market_series'
             """)
-        ) == 4
-        assert connection.scalar(
-            text("""
+            )
+            == 4
+        )
+        assert (
+            connection.scalar(
+                text("""
                 select count(*) from operations.workflow_run
                 where workflow_code = 'call_auction_market_series'
             """)
-        ) == 4
+            )
+            == 4
+        )
 
         connection.execute(text("set local role market_data_api"))
         payload = connection.scalar(
@@ -1193,9 +1203,7 @@ def test_only_worker_can_delete_series_snapshot_details(
 ) -> None:
     with psycopg.connect(migrated_database_url, autocommit=True) as connection:
         connection.execute("set role market_data_worker")
-        connection.execute(
-            "delete from realtime.call_auction_market_series_snapshot where false"
-        )
+        connection.execute("delete from realtime.call_auction_market_series_snapshot where false")
         connection.execute("reset role")
 
         for role in ("anon", "authenticated", "market_data_api"):

@@ -470,9 +470,7 @@ def _configure_data_cleanup_runner(
     monkeypatch.setattr(
         scheduler_module,
         "WorkerSettings",
-        lambda: SimpleNamespace(
-            database_url=SimpleNamespace(get_secret_value=lambda: "unused")
-        ),
+        lambda: SimpleNamespace(database_url=SimpleNamespace(get_secret_value=lambda: "unused")),
     )
     monkeypatch.setattr(
         scheduler_module,
@@ -904,10 +902,10 @@ def test_scheduler_health_requires_jobs_fresh_snapshot_and_no_stale_runs(tmp_pat
             STALE_RUN_RECOVERY_JOB_ID,
             STOCK_DAILY_INDICATOR_JOB_ID,
             STOCK_POOL_JOB_ID,
-                CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID,
-                BOARD_INDEX_DAILY_BAR_JOB_ID,
-                DATA_CLEANUP_JOB_ID,
-            ),
+            CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID,
+            BOARD_INDEX_DAILY_BAR_JOB_ID,
+            DATA_CLEANUP_JOB_ID,
+        ),
     )
     settings = SchedulerSettings(
         scheduler_store_path=store_path,

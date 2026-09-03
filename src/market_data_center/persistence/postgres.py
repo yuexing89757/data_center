@@ -1154,9 +1154,7 @@ group by trade_date
             )
         return result.rowcount
 
-    def latest_completed_trading_dates(
-        self, reference_date: date, limit: int
-    ) -> tuple[date, ...]:
+    def latest_completed_trading_dates(self, reference_date: date, limit: int) -> tuple[date, ...]:
         if limit < 1:
             raise ValueError("limit must be positive")
         with self._engine.connect() as connection:
