@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from json import dumps
 from typing import cast
@@ -10,6 +11,7 @@ from uuid import UUID
 
 from sqlalchemy import Connection, Engine, text
 
+from market_data_center.call_auction_market_series_writer import CapturedRound
 from market_data_center.domain.call_auction_market_series import (
     MarketSeriesRound,
     MarketSeriesSession,
@@ -89,63 +91,115 @@ class PostgreSQLCallAuctionMarketSeriesPersistence:
                 _session_parameters(session),
             )
 
+    def persist_captured_round(self, captured: CapturedRound) -> None:
+        with self._engine.begin() as connection:
+            self._insert_round(connection, captured.running_round)
+            for attempt in captured.attempts:
+                running = replace(
+                    attempt.run,
+                    status=IngestionStatus.RUNNING,
+                    finished_at=None,
+                    fetched_rows=0,
+                    accepted_rows=0,
+                    rejected_rows=0,
+                    error_summary=None,
+                )
+                self._insert_ingestion_run(connection, running)
+                self._commit_attempt(
+                    connection,
+                    attempt.run,
+                    attempt.records,
+                    attempt.manifest,
+                    attempt.quality_results,
+                )
+            self._finish_round(connection, captured.completed_round)
+
     def create_ingestion_run(self, run: IngestionRun) -> None:
+        with self._engine.begin() as connection:
+            self._insert_ingestion_run(connection, run)
+
+    def start_round(self, round_state: MarketSeriesRound) -> None:
+        with self._engine.begin() as connection:
+            self._insert_round(connection, round_state)
+
+    def commit_attempt(
+        self,
+        run: IngestionRun,
+        records: Sequence[MarketSeriesSnapshotRecord],
+        manifest: RawManifest,
+        quality_results: Sequence[QualityResult],
+    ) -> None:
+        with self._engine.begin() as connection:
+            self._commit_attempt(connection, run, records, manifest, quality_results)
+
+    def finish_round(self, round_summary: MarketSeriesRound) -> None:
+        with self._engine.begin() as connection:
+            self._finish_round(connection, round_summary)
+
+    def finish_session(
+        self,
+        session_id: UUID,
+        finished_at: datetime,
+        error_summary: str | None = None,
+    ) -> MarketSeriesSession:
+        return self._finish_session(session_id, finished_at, error_summary)
+
+    def _insert_ingestion_run(self, connection: Connection, run: IngestionRun) -> None:
         if run.dataset_code is not DatasetCode.CALL_AUCTION_MARKET_SERIES:
             raise ValueError("unexpected market-series dataset")
         if run.status is not IngestionStatus.RUNNING:
             raise ValueError("new market-series ingestion must be running")
-        with self._engine.begin() as connection:
-            connection.execute(
-                text("""
-                    insert into ingestion.ingestion_run (
-                      ingestion_id,provider_code,dataset_code,status,requested_at,started_at,
-                      finished_at,request_params,fetched_rows,accepted_rows,rejected_rows,
-                      error_summary,replayed_from_raw_id
-                    ) values (
-                      :ingestion_id,:provider_code,:dataset_code,:status,:requested_at,:started_at,
-                      :finished_at,cast(:request_params as jsonb),:fetched_rows,:accepted_rows,
-                      :rejected_rows,:error_summary,:replayed_from_raw_id
-                    )
-                """),
-                _run_parameters(run),
-            )
+        connection.execute(
+            text("""
+                insert into ingestion.ingestion_run (
+                  ingestion_id,provider_code,dataset_code,status,requested_at,started_at,
+                  finished_at,request_params,fetched_rows,accepted_rows,rejected_rows,
+                  error_summary,replayed_from_raw_id
+                ) values (
+                  :ingestion_id,:provider_code,:dataset_code,:status,:requested_at,:started_at,
+                  :finished_at,cast(:request_params as jsonb),:fetched_rows,:accepted_rows,
+                  :rejected_rows,:error_summary,:replayed_from_raw_id
+                )
+            """),
+            _run_parameters(run),
+        )
 
-    def start_round(self, round_state: MarketSeriesRound) -> None:
+    def _insert_round(self, connection: Connection, round_state: MarketSeriesRound) -> None:
         if round_state.status is not MarketSeriesStatus.RUNNING:
             raise ValueError("new market-series round must be running")
-        with self._engine.begin() as connection:
-            session = connection.execute(
-                text("""
-                    select window_start,universe_count,status
-                    from realtime.call_auction_market_series_session
-                    where session_id=:session_id for update
-                """),
-                {"session_id": round_state.session_id},
-            ).one()
-            expected_scheduled_at = session.window_start + round_state.sample_seq * _TWENTY_SECONDS
-            if session.status != "running":
-                raise RuntimeError("market-series session is no longer running")
-            if round_state.scheduled_at != expected_scheduled_at:
-                raise ValueError("round scheduled_at does not match its session")
-            if round_state.expected_quotes != session.universe_count:
-                raise ValueError("round expected_quotes does not match frozen universe")
-            connection.execute(
-                text("""
-                    insert into realtime.call_auction_market_series_round (
-                      session_id,sample_seq,scheduled_at,collected_at,status,attempt_count,
-                      expected_quotes,successful_quotes,failed_quotes,selected_ingestion_id,
-                      error_summary
-                    ) values (
-                      :session_id,:sample_seq,:scheduled_at,:collected_at,:status,:attempt_count,
-                      :expected_quotes,:successful_quotes,:failed_quotes,:selected_ingestion_id,
-                      :error_summary
-                    )
-                """),
-                _round_parameters(round_state),
-            )
+        session = connection.execute(
+            text("""
+                select window_start,universe_count,status
+                from realtime.call_auction_market_series_session
+                where session_id=:session_id for update
+            """),
+            {"session_id": round_state.session_id},
+        ).one()
+        expected_scheduled_at = session.window_start + round_state.sample_seq * _TWENTY_SECONDS
+        if session.status != "running":
+            raise RuntimeError("market-series session is no longer running")
+        if round_state.scheduled_at != expected_scheduled_at:
+            raise ValueError("round scheduled_at does not match its session")
+        if round_state.expected_quotes != session.universe_count:
+            raise ValueError("round expected_quotes does not match frozen universe")
+        connection.execute(
+            text("""
+                insert into realtime.call_auction_market_series_round (
+                  session_id,sample_seq,scheduled_at,collected_at,status,attempt_count,
+                  expected_quotes,successful_quotes,failed_quotes,selected_ingestion_id,
+                  error_summary
+                ) values (
+                  :session_id,:sample_seq,:scheduled_at,:collected_at,:status,:attempt_count,
+                  :expected_quotes,:successful_quotes,:failed_quotes,:selected_ingestion_id,
+                  :error_summary
+                )
+            """),
+            _round_parameters(round_state),
+        )
 
-    def commit_attempt(
+    def _commit_attempt(
         self,
+        connection: Connection,
         run: IngestionRun,
         records: Sequence[MarketSeriesSnapshotRecord],
         manifest: RawManifest,
@@ -172,75 +226,73 @@ class PostgreSQLCallAuctionMarketSeriesPersistence:
         ):
             raise ValueError("market-series fact does not match ingestion request")
 
-        with self._engine.begin() as connection:
+        connection.execute(
+            text("""
+                insert into ingestion.raw_manifest (
+                  raw_id,ingestion_id,storage_backend,object_path,file_format,
+                  content_sha256,byte_size,row_count,schema_version
+                ) values (
+                  :raw_id,:ingestion_id,:storage_backend,:object_path,:file_format,
+                  :content_sha256,:byte_size,:row_count,:schema_version
+                )
+            """),
+            _manifest_parameters(manifest),
+        )
+        if quality_results:
             connection.execute(
                 text("""
-                    insert into ingestion.raw_manifest (
-                      raw_id,ingestion_id,storage_backend,object_path,file_format,
-                      content_sha256,byte_size,row_count,schema_version
+                    insert into audit.quality_result (
+                      quality_result_id,ingestion_id,dataset_code,rule_code,severity,
+                      status,natural_key,message,details
                     ) values (
-                      :raw_id,:ingestion_id,:storage_backend,:object_path,:file_format,
-                      :content_sha256,:byte_size,:row_count,:schema_version
+                      :quality_result_id,:ingestion_id,:dataset_code,:rule_code,:severity,
+                      :status,cast(:natural_key as jsonb),:message,cast(:details as jsonb)
                     )
                 """),
-                _manifest_parameters(manifest),
+                [_quality_parameters(result) for result in quality_results],
             )
-            if quality_results:
-                connection.execute(
-                    text("""
-                        insert into audit.quality_result (
-                          quality_result_id,ingestion_id,dataset_code,rule_code,severity,
-                          status,natural_key,message,details
-                        ) values (
-                          :quality_result_id,:ingestion_id,:dataset_code,:rule_code,:severity,
-                          :status,cast(:natural_key as jsonb),:message,cast(:details as jsonb)
-                        )
-                    """),
-                    [_quality_parameters(result) for result in quality_results],
-                )
-            if records:
-                connection.execute(
-                    text("""
-                        insert into realtime.call_auction_market_series_snapshot (
-                          trade_date,ingestion_id,session_id,sample_seq,batch_code,scheduled_at,symbol,
-                          observed_at,last_price,previous_close,high_price,low_price,
-                          cumulative_volume,cumulative_amount,source_code,value_semantics,
-                          bid1_price,bid1_volume,bid2_price,bid2_volume,bid3_price,bid3_volume,
-                          bid4_price,bid4_volume,bid5_price,bid5_volume,
-                          ask1_price,ask1_volume,ask2_price,ask2_volume,ask3_price,ask3_volume,
-                          ask4_price,ask4_volume,ask5_price,ask5_volume
-                        ) values (
-                          :trade_date,:ingestion_id,:session_id,:sample_seq,:batch_code,
-                          :scheduled_at,:symbol,
-                          :observed_at,:last_price,:previous_close,:high_price,:low_price,
-                          :cumulative_volume,:cumulative_amount,:source_code,:value_semantics,
-                          :bid1_price,:bid1_volume,:bid2_price,:bid2_volume,:bid3_price,:bid3_volume,
-                          :bid4_price,:bid4_volume,:bid5_price,:bid5_volume,
-                          :ask1_price,:ask1_volume,:ask2_price,:ask2_volume,:ask3_price,:ask3_volume,
-                          :ask4_price,:ask4_volume,:ask5_price,:ask5_volume
-                        )
-                    """),
-                    [_snapshot_parameters(record, run.ingestion_id) for record in records],
-                )
-            updated = connection.execute(
+        if records:
+            connection.execute(
                 text("""
-                    update ingestion.ingestion_run set
-                      status=:status,finished_at=:finished_at,fetched_rows=:fetched_rows,
-                      accepted_rows=:accepted_rows,rejected_rows=:rejected_rows,
-                      error_summary=:error_summary
-                    where ingestion_id=:ingestion_id and status='running'
+                    insert into realtime.call_auction_market_series_snapshot (
+                      trade_date,ingestion_id,session_id,sample_seq,batch_code,scheduled_at,symbol,
+                      observed_at,last_price,previous_close,high_price,low_price,
+                      cumulative_volume,cumulative_amount,source_code,value_semantics,
+                      bid1_price,bid1_volume,bid2_price,bid2_volume,bid3_price,bid3_volume,
+                      bid4_price,bid4_volume,bid5_price,bid5_volume,
+                      ask1_price,ask1_volume,ask2_price,ask2_volume,ask3_price,ask3_volume,
+                      ask4_price,ask4_volume,ask5_price,ask5_volume
+                    ) values (
+                      :trade_date,:ingestion_id,:session_id,:sample_seq,:batch_code,
+                      :scheduled_at,:symbol,
+                      :observed_at,:last_price,:previous_close,:high_price,:low_price,
+                      :cumulative_volume,:cumulative_amount,:source_code,:value_semantics,
+                      :bid1_price,:bid1_volume,:bid2_price,:bid2_volume,:bid3_price,:bid3_volume,
+                      :bid4_price,:bid4_volume,:bid5_price,:bid5_volume,
+                      :ask1_price,:ask1_volume,:ask2_price,:ask2_volume,:ask3_price,:ask3_volume,
+                      :ask4_price,:ask4_volume,:ask5_price,:ask5_volume
+                    )
                 """),
-                _run_parameters(run),
+                [_snapshot_parameters(record, run.ingestion_id) for record in records],
             )
-            if updated.rowcount != 1:
-                raise RuntimeError("market-series ingestion is no longer running")
+        updated = connection.execute(
+            text("""
+                update ingestion.ingestion_run set
+                  status=:status,finished_at=:finished_at,fetched_rows=:fetched_rows,
+                  accepted_rows=:accepted_rows,rejected_rows=:rejected_rows,
+                  error_summary=:error_summary
+                where ingestion_id=:ingestion_id and status='running'
+            """),
+            _run_parameters(run),
+        )
+        if updated.rowcount != 1:
+            raise RuntimeError("market-series ingestion is no longer running")
 
-    def finish_round(self, round_summary: MarketSeriesRound) -> None:
+    def _finish_round(self, connection: Connection, round_summary: MarketSeriesRound) -> None:
         if round_summary.status is MarketSeriesStatus.RUNNING:
             raise ValueError("market-series round finish requires terminal status")
-        with self._engine.begin() as connection:
-            stored = connection.execute(
-                text("""
+        stored = connection.execute(
+            text("""
                     select round.scheduled_at,round.expected_quotes,round.status,
                            session.window_start,session.status session_status
                     from realtime.call_auction_market_series_round round
@@ -248,52 +300,49 @@ class PostgreSQLCallAuctionMarketSeriesPersistence:
                     where round.session_id=:session_id and round.sample_seq=:sample_seq
                     for update of round,session
                 """),
-                {
-                    "session_id": round_summary.session_id,
-                    "sample_seq": round_summary.sample_seq,
-                },
-            ).one()
-            if stored.status != "running" or stored.session_status != "running":
-                raise RuntimeError("market-series round or session is no longer running")
-            if (
-                stored.scheduled_at != round_summary.scheduled_at
-                or stored.expected_quotes != round_summary.expected_quotes
-                or stored.window_start + round_summary.sample_seq * _TWENTY_SECONDS
-                != round_summary.scheduled_at
-            ):
-                raise ValueError("market-series round identity changed")
-            if round_summary.selected_ingestion_id is not None:
-                selected = connection.execute(
-                    text("""
+            {
+                "session_id": round_summary.session_id,
+                "sample_seq": round_summary.sample_seq,
+            },
+        ).one()
+        if stored.status != "running" or stored.session_status != "running":
+            raise RuntimeError("market-series round or session is no longer running")
+        if (
+            stored.scheduled_at != round_summary.scheduled_at
+            or stored.expected_quotes != round_summary.expected_quotes
+            or stored.window_start + round_summary.sample_seq * _TWENTY_SECONDS
+            != round_summary.scheduled_at
+        ):
+            raise ValueError("market-series round identity changed")
+        if round_summary.selected_ingestion_id is not None:
+            selected = connection.execute(
+                text("""
                         select dataset_code,status,request_params->>'session_id' session_id,
                                request_params->>'sample_seq' sample_seq
                         from ingestion.ingestion_run where ingestion_id=:ingestion_id
                     """),
-                    {"ingestion_id": round_summary.selected_ingestion_id},
-                ).one_or_none()
-                if selected is None or (
-                    selected.dataset_code != DatasetCode.CALL_AUCTION_MARKET_SERIES.value
-                    or selected.status not in {"succeeded", "partial"}
-                    or selected.session_id != str(round_summary.session_id)
-                    or selected.sample_seq != str(round_summary.sample_seq)
-                ):
-                    raise ValueError("selected ingestion does not match market-series round")
-            updated = connection.execute(
-                text("""
+                {"ingestion_id": round_summary.selected_ingestion_id},
+            ).one_or_none()
+            if selected is None or (
+                selected.dataset_code != DatasetCode.CALL_AUCTION_MARKET_SERIES.value
+                or selected.status not in {"succeeded", "partial"}
+                or selected.session_id != str(round_summary.session_id)
+                or selected.sample_seq != str(round_summary.sample_seq)
+            ):
+                raise ValueError("selected ingestion does not match market-series round")
+        updated = connection.execute(
+            text("""
                     update realtime.call_auction_market_series_round set
                       collected_at=:collected_at,status=:status,attempt_count=:attempt_count,
                       successful_quotes=:successful_quotes,failed_quotes=:failed_quotes,
                       selected_ingestion_id=:selected_ingestion_id,error_summary=:error_summary
                     where session_id=:session_id and sample_seq=:sample_seq and status='running'
                 """),
-                _round_parameters(round_summary),
-            )
-            if updated.rowcount != 1:
-                raise RuntimeError("market-series round is no longer running")
-            _refresh_session_counts(connection, round_summary.session_id)
-
-    def finish_session(self, session_id: UUID, finished_at: datetime) -> MarketSeriesSession:
-        return self._finish_session(session_id, finished_at, None)
+            _round_parameters(round_summary),
+        )
+        if updated.rowcount != 1:
+            raise RuntimeError("market-series round is no longer running")
+        _refresh_session_counts(connection, round_summary.session_id)
 
     def recover_expired_sessions(self, now: datetime) -> int:
         _require_aware(now)
