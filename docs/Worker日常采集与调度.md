@@ -123,16 +123,14 @@ uv run market-data-center shareholder-count-backfill --cutoff-date 2026-08-24 --
 显式记为 failed，最后一轮 deadline 为 09:25:40，不补采过去时槽。任务由一个Producer严格按时采集
 行情并先写Raw v2，再送入容量32的进程内FIFO队列；单个非daemon Writer按轮次顺序事务写库。数据库
 延迟可以使Session在09:25:40后才完成，但不得阻塞下一个Provider计划点。该任务在专用
-`morning_auction` executor运行，其他 Worker 任务仍使用单线程default executor。另有沪深全市场
-开盘竞价来源采集任务在工作日 09:25:30 运行：只采集 `SSE`、`SZSE` 的 `stock`、`listed` 证券，BSE
-暂缓，ETF、可转债和指数不进入集合。每次尝试固定一个 quote-capable endpoint，按最多 80 只分批；
-每个 endpoint 只允许形成完整全集，至多进行两次完整尝试，绝不拼接 endpoint 的 partial 结果。新
-请求的硬截止为 09:29:30；09:30 后观察到的记录不能进入成功快照。失败或 partial 尝试仍保留 Raw、
-Manifest、质量结果和 ingestion lineage。
+`morning_auction` executor运行，其他 Worker 任务仍使用单线程default executor。序列末轮
+`sample_seq=31`、`batch_code=092520` 是两个公共竞价读取接口的唯一来源；读取时基于卖一至卖三量
+和买一价量计算封单额。历史 `call-auction-market-snapshot-daily` 已从任务目录移除，Worker 启动时
+清理 JobStore 残留，不再在 09:25:30 重复采集。
 
 项目所有者已移除工作日 21:30 “今日竞价量”自动最终化，不提供替代调度、环境时间或 OS 计划任务。
-数据库最终化实现和历史 workflow code 仅作为非调度的内部能力保留。`CALL_AUCTION_SNAPSHOT_ENABLED`
-只控制 09:25:30 来源采集。该数据集的来源 Raw 继续长期保留，但 operational Raw replay 暂停；只有持久化并
+数据库最终化实现、单次快照服务和历史 workflow code 仅作为非调度的内部能力保留。历史单次快照
+数据集的来源 Raw 继续长期保留，但 operational Raw replay 暂停；只有持久化并
 验证原始冻结 SSE/SZSE listed-stock 全集的确定性身份后，才可通过后续接受决策重新启用。
 
 Worker 启动时先探测一个有界候选集，按 quote、SSE 日 K、SZSE 日 K 和 BSE 日 K 能力生成
@@ -147,7 +145,6 @@ PYTDX_VIPDOC_PATH=D:\new_tdx64\vipdoc
 RAW_DATA_ROOT=/var/lib/market-data-center/raw
 SCHEDULER_STORE_PATH=/var/lib/market-data-center/scheduler/jobs.sqlite
 EOD_QUOTE_SNAPSHOT_ENABLED=true
-CALL_AUCTION_SNAPSHOT_ENABLED=true
 CALL_AUCTION_MARKET_SERIES_ENABLED=true
 DATA_CLEANUP_ENABLED=true
 DRAGON_TIGER_ENABLED=false
@@ -192,7 +189,7 @@ Worker 并走受保护 migration，Worker 自身不得执行 DDL。Raw 和 Manif
 每天 03:00（Asia/Shanghai）读取当前上海日期以前最近三个 `CN_A_SHARE` 交易日，只删除
 `realtime.call_auction_market_series_snapshot` 中早于最老保留日的明细。若交易日历不足三个已完成
 交易日，任务在 DELETE 前失败并保持数据不变。Session、Round、Raw、Manifest、IngestionRun、
-QualityResult、operations 记录以及独立的 09:25:30 `call_auction_market_snapshot` 均不清理；因此已清理
+QualityResult、operations 记录以及历史 `call_auction_market_snapshot` 均不清理；因此已清理
 日期的查询仍可返回保留轮次，但 `items` 为空并报告请求代码缺失。任务仅执行事务性 DML，不删除或
 分离月度分区，也不执行 VACUUM/TRUNCATE；删除后的空间可由 PostgreSQL 复用，但不保证数据库文件
 立即缩小。初始分区覆盖至 2027-09-30，后续月份仍必须通过新的 ordered migration 创建。

@@ -2076,14 +2076,113 @@ select api_v1.query_daily_limit_up_list(
     assert payload["items"] == []
 
 
-def test_call_auction_market_snapshot_rpc_selects_one_preferred_batch(
+def _insert_series_round(
+    connection: Connection,
+    *,
+    trade_date: date,
+    ingestion_id: UUID,
+    ingestion_status: str,
+    symbols: tuple[str, ...],
+    started_at: datetime,
+    workflow_attempt: int,
+    sample_seq: int = 31,
+) -> UUID:
+    workflow_run_id = uuid4()
+    session_id = uuid4()
+    ordered_symbols = tuple(sorted(symbols))
+    scheduled_at = series_slots(trade_date)[sample_seq]
+    collected_at = scheduled_at + timedelta(seconds=10)
+    connection.execute(
+        text("""
+insert into operations.workflow_run (
+    workflow_run_id, workflow_code, scheduled_for, trigger_source,
+    attempt, status, started_at
+) values (
+    :workflow_id, 'call_auction_market_series', :scheduled_at,
+    'scheduled', :workflow_attempt, 'running', :started_at
+)
+"""),
+        {
+            "workflow_id": workflow_run_id,
+            "scheduled_at": series_slots(trade_date)[0],
+            "started_at": started_at,
+            "workflow_attempt": workflow_attempt,
+        },
+    )
+    connection.execute(
+        text("""
+insert into realtime.call_auction_market_series_session (
+    session_id, workflow_run_id, trade_date, window_start, window_end,
+    cadence_seconds, expected_rounds, universe_symbols, universe_count,
+    universe_hash, status, started_at
+) values (
+    :session_id, :workflow_id, :trade_date, :window_start, :window_end,
+    20, 32, :symbols, :symbol_count, :universe_hash, 'running', :started_at
+)
+"""),
+        {
+            "session_id": session_id,
+            "workflow_id": workflow_run_id,
+            "trade_date": trade_date,
+            "window_start": series_slots(trade_date)[0],
+            "window_end": series_slots(trade_date)[-1] + timedelta(seconds=20),
+            "symbols": list(ordered_symbols),
+            "symbol_count": len(ordered_symbols),
+            "universe_hash": universe_hash(ordered_symbols),
+            "started_at": started_at,
+        },
+    )
+    connection.execute(
+        text("""
+insert into ingestion.ingestion_run (
+    ingestion_id, provider_code, dataset_code, status,
+    requested_at, started_at, finished_at, fetched_rows, accepted_rows
+) values (
+    :ingestion_id, 'pytdx_hq', 'call_auction_market_series', :status,
+    :scheduled_at, :scheduled_at, :collected_at, :row_count, :row_count
+)
+"""),
+        {
+            "ingestion_id": ingestion_id,
+            "status": ingestion_status,
+            "scheduled_at": scheduled_at,
+            "collected_at": collected_at,
+            "row_count": len(ordered_symbols),
+        },
+    )
+    connection.execute(
+        text("""
+insert into realtime.call_auction_market_series_round (
+    session_id, sample_seq, scheduled_at, collected_at, status,
+    attempt_count, expected_quotes, successful_quotes, failed_quotes,
+    selected_ingestion_id
+) values (
+    :session_id, :sample_seq, :scheduled_at, :collected_at, :status,
+    1, :row_count, :row_count, 0, :ingestion_id
+)
+"""),
+        {
+            "session_id": session_id,
+            "sample_seq": sample_seq,
+            "scheduled_at": scheduled_at,
+            "collected_at": collected_at,
+            "status": ingestion_status,
+            "row_count": len(ordered_symbols),
+            "ingestion_id": ingestion_id,
+        },
+    )
+    return session_id
+
+
+def test_call_auction_market_snapshot_rpc_selects_one_preferred_final_series_batch(
     database_engine: Engine,
 ) -> None:
     security_ingestion_id = uuid4()
     succeeded_ingestion_id = uuid4()
     partial_ingestion_id = uuid4()
+    legacy_ingestion_id = uuid4()
     trade_date = date(2026, 8, 13)
-    observed_at = datetime(2026, 8, 13, 1, 26, tzinfo=UTC)
+    observed_at = datetime(2026, 8, 13, 1, 25, 30, tzinfo=UTC)
     with database_engine.begin() as connection:
         connection.execute(
             text("""
@@ -2093,18 +2192,13 @@ insert into ingestion.ingestion_run (
 ) values
     (:security_id, 'baostock', 'security', 'running',
      :security_at, :security_at, null, 0, 0),
-    (:succeeded_id, 'pytdx_hq', 'call_auction_market_snapshot', 'succeeded',
-     :succeeded_at, :succeeded_at, :succeeded_finished_at, 2, 2),
-    (:partial_id, 'pytdx_hq', 'call_auction_market_snapshot', 'partial',
+    (:legacy_id, 'pytdx_hq', 'call_auction_market_snapshot', 'succeeded',
      :partial_at, :partial_at, :partial_finished_at, 1, 1)
 """),
             {
                 "security_id": security_ingestion_id,
                 "security_at": observed_at - timedelta(days=1),
-                "succeeded_id": succeeded_ingestion_id,
-                "succeeded_at": observed_at - timedelta(minutes=2),
-                "succeeded_finished_at": observed_at - timedelta(minutes=1),
-                "partial_id": partial_ingestion_id,
+                "legacy_id": legacy_ingestion_id,
                 "partial_at": observed_at,
                 "partial_finished_at": observed_at + timedelta(minutes=1),
             },
@@ -2122,27 +2216,70 @@ insert into core.security (
 """),
             {"security_id": security_ingestion_id},
         )
+        succeeded_session_id = _insert_series_round(
+            connection,
+            trade_date=trade_date,
+            ingestion_id=succeeded_ingestion_id,
+            ingestion_status="succeeded",
+            symbols=("SSE:600000", "SZSE:600000"),
+            started_at=observed_at - timedelta(minutes=2),
+            workflow_attempt=1,
+        )
+        partial_session_id = _insert_series_round(
+            connection,
+            trade_date=trade_date,
+            ingestion_id=partial_ingestion_id,
+            ingestion_status="partial",
+            symbols=("SSE:600000",),
+            started_at=observed_at,
+            workflow_attempt=2,
+        )
+        connection.execute(
+            text("""
+insert into realtime.call_auction_market_series_snapshot (
+    ingestion_id, session_id, sample_seq, batch_code, scheduled_at,
+    symbol, trade_date, observed_at, last_price,
+    previous_close, high_price, low_price, cumulative_volume,
+    cumulative_amount, bid1_price, bid1_volume, bid2_volume,
+    ask1_price, ask1_volume, ask2_volume, ask3_volume, source_code,
+    value_semantics
+) values
+    (:succeeded_id, :succeeded_session_id, 31, '092520', :scheduled_at,
+     'SSE:600000', :trade_date, :observed_at,
+     10.1200, 10.0000, 10.1500, 9.9800, 123400, 1248808.0000,
+     10.1200, 560200, 10743200, null, null, null, null, 'pytdx_hq', 'opening_trade'),
+    (:succeeded_id, :succeeded_session_id, 31, '092520', :scheduled_at,
+     'SZSE:600000', :trade_date, :observed_at,
+     20.1200, 20.0000, 20.1500, 19.9800, 223400, 4494808.0000,
+     null, null, null, null, null, null, null, 'pytdx_hq', 'opening_trade'),
+    (:partial_id, :partial_session_id, 31, '092520', :scheduled_at,
+     'SSE:600000', :trade_date, :observed_at,
+     99.0000, 98.0000, 99.0000, 98.0000, 1, 99.0000,
+     null, null, null, null, null, null, null, 'pytdx_hq', 'opening_trade')
+"""),
+            {
+                "succeeded_id": succeeded_ingestion_id,
+                "partial_id": partial_ingestion_id,
+                "succeeded_session_id": succeeded_session_id,
+                "partial_session_id": partial_session_id,
+                "trade_date": trade_date,
+                "observed_at": observed_at,
+                "scheduled_at": series_slots(trade_date)[31],
+            },
+        )
         connection.execute(
             text("""
 insert into realtime.call_auction_market_snapshot (
     ingestion_id, symbol, trade_date, observed_at, last_price,
     previous_close, high_price, low_price, cumulative_volume,
-    cumulative_amount, bid1_price, bid1_volume, bid2_volume,
-    ask1_price, ask1_volume, ask2_volume, seal_amount, source_code
-) values
-    (:succeeded_id, 'SSE:600000', :trade_date, :observed_at,
-     10.1200, 10.0000, 10.1500, 9.9800, 123400, 1248808.0000,
-     10.1200, 560200, 10743200, 10.1300, 0, 13300, 5669224.0000, 'pytdx_hq'),
-    (:succeeded_id, 'SZSE:600000', :trade_date, :observed_at,
-     20.1200, 20.0000, 20.1500, 19.9800, 223400, 4494808.0000,
-     null, null, null, null, null, null, null, 'pytdx_hq'),
-    (:partial_id, 'SSE:600000', :trade_date, :observed_at,
-     99.0000, 98.0000, 99.0000, 98.0000, 1, 99.0000,
-     null, null, null, null, null, null, null, 'pytdx_hq')
+    cumulative_amount, source_code
+) values (
+    :legacy_id, 'SSE:600000', :trade_date, :observed_at,
+    77, 70, 77, 77, 1, 77, 'pytdx_hq'
+)
 """),
             {
-                "succeeded_id": succeeded_ingestion_id,
-                "partial_id": partial_ingestion_id,
+                "legacy_id": legacy_ingestion_id,
                 "trade_date": trade_date,
                 "observed_at": observed_at,
             },
@@ -2159,7 +2296,7 @@ select has_function_privilege(
         assert not connection.scalar(
             text("""
 select has_table_privilege(
-    'market_data_api', 'realtime.call_auction_market_snapshot', 'select'
+    'market_data_api', 'realtime.call_auction_market_series_snapshot', 'select'
 )
 """)
         )
@@ -2203,7 +2340,7 @@ select api_v1.query_call_auction_market_snapshots(
     assert payload["items"][0]["last_price"] == 10.1200
     assert payload["items"][0]["bid2_price"] is None
     assert payload["items"][0]["bid2_volume"] == 10_743_200
-    assert payload["items"][0]["ask2_volume"] == 13_300
+    assert payload["items"][0]["ask2_volume"] is None
     assert payload["items"][0]["seal_amount"] == 5_669_224.0000
     assert partial_payload["ingestion_id"] == str(partial_ingestion_id)
     assert partial_payload["ingestion_status"] == "partial"
@@ -2211,7 +2348,7 @@ select api_v1.query_call_auction_market_snapshots(
     assert partial_payload["items"][0]["last_price"] == 99.0000
 
 
-def test_auction_one_price_limits_calculates_mainboard_limits_from_092530_snapshot(
+def test_auction_one_price_limits_calculates_mainboard_limits_from_092520_series_batch(
     database_engine: Engine,
 ) -> None:
     security_ingestion_id = uuid4()
@@ -2219,6 +2356,8 @@ def test_auction_one_price_limits_calculates_mainboard_limits_from_092530_snapsh
     bar_ingestion_id = uuid4()
     snapshot_ingestion_id = uuid4()
     partial_ingestion_id = uuid4()
+    series_ingestion_id = uuid4()
+    series_partial_ingestion_id = uuid4()
     trade_date = date(2026, 8, 17)
     observed_at = datetime(2026, 8, 17, 1, 25, 30, tzinfo=UTC)
     prior_dates = tuple(date(2026, 8, day) for day in range(10, 15))
@@ -2373,6 +2512,93 @@ where ingestion_id=:id and symbol='SSE:600000'
 """),
             {"id": snapshot_ingestion_id},
         )
+        series_session_id = _insert_series_round(
+            connection,
+            trade_date=trade_date,
+            ingestion_id=series_ingestion_id,
+            ingestion_status="succeeded",
+            symbols=(
+                "SSE:600000",
+                "SZSE:000001",
+                "SSE:600001",
+                "SSE:600002",
+                "SSE:600003",
+                "SSE:600004",
+                "SSE:600005",
+                "SSE:600006",
+                "SSE:600007",
+                "SSE:603999",
+                "SSE:605000",
+                "SZSE:004999",
+                "SSE:604000",
+                "SZSE:001001",
+                "SZSE:300001",
+                "SSE:688001",
+            ),
+            started_at=observed_at - timedelta(minutes=2),
+            workflow_attempt=1,
+        )
+        series_partial_session_id = _insert_series_round(
+            connection,
+            trade_date=trade_date,
+            ingestion_id=series_partial_ingestion_id,
+            ingestion_status="partial",
+            symbols=("SSE:600001",),
+            started_at=observed_at,
+            workflow_attempt=2,
+        )
+        connection.execute(
+            text("""
+insert into realtime.call_auction_market_series_snapshot (
+    trade_date, ingestion_id, session_id, sample_seq, batch_code,
+    scheduled_at, symbol, observed_at, last_price, previous_close,
+    high_price, low_price, cumulative_volume, cumulative_amount,
+    bid1_price, bid1_volume, bid2_price, bid2_volume,
+    bid3_price, bid3_volume, bid4_price, bid4_volume,
+    bid5_price, bid5_volume, ask1_price, ask1_volume,
+    ask2_price, ask2_volume, ask3_price, ask3_volume,
+    ask4_price, ask4_volume, ask5_price, ask5_volume,
+    source_code, value_semantics
+)
+select
+    source.trade_date,
+    case when source.ingestion_id = :legacy_succeeded_id
+         then :series_succeeded_id else :series_partial_id end,
+    case when source.ingestion_id = :legacy_succeeded_id
+         then :series_session_id else :series_partial_session_id end,
+    31, '092520', :scheduled_at, source.symbol, source.observed_at,
+    source.last_price, source.previous_close, source.high_price,
+    source.low_price, source.cumulative_volume, source.cumulative_amount,
+    source.bid1_price, source.bid1_volume, source.bid2_price, source.bid2_volume,
+    source.bid3_price, source.bid3_volume, source.bid4_price, source.bid4_volume,
+    source.bid5_price, source.bid5_volume, source.ask1_price, source.ask1_volume,
+    source.ask2_price, source.ask2_volume, source.ask3_price, source.ask3_volume,
+    source.ask4_price, source.ask4_volume, source.ask5_price, source.ask5_volume,
+    source.source_code, 'opening_trade'
+from realtime.call_auction_market_snapshot source
+where source.ingestion_id in (:legacy_succeeded_id, :legacy_partial_id)
+"""),
+            {
+                "legacy_succeeded_id": snapshot_ingestion_id,
+                "legacy_partial_id": partial_ingestion_id,
+                "series_succeeded_id": series_ingestion_id,
+                "series_partial_id": series_partial_ingestion_id,
+                "series_session_id": series_session_id,
+                "series_partial_session_id": series_partial_session_id,
+                "scheduled_at": series_slots(trade_date)[31],
+            },
+        )
+        connection.execute(
+            text("""
+update realtime.call_auction_market_series_snapshot
+set bid1_price = 11.0600,
+    bid1_volume = 100,
+    ask2_volume = 1
+where ingestion_id = :series_id
+  and symbol = 'SSE:600005'
+"""),
+            {"series_id": series_ingestion_id},
+        )
         assert connection.scalar(
             text(
                 "select has_function_privilege('market_data_api', "
@@ -2382,7 +2608,7 @@ where ingestion_id=:id and symbol='SSE:600000'
         assert not connection.scalar(
             text(
                 "select has_table_privilege('market_data_api', "
-                "'realtime.call_auction_market_snapshot', 'select')"
+                "'realtime.call_auction_market_series_snapshot', 'select')"
             )
         )
         assert not connection.scalar(
@@ -2402,7 +2628,7 @@ where ingestion_id=:id and symbol='SSE:600000'
         connection.execute(text("reset role"))
         connection.execute(
             text("update ingestion.ingestion_run set status='failed' where ingestion_id=:id"),
-            {"id": snapshot_ingestion_id},
+            {"id": series_ingestion_id},
         )
         connection.execute(text("set local role market_data_api"))
         partial_payload = connection.scalar(
@@ -2410,11 +2636,12 @@ where ingestion_id=:id and symbol='SSE:600000'
             {"day": trade_date},
         )
 
-    assert payload["ingestion_id"] == str(snapshot_ingestion_id)
+    assert payload["ingestion_id"] == str(series_ingestion_id)
     assert payload["price_limit_calculation_id"] is None
     assert payload["price_limit_rule_version"] == "CN_MAINBOARD_2026_07_06"
     assert payload["price_limit_algorithm_version"] == "1.0.0"
     assert payload["calculation_mode"] == "realtime_read"
+    assert payload["snapshot_window"] == "09:25:20-09:25:39 Asia/Shanghai"
     assert payload["candidate_count"] == 12
     assert payload["omitted_incomplete_count"] == 3
     assert [item["symbol"] for item in payload["up"]] == [
@@ -2425,31 +2652,191 @@ where ingestion_id=:id and symbol='SSE:600000'
     assert payload["up"][1]["limit_price"] == 0.05
     assert payload["up"][2]["limit_price"] == 11.06
     assert payload["up"][0]["seal_amount"] == 1100
+    assert payload["up"][2]["seal_amount"] is None
     assert [item["symbol"] for item in payload["down"]] == [
         "SSE:600006",
         "SZSE:000001",
     ]
     assert payload["down"][0]["limit_price"] == 0.01
     assert payload["down"][0]["seal_amount"] is None
-    assert partial_payload["ingestion_id"] == str(partial_ingestion_id)
+    assert partial_payload["ingestion_id"] == str(series_partial_ingestion_id)
     assert partial_payload["ingestion_status"] == "partial"
     assert partial_payload["candidate_count"] == 1
     assert partial_payload["up"] == []
     assert partial_payload["down"] == []
 
 
-def test_auction_one_price_limits_requires_exact_092550_snapshot(
+def test_auction_one_price_limits_requires_exact_092520_series_batch(
     database_engine: Engine,
 ) -> None:
-    with database_engine.connect() as connection:
+    trade_date = date(2026, 8, 17)
+    security_ingestion_id = uuid4()
+    legacy_ingestion_id = uuid4()
+    observed_at = datetime(2026, 8, 17, 1, 25, 30, tzinfo=UTC)
+    with database_engine.begin() as connection:
+        connection.execute(
+            text("""
+insert into ingestion.ingestion_run (
+    ingestion_id, provider_code, dataset_code, status,
+    requested_at, started_at, finished_at, fetched_rows, accepted_rows
+) values
+    (:security_id, 'baostock', 'security', 'running', :at, :at, null, 0, 0),
+    (:legacy_id, 'pytdx_hq', 'call_auction_market_snapshot', 'succeeded',
+     :at, :at, :at, 1, 1)
+"""),
+            {
+                "security_id": security_ingestion_id,
+                "legacy_id": legacy_ingestion_id,
+                "at": observed_at,
+            },
+        )
+        connection.execute(
+            text("""
+insert into core.security (
+    symbol, code, exchange, current_name, security_type, status,
+    source_code, ingestion_id
+) values (
+    'SSE:600000', '600000', 'SSE', '历史单次快照', 'stock', 'listed',
+    'baostock', :security_id
+)
+"""),
+            {"security_id": security_ingestion_id},
+        )
+        connection.execute(
+            text("""
+insert into realtime.call_auction_market_snapshot (
+    ingestion_id, symbol, trade_date, observed_at, last_price,
+    previous_close, high_price, low_price, cumulative_volume,
+    cumulative_amount, source_code
+) values (
+    :legacy_id, 'SSE:600000', :trade_date, :at, 11, 10, 11, 11, 100, 1100,
+    'pytdx_hq'
+)
+"""),
+            {"legacy_id": legacy_ingestion_id, "trade_date": trade_date, "at": observed_at},
+        )
         connection.execute(text("set local role market_data_api"))
         with pytest.raises(DBAPIError) as raised:
             connection.scalar(
                 text("select api_v1.query_auction_one_price_limits(:day)"),
-                {"day": date(2026, 8, 17)},
+                {"day": trade_date},
             )
 
     assert raised.value.orig.sqlstate == "P0002"
+
+
+def test_auction_read_rpcs_skip_newer_date_with_only_earlier_series_round(
+    database_engine: Engine,
+) -> None:
+    eligible_date = date(2026, 8, 18)
+    earlier_only_date = date(2026, 8, 19)
+    security_ingestion_id = uuid4()
+    final_ingestion_id = uuid4()
+    earlier_ingestion_id = uuid4()
+    with database_engine.begin() as connection:
+        connection.execute(
+            text("""
+insert into ingestion.ingestion_run (
+    ingestion_id, provider_code, dataset_code, status,
+    requested_at, started_at, fetched_rows, accepted_rows
+) values (
+    :security_id, 'baostock', 'security', 'running', :at, :at, 0, 0
+)
+"""),
+            {"security_id": security_ingestion_id, "at": series_slots(eligible_date)[0]},
+        )
+        connection.execute(
+            text("""
+insert into core.security (
+    symbol, code, exchange, current_name, security_type, status,
+    source_code, ingestion_id
+) values (
+    'SSE:600000', '600000', 'SSE', '末轮边界样本', 'stock', 'listed',
+    'baostock', :security_id
+)
+"""),
+            {"security_id": security_ingestion_id},
+        )
+        final_session_id = _insert_series_round(
+            connection,
+            trade_date=eligible_date,
+            ingestion_id=final_ingestion_id,
+            ingestion_status="succeeded",
+            symbols=("SSE:600000",),
+            started_at=series_slots(eligible_date)[0],
+            workflow_attempt=1,
+        )
+        earlier_session_id = _insert_series_round(
+            connection,
+            trade_date=earlier_only_date,
+            ingestion_id=earlier_ingestion_id,
+            ingestion_status="succeeded",
+            symbols=("SSE:600000",),
+            started_at=series_slots(earlier_only_date)[0],
+            workflow_attempt=1,
+            sample_seq=30,
+        )
+        connection.execute(
+            text("""
+insert into realtime.call_auction_market_series_snapshot (
+    ingestion_id, session_id, sample_seq, batch_code, scheduled_at,
+    symbol, trade_date, observed_at, last_price, previous_close,
+    high_price, low_price, cumulative_volume, cumulative_amount,
+    bid1_price, bid1_volume, source_code, value_semantics
+) values
+    (:final_id, :final_session_id, 31, '092520', :final_scheduled_at,
+     'SSE:600000', :eligible_date, :final_observed_at, 11, 10, 11, 11,
+     100, 1100, 11, 100, 'pytdx_hq', 'opening_trade'),
+    (:earlier_id, :earlier_session_id, 30, '092500', :earlier_scheduled_at,
+     'SSE:600000', :earlier_date, :earlier_observed_at, 99, 90, 99, 99,
+     100, 9900, 99, 100, 'pytdx_hq', 'opening_trade')
+"""),
+            {
+                "final_id": final_ingestion_id,
+                "final_session_id": final_session_id,
+                "final_scheduled_at": series_slots(eligible_date)[31],
+                "final_observed_at": series_slots(eligible_date)[31] + timedelta(seconds=5),
+                "eligible_date": eligible_date,
+                "earlier_id": earlier_ingestion_id,
+                "earlier_session_id": earlier_session_id,
+                "earlier_scheduled_at": series_slots(earlier_only_date)[30],
+                "earlier_observed_at": series_slots(earlier_only_date)[30] + timedelta(seconds=5),
+                "earlier_date": earlier_only_date,
+            },
+        )
+
+    with database_engine.connect() as connection:
+        connection.execute(text("set local role market_data_api"))
+        latest_payload = connection.scalar(
+            text("select api_v1.query_auction_one_price_limits(null)")
+        )
+
+    assert latest_payload["trade_date"] == eligible_date.isoformat()
+    assert latest_payload["ingestion_id"] == str(final_ingestion_id)
+
+    with database_engine.connect() as connection:
+        connection.execute(text("set local role market_data_api"))
+        with pytest.raises(DBAPIError) as batch_raised:
+            connection.scalar(
+                text("""
+select api_v1.query_call_auction_market_snapshots(
+    :trade_date, array['600000']::text[]
+)
+"""),
+                {"trade_date": earlier_only_date},
+            )
+
+    assert batch_raised.value.orig.sqlstate == "P0002"
+
+    with database_engine.connect() as connection:
+        connection.execute(text("set local role market_data_api"))
+        with pytest.raises(DBAPIError) as limit_raised:
+            connection.scalar(
+                text("select api_v1.query_auction_one_price_limits(:trade_date)"),
+                {"trade_date": earlier_only_date},
+            )
+
+    assert limit_raised.value.orig.sqlstate == "P0002"
 
 
 def test_call_auction_one_price_patterns_requires_a_complete_window_session(

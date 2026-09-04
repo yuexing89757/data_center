@@ -122,10 +122,11 @@ facts, and provider-neutral lineage. It never substitutes an older date or missi
 members are deterministically ordered by symbol. The generic `/api/v1/limit-up-pool` contract is
 unchanged.
 
-`POST /api/v1/call-auction-market-snapshots/query` batch-reads the exact-date 09:25:30 Shanghai and
-Shenzhen market five-level source facts and calculated seal amount for 1–500 six-digit codes. It selects one coherent succeeded batch,
-falling back to one partial batch only when no succeeded batch exists, and reports missing codes
-without substituting another date or combining ingestions.
+`POST /api/v1/call-auction-market-snapshots/query` batch-reads the exact-date 09:25:20 final
+Shanghai/Shenzhen auction-series batch and calculates seal amount for 1–500 six-digit codes. It
+selects one coherent succeeded attempt, falling back to its partial attempt only when no succeeded
+attempt exists, and reports missing codes without substituting another date, earlier round, or the
+retired standalone snapshot dataset.
 
 `POST /api/v1/call-auction-market-series-snapshots/query` reads the exact-date 09:15:00–09:25:20
 PYTDX full-market series for 1–500 six-digit codes. Each item includes its deterministic `HHMMSS`
@@ -136,7 +137,7 @@ historical workflow and stored facts remain readable.
 The default-enabled `data-cleanup-daily` Worker job runs every day at 03:00 Asia/Shanghai. It
 deletes only `realtime.call_auction_market_series_snapshot` details older than the latest three
 completed `CN_A_SHARE` trading days. Session/round metadata, Raw and lineage records, quality and
-operations history, the separate 09:25:30 snapshot, and monthly partitions are retained. Its time,
+operations history, the historical standalone snapshot facts, and monthly partitions are retained. Its time,
 retention count, and target table are code-owned; `.env` exposes only `DATA_CLEANUP_ENABLED`.
 
 DragonTiger collection is opt-in and remains disabled until source-rights review is recorded

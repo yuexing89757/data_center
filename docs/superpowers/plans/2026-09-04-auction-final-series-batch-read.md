@@ -15,6 +15,7 @@
 - The only source for both APIs is `realtime.call_auction_market_series_snapshot` with `sample_seq=31` and `batch_code='092520'`.
 - Prefer a succeeded selected attempt; if none exists for the exact date, allow the selected partial attempt. Never combine attempts, sessions, dates, or earlier rounds.
 - Keep both FastAPI paths, RPC signatures, response field names, bounds, grants, and numeric serialization compatible.
+- Change the one-price response constant to `snapshot_window='09:25:20-09:25:39 Asia/Shanghai'`.
 - Compute `seal_amount` only when ask1/ask2/ask3 volume are each null or zero and bid1 price/volume are non-null; otherwise return null.
 - Remove `call-auction-market-snapshot-daily` from the code-owned Worker catalog. Do not add cron, systemd timers, environment-based schedule times, or a replacement job.
 - Preserve historical `realtime.call_auction_market_snapshot` rows, migrations, lineage, and non-scheduled collection/persistence code.
@@ -76,6 +77,7 @@ Use final series rows covering both branches:
 assert limit_up_item["seal_amount"] == 11_000.00
 assert row_with_nonzero_ask2["seal_amount"] is None
 assert payload["calculation_mode"] == "realtime_read"
+assert payload["snapshot_window"] == "09:25:20-09:25:39 Asia/Shanghai"
 ```
 
 Keep the existing mainboard ranges, IPO age, prior-five-bars completeness, upper/lower limit formula, omission counts, and Shanghai timestamp formatting assertions unchanged. Make the old single-snapshot facts conflict so the test proves they are ignored.
@@ -268,6 +270,7 @@ git commit -m "refactor: retire duplicate auction snapshot job"
 
 **Files:**
 - Modify: `src/market_data_center/public_api/app.py:470-590`
+- Modify: `src/market_data_center/public_api/models.py:570-595`
 - Modify: `contracts/postgrest-openapi-v1.json`
 - Modify: `contracts/agent-tools-v1.json`
 - Modify: `contracts/fastapi-openapi-v1.json`
@@ -306,10 +309,17 @@ Expected: FAIL because checked-in descriptions still advertise the independent s
 
 - [ ] **Step 3: Update FastAPI route descriptions**
 
-Keep paths, parameters, tags, and response models unchanged. Change only summary/description text, for example:
+Keep paths, parameters, tags, and response field names unchanged. Change the summary/description text and update
+`AuctionOnePriceLimitResponse.snapshot_window` to:
 
 ```python
-description=(
+snapshot_window: Literal["09:25:20-09:25:39 Asia/Shanghai"]
+```
+
+Use route text such as:
+
+```python
+description = (
     "固定读取指定交易日沪深全市场竞价序列的 09:25:20 最后一批；"
     "成功 attempt 优先，没有成功 attempt 时允许 partial，不回退到更早轮次。"
 )

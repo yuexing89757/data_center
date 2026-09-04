@@ -11,7 +11,6 @@ DEDUCTED_PROFIT_JOB_ID = "deducted-profit-daily"
 SHAREHOLDER_COUNT_DAILY_JOB_ID = "shareholder-count-daily"
 STOCK_POOL_JOB_ID = "mainboard-price-limit-stock-pools-daily"
 EOD_QUOTE_SNAPSHOT_JOB_ID = "eod-quote-snapshot-daily"
-CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID = "call-auction-market-snapshot-daily"
 CALL_AUCTION_MARKET_SERIES_JOB_ID = "call-auction-market-series"
 TODAY_LIMIT_UP_SNAPSHOT_JOB_ID = "today-limit-up-snapshot-daily"
 PYTDX_POOL_REFRESH_JOB_ID = "pytdx-pool-refresh"
@@ -266,22 +265,6 @@ def job_definitions(settings: SchedulerSettings) -> tuple[JobDefinition, ...]:
             day_of_week="mon-fri",
             hour=21,
             minute=10,
-        ),
-        JobDefinition(
-            CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID,
-            "沪深全市场开盘竞价快照",
-            "采集沪深上市股票在开盘集合竞价结束后、连续竞价前的完整五档来源快照。",
-            "call_auction_market_snapshot",
-            "cron",
-            "周一至周五 09:25:30",
-            timezone,
-            settings.call_auction_snapshot_enabled,
-            timeout,
-            "只在当日 09:25-09:30 窗口内采集; 失败保持显式缺口, 不盘后补采。",
-            day_of_week="mon-fri",
-            hour=9,
-            minute=25,
-            second=30,
         ),
         JobDefinition(
             CALL_AUCTION_MARKET_SERIES_JOB_ID,

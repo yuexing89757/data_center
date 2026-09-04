@@ -346,7 +346,7 @@
     },
     {
       "name": "market_call_auction_snapshots",
-      "description": "Read one exact-date opening-auction market batch by six-digit codes.",
+      "description": "Read the exact-date 09:25:20 final opening-auction series batch by six-digit codes; no earlier-round or legacy-table fallback.",
       "endpoint": "query_call_auction_market_snapshots",
       "read_only": true,
       "input_schema": {

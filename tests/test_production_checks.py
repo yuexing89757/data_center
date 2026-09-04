@@ -158,7 +158,7 @@ def test_realtime_auction_one_price_limit_decision_is_documented() -> None:
         "realtime_read",
         "price_limit_calculation_id",
         "market_data_api",
-        "09:25:30",
+        "09:25:20",
     ):
         assert term in adr + detail
 
@@ -266,7 +266,7 @@ def test_fastapi_preflight_publishes_auction_one_price_patterns() -> None:
         "CN_MAINBOARD_2026_07_06",
         "1.0.0",
         "price_limit_calculation_id=null",
-        "09:25:30",
+        "09:25:20",
         "10%",
     ):
         assert term in documentation
@@ -310,6 +310,25 @@ def test_auction_snapshot_schedule_and_seal_rule_migration_is_versioned() -> Non
     assert "'snapshot_window', '09:25:30-09:29:59 asia/shanghai'" in normalized
     assert "create or replace function api_v1.query_auction_one_price_limits" in normalized
     assert "market_data_api" in normalized
+    assert not re.search(r"(?im)^\s*(insert|update|delete)\s", migration)
+
+
+def test_auction_read_rpcs_use_only_the_final_series_batch() -> None:
+    migration = (
+        MIGRATION_DIR / "20260904000100_read_auction_apis_from_final_series_batch.sql"
+    ).read_text(encoding="utf-8")
+    normalized = migration.lower()
+
+    assert normalized.count("create or replace function api_v1.query_") == 2
+    assert "realtime.call_auction_market_snapshot snapshot" not in normalized
+    assert "realtime.call_auction_market_series_snapshot snapshot" in normalized
+    assert "round.sample_seq = 31" in normalized
+    assert "snapshot.sample_seq = 31" in normalized
+    assert "snapshot.batch_code = '092520'" in normalized
+    assert "'snapshot_window', '09:25:20-09:25:39 asia/shanghai'" in normalized
+    for level in (1, 2, 3):
+        assert f"coalesce(snapshot.ask{level}_volume, 0) = 0" in normalized
+    assert "call-auction market series snapshot not found" in normalized
     assert not re.search(r"(?im)^\s*(insert|update|delete)\s", migration)
 
 
@@ -834,7 +853,7 @@ def test_linux_worker_uses_the_shared_pool_runtime_contract() -> None:
     assert "AUCTION_COLLECTION_ENABLED" not in template
     assert "PYSNOWBALL_TOKEN" not in template
     assert "EOD_QUOTE_SNAPSHOT_ENABLED=true" in template
-    assert "CALL_AUCTION_SNAPSHOT_ENABLED=true" in template
+    assert "CALL_AUCTION_SNAPSHOT_ENABLED" not in template
     assert "CALL_AUCTION_MARKET_SERIES_ENABLED=true" in template
     assert "DATA_CLEANUP_ENABLED=true" in template
     assert "scripts/check_pytdx_pool.py" in smoke
@@ -851,7 +870,6 @@ def test_release_templates_expose_task_switches_but_not_task_times() -> None:
     )
     switches = (
         "EOD_QUOTE_SNAPSHOT_ENABLED=true",
-        "CALL_AUCTION_SNAPSHOT_ENABLED=true",
         "CALL_AUCTION_MARKET_SERIES_ENABLED=true",
         "DATA_CLEANUP_ENABLED=true",
     )

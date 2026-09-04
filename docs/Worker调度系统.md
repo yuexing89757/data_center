@@ -25,7 +25,7 @@
 │ (单实例保证)       │    │                      │   │ (只读 HTML, ADR-0018)│
 └───────────────────┘    │ JobStore: SQLite     │   └─────────────────────┘
                          │ Executor: 单线程      │
-                         │ 10 个定时 job         │
+                         │ 15 个定时 job         │
                          └──────────┬───────────┘
                                     │ 按时触发
                     ┌───────────────┼───────────────┐
@@ -80,7 +80,7 @@ BlockingScheduler
 - `cron` 类型 → `CronTrigger(day_of_week, hour, minute, timezone)`
 - `interval` 类型 → `IntervalTrigger(hours=N, timezone)`
 
-## 定时任务目录（16 个 job）
+## 定时任务目录（15 个 job）
 
 任务定义在 `scheduling_catalog.py`。每个 job 有：`code`（APScheduler job id）、`display_name`、`workflow_code`、`trigger_type`、计划时间、`enabled`、`timeout_seconds`、`recovery_policy`。
 
@@ -90,22 +90,21 @@ BlockingScheduler
 |---|---|---|---|---|---|---|
 | 1 | `data-cleanup-daily` | 数据清理任务 | `data_cleanup` | cron 每天 | 03:00 | ✅ |
 | 2 | `call-auction-market-series` | 沪深全市场开盘竞价序列快照 | `call_auction_market_series` | cron 周一至周五 | 09:15 | ✅ |
-| 3 | `call-auction-market-snapshot-daily` | 沪深全市场开盘竞价快照 | `call_auction_market_snapshot` | cron 周一至周五 | 09:25:30 | ✅ |
-| 4 | `board-index-883423-daily-bar` | 883423 板块日线收盘采集 | `board_index_daily_bar` | cron 周一至周五 | 15:30、16:30、17:30 | ✅ |
-| 5 | `daily-run` | 日 K 与基础数据更新 | `daily_market` | cron 周一至周五 | 20:00 | ✅ |
-| 6 | `deducted-profit-daily` | 扣非净利润增量同步 | `deducted_profit` | cron 每天 | 20:00 | ✅ |
-| 7 | `stock-daily-indicators-daily` | 股票每日指标更新 | `stock_daily_indicator` | cron 周一至周五 | 20:30 | ✅ |
-| 8 | `dragon-tiger-daily` | 股票龙虎榜采集 | `dragon_tiger_daily` | cron 周一至周五 | 20:30 | 默认关闭 |
-| 9 | `shareholder-count-daily` | 股东人数每日增量同步 | `shareholder_count_daily` | cron 每天 | 21:00 | 默认关闭 |
-| 10 | `mainboard-price-limit-stock-pools-daily` | 沪深主板昨日涨跌停股票池 | `stock_pool` | cron 周一至周五 | 21:00 | ✅ |
-| 11 | `eod-quote-snapshot-daily` | 收盘五档快照 | `eod_quote_snapshot` | cron 周一至周五 | 21:10 | ✅ |
-| 12 | `close-price-new-highs-120d-daily` | 沪深120交易日收盘新高快照 | `close_price_new_highs_120d` | cron 周一至周五 | 21:30 | ✅ |
-| 13 | `today-limit-up-snapshot-daily` | 同日涨停不可变快照 | `today_limit_up_snapshot` | cron 周一至周五 | 22:00 | 默认关闭 |
-| 14 | `regulation-daily-calculation` | 监管异动规则与T+1预警测算 | `regulation_daily_calculation` | cron 周一至周五 | 22:30 | 默认关闭 |
-| 15 | `recover-stale-ingestion-runs` | 陈旧运行恢复 | `stale_run_recovery` | interval | 每 1 小时 | ✅ |
-| 16 | `pytdx-pool-refresh` | PYTDX 节点池刷新 | `pytdx_pool_refresh` | interval | 每 1 小时 | ✅ |
+| 3 | `board-index-883423-daily-bar` | 883423 板块日线收盘采集 | `board_index_daily_bar` | cron 周一至周五 | 15:30、16:30、17:30 | ✅ |
+| 4 | `daily-run` | 日 K 与基础数据更新 | `daily_market` | cron 周一至周五 | 20:00 | ✅ |
+| 5 | `deducted-profit-daily` | 扣非净利润增量同步 | `deducted_profit` | cron 每天 | 20:00 | ✅ |
+| 6 | `stock-daily-indicators-daily` | 股票每日指标更新 | `stock_daily_indicator` | cron 周一至周五 | 20:30 | ✅ |
+| 7 | `dragon-tiger-daily` | 股票龙虎榜采集 | `dragon_tiger_daily` | cron 周一至周五 | 20:30 | 默认关闭 |
+| 8 | `shareholder-count-daily` | 股东人数每日增量同步 | `shareholder_count_daily` | cron 每天 | 21:00 | 默认关闭 |
+| 9 | `mainboard-price-limit-stock-pools-daily` | 沪深主板昨日涨跌停股票池 | `stock_pool` | cron 周一至周五 | 21:00 | ✅ |
+| 10 | `eod-quote-snapshot-daily` | 收盘五档快照 | `eod_quote_snapshot` | cron 周一至周五 | 21:10 | ✅ |
+| 11 | `close-price-new-highs-120d-daily` | 沪深120交易日收盘新高快照 | `close_price_new_highs_120d` | cron 周一至周五 | 21:30 | ✅ |
+| 12 | `today-limit-up-snapshot-daily` | 同日涨停不可变快照 | `today_limit_up_snapshot` | cron 周一至周五 | 22:00 | 默认关闭 |
+| 13 | `regulation-daily-calculation` | 监管异动规则与T+1预警测算 | `regulation_daily_calculation` | cron 周一至周五 | 22:30 | 默认关闭 |
+| 14 | `recover-stale-ingestion-runs` | 陈旧运行恢复 | `stale_run_recovery` | interval | 每 1 小时 | ✅ |
+| 15 | `pytdx-pool-refresh` | PYTDX 节点池刷新 | `pytdx_pool_refresh` | interval | 每 1 小时 | ✅ |
 
-> 时间与调度策略固定在 `scheduling_catalog.py`，不能通过 `.env` 覆盖。全市场序列固定 09:15:00--09:25:20 每 20 秒一轮，共 32 轮、每批最多 80 只。09:25:30 单次快照继续使用 `default` executor，与序列表和会话完全隔离。其他任务仍在单线程 `default` executor 串行执行。
+> 时间与调度策略固定在 `scheduling_catalog.py`，不能通过 `.env` 覆盖。全市场序列固定 09:15:00--09:25:20 每 20 秒一轮，共 32 轮、每批最多 80 只。历史 09:25:30 单次快照 job 已退役；Worker 启动时清理其 JobStore 残留。其他任务仍在单线程 `default` executor 串行执行。
 
 ### 每个 job 做什么（scheduler.py 里的执行函数）
 
@@ -119,7 +118,6 @@ BlockingScheduler
 | `run_deducted_profit_job` | tushare 扣非净利润增量同步（按披露变化发现新公告/修订） |
 | `run_stock_pool_job` | 解析基准交易日 → 构建下一交易日生效的涨跌停股票池（依赖当日日K+指标成功） |
 | `run_eod_quote_snapshot_job` | 对当日 ready 涨停池采集收盘五档快照（默认启用） |
-| `run_call_auction_market_snapshot_job` | 09:25:30 从一个 quote-capable endpoint 采集 SSE/SZSE `stock`、`listed` 全集的开盘竞价五档来源快照；卖一至卖三量分别为空或零时按买一价乘买一量计算封单额；BSE、ETF、可转债和指数不进入本任务 |
 | `run_call_auction_market_series_job` | 09:15 启动 32 轮 SSE/SZSE `stock`、`listed` 全集采集；每轮最多两个 endpoint 完整 attempt，不合并 partial |
 | `run_data_cleanup_job` | 每天 03:00 查询上海本地日期以前最近三个 `CN_A_SHARE` 交易日，仅删除更早的竞价序列明细；交易日不足时失败且不删除 |
 | `run_board_index_daily_bar_job` | 15:30、16:30、17:30 幂等采集 `THS:883423` 日线；每轮最多三次 Provider 短重试，后续时点补采尾部缺口 |
@@ -145,7 +143,6 @@ BlockingScheduler
 | `SCHEDULER_STORE_PATH` | `data/scheduler/jobs.sqlite` | APScheduler 持久化路径 |
 | `WORKER_ADMIN_PORT` | `8765` | 管理页面端口 |
 | `EOD_QUOTE_SNAPSHOT_ENABLED` | `true` | 收盘五档任务开关 |
-| `CALL_AUCTION_SNAPSHOT_ENABLED` | `true` | 只控制 09:25:30 沪深全市场开盘竞价来源采集 |
 | `CALL_AUCTION_MARKET_SERIES_ENABLED` | `true` | 只控制 09:15 全市场竞价序列任务 |
 | `DATA_CLEANUP_ENABLED` | `true` | 只控制每天 03:00 的竞价序列明细清理任务 |
 | `TODAY_LIMIT_UP_SNAPSHOT_ENABLED` | `false` | 只控制 22:00 同日涨停快照；迁移和出站预检前保持关闭 |
@@ -185,7 +182,7 @@ market-data-center worker --check
 
 **展示内容**：
 - 摘要卡片：Worker 存活、调度健康、JobStore 可读、陈旧运行数、最新快照日期
-- 定时任务表：16 个任务的 ID/名称/描述/Workflow/步骤/触发类型/计划/状态/超时恢复/下次运行/已持久化
+- 定时任务表：15 个任务的 ID/名称/描述/Workflow/步骤/触发类型/计划/状态/超时恢复/下次运行/已持久化
 - 最近工作流执行：最近 10 条 operations 记录（workflow/status/attempt/触发来源/起止/行数/错误）
 
 **安全约束**（ADR-0018）：

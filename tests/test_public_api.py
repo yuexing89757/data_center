@@ -706,7 +706,7 @@ class FakeQueryService:
             price_limit_rule_version="CN_MAINBOARD_2026_07_06",
             price_limit_algorithm_version="1.0.0",
             calculation_mode="realtime_read",
-            snapshot_window="09:25:30-09:29:59 Asia/Shanghai",
+            snapshot_window="09:25:20-09:25:39 Asia/Shanghai",
             candidate_count=2,
             omitted_incomplete_count=1,
             up_count=1,
@@ -1859,6 +1859,7 @@ def test_auction_one_price_limits_returns_separate_sets() -> None:
     assert response.json()["price_limit_rule_version"] == "CN_MAINBOARD_2026_07_06"
     assert response.json()["price_limit_algorithm_version"] == "1.0.0"
     assert response.json()["calculation_mode"] == "realtime_read"
+    assert response.json()["snapshot_window"] == "09:25:20-09:25:39 Asia/Shanghai"
     assert response.json()["up"][0]["seal_amount"] == "1100"
     assert response.json()["up"][0]["observed_at"] == "2026-08-13 09:26:00"
 
@@ -1905,6 +1906,10 @@ def test_auction_one_price_limits_openapi_exposes_realtime_lineage() -> None:
     )
     assert response["properties"]["price_limit_algorithm_version"]["const"] == "1.0.0"
     assert response["properties"]["calculation_mode"]["const"] == "realtime_read"
+    assert response["properties"]["snapshot_window"]["const"] == ("09:25:20-09:25:39 Asia/Shanghai")
+    operation = schema["paths"]["/api/v1/call-auction-one-price-limits"]["get"]
+    assert "09:25:20" in operation["summary"]
+    assert "序列末批" in operation["description"]
     assert "seal_amount" in item["properties"]
     assert "封单额" in item["properties"]["seal_amount"]["description"]
     assert item["properties"]["observed_at"]["examples"] == ["2026-08-18 14:27:46"]

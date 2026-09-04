@@ -81,6 +81,9 @@ otherwise NULL
 唯一变化是来源 CTE 改为所选 09:25:20 序列末批。封单额使用与批量快照 RPC 完全相同的 SQL
 表达式；不新增持久化字段，不访问 Provider，不写入数据库。
 
+响应字段保持不变，但 `snapshot_window` 的固定值改为
+`09:25:20-09:25:39 Asia/Shanghai`，与末轮计划时点及其二十秒硬截止一致。
+
 ## 调度退役
 
 从 `scheduling_catalog.py` 删除 `call-auction-market-snapshot-daily` 定义，并从 Scheduler job

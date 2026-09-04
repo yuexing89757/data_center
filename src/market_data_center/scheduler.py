@@ -26,7 +26,6 @@ from market_data_center.board_index_daily_schedule import collect_board_index_da
 from market_data_center.call_auction_market_series_service import (
     CallAuctionMarketSeriesService,
 )
-from market_data_center.call_auction_market_service import CallAuctionMarketSnapshotService
 from market_data_center.cli import run_daily_workflow, run_stock_daily_indicator_workflow
 from market_data_center.close_price_new_highs_service import ClosePriceNewHighsService
 from market_data_center.data_cleanup_service import DataCleanupService
@@ -71,7 +70,6 @@ from market_data_center.reliability import recover_stale_runs
 from market_data_center.scheduling_catalog import (
     BOARD_INDEX_DAILY_BAR_JOB_ID,
     CALL_AUCTION_MARKET_SERIES_JOB_ID,
-    CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID,
     CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID,
     DAILY_RUN_JOB_ID,
     DATA_CLEANUP_JOB_ID,
@@ -103,6 +101,7 @@ SCHEDULER_LOCK_KEY = "market-data-center:scheduler"
 LOGGER = getLogger(__name__)
 _RETIRED_JOB_IDS = (
     "call-auction-snapshot-daily",
+    "call-auction-market-snapshot-daily",
     "opening-auction-limit-up-quotes",
     "trading-billboard-daily",
 )
@@ -543,49 +542,6 @@ def run_eod_quote_snapshot_job() -> None:
         engine.dispose()
 
 
-def run_call_auction_market_snapshot_job() -> None:
-    """Collect one complete morning auction snapshot from stable quote endpoints."""
-    settings = WorkerSettings()  # type: ignore[call-arg]
-    scheduling = SchedulerSettings()
-    pool_settings = PytdxPoolSettings()
-    quote_settings = PytdxHqSettings()
-    engine = create_engine(
-        sqlalchemy_url(settings.database_url.get_secret_value()), pool_pre_ping=True
-    )
-    try:
-        fire_time = _scheduled_job_fire_time(CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID, scheduling)
-        execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
-            WorkflowCode.CALL_AUCTION_MARKET_SNAPSHOT,
-            fire_time,
-            TriggerSource.SCHEDULED,
-        )
-        try:
-            trade_date = fire_time.astimezone(ZoneInfo(SCHEDULER_TIMEZONE)).date()
-            pool = load_endpoint_pool(pool_settings.pytdx_pool_path)
-            quote_endpoints = endpoints_for(pool, PytdxCapability.QUOTE)
-
-            def provider_factory(endpoint: tuple[str, int]) -> PytdxHqProvider:
-                return PytdxHqProvider(quote_settings, endpoints=(endpoint,))
-
-            service = CallAuctionMarketSnapshotService(
-                persistence=PostgreSQLPersistence(engine),
-                raw_store=LocalRawStore(settings.raw_data_root),
-                quote_endpoints=quote_endpoints,
-                provider_factory=provider_factory,
-            )
-            execution.step(
-                "collect_call_auction_market_snapshot",
-                1,
-                lambda: service.collect(trade_date),
-            )
-        except BaseException as error:
-            execution.fail(error)
-            raise
-        execution.succeed()
-    finally:
-        engine.dispose()
-
-
 def run_call_auction_market_series_job() -> None:
     """Collect the fixed 32-round full-market opening-auction series."""
     settings = WorkerSettings()  # type: ignore[call-arg]
@@ -852,7 +808,6 @@ def build_scheduler(settings: SchedulerSettings | None = None) -> BlockingSchedu
         SHAREHOLDER_COUNT_DAILY_JOB_ID: run_shareholder_count_daily_job,
         STOCK_POOL_JOB_ID: run_stock_pool_job,
         EOD_QUOTE_SNAPSHOT_JOB_ID: run_eod_quote_snapshot_job,
-        CALL_AUCTION_MARKET_SNAPSHOT_JOB_ID: run_call_auction_market_snapshot_job,
         CALL_AUCTION_MARKET_SERIES_JOB_ID: run_call_auction_market_series_job,
         TODAY_LIMIT_UP_SNAPSHOT_JOB_ID: run_today_limit_up_snapshot_job,
         CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID: run_close_price_new_highs_120d_job,

@@ -151,7 +151,7 @@
     "/rpc/query_call_auction_market_snapshots": {
       "post": {
         "operationId": "queryCallAuctionMarketSnapshots",
-        "summary": "Read one exact-date opening-auction market batch",
+        "summary": "Read the exact-date 09:25:20 final opening-auction series batch",
         "security": [
           {
             "bearerAuth": []
@@ -162,7 +162,7 @@
         },
         "responses": {
           "200": {
-            "description": "One succeeded or partial batch with explicit missing codes"
+            "description": "One succeeded or partial 09:25:20 series attempt with explicit missing codes"
           },
           "404": {
             "description": "No eligible batch exists for the exact date"

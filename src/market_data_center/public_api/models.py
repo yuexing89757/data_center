@@ -581,7 +581,7 @@ class AuctionOnePriceLimitResponse(ApiModel):
     price_limit_rule_version: Literal["CN_MAINBOARD_2026_07_06"]
     price_limit_algorithm_version: Literal["1.0.0"]
     calculation_mode: Literal["realtime_read"]
-    snapshot_window: Literal["09:25:30-09:29:59 Asia/Shanghai"]
+    snapshot_window: Literal["09:25:20-09:25:39 Asia/Shanghai"]
     candidate_count: int = Field(ge=0)
     omitted_incomplete_count: int = Field(ge=0)
     up_count: int = Field(ge=0)

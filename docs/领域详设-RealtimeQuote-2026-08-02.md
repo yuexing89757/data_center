@@ -2,15 +2,16 @@
 
 > 沪深全市场开盘竞价来源快照：ADR-0027；Raw replay 暂停及自动最终化移除：ADR-0028（Accepted）。
 
-## 全市场开盘竞价来源快照（v2）
+## 全市场开盘竞价来源快照（v2，历史能力）
 
 ### 领域边界
 
-`CallAuctionMarketSnapshotRecord` 是 09:25 最终撮合后、09:30 连续竞价前观察到的沪深 listed
-stock 来源事实。它不是逐笔成交、分钟行情或盘后历史重建。BSE 不在 v2 支持范围。
+`CallAuctionMarketSnapshotRecord` 是历史 09:25 最终撮合后、09:30 连续竞价前观察到的沪深
+listed stock 来源事实。它不是逐笔成交、分钟行情或盘后历史重建。BSE 不在 v2 支持范围；其
+定时任务现已退役，表、Raw、服务和 workflow 仅为历史审计及非调度内部能力保留。
 
 ```text
-09:25:30 Security 全集
+历史 09:25:30 Security 全集
   → 单 endpoint、每批 ≤80 的 pytdx_hq 采集
   → Raw JSONL + RawManifest + IngestionRun
   → realtime.call_auction_market_snapshot（append-only）
@@ -63,21 +64,21 @@ CallAuctionMarketSnapshotRecord
 现有数据库最终化实现仍可写 `realtime.call_auction_snapshot`，保留晨间 ingestion lineage 和
 `observed_at`，但它是非调度内部能力。公共 `query_daily_limit_up_list` 继续只连接最终表。
 
-外部只读服务可调用受限的
+外部只读服务继续调用同名受限的
 `api_v1.query_call_auction_market_snapshots(p_trade_date date,p_codes text[])` 查询全市场来源事实：
 代码数量为 1～500，格式固定为六位数字；重复代码去重；同一代码若同时属于 SSE/SZSE，返回两条
-标准 symbol。精确日期优先选择最新 `succeeded` ingestion；没有成功批次时才选择最新 `partial`
-ingestion；不得拼接批次或回退日期。响应显式返回 provider-neutral ingestion ID/status、缺失代码和
-最高价/最低价等事实，不公开 `source_code`、Raw、节点或内部创建时间。内部表仍不直接授权 API
+标准 symbol。RPC 固定读取竞价序列表的 `sample_seq=31`、`batch_code=092520` 末轮：优先选择
+`succeeded` attempt，没有成功 attempt 时允许所选 `partial` attempt；不得拼接 session，或回退日期、
+较早轮次及历史单次表。响应显式返回 provider-neutral ingestion ID/status、缺失代码和最高价/最低价
+等事实，并按卖一至卖三量均为空或零且买一价量完整的规则计算封单额。内部表仍不直接授权 API
 角色，RPC 使用五秒 statement timeout。
 
 ### 时间和调度
 
-- `call-auction-market-snapshot-daily`：工作日 09:25:30；
-- 09:29:30 后不发新请求，`observed_at >=09:30` 硬拒绝；
+- `call-auction-market-snapshot-daily` 已退役并加入 JobStore 清理列表；
 - `call-auction-snapshot-daily` 已移除，无替代自动调度；
-- `CALL_AUCTION_SNAPSHOT_ENABLED` 只控制 09:25:30 任务；时间只在代码目录；
-- 非交易日跳过，错过晨间窗口不补采，盘后不调用历史成交或实时行情伪造。
+- `.env` 不再提供单次快照任务开关；
+- 竞价公共读取由 09:15:00–09:25:20 序列任务末轮承载，错过末轮不补采。
 
 ### 保留和容量
 
@@ -91,8 +92,8 @@ ingestion；不得拼接批次或回退日期。响应显式返回 provider-neut
 
 Issue #54 删除 `opening-auction-limit-up-quotes` Worker 任务和 pysnowball 运行时 Adapter。
 `AuctionCollectionSession`、历史来源身份、历史事实表、Raw、查询和陈旧会话恢复仍保留，以保证
-既有数据可追溯；不得再注册、启动或补采该会话。全市场竞价序列与 09:25:30 快照继续独立使用
-`pytdx_hq`。
+既有数据可追溯；不得再注册、启动或补采该会话。全市场竞价序列继续使用 `pytdx_hq`；历史
+09:25:30 单次快照任务同样已经退役。
 
 > 状态：有效，已实现
 > 日期：2026-08-02

@@ -283,6 +283,28 @@ def test_market_snapshot_item_contract_exposes_five_levels_and_seal_amount() -> 
     assert "seal_amount" in properties
 
 
+def test_auction_read_contracts_name_the_final_series_batch() -> None:
+    fastapi = _load("fastapi-openapi-v1.json")
+    snapshot_operation = fastapi["paths"]["/api/v1/call-auction-market-snapshots/query"]["post"]
+    limits_operation = fastapi["paths"]["/api/v1/call-auction-one-price-limits"]["get"]
+    assert "09:25:20" in snapshot_operation["description"]
+    assert "历史单次快照" in snapshot_operation["description"]
+    assert "09:25:20" in limits_operation["description"]
+    assert "竞价序列末批" in limits_operation["description"]
+
+    postgrest = _load("postgrest-openapi-v1.json")
+    postgrest_operation = postgrest["paths"]["/rpc/query_call_auction_market_snapshots"]["post"]
+    assert "09:25:20" in postgrest_operation["summary"]
+    assert "series" in postgrest_operation["summary"].lower()
+
+    agent = _load("agent-tools-v1.json")
+    tool = next(
+        item for item in agent["tools"] if item["endpoint"] == "query_call_auction_market_snapshots"
+    )
+    assert "09:25:20" in tool["description"]
+    assert "legacy-table fallback" in tool["description"]
+
+
 def test_latest_stock_daily_indicator_contract_is_bounded_and_decimal_safe() -> None:
     fastapi = _load("fastapi-openapi-v1.json")
     operation = fastapi["paths"]["/api/v1/stock-daily-indicators/latest/query"]["post"]
