@@ -3,6 +3,7 @@
 import logging
 from collections.abc import Mapping, Sequence
 from datetime import date
+from decimal import Decimal
 from typing import Any, Never, Protocol
 
 from sqlalchemy import Engine, RowMapping, text
@@ -13,6 +14,7 @@ from market_data_center.public_api.models import (
     AuctionIndicativeDetailResponse,
     AuctionOnePriceLimitResponse,
     BoardIndexBiasResponse,
+    CallAuctionGrabLineResponse,
     CallAuctionMarketSeriesSnapshotResponse,
     CallAuctionMarketSnapshotResponse,
     CallAuctionOnePricePatternResponse,
@@ -141,6 +143,13 @@ select api_v1.query_call_auction_one_price_patterns(
 ) as payload
 """)
 
+QUERY_AUCTION_GRAB_LINES = text("""
+select api_v1.query_call_auction_grab_lines(
+    p_trade_date => :trade_date,
+    p_threshold_n => :threshold_n
+) as payload
+""")
+
 QUERY_AUCTION_INDICATIVE_DETAILS = text("""
 select api_v1.query_call_auction_indicative_details(
     p_symbol => :symbol,
@@ -242,6 +251,10 @@ class PublicQueryService(Protocol):
     def auction_one_price_patterns(
         self, trade_date: date | None
     ) -> CallAuctionOnePricePatternResponse: ...
+
+    def auction_grab_lines(
+        self, trade_date: date, threshold_n: Decimal
+    ) -> CallAuctionGrabLineResponse: ...
 
     def auction_indicative_details(
         self, symbol: str, offset: int, limit: int
@@ -444,6 +457,18 @@ class PostgreSQLPublicQueryService:
         if not rows or rows[0]["payload"] is None:
             raise PublicQueryNotFound("call-auction one-price pattern session was not found")
         return CallAuctionOnePricePatternResponse.model_validate(rows[0]["payload"])
+
+    def auction_grab_lines(
+        self, trade_date: date, threshold_n: Decimal
+    ) -> CallAuctionGrabLineResponse:
+        rows = self._execute(
+            QUERY_AUCTION_GRAB_LINES,
+            {"trade_date": trade_date, "threshold_n": threshold_n},
+            statement_timeout_ms=10_000,
+        )
+        if not rows or rows[0]["payload"] is None:
+            raise PublicQueryNotFound("call-auction grab-line pair was not found")
+        return CallAuctionGrabLineResponse.model_validate(rows[0]["payload"])
 
     def auction_indicative_details(
         self, symbol: str, offset: int, limit: int

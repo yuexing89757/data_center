@@ -110,6 +110,19 @@ either bid-1 input is missing, all three values are `null`. From 09:25 onward it
 and preserves the provider's actual trade price, cumulative volume and amount. Rows written before
 this contract are labeled `legacy_source_quote`; their historical values are not rewritten.
 
+`GET /api/v1/call-auction-grab-lines?trade_date=YYYY-MM-DD&n=0` requires one exact trading date;
+`n` is an optional Decimal percentage-point threshold and defaults to zero. For each SSE/SZSE
+stock valid on that date (by IPO/delisting dates), the database calculates
+`(09:25:20 price - 09:24:40 price) / previous close * 100` from the
+exact `092440` and `092520` rounds of one selected session. Both rounds must be successful, use
+the same positive `previous_close`, and contain positive prices. The first value is the auction
+indicative price and the final value is the opening-trade price. The result includes only values
+strictly greater than `n`, ordered by the unrounded result descending and code ascending. Items
+contain only `code`, `name`, `grab_line_pct`, and `trade_date`; the response also identifies the
+selected session, its status, threshold, exact batch codes, and result count. Missing inputs are
+omitted. The route never mixes sessions, falls back to another date, reads another price source,
+or triggers collection; the bounded database statement timeout is 10 seconds.
+
 `GET /api/v1/top-gainers-20d?end_date=&limit=10` ranks unadjusted close-to-close returns over
 exactly 20 calendar trading sessions (19 intervals), with exact observation dates/prices, end-date
 historical names and bounded omission counts. Exact-date positive pytdx bars with the provider-neutral

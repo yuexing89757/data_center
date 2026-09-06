@@ -739,6 +739,120 @@
         "title": "BoardIndexBiasResponse",
         "type": "object"
       },
+      "CallAuctionGrabLineItem": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "description": "六位股票代码。",
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "grab_line_pct": {
+            "description": "抢筹线百分比, 即 (09:25:20价格 - 09:24:40价格) / 昨收价 * 100。",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Grab Line Pct",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "请求交易日有效的股票名称; 缺失时为 null。",
+            "title": "Name"
+          },
+          "trade_date": {
+            "description": "交易日, 格式为 YYYY-MM-DD。",
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "grab_line_pct",
+          "trade_date"
+        ],
+        "title": "CallAuctionGrabLineItem",
+        "type": "object"
+      },
+      "CallAuctionGrabLineResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "description": "返回股票数量。",
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "final_batch_code": {
+            "const": "092520",
+            "description": "结束比较批次。",
+            "title": "Final Batch Code",
+            "type": "string"
+          },
+          "first_batch_code": {
+            "const": "092440",
+            "description": "起始比较批次。",
+            "title": "First Batch Code",
+            "type": "string"
+          },
+          "items": {
+            "description": "按抢筹线从高到低排列的结果。",
+            "items": {
+              "$ref": "#/components/schemas/CallAuctionGrabLineItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "session_id": {
+            "description": "被选择的单一集合竞价序列会话标识。",
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "session_status": {
+            "description": "序列会话状态。",
+            "enum": [
+              "succeeded",
+              "partial"
+            ],
+            "title": "Session Status",
+            "type": "string"
+          },
+          "threshold_n": {
+            "description": "筛选阈值 N, 单位为百分比。",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Threshold N",
+            "type": "string"
+          },
+          "trade_date": {
+            "description": "查询交易日, 格式为 YYYY-MM-DD。",
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "trade_date",
+          "session_id",
+          "session_status",
+          "threshold_n",
+          "first_batch_code",
+          "final_batch_code",
+          "count",
+          "items"
+        ],
+        "title": "CallAuctionGrabLineResponse",
+        "type": "object"
+      },
       "CallAuctionMarketSeriesRound": {
         "additionalProperties": false,
         "properties": {
@@ -5116,6 +5230,107 @@
           }
         ],
         "summary": "查询同花顺 883423 板块最新五日线乖离指标",
+        "tags": [
+          "市场数据"
+        ]
+      }
+    },
+    "/api/v1/call-auction-grab-lines": {
+      "get": {
+        "description": "读取指定交易日同一沪深全市场集合竞价序列会话的 09:24:40 与 09:25:20 成功批次，按（09:25:20价格－09:24:40价格）÷昨收价×100 计算抢筹线。仅返回抢筹线严格大于参数 n 的沪深上市股票，结果按抢筹线从高到低排列。两个批次不会跨会话拼接，缺少完整批次时返回404，不回退日期。",
+        "operationId": "auction_grab_lines_api_v1_call_auction_grab_lines_get",
+        "parameters": [
+          {
+            "description": "交易日。",
+            "in": "query",
+            "name": "trade_date",
+            "required": true,
+            "schema": {
+              "description": "必传交易日，格式为 YYYY-MM-DD，例如 2026-09-04。",
+              "format": "date",
+              "title": "Trade Date",
+              "type": "string"
+            }
+          },
+          {
+            "description": "抢筹线筛选阈值N，单位为百分比，默认0。",
+            "in": "query",
+            "name": "n",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                }
+              ],
+              "default": "0",
+              "description": "抢筹线筛选阈值 N，单位为百分比，默认 0。",
+              "title": "N"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallAuctionGrabLineResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "查询集合竞价抢筹线股票",
         "tags": [
           "市场数据"
         ]

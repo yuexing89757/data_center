@@ -612,6 +612,26 @@ class CallAuctionOnePricePatternResponse(ApiModel):
     items: list[CallAuctionOnePricePatternItem]
 
 
+class CallAuctionGrabLineItem(ApiModel):
+    code: SixDigitCode = Field(description="六位股票代码。")
+    name: str | None = Field(description="请求交易日有效的股票名称; 缺失时为 null。")
+    grab_line_pct: Decimal = Field(
+        description="抢筹线百分比, 即 (09:25:20价格 - 09:24:40价格) / 昨收价 * 100。"
+    )
+    trade_date: date = Field(description="交易日, 格式为 YYYY-MM-DD。")
+
+
+class CallAuctionGrabLineResponse(ApiModel):
+    trade_date: date = Field(description="查询交易日, 格式为 YYYY-MM-DD。")
+    session_id: UUID = Field(description="被选择的单一集合竞价序列会话标识。")
+    session_status: Literal["succeeded", "partial"] = Field(description="序列会话状态。")
+    threshold_n: Decimal = Field(description="筛选阈值 N, 单位为百分比。")
+    first_batch_code: Literal["092440"] = Field(description="起始比较批次。")
+    final_batch_code: Literal["092520"] = Field(description="结束比较批次。")
+    count: int = Field(ge=0, le=10_000, description="返回股票数量。")
+    items: list[CallAuctionGrabLineItem] = Field(description="按抢筹线从高到低排列的结果。")
+
+
 class AuctionIndicativeDetailItem(ApiModel):
     observed_at: datetime = Field(
         description="Asia/Shanghai wall-clock time formatted as YYYY-MM-DD HH:mm:ss",

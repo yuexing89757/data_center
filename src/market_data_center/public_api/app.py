@@ -6,6 +6,7 @@ from argparse import ArgumentParser
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import date
+from decimal import Decimal
 from secrets import compare_digest
 from typing import Annotated, Literal, cast
 from uuid import UUID
@@ -37,6 +38,7 @@ from market_data_center.public_api.models import (
     AuctionIndicativeDetailResponse,
     AuctionOnePriceLimitResponse,
     BoardIndexBiasResponse,
+    CallAuctionGrabLineResponse,
     CallAuctionMarketSeriesSnapshotQuery,
     CallAuctionMarketSeriesSnapshotResponse,
     CallAuctionMarketSnapshotQuery,
@@ -606,6 +608,37 @@ def create_app(
         trade_date: Annotated[date | None, Query()] = None,
     ) -> CallAuctionOnePricePatternResponse:
         return service.auction_one_price_patterns(trade_date)
+
+    @app.get(
+        "/api/v1/call-auction-grab-lines",
+        response_model=CallAuctionGrabLineResponse,
+        responses={
+            401: {"model": ErrorResponse},
+            404: {"model": ErrorResponse},
+            503: {"model": ErrorResponse},
+        },
+        tags=["市场数据"],
+        summary="查询集合竞价抢筹线股票",
+        description=(
+            "读取指定交易日同一沪深全市场集合竞价序列会话的 09:24:40 与 09:25:20 "
+            "成功批次，按（09:25:20价格－09:24:40价格）÷昨收价×100 计算抢筹线。"
+            "仅返回抢筹线严格大于参数 n 的沪深上市股票，结果按抢筹线从高到低排列。"
+            "两个批次不会跨会话拼接，缺少完整批次时返回404，不回退日期。"
+        ),
+    )
+    def auction_grab_lines(
+        _: ApiKeyDependency,
+        service: QueryServiceDependency,
+        trade_date: Annotated[
+            date,
+            Query(description="必传交易日，格式为 YYYY-MM-DD，例如 2026-09-04。"),
+        ],
+        n: Annotated[
+            Decimal,
+            Query(description="抢筹线筛选阈值 N，单位为百分比，默认 0。"),
+        ] = Decimal("0"),
+    ) -> CallAuctionGrabLineResponse:
+        return service.auction_grab_lines(trade_date, n)
 
     @app.get(
         "/api/v1/call-auction-indicative-details",
