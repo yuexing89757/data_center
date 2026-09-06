@@ -1,5 +1,6 @@
 from datetime import date, timedelta
 from decimal import Decimal
+from time import perf_counter
 from uuid import uuid4
 
 import pytest
@@ -106,11 +107,112 @@ where snapshot.session_id = :session_id
             },
         )
 
+        first_ingestion_id = connection.scalar(
+            text("""
+select selected_ingestion_id
+from realtime.call_auction_market_series_round
+where session_id = :session_id and sample_seq = 29
+"""),
+            {"session_id": session_id},
+        )
+        security_ingestion_id = connection.scalar(
+            text("select ingestion_id from core.security order by symbol limit 1")
+        )
+        connection.execute(
+            text("""
+insert into core.security (
+    symbol, code, exchange, current_name, security_type, status,
+    ipo_date, source_code, ingestion_id
+)
+select
+    'SSE:' || (700000 + value)::text,
+    (700000 + value)::text,
+    'SSE',
+    'PERF ' || value::text,
+    'stock',
+    'listed',
+    :trade_date - 100,
+    'baostock',
+    :security_ingestion_id
+from generate_series(0, 5199) value
+"""),
+            {
+                "trade_date": trade_date,
+                "security_ingestion_id": security_ingestion_id,
+            },
+        )
+        connection.execute(
+            text("""
+insert into realtime.call_auction_market_series_snapshot (
+    trade_date, ingestion_id, session_id, sample_seq, batch_code,
+    scheduled_at, symbol, observed_at, last_price, previous_close,
+    source_code, value_semantics
+)
+select
+    :trade_date,
+    source.ingestion_id,
+    :session_id,
+    source.sample_seq,
+    source.batch_code,
+    source.scheduled_at,
+    security.symbol,
+    source.observed_at,
+    10.00,
+    10.00,
+    'pytdx_hq',
+    source.value_semantics
+from core.security security
+cross join (values
+    (:first_ingestion_id, 29, '092440', :first_scheduled_at,
+        :first_observed_at, 'auction_indicative'),
+    (:final_ingestion_id, 31, '092520', :final_scheduled_at,
+        :final_observed_at, 'opening_trade')
+) source(
+    ingestion_id, sample_seq, batch_code, scheduled_at,
+    observed_at, value_semantics
+)
+where security.code between '700000' and '705199'
+"""),
+            {
+                "trade_date": trade_date,
+                "session_id": session_id,
+                "first_ingestion_id": first_ingestion_id,
+                "first_scheduled_at": slots[29],
+                "first_observed_at": slots[29] + timedelta(seconds=1),
+                "final_ingestion_id": ingestion_id,
+                "final_scheduled_at": slots[31],
+                "final_observed_at": slots[31] + timedelta(seconds=1),
+            },
+        )
+        connection.execute(
+            text("""
+update realtime.call_auction_market_series_round
+set expected_quotes = expected_quotes + 5200,
+    successful_quotes = successful_quotes + 5200
+where session_id = :session_id and sample_seq in (29, 31)
+"""),
+            {"session_id": session_id},
+        )
+        connection.execute(
+            text("""
+update ingestion.ingestion_run
+set fetched_rows = fetched_rows + 5200,
+    accepted_rows = accepted_rows + 5200
+where ingestion_id in (:first_ingestion_id, :final_ingestion_id)
+"""),
+            {
+                "first_ingestion_id": first_ingestion_id,
+                "final_ingestion_id": ingestion_id,
+            },
+        )
+
         connection.execute(text("set local role market_data_api"))
+        query_started = perf_counter()
         payload = connection.scalar(
             text("select api_v1.query_call_auction_grab_lines(:day, :threshold_n)"),
             {"day": trade_date, "threshold_n": Decimal("1.00")},
         )
+        query_elapsed_seconds = perf_counter() - query_started
         boundary_payload = connection.scalar(
             text("select api_v1.query_call_auction_grab_lines(:day, :threshold_n)"),
             {"day": trade_date, "threshold_n": Decimal("3.00")},
@@ -145,6 +247,7 @@ where oid = 'api_v1.query_call_auction_grab_lines(date,numeric)'::regprocedure
     assert payload["items"][0]["name"] == "浦发银行"
     assert Decimal(str(payload["items"][0]["grab_line_pct"])) == Decimal("3.0000000000")
     assert payload["items"][0]["trade_date"] == "2026-09-04"
+    assert query_elapsed_seconds < 2
     assert boundary_payload["count"] == 0
     assert boundary_payload["items"] == []
 
