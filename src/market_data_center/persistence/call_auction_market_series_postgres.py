@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from json import dumps
 from typing import cast
 from uuid import UUID
@@ -17,6 +17,7 @@ from market_data_center.domain.call_auction_market_series import (
     MarketSeriesSession,
     MarketSeriesSnapshotRecord,
     MarketSeriesStatus,
+    series_slots,
 )
 from market_data_center.domain.ingestion import (
     DatasetCode,
@@ -169,13 +170,13 @@ class PostgreSQLCallAuctionMarketSeriesPersistence:
             raise ValueError("new market-series round must be running")
         session = connection.execute(
             text("""
-                select window_start,universe_count,status
+                select trade_date,universe_count,status
                 from realtime.call_auction_market_series_session
                 where session_id=:session_id for update
             """),
             {"session_id": round_state.session_id},
         ).one()
-        expected_scheduled_at = session.window_start + round_state.sample_seq * _TWENTY_SECONDS
+        expected_scheduled_at = series_slots(session.trade_date)[round_state.sample_seq]
         if session.status != "running":
             raise RuntimeError("market-series session is no longer running")
         if round_state.scheduled_at != expected_scheduled_at:
@@ -294,7 +295,7 @@ class PostgreSQLCallAuctionMarketSeriesPersistence:
         stored = connection.execute(
             text("""
                     select round.scheduled_at,round.expected_quotes,round.status,
-                           session.window_start,session.status session_status
+                           session.trade_date,session.status session_status
                     from realtime.call_auction_market_series_round round
                     join realtime.call_auction_market_series_session session using (session_id)
                     where round.session_id=:session_id and round.sample_seq=:sample_seq
@@ -310,7 +311,7 @@ class PostgreSQLCallAuctionMarketSeriesPersistence:
         if (
             stored.scheduled_at != round_summary.scheduled_at
             or stored.expected_quotes != round_summary.expected_quotes
-            or stored.window_start + round_summary.sample_seq * _TWENTY_SECONDS
+            or series_slots(stored.trade_date)[round_summary.sample_seq]
             != round_summary.scheduled_at
         ):
             raise ValueError("market-series round identity changed")
@@ -453,9 +454,6 @@ class PostgreSQLCallAuctionMarketSeriesPersistence:
                 .one()
             )
         return _session(cast(Mapping[str, object], updated))
-
-
-_TWENTY_SECONDS = timedelta(seconds=20)
 
 
 def _refresh_session_counts(connection: Connection, session_id: UUID) -> None:

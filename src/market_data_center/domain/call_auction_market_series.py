@@ -21,6 +21,9 @@ from market_data_center.domain.realtime_quote import (
 SHANGHAI_ZONE = ZoneInfo("Asia/Shanghai")
 SERIES_START = time(9, 15)
 SERIES_OPENING_TRADE_START = time(9, 25)
+SERIES_PRE_CLOSE_EFFECTIVE_DATE = date(2026, 9, 7)
+SERIES_PRE_CLOSE_SAMPLE_SEQ = 30
+SERIES_PRE_CLOSE_SAMPLE_TIME = time(9, 24, 53)
 SERIES_CADENCE_SECONDS = 20
 SERIES_ROUND_COUNT = 32
 
@@ -39,10 +42,24 @@ class MarketSeriesValueSemantics(StrEnum):
 
 
 def series_slots(trade_date: date) -> tuple[datetime, ...]:
-    """Return the 32 immutable sample timestamps as UTC datetimes."""
-    start = datetime.combine(trade_date, SERIES_START, SHANGHAI_ZONE).astimezone(UTC)
-    cadence = timedelta(seconds=SERIES_CADENCE_SECONDS)
-    return tuple(start + cadence * sample_seq for sample_seq in range(SERIES_ROUND_COUNT))
+    """Return the 32 effective-dated sample timestamps as UTC datetimes."""
+    slots = [_standard_series_slot(trade_date, seq) for seq in range(SERIES_ROUND_COUNT)]
+    if trade_date >= SERIES_PRE_CLOSE_EFFECTIVE_DATE:
+        slots[SERIES_PRE_CLOSE_SAMPLE_SEQ] = datetime.combine(
+            trade_date, SERIES_PRE_CLOSE_SAMPLE_TIME, SHANGHAI_ZONE
+        ).astimezone(UTC)
+    return tuple(slots)
+
+
+def series_round_deadline(trade_date: date, sample_seq: int) -> datetime:
+    """Return the exclusive deadline for one scheduled sampling round."""
+    if not 0 <= sample_seq < SERIES_ROUND_COUNT:
+        raise ValueError("sample_seq must be between 0 and 31")
+    if trade_date >= SERIES_PRE_CLOSE_EFFECTIVE_DATE and sample_seq == 29:
+        return datetime.combine(trade_date, SERIES_PRE_CLOSE_SAMPLE_TIME, SHANGHAI_ZONE).astimezone(
+            UTC
+        )
+    return _standard_series_slot(trade_date, sample_seq + 1)
 
 
 def series_batch_code(scheduled_at: datetime) -> str:
@@ -231,7 +248,7 @@ class MarketSeriesSnapshotRecord:
         if self.batch_code != series_batch_code(self.scheduled_at):
             raise ValueError("batch_code must match scheduled_at in Asia/Shanghai")
         _require_utc(self.observed_at, "observed_at")
-        deadline = self.scheduled_at + timedelta(seconds=SERIES_CADENCE_SECONDS)
+        deadline = series_round_deadline(self.trade_date, self.sample_seq)
         if not self.scheduled_at <= self.observed_at < deadline:
             raise ValueError("observed_at must be within the scheduled round")
         if self.source_code != "pytdx_hq":
@@ -313,3 +330,8 @@ def _require_utc(value: datetime, name: str) -> None:
         raise ValueError(f"{name} must be timezone-aware")
     if value.utcoffset() != timedelta(0):
         raise ValueError(f"{name} must be UTC")
+
+
+def _standard_series_slot(trade_date: date, sample_seq: int) -> datetime:
+    start = datetime.combine(trade_date, SERIES_START, SHANGHAI_ZONE).astimezone(UTC)
+    return start + timedelta(seconds=SERIES_CADENCE_SECONDS * sample_seq)

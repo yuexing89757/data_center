@@ -104,7 +104,10 @@ BlockingScheduler
 | 14 | `recover-stale-ingestion-runs` | 陈旧运行恢复 | `stale_run_recovery` | interval | 每 1 小时 | ✅ |
 | 15 | `pytdx-pool-refresh` | PYTDX 节点池刷新 | `pytdx_pool_refresh` | interval | 每 1 小时 | ✅ |
 
-> 时间与调度策略固定在 `scheduling_catalog.py`，不能通过 `.env` 覆盖。全市场序列固定 09:15:00--09:25:20 每 20 秒一轮，共 32 轮、每批最多 80 只。历史 09:25:30 单次快照 job 已退役；Worker 启动时清理其 JobStore 残留。其他任务仍在单线程 `default` executor 串行执行。
+> 时间与调度策略固定在代码目录，不能通过 `.env` 覆盖。全市场序列从 2026-09-07 起固定为
+> 09:15:00--09:24:40 每 20 秒一轮，再采 09:24:53 和 09:25:20，共 32 轮、每批最多 80 只；
+> 最后四轮为 09:24:20、09:24:40、09:24:53、09:25:20。历史 09:25:30 单次快照 job 已退役；
+> Worker 启动时清理其 JobStore 残留。其他任务仍在单线程 `default` executor 串行执行。
 
 ### 每个 job 做什么（scheduler.py 里的执行函数）
 

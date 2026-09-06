@@ -27,6 +27,7 @@ from market_data_center.domain.call_auction_market_series import (
     MarketSeriesStatus,
     MarketSeriesValueSemantics,
     series_batch_code,
+    series_round_deadline,
     series_slots,
     universe_hash,
 )
@@ -170,7 +171,7 @@ class CallAuctionMarketSeriesService:
         writer = CallAuctionMarketSeriesWriter(self._persistence)
         try:
             for sample_seq, scheduled_at in enumerate(slots):
-                deadline = scheduled_at + timedelta(seconds=SERIES_CADENCE_SECONDS)
+                deadline = series_round_deadline(trade_date, sample_seq)
                 running_round = MarketSeriesRound(
                     session_id=session.session_id,
                     sample_seq=sample_seq,

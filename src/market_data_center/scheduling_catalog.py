@@ -269,7 +269,7 @@ def job_definitions(settings: SchedulerSettings) -> tuple[JobDefinition, ...]:
         JobDefinition(
             CALL_AUCTION_MARKET_SERIES_JOB_ID,
             "沪深全市场开盘竞价序列快照",
-            "09:15-09:25:20 每20秒保存一次沪深上市股票全集来源事实。",
+            "09:15-09:24:40 每20秒采集, 随后在09:24:53和09:25:20采集沪深上市股票全集。",
             "call_auction_market_series",
             "cron",
             "周一至周五 09:15",

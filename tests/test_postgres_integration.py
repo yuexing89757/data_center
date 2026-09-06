@@ -1534,7 +1534,7 @@ def test_market_series_attempt_rolls_back_manifest_quality_and_facts(
 def test_market_series_persistence_commits_captured_round_atomically(
     database_engine: Engine,
 ) -> None:
-    trade_date = date(2026, 8, 17)
+    trade_date = date(2026, 9, 7)
     slots = series_slots(trade_date)
     persistence = PostgreSQLCallAuctionMarketSeriesPersistence(database_engine)
     operations = PostgreSQLOperationsPersistence(database_engine)
@@ -1646,6 +1646,44 @@ def test_market_series_persistence_commits_captured_round_atomically(
         CapturedRound(running, completed, (partial_attempt, succeeded_attempt))
     )
 
+    pre_close_running = round_state(30)
+    pre_close_run = replace(
+        run(30, 2, IngestionStatus.SUCCEEDED),
+        finished_at=slots[31] - timedelta(seconds=1),
+    )
+    pre_close_records = tuple(
+        replace(record(30, symbol), observed_at=slots[31] - timedelta(seconds=1))
+        for symbol in symbols
+    )
+    pre_close_attempt = CapturedAttempt(
+        pre_close_run,
+        pre_close_records,
+        _manifest(
+            pre_close_run.ingestion_id,
+            "market-series-atomic-092453",
+            2,
+            "pytdx_hq",
+        ),
+        (),
+        slots[31] - slots[30] - timedelta(seconds=1),
+        True,
+    )
+    pre_close_completed = replace(
+        pre_close_running,
+        collected_at=slots[31] - timedelta(seconds=1),
+        status=MarketSeriesStatus.SUCCEEDED,
+        attempt_count=1,
+        successful_quotes=2,
+        selected_ingestion_id=pre_close_run.ingestion_id,
+    )
+    persistence.persist_captured_round(
+        CapturedRound(
+            pre_close_running,
+            pre_close_completed,
+            (pre_close_attempt,),
+        )
+    )
+
     with database_engine.connect() as connection:
         round_row = connection.execute(
             text("""
@@ -1680,6 +1718,15 @@ def test_market_series_persistence_commits_captured_round_atomically(
                 {"ids": [partial_run.ingestion_id, succeeded_run.ingestion_id]},
             ).all()
         )
+        pre_close_facts = connection.execute(
+            text("""
+                select batch_code, scheduled_at, max(observed_at), count(*)
+                from realtime.call_auction_market_series_snapshot
+                where ingestion_id=:id
+                group by batch_code, scheduled_at
+            """),
+            {"id": pre_close_run.ingestion_id},
+        ).one()
     assert tuple(round_row) == ("succeeded", 2, succeeded_run.ingestion_id)
     assert tuple(ingestion_counts) == (2, 1, 1)
     assert manifest_count == 2
@@ -1687,6 +1734,12 @@ def test_market_series_persistence_commits_captured_round_atomically(
         partial_run.ingestion_id: 1,
         succeeded_run.ingestion_id: 2,
     }
+    assert tuple(pre_close_facts) == (
+        "092453",
+        slots[30],
+        slots[31] - timedelta(seconds=1),
+        2,
+    )
 
     invalid_running = round_state(1)
     invalid_run = run(1, 2, IngestionStatus.SUCCEEDED)

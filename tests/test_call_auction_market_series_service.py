@@ -35,7 +35,7 @@ from market_data_center.domain.records import Market
 from market_data_center.providers.contracts import RealtimeQuoteFetch
 from market_data_center.raw_store import StoredRawObject
 
-TRADE_DATE = date(2026, 8, 17)
+TRADE_DATE = date(2026, 9, 7)
 SLOTS = series_slots(TRADE_DATE)
 UNIVERSE = ("SSE:600000", "SZSE:000001")
 ENDPOINTS = (("first.quote", 7709), ("second.quote", 7709))
@@ -304,7 +304,7 @@ def _service(
     )
 
 
-def test_series_values_use_bid1_before_0925_and_source_trade_at_0925() -> None:
+def test_series_values_use_bid1_at_092453_and_source_trade_at_092520() -> None:
     quote = _quote("SSE:600000", SLOTS[29])
     assert _series_values(quote, SLOTS[29]) == (
         Decimal("9.99"),
@@ -313,6 +313,12 @@ def test_series_values_use_bid1_before_0925_and_source_trade_at_0925() -> None:
         MarketSeriesValueSemantics.AUCTION_INDICATIVE,
     )
     assert _series_values(quote, SLOTS[30]) == (
+        Decimal("9.99"),
+        100,
+        Decimal("999.00"),
+        MarketSeriesValueSemantics.AUCTION_INDICATIVE,
+    )
+    assert _series_values(quote, SLOTS[31]) == (
         Decimal("10.00"),
         100,
         Decimal("1000.00"),
@@ -346,7 +352,8 @@ def test_collects_thirty_two_exact_rounds_and_raw_lineage() -> None:
     assert [item.sample_seq for item in persistence.rounds] == list(range(32))
     assert all(item.status is MarketSeriesStatus.SUCCEEDED for item in persistence.rounds)
     assert factory.requested == [UNIVERSE] * 32
-    assert factory.deadlines[-1] == datetime(2026, 8, 17, 1, 25, 40, tzinfo=UTC)
+    assert factory.deadlines[30] == SLOTS[31]
+    assert factory.deadlines[-1] == datetime(2026, 9, 7, 1, 25, 40, tzinfo=UTC)
     assert (summary.expected_rows, summary.accepted_rows, summary.rejected_rows) == (64, 64, 0)
     assert raw_store.schema_versions == [CALL_AUCTION_MARKET_SERIES_RAW_SCHEMA_VERSION] * 32
     first_raw = raw_store.rows[0][0]

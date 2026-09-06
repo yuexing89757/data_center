@@ -28,9 +28,10 @@ Session ID、Round自然键和Ingestion ID互不替代。Domain Record不携带 
 
 ```text
 window_start = 09:15:00 Asia/Shanghai
-cadence = 20 seconds
+base cadence = 20 seconds
 sample_seq = 0..31
-scheduled_at(seq) = window_start + seq * cadence
+scheduled_at(seq) = window_start + seq * cadence，seq=30 除外
+scheduled_at(30) = 09:24:53（trade_date >= 2026-09-07；此前为 09:25:00）
 last scheduled_at = 09:25:20
 round deadline(seq<31) = scheduled_at(seq+1)
 round deadline(seq=31) = 09:25:40
@@ -39,7 +40,8 @@ round deadline(seq=31) = 09:25:40
 `scheduled_at` 表示计划点；每条 `observed_at` 表示Worker收到并标准化该证券响应的时间；Round `collected_at` 表示该轮来源采集完成或截止的时间，与异步数据库事务的提交时间无关。三者不得互相伪造。
 
 每轮另保存由 `scheduled_at` 上海时间格式化得到的六位 `batch_code=HHMMSS`，例如
-09:15:00 为 `091500`、09:15:20 为 `091520`。它是展示和检索字段，不替代 Round 自然键。
+09:15:00 为 `091500`、09:15:20 为 `091520`；从 2026-09-07 起 `sample_seq=30` 为
+`092453`。它是展示和检索字段，不替代 Round 自然键。
 
 ## 4. 领域对象
 
@@ -72,7 +74,7 @@ source code。价格/金额使用Decimal，数量为股，missing保持None，ze
 ## 5. 服务流程
 
 1. 校验交易日、窗口和quote节点池，并在进入采样循环前同步持久化Session、冻结全集及哈希。
-2. 根据当前时间确定首个未错过seq；过去seq形成内存中的failed Round，不调用Provider。
+2. 根据当前时间及代码固定时槽确定首个未错过seq；过去seq形成内存中的failed Round，不调用Provider。
 3. Producer严格等待当前slot，不提前请求；按80只批次和deadline读取完整全集。
 4. Provider响应返回后立即保存不可变Raw v2，再复制五档事实并执行全集、时间、symbol、数值、
    档位和基数校验；单条事实构造失败转为该symbol质量拒绝，不中断其余证券处理。
@@ -121,7 +123,7 @@ time、endpoint和attempt number。Raw对象不可覆盖。
 - slot错过：Round failed，无IngestionRun。
 - Raw写入失败：该Round failed且不入队attempt；后续计划点继续采集，不在内存中伪造Raw lineage。
 - Writer持久化某轮失败：该轮事务回滚并记录失败sample sequence与异常类型；Writer继续消费后续轮次，
-  Producer仍按20秒节奏采集。Session最终化把数据库中缺失的Round计为failed并保存摘要。
+  Producer仍按代码固定时槽采集。Session最终化把数据库中缺失的Round计为failed并保存摘要。
 - 任一Round非succeeded：Session不得succeeded。
 
 当前实现不自动重放Writer失败轮次；Raw replay仍按第7节fail closed。进程在队列排空前不正常退出，
@@ -129,7 +131,8 @@ time、endpoint和attempt number。Raw对象不可覆盖。
 
 ## 9. 调度边界
 
-Worker注册一个代码目录固定的工作日09:15 job。`CALL_AUCTION_MARKET_SERIES_ENABLED`仅控制启停。
+Worker注册一个代码目录固定的工作日09:15 job。2026-09-07 起最后四轮为
+`09:24:20 / 09:24:40 / 09:24:53 / 09:25:20`。`CALL_AUCTION_MARKET_SERIES_ENABLED`仅控制启停。
 专用`morning_auction` executor承载该早盘长会话；default executor保持1线程。已退役的涨停池
 五档任务不得占用该 executor 或重新注册。
 
