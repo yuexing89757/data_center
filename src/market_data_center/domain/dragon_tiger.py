@@ -324,8 +324,11 @@ class DragonTigerEventRecord:
         )
         if self.trigger_window.end_date != self.trade_date:
             raise ValueError("event trigger end_date must equal trade_date")
-        if self.trigger_window.start_date is None:
-            raise ValueError("resolved event requires a trigger start_date")
+        if (
+            self.trigger_window.start_date is None
+            and self.trigger_window.basis is DragonTigerWindowBasis.MARKET_SESSIONS
+        ):
+            raise ValueError("market-session trigger requires a start_date")
         if self.amount_period.basis is not DragonTigerAmountPeriodBasis.SOURCE_UNSPECIFIED:
             if self.amount_period.start_date is None or self.amount_period.end_date is None:
                 raise ValueError("verified amount period requires resolved dates")
@@ -445,7 +448,10 @@ def _validate_event(
         return "unknown_security", "event security is not known for the trade date"
     if record.trade_date not in known_trading_dates:
         return "unknown_trading_date", "event date is not a known trading date"
-    if record.trigger_window.start_date not in known_trading_dates:
+    if (
+        record.trigger_window.start_date is not None
+        and record.trigger_window.start_date not in known_trading_dates
+    ):
         return "unknown_trigger_start", "event trigger start is not a known trading date"
     amount_start = record.amount_period.start_date
     if amount_start is not None and amount_start not in known_trading_dates:

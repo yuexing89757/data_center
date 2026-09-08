@@ -179,8 +179,10 @@ class FakePersistence:
 
     def security_traded_period_start_date(
         self, symbol: str, trade_date: date, session_count: int
-    ) -> date:
+    ) -> date | None:
         self.events.append(f"security-period:{symbol}:{session_count}")
+        if self.fail == "security-period":
+            return None
         return trade_date - timedelta(days=session_count - 1)
 
     def known_stock_symbols(self, trade_date: date) -> frozenset[str]:
@@ -345,6 +347,21 @@ def test_collect_resolves_security_traded_session_window() -> None:
 
     assert "security-period:SSE:600000:3" in events
     assert cast(object, persistence.records[0]).trigger_window.start_date == date(2026, 8, 18)
+
+
+def test_collect_publishes_missing_security_traded_start_as_quality() -> None:
+    draft = _draft(basis=DragonTigerWindowBasis.SECURITY_TRADED_SESSIONS)
+    service, persistence, _ = _service(draft=draft, persistence_fail="security-period")
+
+    summary = service.collect(TRADE_DATE)
+
+    assert summary.status == "succeeded"
+    assert cast(object, persistence.records[0]).trigger_window.start_date is None
+    finding = next(
+        item for item in persistence.quality if item.rule_code == "DT_TRIGGER_START_UNAVAILABLE"
+    )
+    assert finding.severity is QualitySeverity.WARNING
+    assert finding.natural_key == {"source_event_id": f"event-{TRADE_DATE}"}
 
 
 def test_backfill_continues_after_a_failed_trading_date() -> None:

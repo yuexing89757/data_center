@@ -967,7 +967,7 @@ where symbol in :symbols
 
     def dragon_tiger_security_traded_period_start_date(
         self, symbol: str, trade_date: date, session_count: int
-    ) -> date:
+    ) -> date | None:
         if session_count < 1:
             raise ValueError("session_count must be positive")
         with self._engine.connect() as connection:
@@ -984,7 +984,7 @@ where symbol in :symbols
                 },
             ).all()
         if len(dates) != session_count:
-            raise ValueError("daily bars cannot resolve DragonTiger traded-session window")
+            return None
         return cast(date, min(dates))
 
     def known_board_ids(self, board_ids: Collection[str]) -> set[str]:

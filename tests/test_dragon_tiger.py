@@ -154,6 +154,30 @@ def test_trigger_window_accepts_supported_bases(basis: DragonTigerWindowBasis) -
     assert _trigger(basis=basis).basis is basis
 
 
+def test_event_allows_unavailable_security_traded_trigger_start() -> None:
+    event = _event(
+        trigger_window=_trigger(
+            basis=DragonTigerWindowBasis.SECURITY_TRADED_SESSIONS,
+            session_count=3,
+            start_date=None,
+        )
+    )
+
+    result = validate_dragon_tiger_events(
+        (event,),
+        known_symbols={event.symbol},
+        known_trading_dates={TRADE_DATE},
+    )
+
+    assert result.accepted == (event,)
+    assert result.findings == ()
+
+
+def test_event_rejects_unavailable_market_session_trigger_start() -> None:
+    with pytest.raises(ValueError, match="market-session trigger requires a start_date"):
+        _event(trigger_window=_trigger(start_date=None))
+
+
 def test_trigger_window_rejects_nonpositive_session_count() -> None:
     with pytest.raises(ValueError, match="session_count must be positive"):
         _trigger(session_count=0)

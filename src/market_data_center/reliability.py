@@ -154,7 +154,7 @@ class ReliabilityPersistence(Protocol):
 
     def dragon_tiger_security_traded_period_start_date(
         self, symbol: str, trade_date: date, session_count: int
-    ) -> date: ...
+    ) -> date | None: ...
 
     def known_trading_dates(self, dates: Collection[date]) -> set[date]: ...
 
@@ -462,9 +462,11 @@ class RawReplayService:
                 accepted_count,
                 rejected_count,
             )
-            quality = self._dragon_tiger_source_quality(
-                completed, normalized.dragon_tiger_findings
-            ) + self._dragon_tiger_quality(completed, validation.findings)
+            quality = (
+                self._dragon_tiger_source_quality(completed, normalized.dragon_tiger_findings)
+                + self._dragon_tiger_trigger_start_quality(completed, dragon_tiger_records)
+                + self._dragon_tiger_quality(completed, validation.findings)
+            )
             if completed is not None:
                 if validation.findings:
                     self._persistence.commit_rejected_batch(completed, None, quality)
@@ -960,6 +962,32 @@ class RawReplayService:
                 },
             )
             for finding in findings
+        )
+
+    def _dragon_tiger_trigger_start_quality(
+        self,
+        run: IngestionRun | None,
+        records: Sequence[DragonTigerEventRecord],
+    ) -> tuple[QualityResult, ...]:
+        if run is None:
+            return ()
+        return tuple(
+            QualityResult(
+                quality_result_id=self._uuid_factory(),
+                ingestion_id=run.ingestion_id,
+                dataset_code=DatasetCode.DRAGON_TIGER,
+                rule_code="DT_TRIGGER_START_UNAVAILABLE",
+                severity=QualitySeverity.WARNING,
+                status=QualityStatus.FAILED,
+                message="Security-traded trigger start is unavailable from confirmed Daily Bars",
+                natural_key={"source_event_id": record.source_record_id},
+                details={
+                    "trigger_window_basis": record.trigger_window.basis.value,
+                    "trigger_window_sessions": record.trigger_window.session_count,
+                },
+            )
+            for record in records
+            if record.trigger_window.start_date is None
         )
 
     def _classification_quality(

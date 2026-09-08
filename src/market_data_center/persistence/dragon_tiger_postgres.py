@@ -60,7 +60,7 @@ class PostgreSQLDragonTigerPersistence:
 
     def security_traded_period_start_date(
         self, symbol: str, trade_date: date, session_count: int
-    ) -> date:
+    ) -> date | None:
         if session_count < 1:
             raise ValueError("session_count must be positive")
         with self._engine.connect() as connection:
@@ -77,7 +77,7 @@ class PostgreSQLDragonTigerPersistence:
                 },
             ).all()
         if len(rows) != session_count:
-            raise ValueError("daily bars cannot resolve the requested traded-session window")
+            return None
         return cast(date, min(rows))
 
     def known_stock_symbols(self, trade_date: date) -> frozenset[str]:
