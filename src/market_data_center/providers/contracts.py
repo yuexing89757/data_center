@@ -11,7 +11,10 @@ from market_data_center.domain.board_index import BoardIndexProviderRecord
 from market_data_center.domain.classification import ClassificationRecord
 from market_data_center.domain.convertible_bond import ConvertibleBondRecord
 from market_data_center.domain.deducted_profit import DeductedProfitRecord
-from market_data_center.domain.dragon_tiger import DragonTigerEventDraft
+from market_data_center.domain.dragon_tiger import (
+    DragonTigerEventDraft,
+    DragonTigerNormalizationResult,
+)
 from market_data_center.domain.realtime_quote import FiveLevelQuoteSnapshotRecord
 from market_data_center.domain.records import (
     CapitalRecord,
@@ -55,7 +58,7 @@ class DragonTigerProvider(Protocol):
 
     source_code: str
 
-    def fetch_dragon_tiger(self, trade_date: date) -> "ProviderBatch[DragonTigerEventDraft]": ...
+    def fetch_dragon_tiger(self, trade_date: date) -> "DragonTigerProviderBatch": ...
 
 
 class MarketDataProvider(Protocol):
@@ -244,3 +247,32 @@ class ProviderBatch[RecordT: ProviderRecord]:
             except Exception as error:
                 raise ProviderError("provider response normalization failed") from error
         return self._records
+
+
+class DragonTigerProviderBatch:
+    """Frozen DragonTiger Raw with one lazy normalization result."""
+
+    def __init__(
+        self,
+        *,
+        raw_rows: Sequence[RawRow],
+        request_params: Mapping[str, object],
+        schema_version: str,
+        normalization_factory: Callable[[], DragonTigerNormalizationResult],
+    ) -> None:
+        self.raw_rows = raw_rows
+        self.request_params = request_params
+        self.schema_version = schema_version
+        self._normalization_factory = normalization_factory
+        self._normalization: DragonTigerNormalizationResult | None = None
+
+    @property
+    def normalization(self) -> DragonTigerNormalizationResult:
+        if self._normalization is None:
+            try:
+                self._normalization = self._normalization_factory()
+            except ProviderError:
+                raise
+            except Exception as error:
+                raise ProviderError("provider response normalization failed") from error
+        return self._normalization

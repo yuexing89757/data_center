@@ -5,31 +5,58 @@ from uuid import UUID
 import pytest
 
 from market_data_center.domain.dragon_tiger import (
+    DragonTigerAmountPeriod,
+    DragonTigerAmountPeriodBasis,
+    DragonTigerEventDraft,
     DragonTigerEventRecord,
-    DragonTigerPeriodType,
     DragonTigerReason,
     DragonTigerReasonType,
+    DragonTigerTriggerWindow,
+    DragonTigerWindowBasis,
     SeatTradeRecord,
     TradingSeat,
     TradingSeatAlias,
+    TradingSeatSourceIdentity,
     TradingSeatType,
     dragon_tiger_content_hash,
     validate_dragon_tiger_events,
 )
 
+TRADE_DATE = date(2026, 8, 20)
 
-def _reason(
-    period_type: DragonTigerPeriodType = DragonTigerPeriodType.DAY,
-) -> DragonTigerReason:
+
+def _reason() -> DragonTigerReason:
     return DragonTigerReason(
-        reason_code=f"PRICE_DEVIATION_{period_type.value}",
+        reason_code="PRICE_DEVIATION_MARKET_1",
         reason_name="价格偏离",
         reason_type=DragonTigerReasonType.PRICE_DEVIATION,
-        period_type=period_type,
         source_code="eastmoney",
         source_reason_code="01",
         source_reason_name="日价格涨幅偏离值达到7%",
     )
+
+
+def _trigger(**overrides: object) -> DragonTigerTriggerWindow:
+    values: dict[str, object] = {
+        "basis": DragonTigerWindowBasis.MARKET_SESSIONS,
+        "session_count": 1,
+        "occurrence_count": None,
+        "start_date": TRADE_DATE,
+        "end_date": TRADE_DATE,
+    }
+    values.update(overrides)
+    return DragonTigerTriggerWindow(**values)  # type: ignore[arg-type]
+
+
+def _amount_period(**overrides: object) -> DragonTigerAmountPeriod:
+    values: dict[str, object] = {
+        "basis": DragonTigerAmountPeriodBasis.MARKET_SESSIONS,
+        "session_count": 1,
+        "start_date": TRADE_DATE,
+        "end_date": TRADE_DATE,
+    }
+    values.update(overrides)
+    return DragonTigerAmountPeriod(**values)  # type: ignore[arg-type]
 
 
 def _trade(**overrides: object) -> SeatTradeRecord:
@@ -37,7 +64,7 @@ def _trade(**overrides: object) -> SeatTradeRecord:
         "source_record_id": "event-1:seat-1",
         "source_event_id": "event-1",
         "symbol": "SSE:600000",
-        "trade_date": date(2026, 8, 20),
+        "trade_date": TRADE_DATE,
         "seat_id": UUID("00000000-0000-0000-0000-000000000001"),
         "seat_source_key": "seat-1",
         "seat_name_raw": "某证券营业部",
@@ -57,10 +84,9 @@ def _event(**overrides: object) -> DragonTigerEventRecord:
     values: dict[str, object] = {
         "source_record_id": "event-1",
         "symbol": "SSE:600000",
-        "trade_date": date(2026, 8, 20),
-        "period_type": DragonTigerPeriodType.DAY,
-        "period_start_date": date(2026, 8, 20),
-        "period_end_date": date(2026, 8, 20),
+        "trade_date": TRADE_DATE,
+        "trigger_window": _trigger(),
+        "amount_period": _amount_period(),
         "reason": _reason(),
         "reason_name_raw": "日价格涨幅偏离值达到7%",
         "close_price": Decimal("12.34"),
@@ -70,6 +96,8 @@ def _event(**overrides: object) -> DragonTigerEventRecord:
         "amplitude": None,
         "lhb_buy_amount": Decimal("100"),
         "lhb_sell_amount": Decimal("20"),
+        "buy_disclosure_present": True,
+        "sell_disclosure_present": True,
         "seat_trades": (_trade(),),
         "source_code": "eastmoney",
     }
@@ -77,30 +105,78 @@ def _event(**overrides: object) -> DragonTigerEventRecord:
     return DragonTigerEventRecord(**values)  # type: ignore[arg-type]
 
 
-def test_day_event_uses_one_trading_date_for_the_period() -> None:
-    event = _event()
-
-    assert event.period_start_date == event.trade_date
-    assert event.period_end_date == event.trade_date
-
-
-def test_three_day_event_requires_an_explicit_calendar_period() -> None:
-    event = _event(
-        period_type=DragonTigerPeriodType.THREE_DAY,
-        period_start_date=date(2026, 8, 18),
-        reason=_reason(DragonTigerPeriodType.THREE_DAY),
+def test_event_keeps_trigger_window_separate_from_unspecified_amount_period() -> None:
+    trigger = _trigger(
+        session_count=10,
+        occurrence_count=4,
+        start_date=None,
+    )
+    amount = DragonTigerAmountPeriod(
+        basis=DragonTigerAmountPeriodBasis.SOURCE_UNSPECIFIED,
+        session_count=None,
+        start_date=None,
+        end_date=None,
+    )
+    draft = DragonTigerEventDraft(
+        source_record_id="event-1",
+        symbol="SSE:600000",
+        trade_date=TRADE_DATE,
+        trigger_window=trigger,
+        amount_period=amount,
+        reason=_reason(),
+        reason_name_raw="连续10个交易日内4次出现同正向异常波动的证券",
+        close_price=Decimal("12.34"),
+        change_pct=Decimal("7.10"),
+        turnover_amount=Decimal("1000"),
+        turnover_rate=Decimal("8.2"),
+        amplitude=None,
+        lhb_buy_amount=Decimal("100"),
+        lhb_sell_amount=Decimal("20"),
+        buy_disclosure_present=True,
+        sell_disclosure_present=True,
+        seat_trades=(_trade(),),
+        source_code="eastmoney",
     )
 
-    assert event.period_start_date == date(2026, 8, 18)
-    assert event.period_end_date == event.trade_date
+    record = draft.resolve_windows(date(2026, 8, 7), None)
+
+    assert record.trigger_window.start_date == date(2026, 8, 7)
+    assert record.trigger_window.occurrence_count == 4
+    assert record.amount_period.basis is DragonTigerAmountPeriodBasis.SOURCE_UNSPECIFIED
+    assert record.amount_period.start_date is None
 
 
-def test_three_day_event_rejects_a_same_day_period() -> None:
-    with pytest.raises(ValueError, match="three-day event"):
-        _event(
-            period_type=DragonTigerPeriodType.THREE_DAY,
-            reason=_reason(DragonTigerPeriodType.THREE_DAY),
+@pytest.mark.parametrize(
+    "basis",
+    [DragonTigerWindowBasis.MARKET_SESSIONS, DragonTigerWindowBasis.SECURITY_TRADED_SESSIONS],
+)
+def test_trigger_window_accepts_supported_bases(basis: DragonTigerWindowBasis) -> None:
+    assert _trigger(basis=basis).basis is basis
+
+
+def test_trigger_window_rejects_nonpositive_session_count() -> None:
+    with pytest.raises(ValueError, match="session_count must be positive"):
+        _trigger(session_count=0)
+
+
+def test_unspecified_amount_period_rejects_invented_dates() -> None:
+    with pytest.raises(ValueError, match="unspecified amount period"):
+        DragonTigerAmountPeriod(
+            basis=DragonTigerAmountPeriodBasis.SOURCE_UNSPECIFIED,
+            session_count=None,
+            start_date=TRADE_DATE,
+            end_date=TRADE_DATE,
         )
+
+
+def test_resolved_event_requires_a_complete_verified_amount_period() -> None:
+    with pytest.raises(ValueError, match="verified amount period requires resolved dates"):
+        _event(amount_period=_amount_period(start_date=None))
+
+
+def test_event_requires_at_least_one_disclosure_side() -> None:
+    with pytest.raises(ValueError, match="at least one disclosure side"):
+        _event(buy_disclosure_present=False, sell_disclosure_present=False)
 
 
 def test_missing_opposing_amount_is_not_zero_or_pure_buy() -> None:
@@ -147,8 +223,9 @@ def test_anonymous_institution_does_not_claim_a_stable_seat_identity() -> None:
     assert trade.is_institution is True
 
 
-def test_trading_seat_alias_preserves_the_source_name() -> None:
+def test_alias_is_a_temporal_name_observation_for_one_source_identity() -> None:
     seat_id = UUID("00000000-0000-0000-0000-000000000001")
+    identity_id = UUID("00000000-0000-0000-0000-000000000002")
     seat = TradingSeat(
         seat_id=seat_id,
         canonical_name="某证券营业部",
@@ -157,18 +234,28 @@ def test_trading_seat_alias_preserves_the_source_name() -> None:
         seat_type=TradingSeatType.BROKER,
         province=None,
         city=None,
-        first_seen_date=date(2026, 8, 20),
-        last_seen_date=date(2026, 8, 20),
+        first_seen_date=TRADE_DATE,
+        last_seen_date=TRADE_DATE,
         is_active=True,
     )
-    alias = TradingSeatAlias(
+    identity = TradingSeatSourceIdentity(
+        identity_id=identity_id,
         seat_id=seat_id,
         source_code="eastmoney",
         source_seat_key="seat-1",
+        first_seen_date=TRADE_DATE,
+        last_seen_date=TRADE_DATE,
+    )
+    alias = TradingSeatAlias(
+        alias_id=UUID("00000000-0000-0000-0000-000000000003"),
+        identity_id=identity_id,
         alias_name="某证券股份有限公司营业部",
+        first_seen_date=TRADE_DATE,
+        last_seen_date=TRADE_DATE,
     )
 
-    assert alias.seat_id == seat.seat_id
+    assert identity.seat_id == seat.seat_id
+    assert alias.identity_id == identity.identity_id
     assert alias.alias_name != seat.canonical_name
 
 
@@ -179,7 +266,7 @@ def test_validation_accepts_a_known_bse_security() -> None:
     result = validate_dragon_tiger_events(
         (event,),
         known_symbols={"BSE:920000"},
-        known_trading_dates={date(2026, 8, 20)},
+        known_trading_dates={TRADE_DATE},
     )
 
     assert result.accepted == (event,)
@@ -192,7 +279,7 @@ def test_validation_rejects_a_seat_parent_mismatch() -> None:
     result = validate_dragon_tiger_events(
         (event,),
         known_symbols={"SSE:600000", "SZSE:000001"},
-        known_trading_dates={date(2026, 8, 20)},
+        known_trading_dates={TRADE_DATE},
     )
 
     assert result.accepted == ()

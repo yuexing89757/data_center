@@ -9,10 +9,25 @@ from enum import StrEnum
 from hashlib import sha256
 from uuid import UUID
 
+from market_data_center.domain.ingestion import QualitySeverity
+
 _SUPPORTED_EXCHANGES = frozenset({"SSE", "SZSE", "BSE"})
 
 
+class DragonTigerWindowBasis(StrEnum):
+    MARKET_SESSIONS = "MARKET_SESSIONS"
+    SECURITY_TRADED_SESSIONS = "SECURITY_TRADED_SESSIONS"
+
+
+class DragonTigerAmountPeriodBasis(StrEnum):
+    MARKET_SESSIONS = "MARKET_SESSIONS"
+    SECURITY_TRADED_SESSIONS = "SECURITY_TRADED_SESSIONS"
+    SOURCE_UNSPECIFIED = "SOURCE_UNSPECIFIED"
+
+
 class DragonTigerPeriodType(StrEnum):
+    """Temporary import compatibility until provider migration is complete."""
+
     DAY = "DAY"
     THREE_DAY = "THREE_DAY"
 
@@ -39,7 +54,6 @@ class DragonTigerReason:
     reason_code: str
     reason_name: str
     reason_type: DragonTigerReasonType
-    period_type: DragonTigerPeriodType
     source_code: str
     source_reason_code: str
     source_reason_name: str
@@ -74,16 +88,32 @@ class TradingSeat:
 
 
 @dataclass(frozen=True, slots=True)
-class TradingSeatAlias:
+class TradingSeatSourceIdentity:
+    identity_id: UUID
     seat_id: UUID
     source_code: str
-    source_seat_key: str | None
-    alias_name: str
+    source_seat_key: str
+    first_seen_date: date
+    last_seen_date: date
 
     def __post_init__(self) -> None:
-        _require_nonblank(source_code=self.source_code, alias_name=self.alias_name)
-        if self.source_seat_key is not None and not self.source_seat_key.strip():
-            raise ValueError("source_seat_key must be None or non-blank")
+        _require_nonblank(source_code=self.source_code, source_seat_key=self.source_seat_key)
+        if self.first_seen_date > self.last_seen_date:
+            raise ValueError("identity first_seen_date must not follow last_seen_date")
+
+
+@dataclass(frozen=True, slots=True)
+class TradingSeatAlias:
+    alias_id: UUID
+    identity_id: UUID
+    alias_name: str
+    first_seen_date: date
+    last_seen_date: date
+
+    def __post_init__(self) -> None:
+        _require_nonblank(alias_name=self.alias_name)
+        if self.first_seen_date > self.last_seen_date:
+            raise ValueError("alias first_seen_date must not follow last_seen_date")
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,13 +179,53 @@ class SeatTradeRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class DragonTigerTriggerWindow:
+    basis: DragonTigerWindowBasis
+    session_count: int
+    occurrence_count: int | None
+    start_date: date | None
+    end_date: date
+
+    def __post_init__(self) -> None:
+        if self.session_count < 1:
+            raise ValueError("trigger window session_count must be positive")
+        if self.occurrence_count is not None and self.occurrence_count < 1:
+            raise ValueError("trigger window occurrence_count must be positive")
+        if self.start_date is not None and self.start_date > self.end_date:
+            raise ValueError("trigger window start_date must not follow end_date")
+
+
+@dataclass(frozen=True, slots=True)
+class DragonTigerAmountPeriod:
+    basis: DragonTigerAmountPeriodBasis
+    session_count: int | None
+    start_date: date | None
+    end_date: date | None
+
+    def __post_init__(self) -> None:
+        if self.basis is DragonTigerAmountPeriodBasis.SOURCE_UNSPECIFIED:
+            if any(
+                value is not None for value in (self.session_count, self.start_date, self.end_date)
+            ):
+                raise ValueError("unspecified amount period cannot contain sessions or dates")
+            return
+        if self.session_count is None or self.session_count < 1:
+            raise ValueError("verified amount period session_count must be positive")
+        if (
+            self.start_date is not None
+            and self.end_date is not None
+            and self.start_date > self.end_date
+        ):
+            raise ValueError("amount period start_date must not follow end_date")
+
+
+@dataclass(frozen=True, slots=True)
 class DragonTigerEventDraft:
     source_record_id: str
     symbol: str
     trade_date: date
-    period_type: DragonTigerPeriodType
-    period_start_date: date | None
-    period_end_date: date
+    trigger_window: DragonTigerTriggerWindow
+    amount_period: DragonTigerAmountPeriod
     reason: DragonTigerReason
     reason_name_raw: str
     close_price: Decimal | None
@@ -165,28 +235,48 @@ class DragonTigerEventDraft:
     amplitude: Decimal | None
     lhb_buy_amount: Decimal | None
     lhb_sell_amount: Decimal | None
+    buy_disclosure_present: bool
+    sell_disclosure_present: bool
     seat_trades: tuple[SeatTradeRecord, ...]
     source_code: str
 
     def __post_init__(self) -> None:
-        if self.period_end_date != self.trade_date:
-            raise ValueError("draft period_end_date must equal trade_date")
-        if self.period_type is DragonTigerPeriodType.DAY:
-            if self.period_start_date != self.trade_date:
-                raise ValueError("day draft period must equal trade_date")
-        elif self.period_start_date is not None:
-            raise ValueError("three-day draft start must be resolved by the trading calendar")
-        if self.reason.period_type is not self.period_type:
-            raise ValueError("draft and reason period_type must match")
+        if self.trigger_window.end_date != self.trade_date:
+            raise ValueError("draft trigger end_date must equal trade_date")
+        if (
+            self.amount_period.end_date is not None
+            and self.amount_period.end_date != self.trade_date
+        ):
+            raise ValueError("draft amount period end_date must equal trade_date")
+        if not self.buy_disclosure_present and not self.sell_disclosure_present:
+            raise ValueError("event requires at least one disclosure side")
 
-    def resolve_period(self, period_start_date: date) -> "DragonTigerEventRecord":
+    def resolve_windows(
+        self,
+        trigger_start_date: date | None,
+        amount_start_date: date | None,
+    ) -> "DragonTigerEventRecord":
+        trigger_window = DragonTigerTriggerWindow(
+            basis=self.trigger_window.basis,
+            session_count=self.trigger_window.session_count,
+            occurrence_count=self.trigger_window.occurrence_count,
+            start_date=trigger_start_date,
+            end_date=self.trigger_window.end_date,
+        )
+        amount_period = self.amount_period
+        if amount_period.basis is not DragonTigerAmountPeriodBasis.SOURCE_UNSPECIFIED:
+            amount_period = DragonTigerAmountPeriod(
+                basis=amount_period.basis,
+                session_count=amount_period.session_count,
+                start_date=amount_start_date,
+                end_date=amount_period.end_date,
+            )
         return DragonTigerEventRecord(
             source_record_id=self.source_record_id,
             symbol=self.symbol,
             trade_date=self.trade_date,
-            period_type=self.period_type,
-            period_start_date=period_start_date,
-            period_end_date=self.period_end_date,
+            trigger_window=trigger_window,
+            amount_period=amount_period,
             reason=self.reason,
             reason_name_raw=self.reason_name_raw,
             close_price=self.close_price,
@@ -196,6 +286,8 @@ class DragonTigerEventDraft:
             amplitude=self.amplitude,
             lhb_buy_amount=self.lhb_buy_amount,
             lhb_sell_amount=self.lhb_sell_amount,
+            buy_disclosure_present=self.buy_disclosure_present,
+            sell_disclosure_present=self.sell_disclosure_present,
             seat_trades=self.seat_trades,
             source_code=self.source_code,
         )
@@ -206,9 +298,8 @@ class DragonTigerEventRecord:
     source_record_id: str
     symbol: str
     trade_date: date
-    period_type: DragonTigerPeriodType
-    period_start_date: date
-    period_end_date: date
+    trigger_window: DragonTigerTriggerWindow
+    amount_period: DragonTigerAmountPeriod
     reason: DragonTigerReason
     reason_name_raw: str
     close_price: Decimal | None
@@ -218,6 +309,8 @@ class DragonTigerEventRecord:
     amplitude: Decimal | None
     lhb_buy_amount: Decimal | None
     lhb_sell_amount: Decimal | None
+    buy_disclosure_present: bool
+    sell_disclosure_present: bool
     seat_trades: tuple[SeatTradeRecord, ...]
     source_code: str
 
@@ -236,19 +329,48 @@ class DragonTigerEventRecord:
             self.lhb_buy_amount,
             self.lhb_sell_amount,
         )
-        if self.period_end_date != self.trade_date:
-            raise ValueError("event period_end_date must equal trade_date")
-        if self.period_type is DragonTigerPeriodType.DAY:
-            if self.period_start_date != self.trade_date:
-                raise ValueError("day event period must equal trade_date")
-        elif self.period_start_date >= self.period_end_date:
-            raise ValueError("three-day event requires an earlier period_start_date")
-        if self.reason.period_type is not self.period_type:
-            raise ValueError("event and reason period_type must match")
+        if self.trigger_window.end_date != self.trade_date:
+            raise ValueError("event trigger end_date must equal trade_date")
+        if self.trigger_window.start_date is None:
+            raise ValueError("resolved event requires a trigger start_date")
+        if self.amount_period.basis is not DragonTigerAmountPeriodBasis.SOURCE_UNSPECIFIED:
+            if self.amount_period.start_date is None or self.amount_period.end_date is None:
+                raise ValueError("verified amount period requires resolved dates")
+            if self.amount_period.end_date != self.trade_date:
+                raise ValueError("event amount period end_date must equal trade_date")
+        if not self.buy_disclosure_present and not self.sell_disclosure_present:
+            raise ValueError("event requires at least one disclosure side")
         if self.reason.source_code != self.source_code:
             raise ValueError("event and reason source_code must match")
         if not self.seat_trades:
             raise ValueError("event requires at least one seat trade")
+
+
+@dataclass(frozen=True, slots=True)
+class DragonTigerSourceFinding:
+    rule_code: str
+    severity: QualitySeverity
+    source_event_id: str
+    report_kind: str
+    occurrence_count: int
+    filtered_count: int
+
+    def __post_init__(self) -> None:
+        _require_nonblank(
+            rule_code=self.rule_code,
+            source_event_id=self.source_event_id,
+            report_kind=self.report_kind,
+        )
+        if self.occurrence_count < 1:
+            raise ValueError("source finding occurrence_count must be positive")
+        if self.filtered_count < 0 or self.filtered_count > self.occurrence_count:
+            raise ValueError("source finding filtered_count is invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class DragonTigerNormalizationResult:
+    events: tuple[DragonTigerEventDraft, ...]
+    findings: tuple[DragonTigerSourceFinding, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -286,7 +408,7 @@ def validate_dragon_tiger_events(
     known_trading_dates: Collection[date],
 ) -> DragonTigerValidationResult:
     source_keys: set[tuple[str, str]] = set()
-    semantic_keys: set[tuple[str, date, DragonTigerPeriodType, str, str]] = set()
+    semantic_keys: set[tuple[str, date, str, str]] = set()
     accepted: list[DragonTigerEventRecord] = []
     findings: list[DragonTigerFinding] = []
     for record in records:
@@ -295,7 +417,6 @@ def validate_dragon_tiger_events(
         semantic_key = (
             record.symbol,
             record.trade_date,
-            record.period_type,
             record.reason.reason_code,
             record.source_code,
         )
@@ -331,8 +452,11 @@ def _validate_event(
         return "unknown_security", "event security is not known for the trade date"
     if record.trade_date not in known_trading_dates:
         return "unknown_trading_date", "event date is not a known trading date"
-    if record.period_start_date not in known_trading_dates:
-        return "unknown_period_start", "event period start is not a known trading date"
+    if record.trigger_window.start_date not in known_trading_dates:
+        return "unknown_trigger_start", "event trigger start is not a known trading date"
+    amount_start = record.amount_period.start_date
+    if amount_start is not None and amount_start not in known_trading_dates:
+        return "unknown_amount_period_start", "event amount period start is not known"
     trade_source_ids: set[str] = set()
     buy_ranks: set[int] = set()
     sell_ranks: set[int] = set()
@@ -389,6 +513,10 @@ def _decimal_text(value: Decimal | None) -> str | None:
     return "0" if text == "-0" else text
 
 
+def _date_text(value: date | None) -> str | None:
+    return value.isoformat() if value is not None else None
+
+
 def _trade_payload(trade: SeatTradeRecord) -> dict[str, object]:
     return {
         "source_record_id": trade.source_record_id,
@@ -413,14 +541,23 @@ def _event_payload(record: DragonTigerEventRecord) -> dict[str, object]:
         "source_record_id": record.source_record_id,
         "symbol": record.symbol,
         "trade_date": record.trade_date.isoformat(),
-        "period_type": record.period_type.value,
-        "period_start_date": record.period_start_date.isoformat(),
-        "period_end_date": record.period_end_date.isoformat(),
+        "trigger_window": {
+            "basis": record.trigger_window.basis.value,
+            "session_count": record.trigger_window.session_count,
+            "occurrence_count": record.trigger_window.occurrence_count,
+            "start_date": _date_text(record.trigger_window.start_date),
+            "end_date": record.trigger_window.end_date.isoformat(),
+        },
+        "amount_period": {
+            "basis": record.amount_period.basis.value,
+            "session_count": record.amount_period.session_count,
+            "start_date": _date_text(record.amount_period.start_date),
+            "end_date": _date_text(record.amount_period.end_date),
+        },
         "reason": {
             "reason_code": record.reason.reason_code,
             "reason_name": record.reason.reason_name,
             "reason_type": record.reason.reason_type.value,
-            "period_type": record.reason.period_type.value,
             "source_code": record.reason.source_code,
             "source_reason_code": record.reason.source_reason_code,
             "source_reason_name": record.reason.source_reason_name,
@@ -433,6 +570,8 @@ def _event_payload(record: DragonTigerEventRecord) -> dict[str, object]:
         "amplitude": _decimal_text(record.amplitude),
         "lhb_buy_amount": _decimal_text(record.lhb_buy_amount),
         "lhb_sell_amount": _decimal_text(record.lhb_sell_amount),
+        "buy_disclosure_present": record.buy_disclosure_present,
+        "sell_disclosure_present": record.sell_disclosure_present,
         "seat_trades": [_trade_payload(trade) for trade in record.seat_trades],
         "source_code": record.source_code,
     }
@@ -444,6 +583,5 @@ def _natural_key_json(record: DragonTigerEventRecord) -> dict[str, object]:
         "source_record_id": record.source_record_id,
         "symbol": record.symbol,
         "trade_date": record.trade_date.isoformat(),
-        "period_type": record.period_type.value,
         "reason_code": record.reason.reason_code,
     }
