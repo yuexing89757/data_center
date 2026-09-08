@@ -361,8 +361,7 @@ def test_dragon_tiger_replaces_trading_billboard_contracts() -> None:
     assert "p_trigger_window_basis" in date_properties
     assert "p_trigger_window_sessions" in date_properties
     symbol_tool = next(
-        tool for tool in agent["tools"]
-        if tool["endpoint"] == "query_dragon_tiger_events_by_symbol"
+        tool for tool in agent["tools"] if tool["endpoint"] == "query_dragon_tiger_events_by_symbol"
     )
     assert "p_trigger_window_basis" in symbol_tool["input_schema"]["properties"]
     assert "p_trigger_window_sessions" in symbol_tool["input_schema"]["properties"]
