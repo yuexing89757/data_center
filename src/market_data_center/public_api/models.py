@@ -91,9 +91,17 @@ class DragonTigerEventItem(ApiModel):
     event_id: UUID
     symbol: str
     trade_date: date
-    period_type: Literal["DAY", "THREE_DAY"]
-    period_start_date: date
-    period_end_date: date
+    trigger_window_basis: Literal["MARKET_SESSIONS", "SECURITY_TRADED_SESSIONS"]
+    trigger_window_sessions: int = Field(ge=1)
+    trigger_occurrence_count: int | None = Field(default=None, ge=1)
+    trigger_start_date: date | None
+    trigger_end_date: date
+    amount_period_basis: Literal[
+        "MARKET_SESSIONS", "SECURITY_TRADED_SESSIONS", "SOURCE_UNSPECIFIED"
+    ]
+    amount_period_sessions: int | None = Field(default=None, ge=1)
+    amount_period_start_date: date | None
+    amount_period_end_date: date | None
     reason_code: str
     reason_name: str
     reason_type: Literal[
@@ -108,6 +116,9 @@ class DragonTigerEventItem(ApiModel):
     lhb_buy_amount: Decimal | None
     lhb_sell_amount: Decimal | None
     net_amount: Decimal | None
+    buy_disclosure_present: bool
+    sell_disclosure_present: bool
+    data_quality_codes: list[str]
     source_code: Literal["eastmoney", "tushare"]
     source_record_id: str
     seat_trades: list[DragonTigerSeatTradeItem]
@@ -126,7 +137,20 @@ class DragonTigerSeatTradeOccurrenceItem(DragonTigerSeatTradeItem):
     event_id: UUID
     symbol: str
     trade_date: date
-    period_type: Literal["DAY", "THREE_DAY"]
+    trigger_window_basis: Literal["MARKET_SESSIONS", "SECURITY_TRADED_SESSIONS"]
+    trigger_window_sessions: int = Field(ge=1)
+    trigger_occurrence_count: int | None = Field(default=None, ge=1)
+    trigger_start_date: date | None
+    trigger_end_date: date
+    amount_period_basis: Literal[
+        "MARKET_SESSIONS", "SECURITY_TRADED_SESSIONS", "SOURCE_UNSPECIFIED"
+    ]
+    amount_period_sessions: int | None = Field(default=None, ge=1)
+    amount_period_start_date: date | None
+    amount_period_end_date: date | None
+    buy_disclosure_present: bool
+    sell_disclosure_present: bool
+    data_quality_codes: list[str]
     reason_code: str
     reason_name: str
 
@@ -161,6 +185,10 @@ class DragonTigerCapitalMetricsItem(ApiModel):
     northbound_buy_amount: Decimal | None
     northbound_sell_amount: Decimal | None
     northbound_net_amount: Decimal | None
+    buy_disclosure_present: bool
+    sell_disclosure_present: bool
+    amount_period_verified: bool
+    data_quality_codes: list[str]
 
 
 class ClassificationMembersResponse(ApiModel):

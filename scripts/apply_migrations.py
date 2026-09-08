@@ -33,6 +33,7 @@ EXPECTED_TABLES = {
     ("billboard", "seat_trade"),
     ("billboard", "trading_seat"),
     ("billboard", "trading_seat_alias"),
+    ("billboard", "trading_seat_source_identity"),
     ("capital", "distribution"),
     ("capital", "rights_issue"),
     ("capital", "share_capital"),

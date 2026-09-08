@@ -250,20 +250,29 @@ def create_app(
         },
         tags=["市场数据"],
         summary="按交易日查询龙虎榜事件与席位行为",
-        description="按指定交易日精确查询普通榜或三日榜事件及合并后的席位行为，不回退其他日期。",
+        description="按指定交易日精确查询龙虎榜事件、触发窗口及席位行为，不回退其他日期。",
     )
     def dragon_tiger_events_by_date(
         _: ApiKeyDependency,
         service: QueryServiceDependency,
         trade_date: Annotated[date, Query(description="需要精确查询的交易日。")],
-        period_type: Annotated[
-            Literal["DAY", "THREE_DAY"] | None,
-            Query(description="可选统计周期；空值返回普通榜和三日榜。"),
+        trigger_window_basis: Annotated[
+            Literal["MARKET_SESSIONS", "SECURITY_TRADED_SESSIONS"] | None,
+            Query(description="可选触发窗口基准。"),
+        ] = None,
+        trigger_window_sessions: Annotated[
+            int | None, Query(ge=1, description="可选触发窗口交易会话数。")
         ] = None,
         limit: Annotated[int, Query(ge=1, le=500, description="单页事件数上限。")] = 100,
         offset: Annotated[int, Query(ge=0, le=10000, description="分页偏移量。")] = 0,
     ) -> DragonTigerEventPageResponse:
-        return service.dragon_tiger_events_by_date(trade_date, period_type, limit, offset)
+        return service.dragon_tiger_events_by_date(
+            trade_date,
+            trigger_window_basis,
+            trigger_window_sessions,
+            limit,
+            offset,
+        )
 
     @app.get(
         "/api/v1/dragon-tiger/events/by-symbol/{code}",
@@ -284,16 +293,25 @@ def create_app(
         code: Annotated[str, Path(pattern=STOCK_CODE_PATTERN, description="六位股票代码。")],
         start_date: Annotated[date, Query(description="查询起始交易日（含）。")],
         end_date: Annotated[date, Query(description="查询结束交易日（含）。")],
-        period_type: Annotated[
-            Literal["DAY", "THREE_DAY"] | None,
-            Query(description="可选统计周期；空值返回普通榜和三日榜。"),
+        trigger_window_basis: Annotated[
+            Literal["MARKET_SESSIONS", "SECURITY_TRADED_SESSIONS"] | None,
+            Query(description="可选触发窗口基准。"),
+        ] = None,
+        trigger_window_sessions: Annotated[
+            int | None, Query(ge=1, description="可选触发窗口交易会话数。")
         ] = None,
         limit: Annotated[int, Query(ge=1, le=500, description="单页事件数上限。")] = 100,
         offset: Annotated[int, Query(ge=0, le=10000, description="分页偏移量。")] = 0,
     ) -> DragonTigerEventPageResponse:
         _require_bounded_date_range(start_date, end_date)
         return service.dragon_tiger_events_by_code(
-            code, start_date, end_date, period_type, limit, offset
+            code,
+            start_date,
+            end_date,
+            trigger_window_basis,
+            trigger_window_sessions,
+            limit,
+            offset,
         )
 
     @app.get(

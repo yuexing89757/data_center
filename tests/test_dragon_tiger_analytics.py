@@ -6,10 +6,13 @@ from uuid import UUID
 import pytest
 
 from market_data_center.domain.dragon_tiger import (
+    DragonTigerAmountPeriod,
+    DragonTigerAmountPeriodBasis,
     DragonTigerEventRecord,
-    DragonTigerPeriodType,
     DragonTigerReason,
     DragonTigerReasonType,
+    DragonTigerTriggerWindow,
+    DragonTigerWindowBasis,
     SeatTradeRecord,
 )
 from market_data_center.dragon_tiger_analytics import (
@@ -56,7 +59,6 @@ def _event() -> DragonTigerEventRecord:
         reason_code="PRICE_DEVIATION_DAY",
         reason_name="价格偏离",
         reason_type=DragonTigerReasonType.PRICE_DEVIATION,
-        period_type=DragonTigerPeriodType.DAY,
         source_code="eastmoney",
         source_reason_code="01",
         source_reason_name="日价格涨幅偏离值达到7%",
@@ -65,9 +67,19 @@ def _event() -> DragonTigerEventRecord:
         source_record_id="event-1",
         symbol="SSE:600000",
         trade_date=date(2026, 8, 20),
-        period_type=DragonTigerPeriodType.DAY,
-        period_start_date=date(2026, 8, 20),
-        period_end_date=date(2026, 8, 20),
+        trigger_window=DragonTigerTriggerWindow(
+            basis=DragonTigerWindowBasis.MARKET_SESSIONS,
+            session_count=1,
+            occurrence_count=None,
+            start_date=date(2026, 8, 20),
+            end_date=date(2026, 8, 20),
+        ),
+        amount_period=DragonTigerAmountPeriod(
+            basis=DragonTigerAmountPeriodBasis.MARKET_SESSIONS,
+            session_count=1,
+            start_date=date(2026, 8, 20),
+            end_date=date(2026, 8, 20),
+        ),
         reason=reason,
         reason_name_raw=reason.source_reason_name,
         close_price=Decimal("10"),
@@ -77,6 +89,8 @@ def _event() -> DragonTigerEventRecord:
         amplitude=None,
         lhb_buy_amount=Decimal("100"),
         lhb_sell_amount=Decimal("100"),
+        buy_disclosure_present=True,
+        sell_disclosure_present=True,
         seat_trades=(
             _trade("seat-a", "50", "60", 1, 1, institution=True),
             _trade("seat-b", "30", "30", 2, 2),

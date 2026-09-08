@@ -5,6 +5,10 @@ from uuid import UUID
 
 import pytest
 
+from market_data_center.domain.dragon_tiger import (
+    DragonTigerAmountPeriodBasis,
+    DragonTigerWindowBasis,
+)
 from market_data_center.dragon_tiger_analytics import (
     DragonTigerCapitalMetrics,
     TradingSeatProfile,
@@ -75,6 +79,9 @@ def test_feature_type_contains_no_forward_return_or_label_fields() -> None:
     assert not any("label" in name for name in names)
     assert "target_return" not in names
     assert "forward_return" not in names
+    assert "period_type" not in names
+    assert "trigger_window_basis" in names
+    assert "amount_period_basis" in names
 
 
 @pytest.mark.parametrize("profile_date", [date(2026, 8, 20), date(2026, 8, 21)])
@@ -86,7 +93,14 @@ def test_feature_requires_profiles_from_strictly_before_the_feature_date(
             event_source_record_id="event-1",
             symbol="SSE:600000",
             feature_date=date(2026, 8, 20),
-            period_type="DAY",
+            trigger_window_basis=DragonTigerWindowBasis.MARKET_SESSIONS,
+            trigger_window_sessions=1,
+            trigger_occurrence_count=None,
+            amount_period_basis=DragonTigerAmountPeriodBasis.SOURCE_UNSPECIFIED,
+            amount_period_sessions=None,
+            buy_disclosure_present=True,
+            sell_disclosure_present=False,
+            data_quality_codes=("DT_DISCLOSURE_SIDE_MISSING",),
             change_pct=Decimal("7"),
             turnover_rate=Decimal("8"),
             metrics=_metrics(),
@@ -163,7 +177,14 @@ def test_feature_keeps_objective_capital_and_profile_components() -> None:
         event_source_record_id="event-1",
         symbol="SSE:600000",
         feature_date=date(2026, 8, 20),
-        period_type="DAY",
+        trigger_window_basis=DragonTigerWindowBasis.MARKET_SESSIONS,
+        trigger_window_sessions=1,
+        trigger_occurrence_count=None,
+        amount_period_basis=DragonTigerAmountPeriodBasis.SOURCE_UNSPECIFIED,
+        amount_period_sessions=None,
+        buy_disclosure_present=True,
+        sell_disclosure_present=False,
+        data_quality_codes=("DT_DISCLOSURE_SIDE_MISSING",),
         change_pct=Decimal("7"),
         turnover_rate=Decimal("8"),
         metrics=_metrics(),
@@ -178,6 +199,8 @@ def test_feature_keeps_objective_capital_and_profile_components() -> None:
     assert feature.profile_t3_sample_count == 0
     assert feature.profile_t5_sample_count == 0
     assert feature.profile_consecutive_participation_rate == Decimal("0.5")
+    assert feature.amount_period_verified is False
+    assert feature.sell_disclosure_present is False
 
 
 def test_feature_rejects_mixed_profile_algorithm_versions() -> None:
@@ -195,7 +218,14 @@ def test_feature_rejects_mixed_profile_algorithm_versions() -> None:
             event_source_record_id="event-1",
             symbol="SSE:600000",
             feature_date=date(2026, 8, 20),
-            period_type="DAY",
+            trigger_window_basis=DragonTigerWindowBasis.MARKET_SESSIONS,
+            trigger_window_sessions=1,
+            trigger_occurrence_count=None,
+            amount_period_basis=DragonTigerAmountPeriodBasis.SOURCE_UNSPECIFIED,
+            amount_period_sessions=None,
+            buy_disclosure_present=True,
+            sell_disclosure_present=False,
+            data_quality_codes=("DT_DISCLOSURE_SIDE_MISSING",),
             change_pct=Decimal("7"),
             turnover_rate=Decimal("8"),
             metrics=_metrics(),

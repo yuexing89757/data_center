@@ -39,6 +39,8 @@ class SchedulerSettings(BaseSettings):
     close_price_new_highs_120d_enabled: bool = True
     board_index_daily_bar_enabled: bool = True
     shareholder_count_daily_enabled: bool = False
+    # Tushare BSE L/D/P catalog sync is an explicit source-rights-gated task.
+    security_bse_enabled: bool = False
     # Opt-in until source-rights and protected deployment review are complete.
     dragon_tiger_enabled: bool = False
     # Opt-in until benchmark coverage and the ordered migration are deployed.

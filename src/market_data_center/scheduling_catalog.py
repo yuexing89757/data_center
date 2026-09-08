@@ -16,6 +16,7 @@ TODAY_LIMIT_UP_SNAPSHOT_JOB_ID = "today-limit-up-snapshot-daily"
 PYTDX_POOL_REFRESH_JOB_ID = "pytdx-pool-refresh"
 CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID = "close-price-new-highs-120d-daily"
 BOARD_INDEX_DAILY_BAR_JOB_ID = "board-index-883423-daily-bar"
+SECURITY_BSE_JOB_ID = "security-bse-daily"
 DRAGON_TIGER_JOB_ID = "dragon-tiger-daily"
 REGULATION_DAILY_CALCULATION_JOB_ID = "regulation-daily-calculation"
 DATA_CLEANUP_JOB_ID = "data-cleanup-daily"
@@ -152,6 +153,12 @@ WORKFLOW_DEFINITIONS = (
         "883423 板块日线收盘采集",
         "收盘后采集固定同花顺板块 THS:883423 日线, 并补齐尾部缺口。",
         ("collect_board_index_daily_bars",),
+    ),
+    WorkflowDefinition(
+        "security_bse_daily",
+        "北交所证券目录同步",
+        "使用 Tushare L/D/P 全状态目录同步北交所股票主数据。",
+        ("sync_bse_security",),
     ),
     WorkflowDefinition(
         "dragon_tiger_daily",
@@ -325,6 +332,21 @@ def job_definitions(settings: SchedulerSettings) -> tuple[JobDefinition, ...]:
             day_of_week="mon-fri",
             hour="15-17",
             minute=30,
+        ),
+        JobDefinition(
+            SECURITY_BSE_JOB_ID,
+            "北交所证券目录同步",
+            "在龙虎榜采集前同步 Tushare 北交所 L/D/P 全状态证券。",
+            "security_bse_daily",
+            "cron",
+            "周一至周五 20:15",
+            timezone,
+            settings.security_bse_enabled,
+            timeout,
+            "失败保持显式缺口; 当日龙虎榜前置检查将阻止不完整采集",
+            day_of_week="mon-fri",
+            hour=20,
+            minute=15,
         ),
         JobDefinition(
             DRAGON_TIGER_JOB_ID,

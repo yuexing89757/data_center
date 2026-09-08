@@ -29,6 +29,10 @@ class LocalRawStore:
     def __init__(self, root: Path) -> None:
         self._root = root.resolve()
 
+    @property
+    def root(self) -> Path:
+        return self._root
+
     def write_jsonl(
         self,
         *,

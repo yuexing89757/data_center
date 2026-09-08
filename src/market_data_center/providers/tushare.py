@@ -532,6 +532,21 @@ class TushareProvider(AbstractContextManager["TushareProvider"]):
         raise ProviderRequestUnavailable("Tushare classifications are not accepted in ADR-0013")
 
 
+class TushareBseSecurityProvider(TushareProvider):
+    """Scoped all-status BSE security catalog; Raw remains the complete Tushare response."""
+
+    def fetch_securities(self) -> ProviderBatch[SecurityRecord]:
+        batch = super().fetch_securities()
+        return ProviderBatch(
+            raw_rows=batch.raw_rows,
+            request_params={**batch.request_params, "exchange_scope": "BSE"},
+            schema_version=batch.schema_version,
+            record_factory=lambda: tuple(
+                record for record in batch.records if record.exchange is Exchange.BSE
+            ),
+        )
+
+
 def normalize_tushare_raw(
     dataset_code: DatasetCode,
     schema_version: str,
@@ -551,7 +566,13 @@ def normalize_tushare_raw(
     if expected is None or schema_version != expected:
         raise ProviderError(f"unsupported Tushare Raw schema: {schema_version}")
     if dataset_code is DatasetCode.SECURITY:
-        return tuple(_map_security(row) for row in raw_rows)
+        records = tuple(_map_security(row) for row in raw_rows)
+        scope = request_params.get("exchange_scope")
+        if scope is None:
+            return records
+        if scope != "BSE":
+            raise ProviderError("unsupported Tushare security exchange_scope")
+        return tuple(record for record in records if record.exchange is Exchange.BSE)
     if dataset_code is DatasetCode.TRADING_CALENDAR:
         start_date = _request_date(request_params, "start_date")
         end_date = _request_date(request_params, "end_date")

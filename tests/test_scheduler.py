@@ -16,6 +16,7 @@ from market_data_center.providers.pytdx_pool import (
     PytdxPoolRefreshResult,
 )
 from market_data_center.scheduler import (
+    _require_dragon_tiger_bse_prerequisite,
     build_scheduler,
     check_scheduler_health,
     prepare_locked_worker,
@@ -30,6 +31,7 @@ from market_data_center.scheduling_catalog import (
     DRAGON_TIGER_JOB_ID,
     EOD_QUOTE_SNAPSHOT_JOB_ID,
     PYTDX_POOL_REFRESH_JOB_ID,
+    SECURITY_BSE_JOB_ID,
     SHAREHOLDER_COUNT_DAILY_JOB_ID,
     STALE_RUN_RECOVERY_JOB_ID,
     STOCK_DAILY_INDICATOR_JOB_ID,
@@ -228,6 +230,40 @@ def test_dragon_tiger_schedule_is_opt_in_and_fixed_at_2030(tmp_path: Path) -> No
     assert job is not None
     assert str(job.trigger) == "cron[day_of_week='mon-fri', hour='20', minute='30']"
     assert job.max_instances == 1
+
+
+def test_bse_security_schedule_is_opt_in_and_runs_before_dragon_tiger(tmp_path: Path) -> None:
+    disabled = build_scheduler(
+        SchedulerSettings(scheduler_store_path=tmp_path / "bse-disabled.sqlite", _env_file=None)
+    )
+    enabled = build_scheduler(
+        SchedulerSettings(
+            scheduler_store_path=tmp_path / "bse-enabled.sqlite",
+            security_bse_enabled=True,
+            _env_file=None,
+        )
+    )
+
+    assert disabled.get_job(SECURITY_BSE_JOB_ID) is None
+    job = enabled.get_job(SECURITY_BSE_JOB_ID)
+    assert job is not None
+    assert str(job.trigger) == "cron[day_of_week='mon-fri', hour='20', minute='15']"
+
+
+def test_dragon_tiger_requires_same_date_successful_bse_security_workflow() -> None:
+    requested: list[tuple[object, date]] = []
+
+    class Operations:
+        def has_succeeded_on_date(self, workflow_code: object, trade_date: date) -> bool:
+            requested.append((workflow_code, trade_date))
+            return False
+
+    with pytest.raises(ProviderError, match="DT_BSE_SECURITY_PREREQUISITE_FAILED"):
+        _require_dragon_tiger_bse_prerequisite(  # type: ignore[arg-type]
+            Operations(), date(2026, 8, 20)
+        )
+
+    assert requested == [(scheduler_module.WorkflowCode.SECURITY_BSE_DAILY, date(2026, 8, 20))]
 
 
 def test_legacy_time_environment_cannot_change_registered_jobs(monkeypatch, tmp_path: Path) -> None:

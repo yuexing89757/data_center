@@ -31,6 +31,7 @@ from market_data_center.domain.stock_pool import (
     MAINBOARD_LIMIT_DOWN_POOL,
     MAINBOARD_LIMIT_UP_POOL,
 )
+from market_data_center.dragon_tiger_recovery import DragonTigerOrphanRecovery
 from market_data_center.dragon_tiger_service import (
     DragonTigerBackfillSummary,
     DragonTigerCollectionSummary,
@@ -57,6 +58,7 @@ from market_data_center.providers import (
     ProviderRouter,
     ProviderRoutingError,
     RoutedResult,
+    TushareBseSecurityProvider,
     available_board_index_provider_codes,
     available_provider_codes,
     create_board_index_provider,
@@ -98,9 +100,9 @@ class StockDailyIndicatorWorkflowResult:
     deleted_rows: int
 
 
-class _DragonTigerBackfillStopped(RuntimeError):
+class _DragonTigerBackfillIncomplete(RuntimeError):
     def __init__(self, summary: DragonTigerBackfillSummary) -> None:
-        super().__init__("DragonTiger backfill stopped at the first failed date")
+        super().__init__("DragonTiger backfill completed with failed dates")
         self.summary = summary
 
 
@@ -126,6 +128,32 @@ def main() -> None:
     )
     persistence = PostgreSQLPersistence(engine)
     raw_store = LocalRawStore(settings.raw_data_root)
+
+    if args.dataset == "dragon-tiger-raw-recovery":
+        try:
+            dry_run = _validate_dragon_tiger_recovery_args(args)
+            recovery = DragonTigerOrphanRecovery(
+                raw_store=raw_store,
+                persistence=PostgreSQLDragonTigerPersistence(engine),
+            )
+            recovery_summary = recovery.register(recovery.scan(), dry_run=dry_run)
+            print(dumps(asdict(recovery_summary), ensure_ascii=False, sort_keys=True, default=str))
+        except Exception as error:
+            print(
+                dumps(
+                    {
+                        "status": "failed",
+                        "operation": args.dataset,
+                        "error_type": type(error).__name__,
+                    },
+                    sort_keys=True,
+                ),
+                file=stderr,
+            )
+            raise SystemExit(1) from None
+        finally:
+            engine.dispose()
+        return
 
     if args.dataset in {"shareholder-count-daily", "shareholder-count-backfill"}:
         workflow_code = (
@@ -451,6 +479,7 @@ def main() -> None:
     if (
         args.dataset
         in {
+            "security-bse",
             "stock-daily-indicator",
             "stock-daily-indicators-bulk",
             "deducted-profit-daily",
@@ -621,6 +650,15 @@ def _run_explicit(
     persistence: PostgreSQLPersistence,
     raw_store: LocalRawStore,
 ) -> IngestionRun | DailyBarBulkSummary | None:
+    if args.dataset == "security-bse":
+        if args.provider != "tushare":
+            raise SystemExit("security-bse requires --provider tushare")
+        with TushareBseSecurityProvider.default() as provider:
+            return IngestionPipeline(
+                provider=provider,
+                raw_store=raw_store,
+                persistence=persistence,
+            ).ingest_securities()
     with create_provider(args.provider) as provider:
         pipeline = IngestionPipeline(
             provider=provider,
@@ -1095,6 +1133,7 @@ def _commit_daily_bar_batches(
 def _dataset_code(dataset: str) -> DatasetCode:
     return {
         "security": DatasetCode.SECURITY,
+        "security-bse": DatasetCode.SECURITY,
         "trading-calendar": DatasetCode.TRADING_CALENDAR,
         "daily-bar": DatasetCode.DAILY_BAR,
         "capital": DatasetCode.CAPITAL,
@@ -1104,7 +1143,7 @@ def _dataset_code(dataset: str) -> DatasetCode:
 
 
 def _execute(args: Namespace, pipeline: IngestionPipeline) -> IngestionRun:
-    if args.dataset == "security":
+    if args.dataset in {"security", "security-bse"}:
         return pipeline.ingest_securities()
     if args.dataset == "capital":
         return pipeline.ingest_capital(args.source_symbol, mode=args.mode)
@@ -1165,9 +1204,15 @@ def _validate_dragon_tiger_args(
         raise ValueError("--start-date and --end-date must both be provided")
     if start > end:
         raise ValueError("start_date must not follow end_date")
-    if (end - start).days > 365:
-        raise ValueError("DragonTiger range is bounded to 366 calendar days")
+    if (end - start).days > 729:
+        raise ValueError("DragonTiger range is bounded to 730 calendar days")
     return None, start, end
+
+
+def _validate_dragon_tiger_recovery_args(args: Namespace) -> bool:
+    if args.execute and not args.confirm:
+        raise ValueError("DragonTiger Raw recovery execution requires confirmation")
+    return bool(args.dry_run)
 
 
 def _run_dragon_tiger_command(args: Namespace) -> None:
@@ -1197,8 +1242,8 @@ def _run_dragon_tiger_command(args: Namespace) -> None:
 
                 def collect_range() -> DragonTigerBackfillSummary:
                     summary = service.backfill(start, end)
-                    if summary.failed_date is not None:
-                        raise _DragonTigerBackfillStopped(summary)
+                    if summary.failed_dates:
+                        raise _DragonTigerBackfillIncomplete(summary)
                     return summary
 
                 result = execution.step("collect_dragon_tiger", 1, collect_range)
@@ -1206,7 +1251,7 @@ def _run_dragon_tiger_command(args: Namespace) -> None:
             execution.fail(error)
             payload: object = (
                 asdict(error.summary)
-                if isinstance(error, _DragonTigerBackfillStopped)
+                if isinstance(error, _DragonTigerBackfillIncomplete)
                 else {
                     "status": "failed",
                     "operation": "dragon-tiger-collect",
@@ -1259,7 +1304,16 @@ def _parser() -> ArgumentParser:
         required=True,
         help="confirm source-rights review before this explicit collection command",
     )
+    recovery = subparsers.add_parser(
+        "dragon-tiger-raw-recovery",
+        help="scan or register immutable DragonTiger Raw objects missing database lineage",
+    )
+    recovery_mode = recovery.add_mutually_exclusive_group(required=True)
+    recovery_mode.add_argument("--dry-run", action="store_true")
+    recovery_mode.add_argument("--execute", action="store_true")
+    recovery.add_argument("--confirm", action="store_true")
     subparsers.add_parser("security", help="synchronize the security master")
+    subparsers.add_parser("security-bse", help="synchronize Tushare BSE L/D/P security master")
 
     calendar = subparsers.add_parser("trading-calendar", help="synchronize natural-day calendar")
     _add_date_range(calendar)

@@ -4,6 +4,10 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 
+from market_data_center.domain.dragon_tiger import (
+    DragonTigerAmountPeriodBasis,
+    DragonTigerWindowBasis,
+)
 from market_data_center.dragon_tiger_analytics import (
     DragonTigerCapitalMetrics,
     TradingSeatProfile,
@@ -17,7 +21,15 @@ class DragonTigerFeature:
     event_source_record_id: str
     symbol: str
     feature_date: date
-    period_type: str
+    trigger_window_basis: DragonTigerWindowBasis
+    trigger_window_sessions: int
+    trigger_occurrence_count: int | None
+    amount_period_basis: DragonTigerAmountPeriodBasis
+    amount_period_sessions: int | None
+    amount_period_verified: bool
+    buy_disclosure_present: bool
+    sell_disclosure_present: bool
+    data_quality_codes: tuple[str, ...]
     algorithm_version: str
     change_pct: Decimal | None
     turnover_rate: Decimal | None
@@ -135,7 +147,14 @@ def build_dragon_tiger_feature(
     event_source_record_id: str,
     symbol: str,
     feature_date: date,
-    period_type: str,
+    trigger_window_basis: DragonTigerWindowBasis,
+    trigger_window_sessions: int,
+    trigger_occurrence_count: int | None,
+    amount_period_basis: DragonTigerAmountPeriodBasis,
+    amount_period_sessions: int | None,
+    buy_disclosure_present: bool,
+    sell_disclosure_present: bool,
+    data_quality_codes: tuple[str, ...],
     change_pct: Decimal | None,
     turnover_rate: Decimal | None,
     metrics: DragonTigerCapitalMetrics,
@@ -146,8 +165,19 @@ def build_dragon_tiger_feature(
         raise ValueError("feature metrics do not match the event")
     if any(profile.as_of_date >= feature_date for profile in seat_profiles):
         raise ValueError("feature profiles must be from strictly before the feature date")
-    if period_type not in {"DAY", "THREE_DAY"}:
-        raise ValueError("period_type must be DAY or THREE_DAY")
+    if trigger_window_sessions < 1:
+        raise ValueError("trigger_window_sessions must be positive")
+    if trigger_occurrence_count is not None and trigger_occurrence_count < 1:
+        raise ValueError("trigger_occurrence_count must be positive")
+    if amount_period_basis is DragonTigerAmountPeriodBasis.SOURCE_UNSPECIFIED:
+        if amount_period_sessions is not None:
+            raise ValueError("unspecified amount period cannot have a session count")
+    elif amount_period_sessions is None or amount_period_sessions < 1:
+        raise ValueError("verified amount period must have a positive session count")
+    if not buy_disclosure_present and not sell_disclosure_present:
+        raise ValueError("feature requires at least one disclosed side")
+    if any(not code.startswith("DT_") for code in data_quality_codes):
+        raise ValueError("DragonTiger feature quality codes must use the DT_ namespace")
     if not algorithm_version.strip():
         raise ValueError("algorithm_version must not be blank")
     metric_definitions = {profile.metric_definition for profile in seat_profiles}
@@ -167,7 +197,17 @@ def build_dragon_tiger_feature(
         event_source_record_id=event_source_record_id,
         symbol=symbol,
         feature_date=feature_date,
-        period_type=period_type,
+        trigger_window_basis=trigger_window_basis,
+        trigger_window_sessions=trigger_window_sessions,
+        trigger_occurrence_count=trigger_occurrence_count,
+        amount_period_basis=amount_period_basis,
+        amount_period_sessions=amount_period_sessions,
+        amount_period_verified=(
+            amount_period_basis is not DragonTigerAmountPeriodBasis.SOURCE_UNSPECIFIED
+        ),
+        buy_disclosure_present=buy_disclosure_present,
+        sell_disclosure_present=sell_disclosure_present,
+        data_quality_codes=data_quality_codes,
         algorithm_version=algorithm_version,
         change_pct=change_pct,
         turnover_rate=turnover_rate,

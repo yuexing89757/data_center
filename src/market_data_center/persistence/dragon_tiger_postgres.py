@@ -58,6 +58,28 @@ class PostgreSQLDragonTigerPersistence:
             raise ValueError("trading calendar cannot resolve the requested period")
         return cast(date, min(rows))
 
+    def security_traded_period_start_date(
+        self, symbol: str, trade_date: date, session_count: int
+    ) -> date:
+        if session_count < 1:
+            raise ValueError("session_count must be positive")
+        with self._engine.connect() as connection:
+            rows = connection.scalars(
+                text("""
+                    select trade_date from core.daily_bar
+                    where symbol=:symbol and trade_date <= :trade_date and volume > 0
+                    order by trade_date desc limit :session_count
+                """),
+                {
+                    "symbol": symbol,
+                    "trade_date": trade_date,
+                    "session_count": session_count,
+                },
+            ).all()
+        if len(rows) != session_count:
+            raise ValueError("daily bars cannot resolve the requested traded-session window")
+        return cast(date, min(rows))
+
     def known_stock_symbols(self, trade_date: date) -> frozenset[str]:
         with self._engine.connect() as connection:
             symbols = connection.scalars(
@@ -82,6 +104,81 @@ class PostgreSQLDragonTigerPersistence:
                 {"start_date": start_date, "end_date": end_date},
             ).all()
         return frozenset(dates)
+
+    def succeeded_dates(self, start_date: date, end_date: date) -> frozenset[date]:
+        with self._engine.connect() as connection:
+            values = connection.scalars(
+                text("""
+                    select distinct event.trade_date
+                    from billboard.dragon_tiger_event event
+                    join ingestion.ingestion_run run
+                      on run.ingestion_id = event.ingestion_id
+                    where run.dataset_code='dragon_tiger'
+                      and run.status='succeeded'
+                      and event.trade_date between :start_date and :end_date
+                """),
+                {"start_date": start_date, "end_date": end_date},
+            ).all()
+        return frozenset(values)
+
+    def begin_ingestion(self, run: IngestionRun) -> None:
+        _require_run(run, IngestionStatus.RUNNING)
+        with self._engine.begin() as connection:
+            _insert_run(connection, run)
+
+    def attach_raw_manifest(self, run: IngestionRun, manifest: RawManifest) -> None:
+        _require_run(run, IngestionStatus.RUNNING)
+        if manifest.ingestion_id != run.ingestion_id:
+            raise ValueError("DragonTiger manifest ingestion_id does not match its run")
+        with self._engine.begin() as connection:
+            _update_running_run(connection, run, manifest.row_count)
+            _insert_manifest(connection, manifest)
+
+    def publish_success(
+        self,
+        run: IngestionRun,
+        quality: Sequence[QualityResult],
+        records: Sequence[DragonTigerEventRecord],
+    ) -> DragonTigerCollectionSummary:
+        return self._commit(run, None, quality, records, insert_run=False)
+
+    def complete_failure(self, run: IngestionRun, quality: Sequence[QualityResult]) -> None:
+        _require_run(run, IngestionStatus.FAILED)
+        with self._engine.begin() as connection:
+            _update_run(connection, run)
+            _insert_quality(connection, quality)
+
+    def orphan_raw_state(self, ingestion_id: UUID, object_path: str, content_sha256: str) -> str:
+        with self._engine.connect() as connection:
+            row = connection.execute(
+                text("""
+                    select run.ingestion_id, manifest.object_path, manifest.content_sha256
+                    from ingestion.ingestion_run run
+                    left join ingestion.raw_manifest manifest
+                      on manifest.ingestion_id = run.ingestion_id
+                    where run.ingestion_id=:ingestion_id
+                """),
+                {"ingestion_id": ingestion_id},
+            ).one_or_none()
+        if row is None:
+            return "unregistered"
+        if row.object_path == object_path and row.content_sha256 == content_sha256:
+            return "already_registered"
+        return "conflict"
+
+    def register_orphan_raw(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest,
+        quality: Sequence[QualityResult],
+    ) -> None:
+        _require_run(run, IngestionStatus.FAILED)
+        if run.ingestion_id != manifest.ingestion_id:
+            raise ValueError("DragonTiger orphan manifest does not match its run")
+        with self._engine.begin() as connection:
+            _insert_run(connection, run)
+            _insert_manifest(connection, manifest)
+            _insert_quality(connection, quality)
 
     def commit_success(
         self,
@@ -159,14 +256,24 @@ class PostgreSQLDragonTigerPersistence:
                     event_id = connection.scalar(
                         text("""
                             insert into billboard.dragon_tiger_event (
-                                symbol, trade_date, period_type, period_start_date, period_end_date,
+                                symbol, trade_date, trigger_window_basis,
+                                trigger_window_sessions, trigger_occurrence_count,
+                                trigger_start_date, trigger_end_date, amount_period_basis,
+                                amount_period_sessions, amount_period_start_date,
+                                amount_period_end_date, buy_disclosure_present,
+                                sell_disclosure_present,
                                 reason_id, reason_name_raw, close_price, change_pct,
                                 turnover_amount, turnover_rate, amplitude, lhb_buy_amount,
                                 lhb_sell_amount, source_code, source_record_id, ingestion_id,
                                 content_hash
                             ) values (
-                                :symbol, :trade_date, :period_type, :period_start_date,
-                                :period_end_date, :reason_id, :reason_name_raw, :close_price,
+                                :symbol, :trade_date, :trigger_window_basis,
+                                :trigger_window_sessions, :trigger_occurrence_count,
+                                :trigger_start_date, :trigger_end_date, :amount_period_basis,
+                                :amount_period_sessions, :amount_period_start_date,
+                                :amount_period_end_date, :buy_disclosure_present,
+                                :sell_disclosure_present, :reason_id, :reason_name_raw,
+                                :close_price,
                                 :change_pct, :turnover_amount, :turnover_rate, :amplitude,
                                 :lhb_buy_amount, :lhb_sell_amount, :source_code,
                                 :source_record_id, :ingestion_id, :content_hash
@@ -185,8 +292,18 @@ class PostgreSQLDragonTigerPersistence:
                         text("""
                             update billboard.dragon_tiger_event set
                                 symbol=:symbol, trade_date=:trade_date,
-                                period_type=:period_type, period_start_date=:period_start_date,
-                                period_end_date=:period_end_date, reason_id=:reason_id,
+                                trigger_window_basis=:trigger_window_basis,
+                                trigger_window_sessions=:trigger_window_sessions,
+                                trigger_occurrence_count=:trigger_occurrence_count,
+                                trigger_start_date=:trigger_start_date,
+                                trigger_end_date=:trigger_end_date,
+                                amount_period_basis=:amount_period_basis,
+                                amount_period_sessions=:amount_period_sessions,
+                                amount_period_start_date=:amount_period_start_date,
+                                amount_period_end_date=:amount_period_end_date,
+                                buy_disclosure_present=:buy_disclosure_present,
+                                sell_disclosure_present=:sell_disclosure_present,
+                                reason_id=:reason_id,
                                 reason_name_raw=:reason_name_raw, close_price=:close_price,
                                 change_pct=:change_pct, turnover_amount=:turnover_amount,
                                 turnover_rate=:turnover_rate, amplitude=:amplitude,
@@ -220,19 +337,17 @@ def _upsert_reason(connection: Connection, record: DragonTigerEventRecord) -> UU
     reason_id = connection.scalar(
         text("""
             insert into billboard.dragon_tiger_reason (
-                reason_code, reason_name, reason_type, period_type
-            ) values (:reason_code, :reason_name, :reason_type, :period_type)
+                reason_code, reason_name, reason_type
+            ) values (:reason_code, :reason_name, :reason_type)
             on conflict (reason_code) do update set
                 reason_name=excluded.reason_name,
-                reason_type=excluded.reason_type,
-                period_type=excluded.period_type
+                reason_type=excluded.reason_type
             returning reason_id
         """),
         {
             "reason_code": reason.reason_code,
             "reason_name": reason.reason_name,
             "reason_type": reason.reason_type.value,
-            "period_type": reason.period_type.value,
         },
     )
     if not isinstance(reason_id, UUID):
@@ -240,17 +355,16 @@ def _upsert_reason(connection: Connection, record: DragonTigerEventRecord) -> UU
     connection.execute(
         text("""
             insert into billboard.reason_source_alias (
-                source_code, source_reason_code, source_reason_name, period_type, reason_id
+                source_code, source_reason_code, source_reason_name, reason_id
             ) values (
-                :source_code, :source_reason_code, :source_reason_name, :period_type, :reason_id
-            ) on conflict (source_code, source_reason_code, source_reason_name, period_type)
+                :source_code, :source_reason_code, :source_reason_name, :reason_id
+            ) on conflict (source_code, source_reason_code, source_reason_name)
             do update set reason_id=excluded.reason_id, last_seen_at=now()
         """),
         {
             "source_code": reason.source_code,
             "source_reason_code": reason.source_reason_code,
             "source_reason_name": reason.source_reason_name,
-            "period_type": reason.period_type.value,
             "reason_id": reason_id,
         },
     )
@@ -259,59 +373,24 @@ def _upsert_reason(connection: Connection, record: DragonTigerEventRecord) -> UU
 
 def _resolve_seat(connection: Connection, trade: SeatTradeRecord) -> UUID | None:
     if trade.seat_source_key is None:
-        if trade.seat_name_raw in {
-            "机构专用",
-            "沪股通专用",
-            "深股通专用",
-            "北向资金专用",
-        }:
-            return None
-        existing = connection.scalar(
-            text("""
-                select seat_id from billboard.trading_seat_alias
-                where source_code=:source_code and alias_name=:alias_name
-            """),
-            {"source_code": trade.source_code, "alias_name": trade.seat_name_raw},
-        )
-        if existing is not None and not isinstance(existing, UUID):
-            raise RuntimeError("DragonTiger Alias resolution returned an invalid seat UUID")
-        resolved = existing if isinstance(existing, UUID) else trade.seat_id
-        if resolved is not None:
-            _touch_seat_dates(connection, resolved, trade.trade_date)
-        return resolved
+        return None
     connection.execute(
         text("select pg_advisory_xact_lock(hashtextextended(:key, 0))"),
         {"key": f"dragon_tiger_seat:{trade.source_code}:{trade.seat_source_key}"},
     )
-    by_key = connection.execute(
+    identity = connection.execute(
         text("""
-            select alias_id, seat_id, source_seat_key
-            from billboard.trading_seat_alias
+            select identity_id, seat_id
+            from billboard.trading_seat_source_identity
             where source_code=:source_code and source_seat_key=:source_seat_key
+            for update
         """),
         {
             "source_code": trade.source_code,
             "source_seat_key": trade.seat_source_key,
         },
     ).one_or_none()
-    by_name = connection.execute(
-        text("""
-            select alias_id, seat_id, source_seat_key
-            from billboard.trading_seat_alias
-            where source_code=:source_code and alias_name=:alias_name
-        """),
-        {"source_code": trade.source_code, "alias_name": trade.seat_name_raw},
-    ).one_or_none()
-    if by_key is not None and by_name is not None and by_key.seat_id != by_name.seat_id:
-        raise RuntimeError("DragonTiger reliable seat key conflicts with its Alias")
-    if (
-        by_key is None
-        and by_name is not None
-        and by_name.source_seat_key not in {None, trade.seat_source_key}
-    ):
-        raise RuntimeError("DragonTiger Alias is already bound to another reliable seat key")
-    seat_id = by_key.seat_id if by_key is not None else by_name.seat_id if by_name else None
-    if seat_id is None:
+    if identity is None:
         seat_type = (
             TradingSeatType.NORTHBOUND
             if trade.is_northbound
@@ -332,41 +411,54 @@ def _resolve_seat(connection: Connection, trade: SeatTradeRecord) -> UUID | None
                 "trade_date": trade.trade_date,
             },
         )
-    if not isinstance(seat_id, UUID):
-        raise RuntimeError("DragonTiger seat resolution returned no UUID")
-    _touch_seat_dates(connection, seat_id, trade.trade_date)
-    alias_params = {
-        "seat_id": seat_id,
-        "source_code": trade.source_code,
-        "source_seat_key": trade.seat_source_key,
-        "alias_name": trade.seat_name_raw,
-    }
-    if by_key is not None:
-        if by_name is None:
-            connection.execute(
-                text("""
-                    update billboard.trading_seat_alias set alias_name=:alias_name
-                    where alias_id=:alias_id
-                """),
-                {"alias_id": by_key.alias_id, "alias_name": trade.seat_name_raw},
-            )
-    elif by_name is not None:
-        connection.execute(
+        if not isinstance(seat_id, UUID):
+            raise RuntimeError("DT_SEAT_IDENTITY_CONFLICT")
+        identity_id = connection.scalar(
             text("""
-                update billboard.trading_seat_alias set source_seat_key=:source_seat_key
-                where alias_id=:alias_id
+                insert into billboard.trading_seat_source_identity (
+                    seat_id, source_code, source_seat_key, first_seen_date, last_seen_date
+                ) values (
+                    :seat_id, :source_code, :source_seat_key, :trade_date, :trade_date
+                ) returning identity_id
             """),
-            {"alias_id": by_name.alias_id, "source_seat_key": trade.seat_source_key},
+            {
+                "seat_id": seat_id,
+                "source_code": trade.source_code,
+                "source_seat_key": trade.seat_source_key,
+                "trade_date": trade.trade_date,
+            },
         )
     else:
-        connection.execute(
-            text("""
-                insert into billboard.trading_seat_alias (
-                    seat_id, source_code, source_seat_key, alias_name
-                ) values (:seat_id, :source_code, :source_seat_key, :alias_name)
-            """),
-            alias_params,
-        )
+        identity_id, seat_id = identity.identity_id, identity.seat_id
+    if not isinstance(identity_id, UUID) or not isinstance(seat_id, UUID):
+        raise RuntimeError("DT_SEAT_IDENTITY_CONFLICT")
+    _touch_seat_dates(connection, seat_id, trade.trade_date)
+    connection.execute(
+        text("""
+            update billboard.trading_seat_source_identity set
+                first_seen_date=least(first_seen_date, :trade_date),
+                last_seen_date=greatest(last_seen_date, :trade_date)
+            where identity_id=:identity_id
+        """),
+        {"identity_id": identity_id, "trade_date": trade.trade_date},
+    )
+    connection.execute(
+        text("""
+            insert into billboard.trading_seat_alias (
+                identity_id, alias_name, first_seen_date, last_seen_date
+            ) values (:identity_id, :alias_name, :trade_date, :trade_date)
+            on conflict (identity_id, alias_name) do update set
+                first_seen_date=least(billboard.trading_seat_alias.first_seen_date,
+                                      excluded.first_seen_date),
+                last_seen_date=greatest(billboard.trading_seat_alias.last_seen_date,
+                                        excluded.last_seen_date)
+        """),
+        {
+            "identity_id": identity_id,
+            "alias_name": trade.seat_name_raw,
+            "trade_date": trade.trade_date,
+        },
+    )
     return seat_id
 
 
@@ -391,9 +483,17 @@ def _event_params(
     return {
         "symbol": record.symbol,
         "trade_date": record.trade_date,
-        "period_type": record.period_type.value,
-        "period_start_date": record.period_start_date,
-        "period_end_date": record.period_end_date,
+        "trigger_window_basis": record.trigger_window.basis.value,
+        "trigger_window_sessions": record.trigger_window.session_count,
+        "trigger_occurrence_count": record.trigger_window.occurrence_count,
+        "trigger_start_date": record.trigger_window.start_date,
+        "trigger_end_date": record.trigger_window.end_date,
+        "amount_period_basis": record.amount_period.basis.value,
+        "amount_period_sessions": record.amount_period.session_count,
+        "amount_period_start_date": record.amount_period.start_date,
+        "amount_period_end_date": record.amount_period.end_date,
+        "buy_disclosure_present": record.buy_disclosure_present,
+        "sell_disclosure_present": record.sell_disclosure_present,
         "reason_id": reason_id,
         "reason_name_raw": record.reason_name_raw,
         "close_price": record.close_price,
@@ -501,15 +601,34 @@ def _insert_run(connection: Connection, run: IngestionRun) -> None:
 
 
 def _update_run(connection: Connection, run: IngestionRun) -> None:
-    connection.execute(
+    result = connection.execute(
         text("""
             update ingestion.ingestion_run set status=:status, finished_at=:finished_at,
                 fetched_rows=:fetched_rows, accepted_rows=:accepted_rows,
                 rejected_rows=:rejected_rows, error_summary=:error_summary
-            where ingestion_id=:ingestion_id
+            where ingestion_id=:ingestion_id and status='running'
         """),
         _run_params(run),
     )
+    if result.rowcount != 1:
+        raise RuntimeError("DT_INGESTION_STATE_CONFLICT")
+
+
+def _update_running_run(connection: Connection, run: IngestionRun, fetched_rows: int) -> None:
+    result = connection.execute(
+        text("""
+            update ingestion.ingestion_run set
+                request_params=cast(:request_params as jsonb), fetched_rows=:fetched_rows
+            where ingestion_id=:ingestion_id and status='running'
+        """),
+        {
+            "ingestion_id": run.ingestion_id,
+            "request_params": _json(run.request_params),
+            "fetched_rows": fetched_rows,
+        },
+    )
+    if result.rowcount != 1:
+        raise RuntimeError("DT_INGESTION_STATE_CONFLICT")
 
 
 def _run_params(run: IngestionRun) -> dict[str, object]:

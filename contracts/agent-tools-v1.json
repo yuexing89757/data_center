@@ -544,7 +544,7 @@
     },
     {
       "name": "market_dragon_tiger_events_by_date",
-      "description": "Read one exact trading date of DAY and/or THREE_DAY DragonTiger events with merged seat trades.",
+      "description": "Read one exact trading date of DragonTiger events, with optional trigger-window filters and merged seat trades.",
       "endpoint": "query_dragon_tiger_events_by_date",
       "read_only": true,
       "input_schema": {
@@ -558,16 +558,23 @@
             "type": "string",
             "format": "date"
           },
-          "p_period_type": {
+          "p_trigger_window_basis": {
             "type": [
               "string",
               "null"
             ],
             "enum": [
-              "DAY",
-              "THREE_DAY",
+              "MARKET_SESSIONS",
+              "SECURITY_TRADED_SESSIONS",
               null
             ]
+          },
+          "p_trigger_window_sessions": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
           },
           "p_limit": {
             "type": "integer",
@@ -610,16 +617,23 @@
             "type": "string",
             "format": "date"
           },
-          "p_period_type": {
+          "p_trigger_window_basis": {
             "type": [
               "string",
               "null"
             ],
             "enum": [
-              "DAY",
-              "THREE_DAY",
+              "MARKET_SESSIONS",
+              "SECURITY_TRADED_SESSIONS",
               null
             ]
+          },
+          "p_trigger_window_sessions": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
           },
           "p_limit": {
             "type": "integer",

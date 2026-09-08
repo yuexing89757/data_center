@@ -33,10 +33,13 @@ from market_data_center.domain.deducted_profit import (
     validate_deducted_profits,
 )
 from market_data_center.domain.dragon_tiger import (
+    DragonTigerAmountPeriodBasis,
     DragonTigerEventDraft,
     DragonTigerEventRecord,
     DragonTigerFinding,
-    DragonTigerPeriodType,
+    DragonTigerNormalizationResult,
+    DragonTigerSourceFinding,
+    DragonTigerWindowBasis,
     validate_dragon_tiger_events,
 )
 from market_data_center.domain.entities import CalculatedTradingDay
@@ -71,7 +74,7 @@ from market_data_center.providers.akshare import normalize_akshare_raw
 from market_data_center.providers.akshare_ths import normalize_akshare_ths_raw
 from market_data_center.providers.baostock import normalize_baostock_raw
 from market_data_center.providers.contracts import ProviderError, ProviderRecord
-from market_data_center.providers.eastmoney_dragon_tiger import (
+from market_data_center.providers.eastmoney_dragon_tiger_normalizer import (
     normalize_eastmoney_dragon_tiger_raw,
 )
 from market_data_center.providers.pytdx import normalize_pytdx_raw
@@ -148,6 +151,10 @@ class ReliabilityPersistence(Protocol):
     ) -> set[str]: ...
 
     def dragon_tiger_period_start_date(self, trade_date: date, session_count: int) -> date: ...
+
+    def dragon_tiger_security_traded_period_start_date(
+        self, symbol: str, trade_date: date, session_count: int
+    ) -> date: ...
 
     def known_trading_dates(self, dates: Collection[date]) -> set[date]: ...
 
@@ -281,16 +288,7 @@ _NORMALIZERS: Mapping[ProviderCode, Normalizer] = {
     ProviderCode.AKSHARE_THS: normalize_akshare_ths_raw,
     ProviderCode.BAOSTOCK: normalize_baostock_raw,
     ProviderCode.PYTDX: normalize_pytdx_raw,
-    ProviderCode.TUSHARE: lambda dataset, schema, rows, params: (
-        _normalize_tushare_dragon_tiger_replay(schema, rows, params)
-        if dataset is DatasetCode.DRAGON_TIGER
-        else normalize_tushare_raw(dataset, schema, rows, params)
-    ),
-    ProviderCode.EASTMONEY: lambda dataset, schema, rows, params: (
-        _normalize_eastmoney_dragon_tiger_replay(schema, rows, params)
-        if dataset in {DatasetCode.TRADING_BILLBOARD, DatasetCode.DRAGON_TIGER}
-        else _unsupported_eastmoney_replay(dataset)
-    ),
+    ProviderCode.TUSHARE: normalize_tushare_raw,
 }
 
 
@@ -302,7 +300,7 @@ def _normalize_eastmoney_dragon_tiger_replay(
     schema: str,
     rows: Sequence[Mapping[str, str]],
     request_params: Mapping[str, object],
-) -> tuple[ProviderRecord, ...]:
+) -> DragonTigerNormalizationResult:
     requested_value = request_params.get("trade_date")
     if not isinstance(requested_value, str):
         raise ProviderError("Eastmoney DragonTiger replay request trade_date is missing")
@@ -310,17 +308,17 @@ def _normalize_eastmoney_dragon_tiger_replay(
         requested_date = date.fromisoformat(requested_value)
     except ValueError as error:
         raise ProviderError("Eastmoney DragonTiger replay request trade_date is invalid") from error
-    records = normalize_eastmoney_dragon_tiger_raw(rows, schema)
-    if any(record.trade_date != requested_date for record in records):
+    result = normalize_eastmoney_dragon_tiger_raw(rows, schema)
+    if any(record.trade_date != requested_date for record in result.events):
         raise ProviderError("Eastmoney DragonTiger Raw date does not match request trade_date")
-    return records
+    return result
 
 
 def _normalize_tushare_dragon_tiger_replay(
     schema: str,
     rows: Sequence[Mapping[str, str]],
     request_params: Mapping[str, object],
-) -> tuple[ProviderRecord, ...]:
+) -> DragonTigerNormalizationResult:
     requested_value = request_params.get("trade_date")
     if not isinstance(requested_value, str):
         raise ProviderError("Tushare DragonTiger replay request trade_date is missing")
@@ -328,10 +326,16 @@ def _normalize_tushare_dragon_tiger_replay(
         requested_date = date.fromisoformat(requested_value)
     except ValueError as error:
         raise ProviderError("Tushare DragonTiger replay request trade_date is invalid") from error
-    records = normalize_tushare_dragon_tiger_raw(rows, schema)
-    if any(record.trade_date != requested_date for record in records):
+    result = normalize_tushare_dragon_tiger_raw(rows, schema)
+    if any(record.trade_date != requested_date for record in result.events):
         raise ProviderError("Tushare DragonTiger Raw date does not match request trade_date")
-    return records
+    return result
+
+
+@dataclass(frozen=True, slots=True)
+class _NormalizedReplay:
+    records: tuple[ProviderRecord, ...]
+    dragon_tiger_findings: tuple[DragonTigerSourceFinding, ...] = ()
 
 
 CALL_AUCTION_MARKET_REPLAY_DISABLED = (
@@ -368,48 +372,59 @@ class RawReplayService:
         if run is not None:
             self._persistence.create_ingestion_run(run)
         try:
-            records = self._normalize(source)
-            return self._validate_and_commit(source, records, run, dry_run=dry_run)
+            normalized = self._normalize(source)
+            return self._validate_and_commit(source, normalized, run, dry_run=dry_run)
         except Exception as error:
             if run is not None:
                 self._commit_failure(run, error)
             raise
 
-    def _normalize(self, source: ReplaySource) -> tuple[ProviderRecord, ...]:
+    def _normalize(self, source: ReplaySource) -> _NormalizedReplay:
         if source.manifest is None:
             raise RawIntegrityError("ingestion run has no Raw manifest")
         rows = self._raw_store.read_jsonl(source.manifest)
-        normalizer = _NORMALIZERS[source.provider_code]
-        records = normalizer(
-            source.dataset_code,
-            source.manifest.schema_version,
-            rows,
-            source.request_params,
-        )
+        if source.dataset_code in {DatasetCode.TRADING_BILLBOARD, DatasetCode.DRAGON_TIGER}:
+            if source.provider_code is ProviderCode.EASTMONEY:
+                result = _normalize_eastmoney_dragon_tiger_replay(
+                    source.manifest.schema_version, rows, source.request_params
+                )
+            elif source.provider_code is ProviderCode.TUSHARE:
+                result = _normalize_tushare_dragon_tiger_replay(
+                    source.manifest.schema_version, rows, source.request_params
+                )
+            else:
+                raise ProviderError("unsupported DragonTiger replay provider")
+            records: tuple[ProviderRecord, ...] = result.events
+            findings = result.findings
+        else:
+            normalizer = _NORMALIZERS[source.provider_code]
+            records = normalizer(
+                source.dataset_code,
+                source.manifest.schema_version,
+                rows,
+                source.request_params,
+            )
+            findings = ()
         mismatched = sum(record.source_code != source.provider_code.value for record in records)
         if mismatched:
             raise ProviderError(
                 f"replayed batch contains {mismatched} record(s) with mismatched source_code"
             )
-        return records
+        return _NormalizedReplay(records, findings)
 
     def _validate_and_commit(
         self,
         source: ReplaySource,
-        records: tuple[ProviderRecord, ...],
+        normalized: _NormalizedReplay,
         run: IngestionRun | None,
         *,
         dry_run: bool,
     ) -> ReplaySummary:
+        records = normalized.records
         if source.dataset_code in {DatasetCode.TRADING_BILLBOARD, DatasetCode.DRAGON_TIGER}:
             drafts = cast(tuple[DragonTigerEventDraft, ...], records)
             dragon_tiger_records = tuple(
-                draft.resolve_period(
-                    draft.trade_date
-                    if draft.period_type is DragonTigerPeriodType.DAY
-                    else self._persistence.dragon_tiger_period_start_date(draft.trade_date, 3)
-                )
-                for draft in drafts
+                self._resolve_dragon_tiger_windows(draft) for draft in drafts
             )
             trade_date = (
                 dragon_tiger_records[0].trade_date
@@ -426,19 +441,30 @@ class RawReplayService:
                     {
                         candidate
                         for record in dragon_tiger_records
-                        for candidate in (record.trade_date, record.period_start_date)
+                        for candidate in (
+                            record.trade_date,
+                            record.trigger_window.start_date,
+                            record.amount_period.start_date,
+                        )
+                        if candidate is not None
                     }
                 ),
             )
-            rejected_count = len(dragon_tiger_records) if validation.findings else 0
-            accepted_count = 0 if validation.findings else len(validation.accepted)
+            raw_count = source.manifest.row_count if source.manifest is not None else len(records)
+            filtered_count = sum(
+                finding.filtered_count for finding in normalized.dragon_tiger_findings
+            )
+            rejected_count = raw_count if validation.findings else filtered_count
+            accepted_count = 0 if validation.findings else raw_count - filtered_count
             completed = self._completed(
                 run,
-                len(dragon_tiger_records),
+                raw_count,
                 accepted_count,
                 rejected_count,
             )
-            quality = self._dragon_tiger_quality(completed, validation.findings)
+            quality = self._dragon_tiger_source_quality(
+                completed, normalized.dragon_tiger_findings
+            ) + self._dragon_tiger_quality(completed, validation.findings)
             if completed is not None:
                 if validation.findings:
                     self._persistence.commit_rejected_batch(completed, None, quality)
@@ -453,7 +479,7 @@ class RawReplayService:
                 source,
                 completed,
                 dry_run,
-                len(dragon_tiger_records),
+                raw_count,
                 accepted_count,
                 rejected_count,
             )
@@ -879,6 +905,61 @@ class RawReplayService:
             started_at=now,
             request_params=request_params,
             replayed_from_raw_id=source.manifest.raw_id if source.manifest else None,
+        )
+
+    def _resolve_dragon_tiger_windows(self, draft: DragonTigerEventDraft) -> DragonTigerEventRecord:
+        trigger_start = draft.trigger_window.start_date
+        if trigger_start is None:
+            if draft.trigger_window.basis is DragonTigerWindowBasis.MARKET_SESSIONS:
+                trigger_start = self._persistence.dragon_tiger_period_start_date(
+                    draft.trade_date, draft.trigger_window.session_count
+                )
+            else:
+                trigger_start = self._persistence.dragon_tiger_security_traded_period_start_date(
+                    draft.symbol, draft.trade_date, draft.trigger_window.session_count
+                )
+        amount_start = draft.amount_period.start_date
+        if (
+            amount_start is None
+            and draft.amount_period.basis is not DragonTigerAmountPeriodBasis.SOURCE_UNSPECIFIED
+        ):
+            sessions = draft.amount_period.session_count
+            if sessions is None:
+                raise ProviderError("verified DragonTiger amount period has no sessions")
+            if draft.amount_period.basis is DragonTigerAmountPeriodBasis.MARKET_SESSIONS:
+                amount_start = self._persistence.dragon_tiger_period_start_date(
+                    draft.trade_date, sessions
+                )
+            else:
+                amount_start = self._persistence.dragon_tiger_security_traded_period_start_date(
+                    draft.symbol, draft.trade_date, sessions
+                )
+        return draft.resolve_windows(trigger_start, amount_start)
+
+    def _dragon_tiger_source_quality(
+        self,
+        run: IngestionRun | None,
+        findings: Sequence[DragonTigerSourceFinding],
+    ) -> tuple[QualityResult, ...]:
+        if run is None:
+            return ()
+        return tuple(
+            QualityResult(
+                quality_result_id=self._uuid_factory(),
+                ingestion_id=run.ingestion_id,
+                dataset_code=DatasetCode.DRAGON_TIGER,
+                rule_code=finding.rule_code,
+                severity=finding.severity,
+                status=QualityStatus.FAILED,
+                message="DragonTiger source rows were normalized with a known limitation",
+                natural_key={"source_event_id": finding.source_event_id},
+                details={
+                    "report_kind": finding.report_kind,
+                    "occurrence_count": finding.occurrence_count,
+                    "filtered_count": finding.filtered_count,
+                },
+            )
+            for finding in findings
         )
 
     def _classification_quality(

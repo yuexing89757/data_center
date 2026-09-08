@@ -234,9 +234,22 @@ FIELD_DESCRIPTIONS_ZH = {
         "北向专用席位可完整计算的卖出合计，单位为人民币元；披露不完整时为空。"
     ),
     "northbound_net_amount": "北向专用席位可完整计算的买卖净额，单位为人民币元；披露不完整时为空。",
-    "period_end_date": "龙虎榜统计周期结束交易日。",
-    "period_start_date": "龙虎榜统计周期开始交易日。",
-    "period_type": "统计周期；DAY 为普通榜，THREE_DAY 为三日榜。",
+    "trigger_window_basis": (
+        "触发条件窗口口径；MARKET_SESSIONS 为市场交易日，"
+        "SECURITY_TRADED_SESSIONS 为证券实际交易日。"
+    ),
+    "trigger_window_sessions": "触发条件窗口包含的交易会话数。",
+    "trigger_occurrence_count": "来源披露的触发条件发生次数；未披露时为空。",
+    "trigger_start_date": "触发条件窗口开始交易日；来源无法可靠确定时为空。",
+    "trigger_end_date": "触发条件窗口结束交易日。",
+    "amount_period_basis": "金额统计区间口径；无法可靠确定时为 SOURCE_UNSPECIFIED。",
+    "amount_period_sessions": "金额统计区间包含的交易会话数；未披露时为空。",
+    "amount_period_start_date": "金额统计区间开始交易日；未披露时为空。",
+    "amount_period_end_date": "金额统计区间结束交易日；未披露时为空。",
+    "amount_period_verified": "金额统计区间是否已由来源信息可靠确认。",
+    "buy_disclosure_present": "来源是否提供了可用的买入方向披露。",
+    "sell_disclosure_present": "来源是否提供了可用的卖出方向披露。",
+    "data_quality_codes": "与该龙虎榜事实关联的数据质量代码列表。",
     "pure_buy_seat_count": "买入额大于零且卖出额明确为零的席位数量。",
     "pure_sell_seat_count": "卖出额大于零且买入额明确为零的席位数量。",
     "deal_amount": "龙虎榜成交金额，单位为人民币元。",

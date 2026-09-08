@@ -17,7 +17,7 @@ from market_data_center.domain import (
 )
 from market_data_center.domain.ingestion import DatasetCode
 from market_data_center.providers import ProviderError, ProviderRequestUnavailable, TushareProvider
-from market_data_center.providers.tushare import normalize_tushare_raw
+from market_data_center.providers.tushare import TushareBseSecurityProvider, normalize_tushare_raw
 
 
 class FakeClient:
@@ -52,7 +52,17 @@ class FakeClient:
                         "delist_date": "20020101",
                     },
                 ),
-                "P": (),
+                "P": (
+                    {
+                        "ts_code": "920000.BJ",
+                        "symbol": "920000",
+                        "name": "北交所测试股",
+                        "exchange": "BSE",
+                        "list_status": "P",
+                        "list_date": "20260801",
+                        "delist_date": None,
+                    },
+                ),
             }
             return rows[params["list_status"]]
         if api_name == "trade_cal":
@@ -133,6 +143,28 @@ def test_security_mapping_fetches_all_source_statuses() -> None:
     assert records[1].exchange is Exchange.SSE
     assert records[1].status is SecurityStatus.LISTED
     assert records[1].source_code == "tushare"
+
+
+def test_tushare_bse_security_keeps_full_raw_and_publishes_only_bse() -> None:
+    batch = TushareBseSecurityProvider(FakeClient()).fetch_securities()
+
+    assert len(batch.raw_rows) == 3
+    assert [record.symbol for record in batch.records] == ["BSE:920000"]
+    assert batch.request_params["exchange_scope"] == "BSE"
+    assert batch.request_params["list_statuses"] == ["L", "D", "P"]
+
+
+def test_tushare_bse_security_raw_replay_keeps_the_scope() -> None:
+    batch = TushareBseSecurityProvider(FakeClient()).fetch_securities()
+
+    records = normalize_tushare_raw(
+        DatasetCode.SECURITY,
+        batch.schema_version,
+        batch.raw_rows,
+        batch.request_params,
+    )
+
+    assert [record.symbol for record in records] == ["BSE:920000"]
 
 
 def test_trading_calendar_requires_and_maps_every_natural_day() -> None:

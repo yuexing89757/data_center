@@ -142,8 +142,12 @@ class StubReliabilityPersistence:
         )
 
     def dragon_tiger_period_start_date(self, trade_date: date, session_count: int) -> date:
-        assert session_count == 3
-        return trade_date - timedelta(days=2)
+        return trade_date - timedelta(days=session_count - 1)
+
+    def dragon_tiger_security_traded_period_start_date(
+        self, symbol: str, trade_date: date, session_count: int
+    ) -> date:
+        return trade_date - timedelta(days=session_count - 1)
 
     def known_trading_dates(self, dates: Collection[date]) -> set[date]:
         return set(dates)

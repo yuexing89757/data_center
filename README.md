@@ -148,16 +148,22 @@ retention count, and target table are code-owned; `.env` exposes only `DATA_CLEA
 
 DragonTiger collection is opt-in and remains disabled until source-rights review is recorded
 (`DRAGON_TIGER_ENABLED=false`). The `dragon-tiger-collect` command requires
-`--confirm-eastmoney-source-terms-reviewed`; the Worker catalog slot is fixed at weekdays 20:30
-Asia/Shanghai. It writes immutable JSONL Raw (`eastmoney.dragon_tiger.v2`) before normalization;
-historical `eastmoney.trading_billboard.v1` Raw remains replayable through the new normalizer.
+`--confirm-eastmoney-source-terms-reviewed`. The Worker catalog first runs the independent Tushare
+BSE `L/D/P` security sync at 20:15, then DragonTiger at 20:30 Asia/Shanghai. New collection writes
+immutable JSONL Raw (`eastmoney.dragon_tiger.v3`) before normalization; historical
+`eastmoney.trading_billboard.v1` and `eastmoney.dragon_tiger.v2` Raw remain replayable.
+Historical collection is resumable, continues after individual-date failures, and accepts at most
+730 calendar days. Orphan files can first be inspected with `dragon-tiger-raw-recovery --dry-run`
+and registered only with `--execute --confirm`.
 
 Authenticated reads are `GET /api/v1/dragon-tiger/events/by-date`,
 `GET /api/v1/dragon-tiger/events/by-symbol/{code}`,
 `GET /api/v1/dragon-tiger/seats/{seat_id}/trades`, and
 `GET /api/v1/dragon-tiger/events/{event_id}/metrics`. Queries are bounded and never fall back to
 another date. Metrics are deterministic objective amounts/counts/concentrations; no subjective
-score or strategy label is published.
+score or strategy label is published. Event responses separate trigger-window semantics from the
+amount period, expose one-sided disclosure and safe quality codes, and no longer contain
+`period_type`.
 
 Daily Bar bulk ingestion keeps one provider/Raw/ingestion lineage unit per security while writing
 validated facts in bounded PostgreSQL transactions. Configure `DAILY_BAR_WRITE_BATCH_SIZE`
