@@ -22,13 +22,15 @@ pytestmark = pytest.mark.integration
 def test_call_auction_grab_lines_uses_exact_rounds_and_strict_threshold(
     database_engine: Engine,  # noqa: F811
 ) -> None:
-    trade_date = date(2026, 9, 4)
+    trade_date = date(2026, 9, 7)
     session_id = uuid4()
     ingestion_id = uuid4()
     slots = series_slots(trade_date)
 
     with database_engine.begin() as connection:
-        _seed_one_price_pattern_session(connection, trade_date, session_id)
+        _seed_one_price_pattern_session(
+            connection, trade_date, session_id, include_preclose_round=True
+        )
         connection.execute(
             text("""
 update core.security
@@ -97,7 +99,7 @@ select
     'opening_trade'
 from realtime.call_auction_market_series_snapshot snapshot
 where snapshot.session_id = :session_id
-  and snapshot.sample_seq = 29
+  and snapshot.sample_seq = 30
 """),
             {
                 "ingestion_id": ingestion_id,
@@ -111,7 +113,7 @@ where snapshot.session_id = :session_id
             text("""
 select selected_ingestion_id
 from realtime.call_auction_market_series_round
-where session_id = :session_id and sample_seq = 29
+where session_id = :session_id and sample_seq = 30
 """),
             {"session_id": session_id},
         )
@@ -163,7 +165,7 @@ select
     source.value_semantics
 from core.security security
 cross join (values
-    (:first_ingestion_id, 29, '092440', :first_scheduled_at,
+    (:first_ingestion_id, 30, '092453', :first_scheduled_at,
         :first_observed_at, 'auction_indicative'),
     (:final_ingestion_id, 31, '092520', :final_scheduled_at,
         :final_observed_at, 'opening_trade')
@@ -177,8 +179,8 @@ where security.code between '700000' and '705199'
                 "trade_date": trade_date,
                 "session_id": session_id,
                 "first_ingestion_id": first_ingestion_id,
-                "first_scheduled_at": slots[29],
-                "first_observed_at": slots[29] + timedelta(seconds=1),
+                "first_scheduled_at": slots[30],
+                "first_observed_at": slots[30] + timedelta(seconds=1),
                 "final_ingestion_id": ingestion_id,
                 "final_scheduled_at": slots[31],
                 "final_observed_at": slots[31] + timedelta(seconds=1),
@@ -189,7 +191,7 @@ where security.code between '700000' and '705199'
 update realtime.call_auction_market_series_round
 set expected_quotes = expected_quotes + 5200,
     successful_quotes = successful_quotes + 5200
-where session_id = :session_id and sample_seq in (29, 31)
+where session_id = :session_id and sample_seq in (30, 31)
 """),
             {"session_id": session_id},
         )
@@ -215,7 +217,7 @@ where ingestion_id in (:first_ingestion_id, :final_ingestion_id)
         query_elapsed_seconds = perf_counter() - query_started
         boundary_payload = connection.scalar(
             text("select api_v1.query_call_auction_grab_lines(:day, :threshold_n)"),
-            {"day": trade_date, "threshold_n": Decimal("3.00")},
+            {"day": trade_date, "threshold_n": Decimal("2.00")},
         )
         connection.execute(text("reset role"))
 
@@ -236,17 +238,17 @@ where oid = 'api_v1.query_call_auction_grab_lines(date,numeric)'::regprocedure
 """)
         )
 
-    assert payload["trade_date"] == "2026-09-04"
+    assert payload["trade_date"] == "2026-09-07"
     assert payload["session_id"] == str(session_id)
     assert payload["session_status"] == "partial"
     assert Decimal(str(payload["threshold_n"])) == Decimal("1.00")
-    assert payload["first_batch_code"] == "092440"
+    assert payload["first_batch_code"] == "092453"
     assert payload["final_batch_code"] == "092520"
     assert payload["count"] == 1
     assert payload["items"][0]["code"] == "600000"
     assert payload["items"][0]["name"] == "浦发银行"
-    assert Decimal(str(payload["items"][0]["grab_line_pct"])) == Decimal("3.0000000000")
-    assert payload["items"][0]["trade_date"] == "2026-09-04"
+    assert Decimal(str(payload["items"][0]["grab_line_pct"])) == Decimal("2.0000000000")
+    assert payload["items"][0]["trade_date"] == "2026-09-07"
     assert query_elapsed_seconds < 2
     assert boundary_payload["count"] == 0
     assert boundary_payload["items"] == []

@@ -175,14 +175,14 @@ FastAPI 请求字段名为 `batch_code`，PostgREST 参数名为 `p_batch_code`�
 ## 14. 抢筹线读取
 
 `api_v1.query_call_auction_grab_lines(p_trade_date,p_threshold_n)` 对指定交易日选择单一竞价
-Session，并从该 Session 的精确 `092440`（sample_seq=29）和 `092520`（sample_seq=31）成功
-Round读取沪深上市股票事实。09:24:40 使用 `auction_indicative` 指示价，09:25:20 使用
+Session，并从该 Session 的精确 `092453`（sample_seq=30）和 `092520`（sample_seq=31）成功
+Round读取沪深上市股票事实。09:24:53 使用 `auction_indicative` 指示价，09:25:20 使用
 `opening_trade` 开盘成交价；两个时点必须同时存在、价格为正、`previous_close` 一致且为正；缺失
 或不合法的证券直接省略；证券范围按查询日 IPO/退市日期判断，不依赖当前上市状态。不拼接
 Session，也不回退交易日。
 
 抢筹线使用 Decimal 精确计算：
-`(09:25:20价格 - 09:24:40价格) / previous_close * 100`。筛选采用未舍入值严格大于
+`(09:25:20价格 - 09:24:53价格) / previous_close * 100`。筛选采用未舍入值严格大于
 `p_threshold_n`，输出值舍入到10位小数，按未舍入值降序、六位代码升序稳定排序。
 
 FastAPI 通过 `GET /api/v1/call-auction-grab-lines?trade_date=YYYY-MM-DD&n=0` 代理该 RPC。

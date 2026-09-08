@@ -113,8 +113,8 @@ this contract are labeled `legacy_source_quote`; their historical values are not
 `GET /api/v1/call-auction-grab-lines?trade_date=YYYY-MM-DD&n=0` requires one exact trading date;
 `n` is an optional Decimal percentage-point threshold and defaults to zero. For each SSE/SZSE
 stock valid on that date (by IPO/delisting dates), the database calculates
-`(09:25:20 price - 09:24:40 price) / previous close * 100` from the
-exact `092440` and `092520` rounds of one selected session. Both rounds must be successful, use
+`(09:25:20 price - 09:24:53 price) / previous close * 100` from the
+exact `092453` and `092520` rounds of one selected session. Both rounds must be successful, use
 the same positive `previous_close`, and contain positive prices. The first value is the auction
 indicative price and the final value is the opening-trade price. The result includes only values
 strictly greater than `n`, ordered by the unrounded result descending and code ascending. Items

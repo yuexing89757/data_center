@@ -749,7 +749,7 @@
             "type": "string"
           },
           "grab_line_pct": {
-            "description": "抢筹线百分比, 即 (09:25:20价格 - 09:24:40价格) / 昨收价 * 100。",
+            "description": "抢筹线百分比, 即 (09:25:20价格 - 09:24:53价格) / 昨收价 * 100。",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Grab Line Pct",
             "type": "string"
@@ -799,7 +799,7 @@
             "type": "string"
           },
           "first_batch_code": {
-            "const": "092440",
+            "const": "092453",
             "description": "起始比较批次。",
             "title": "First Batch Code",
             "type": "string"
@@ -5237,7 +5237,7 @@
     },
     "/api/v1/call-auction-grab-lines": {
       "get": {
-        "description": "读取指定交易日同一沪深全市场集合竞价序列会话的 09:24:40 与 09:25:20 成功批次，按（09:25:20价格－09:24:40价格）÷昨收价×100 计算抢筹线。仅返回抢筹线严格大于参数 n 的沪深上市股票，结果按抢筹线从高到低排列。两个批次不会跨会话拼接，缺少完整批次时返回404，不回退日期。",
+        "description": "读取指定交易日同一沪深全市场集合竞价序列会话的 09:24:53 与 09:25:20 成功批次，按（09:25:20价格－09:24:53价格）÷昨收价×100 计算抢筹线。仅返回抢筹线严格大于参数 n 的沪深上市股票，结果按抢筹线从高到低排列。两个批次不会跨会话拼接，缺少完整批次时返回404，不回退日期。",
         "operationId": "auction_grab_lines_api_v1_call_auction_grab_lines_get",
         "parameters": [
           {

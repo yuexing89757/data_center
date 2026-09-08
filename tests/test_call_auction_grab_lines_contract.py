@@ -21,8 +21,10 @@ def test_checked_in_fastapi_contract_exposes_grab_lines() -> None:
     assert parameters["n"]["required"] is False
     assert parameters["n"]["schema"]["default"] == "0"
     assert response["properties"]["count"]["maximum"] == 10_000
+    assert response["properties"]["first_batch_code"]["const"] == "092453"
     assert item["properties"]["code"]["pattern"] == "^[0-9]{6}$"
     assert item["properties"]["grab_line_pct"]["type"] == "string"
+    assert "09:24:53" in operation["description"]
     assert {"401", "404", "422", "503"}.issubset(operation["responses"])
 
 

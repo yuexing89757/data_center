@@ -6151,6 +6151,8 @@ def _seed_one_price_pattern_session(
     connection: Connection,
     trade_date: date,
     session_id: UUID,
+    *,
+    include_preclose_round: bool = False,
 ) -> None:
     _insert_call_auction_security_universe(connection)
     security_ingestion_id = uuid4()
@@ -6168,6 +6170,9 @@ def _seed_one_price_pattern_session(
         )
     )
     snapshot_symbols = (*symbols, "BSE:920000", "SSE:510300")
+    successful_sequences = range(1, 31) if include_preclose_round else range(1, 30)
+    successful_round_count = len(successful_sequences)
+    failed_round_count = 32 - successful_round_count
     connection.execute(
         text("""
 insert into ingestion.ingestion_run (
@@ -6233,8 +6238,8 @@ insert into realtime.call_auction_market_series_session (
 ) values (
     :session_id, :workflow_id, :trade_date, :window_start, :window_end,
     20, 32, :universe_symbols, :universe_count,
-    :universe_hash, 'partial', :window_start, :finished_at, 29,
-    0, 3, :successful_quotes, :failed_quotes
+    :universe_hash, 'partial', :window_start, :finished_at, :successful_round_count,
+    0, :failed_round_count, :successful_quotes, :failed_quotes
 )
 """),
         {
@@ -6247,12 +6252,14 @@ insert into realtime.call_auction_market_series_session (
             "universe_count": len(symbols),
             "universe_hash": universe_hash(symbols),
             "finished_at": slots[-1] + timedelta(seconds=2),
-            "successful_quotes": len(symbols) * 29,
-            "failed_quotes": len(symbols) * 3,
+            "successful_round_count": successful_round_count,
+            "failed_round_count": failed_round_count,
+            "successful_quotes": len(symbols) * successful_round_count,
+            "failed_quotes": len(symbols) * failed_round_count,
         },
     )
 
-    ingestion_ids = {sample_seq: uuid4() for sample_seq in range(1, 30)}
+    ingestion_ids = {sample_seq: uuid4() for sample_seq in successful_sequences}
     connection.execute(
         text("""
 insert into ingestion.ingestion_run (
@@ -6322,6 +6329,8 @@ insert into realtime.call_auction_market_series_round (
             last_price, previous_close = base_prices[symbol]
             if symbol == "SSE:600005" and sample_seq == 7:
                 last_price = Decimal("10.21")
+            if symbol == "SSE:600000" and sample_seq == 30:
+                last_price = Decimal("10.30")
             if symbol == "SSE:600006" and sample_seq == 7:
                 previous_close = Decimal("9.99")
             if symbol == "SSE:600007" and sample_seq == 7:

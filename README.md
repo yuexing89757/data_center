@@ -135,7 +135,7 @@ fact. The retired limit-up-pool auction collector is not registered by the Worke
 historical workflow and stored facts remain readable.
 
 `GET /api/v1/call-auction-grab-lines?trade_date=YYYY-MM-DD&n=0` calculates the exact-date
-full-market auction price move from 09:24:40 to 09:25:20 relative to the stored previous close.
+full-market auction price move from 09:24:53 to 09:25:20 relative to the stored previous close.
 It returns SSE/SZSE stocks whose exact Decimal percentage is strictly greater than `n`, ordered
 from highest to lowest. Both rounds must come from one coherent successful session; the API never
 mixes sessions or dates, and does not trigger collection.
