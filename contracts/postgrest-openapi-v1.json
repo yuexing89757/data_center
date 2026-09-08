@@ -971,16 +971,23 @@
                 "p_trade_date": {
                   "$ref": "#/components/schemas/Date"
                 },
-                "p_period_type": {
+                "p_trigger_window_basis": {
                   "type": [
                     "string",
                     "null"
                   ],
                   "enum": [
-                    "DAY",
-                    "THREE_DAY",
+                    "MARKET_SESSIONS",
+                    "SECURITY_TRADED_SESSIONS",
                     null
                   ]
+                },
+                "p_trigger_window_sessions": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 1
                 },
                 "p_limit": {
                   "type": "integer",
@@ -1021,16 +1028,23 @@
                 "p_end_date": {
                   "$ref": "#/components/schemas/Date"
                 },
-                "p_period_type": {
+                "p_trigger_window_basis": {
                   "type": [
                     "string",
                     "null"
                   ],
                   "enum": [
-                    "DAY",
-                    "THREE_DAY",
+                    "MARKET_SESSIONS",
+                    "SECURITY_TRADED_SESSIONS",
                     null
                   ]
+                },
+                "p_trigger_window_sessions": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 1
                 },
                 "p_limit": {
                   "type": "integer",

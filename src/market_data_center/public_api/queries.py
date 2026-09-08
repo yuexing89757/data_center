@@ -48,7 +48,9 @@ select api_v1.query_recent_daily_bars(
 
 QUERY_DRAGON_TIGER_EVENTS_BY_DATE = text("""
 select api_v1.query_dragon_tiger_events_by_date(
-    p_trade_date => :trade_date, p_period_type => :period_type,
+    p_trade_date => :trade_date,
+    p_trigger_window_basis => :trigger_window_basis,
+    p_trigger_window_sessions => :trigger_window_sessions,
     p_limit => :limit, p_offset => :offset
 ) as payload
 """)
@@ -56,7 +58,8 @@ select api_v1.query_dragon_tiger_events_by_date(
 QUERY_DRAGON_TIGER_EVENTS_BY_SYMBOL = text("""
 select api_v1.query_dragon_tiger_events_by_symbol(
     p_symbol => :symbol, p_start_date => :start_date, p_end_date => :end_date,
-    p_period_type => :period_type,
+    p_trigger_window_basis => :trigger_window_basis,
+    p_trigger_window_sessions => :trigger_window_sessions,
     p_limit => :limit, p_offset => :offset
 ) as payload
 """)
@@ -192,7 +195,12 @@ class PublicQueryService(Protocol):
     def daily_bars(self, code: str, trade_date: date, limit: int) -> DailyBarResponse: ...
 
     def dragon_tiger_events_by_date(
-        self, trade_date: date, period_type: str | None, limit: int, offset: int
+        self,
+        trade_date: date,
+        trigger_window_basis: str | None,
+        trigger_window_sessions: int | None,
+        limit: int,
+        offset: int,
     ) -> DragonTigerEventPageResponse: ...
 
     def dragon_tiger_events_by_code(
@@ -200,7 +208,8 @@ class PublicQueryService(Protocol):
         code: str,
         start_date: date,
         end_date: date,
-        period_type: str | None,
+        trigger_window_basis: str | None,
+        trigger_window_sessions: int | None,
         limit: int,
         offset: int,
     ) -> DragonTigerEventPageResponse: ...
@@ -280,13 +289,19 @@ class PostgreSQLPublicQueryService:
         return DailyBarResponse.model_validate(rows[0]["payload"])
 
     def dragon_tiger_events_by_date(
-        self, trade_date: date, period_type: str | None, limit: int, offset: int
+        self,
+        trade_date: date,
+        trigger_window_basis: str | None,
+        trigger_window_sessions: int | None,
+        limit: int,
+        offset: int,
     ) -> DragonTigerEventPageResponse:
         rows = self._execute(
             QUERY_DRAGON_TIGER_EVENTS_BY_DATE,
             {
                 "trade_date": trade_date,
-                "period_type": period_type,
+                "trigger_window_basis": trigger_window_basis,
+                "trigger_window_sessions": trigger_window_sessions,
                 "limit": limit,
                 "offset": offset,
             },
@@ -299,7 +314,8 @@ class PostgreSQLPublicQueryService:
         code: str,
         start_date: date,
         end_date: date,
-        period_type: str | None,
+        trigger_window_basis: str | None,
+        trigger_window_sessions: int | None,
         limit: int,
         offset: int,
     ) -> DragonTigerEventPageResponse:
@@ -318,7 +334,8 @@ class PostgreSQLPublicQueryService:
                 "symbol": matches[0].symbol,
                 "start_date": start_date,
                 "end_date": end_date,
-                "period_type": period_type,
+                "trigger_window_basis": trigger_window_basis,
+                "trigger_window_sessions": trigger_window_sessions,
                 "limit": limit,
                 "offset": offset,
             },

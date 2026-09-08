@@ -150,8 +150,10 @@ class FakeQueryService:
         self.classification_error: Exception | None = None
         self.security_calls: list[tuple[str, int]] = []
         self.daily_bar_calls: list[tuple[str, date, int]] = []
-        self.dragon_tiger_date_calls: list[tuple[date, str | None, int, int]] = []
-        self.dragon_tiger_code_calls: list[tuple[str, date, date, str | None, int, int]] = []
+        self.dragon_tiger_date_calls: list[tuple[date, str | None, int | None, int, int]] = []
+        self.dragon_tiger_code_calls: list[
+            tuple[str, date, date, str | None, int | None, int, int]
+        ] = []
         self.dragon_tiger_seat_calls: list[tuple[str, date, date, int, int]] = []
         self.dragon_tiger_metrics_calls: list[str] = []
         self.latest_stock_daily_indicator_calls: list[tuple[str, ...]] = []
@@ -219,9 +221,16 @@ class FakeQueryService:
         )
 
     def dragon_tiger_events_by_date(
-        self, trade_date: date, period_type: str | None, limit: int, offset: int
+        self,
+        trade_date: date,
+        trigger_window_basis: str | None,
+        trigger_window_sessions: int | None,
+        limit: int,
+        offset: int,
     ) -> api_models.DragonTigerEventPageResponse:
-        self.dragon_tiger_date_calls.append((trade_date, period_type, limit, offset))
+        self.dragon_tiger_date_calls.append(
+            (trade_date, trigger_window_basis, trigger_window_sessions, limit, offset)
+        )
         return _dragon_tiger_page(limit=limit, offset=offset)
 
     def dragon_tiger_events_by_code(
@@ -229,12 +238,21 @@ class FakeQueryService:
         code: str,
         start_date: date,
         end_date: date,
-        period_type: str | None,
+        trigger_window_basis: str | None,
+        trigger_window_sessions: int | None,
         limit: int,
         offset: int,
     ) -> api_models.DragonTigerEventPageResponse:
         self.dragon_tiger_code_calls.append(
-            (code, start_date, end_date, period_type, limit, offset)
+            (
+                code,
+                start_date,
+                end_date,
+                trigger_window_basis,
+                trigger_window_sessions,
+                limit,
+                offset,
+            )
         )
         return _dragon_tiger_page(limit=limit, offset=offset)
 
@@ -255,7 +273,18 @@ class FakeQueryService:
                     seat_id=UUID(seat_id),
                     symbol="SSE:600000",
                     trade_date=date(2026, 8, 17),
-                    period_type="DAY",
+                    trigger_window_basis="MARKET_SESSIONS",
+                    trigger_window_sessions=1,
+                    trigger_occurrence_count=None,
+                    trigger_start_date=date(2026, 8, 17),
+                    trigger_end_date=date(2026, 8, 17),
+                    amount_period_basis="MARKET_SESSIONS",
+                    amount_period_sessions=1,
+                    amount_period_start_date=date(2026, 8, 17),
+                    amount_period_end_date=date(2026, 8, 17),
+                    buy_disclosure_present=True,
+                    sell_disclosure_present=True,
+                    data_quality_codes=[],
                     reason_code="R1",
                     reason_name="日涨幅偏离值达到7%",
                     seat_name_raw="机构专用",
@@ -298,6 +327,10 @@ class FakeQueryService:
             northbound_buy_amount=None,
             northbound_sell_amount=None,
             northbound_net_amount=None,
+            buy_disclosure_present=True,
+            sell_disclosure_present=True,
+            amount_period_verified=True,
+            data_quality_codes=[],
         )
 
     def latest_stock_daily_indicators(
@@ -919,9 +952,15 @@ def _dragon_tiger_page(
                 event_id=UUID("11111111-1111-1111-1111-111111111111"),
                 symbol="SSE:600000",
                 trade_date=date(2026, 8, 17),
-                period_type="DAY",
-                period_start_date=date(2026, 8, 17),
-                period_end_date=date(2026, 8, 17),
+                trigger_window_basis="MARKET_SESSIONS",
+                trigger_window_sessions=1,
+                trigger_occurrence_count=None,
+                trigger_start_date=date(2026, 8, 17),
+                trigger_end_date=date(2026, 8, 17),
+                amount_period_basis="SOURCE_UNSPECIFIED",
+                amount_period_sessions=None,
+                amount_period_start_date=None,
+                amount_period_end_date=None,
                 reason_code="R1",
                 reason_name="日涨幅偏离值达到7%",
                 reason_type="PRICE_DEVIATION",
@@ -934,6 +973,9 @@ def _dragon_tiger_page(
                 lhb_buy_amount=Decimal("500.00"),
                 lhb_sell_amount=Decimal("300.00"),
                 net_amount=Decimal("200.00"),
+                buy_disclosure_present=True,
+                sell_disclosure_present=False,
+                data_quality_codes=["DT_DISCLOSURE_SIDE_MISSING"],
                 source_code="eastmoney",
                 source_record_id="event-1",
                 seat_trades=[seat],
@@ -1090,7 +1132,8 @@ def test_dragon_tiger_routes_return_decimal_strings_and_forward_bounds() -> None
         "/api/v1/dragon-tiger/events/by-date",
         params={
             "trade_date": "2026-08-17",
-            "period_type": "DAY",
+            "trigger_window_basis": "MARKET_SESSIONS",
+            "trigger_window_sessions": 10,
             "limit": 10,
             "offset": 2,
         },
@@ -1114,10 +1157,16 @@ def test_dragon_tiger_routes_return_decimal_strings_and_forward_bounds() -> None
     assert by_date.status_code == 200
     assert by_date.json()["items"][0]["close_price"] == "12.3400"
     assert by_date.json()["items"][0]["seat_trades"][0]["buy_amount"] == "100.00"
-    assert service.dragon_tiger_date_calls == [(date(2026, 8, 17), "DAY", 10, 2)]
+    item = by_date.json()["items"][0]
+    assert "period_type" not in item
+    assert item["amount_period_basis"] == "SOURCE_UNSPECIFIED"
+    assert item["buy_disclosure_present"] is True
+    assert item["sell_disclosure_present"] is False
+    assert item["data_quality_codes"] == ["DT_DISCLOSURE_SIDE_MISSING"]
+    assert service.dragon_tiger_date_calls == [(date(2026, 8, 17), "MARKET_SESSIONS", 10, 10, 2)]
     assert by_symbol.status_code == 200
     assert service.dragon_tiger_code_calls == [
-        ("600000", date(2026, 1, 1), date(2026, 8, 17), None, 100, 0)
+        ("600000", date(2026, 1, 1), date(2026, 8, 17), None, None, 100, 0)
     ]
     assert by_seat.status_code == 200
     assert by_seat.json()["items"][0]["net_amount"] == "90.00"
@@ -1201,7 +1250,7 @@ def test_dragon_tiger_code_query_resolves_public_security_before_rpc(
     monkeypatch.setattr(service, "_execute", execute)
 
     result = service.dragon_tiger_events_by_code(
-        "600000", date(2026, 1, 1), date(2026, 8, 17), None, 100, 0
+        "600000", date(2026, 1, 1), date(2026, 8, 17), None, None, 100, 0
     )
 
     assert result.total_count == 1

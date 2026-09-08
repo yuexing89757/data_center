@@ -3056,6 +3056,16 @@
       "DragonTigerCapitalMetricsItem": {
         "additionalProperties": false,
         "properties": {
+          "amount_period_verified": {
+            "description": "金额统计区间是否已由来源信息可靠确认。",
+            "title": "Amount Period Verified",
+            "type": "boolean"
+          },
+          "buy_disclosure_present": {
+            "description": "来源是否提供了可用的买入方向披露。",
+            "title": "Buy Disclosure Present",
+            "type": "boolean"
+          },
           "buy_seat_count": {
             "description": "进入买入榜的席位数量。",
             "maximum": 5.0,
@@ -3069,6 +3079,14 @@
             "minimum": 0.0,
             "title": "Buy Sell Overlap Count",
             "type": "integer"
+          },
+          "data_quality_codes": {
+            "description": "与该龙虎榜事实关联的数据质量代码列表。",
+            "items": {
+              "type": "string"
+            },
+            "title": "Data Quality Codes",
+            "type": "array"
           },
           "event_id": {
             "description": "标准化龙虎榜事件 UUID。",
@@ -3194,6 +3212,11 @@
             "title": "Pure Sell Seat Count",
             "type": "integer"
           },
+          "sell_disclosure_present": {
+            "description": "来源是否提供了可用的卖出方向披露。",
+            "title": "Sell Disclosure Present",
+            "type": "boolean"
+          },
           "sell_seat_count": {
             "description": "进入卖出榜的席位数量。",
             "maximum": 5.0,
@@ -3300,7 +3323,11 @@
           "institution_net_amount",
           "northbound_buy_amount",
           "northbound_sell_amount",
-          "northbound_net_amount"
+          "northbound_net_amount",
+          "buy_disclosure_present",
+          "sell_disclosure_present",
+          "amount_period_verified",
+          "data_quality_codes"
         ],
         "title": "DragonTigerCapitalMetricsItem",
         "type": "object"
@@ -3308,6 +3335,55 @@
       "DragonTigerEventItem": {
         "additionalProperties": false,
         "properties": {
+          "amount_period_basis": {
+            "description": "金额统计区间口径；无法可靠确定时为 SOURCE_UNSPECIFIED。",
+            "enum": [
+              "MARKET_SESSIONS",
+              "SECURITY_TRADED_SESSIONS",
+              "SOURCE_UNSPECIFIED"
+            ],
+            "title": "Amount Period Basis",
+            "type": "string"
+          },
+          "amount_period_end_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "金额统计区间结束交易日；未披露时为空。",
+            "title": "Amount Period End Date"
+          },
+          "amount_period_sessions": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "金额统计区间包含的交易会话数；未披露时为空。",
+            "title": "Amount Period Sessions"
+          },
+          "amount_period_start_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "金额统计区间开始交易日；未披露时为空。",
+            "title": "Amount Period Start Date"
+          },
           "amplitude": {
             "anyOf": [
               {
@@ -3320,6 +3396,11 @@
             ],
             "description": "统计周期内振幅，单位为百分比。",
             "title": "Amplitude"
+          },
+          "buy_disclosure_present": {
+            "description": "来源是否提供了可用的买入方向披露。",
+            "title": "Buy Disclosure Present",
+            "type": "boolean"
           },
           "change_pct": {
             "anyOf": [
@@ -3346,6 +3427,14 @@
             ],
             "description": "当日收盘价。",
             "title": "Close Price"
+          },
+          "data_quality_codes": {
+            "description": "与该龙虎榜事实关联的数据质量代码列表。",
+            "items": {
+              "type": "string"
+            },
+            "title": "Data Quality Codes",
+            "type": "array"
           },
           "event_id": {
             "description": "标准化龙虎榜事件 UUID。",
@@ -3392,27 +3481,6 @@
             "description": "净买入金额，单位为人民币元。",
             "title": "Net Amount"
           },
-          "period_end_date": {
-            "description": "龙虎榜统计周期结束交易日。",
-            "format": "date",
-            "title": "Period End Date",
-            "type": "string"
-          },
-          "period_start_date": {
-            "description": "龙虎榜统计周期开始交易日。",
-            "format": "date",
-            "title": "Period Start Date",
-            "type": "string"
-          },
-          "period_type": {
-            "description": "统计周期；DAY 为普通榜，THREE_DAY 为三日榜。",
-            "enum": [
-              "DAY",
-              "THREE_DAY"
-            ],
-            "title": "Period Type",
-            "type": "string"
-          },
           "reason_code": {
             "description": "上榜原因代码。",
             "title": "Reason Code",
@@ -3449,6 +3517,11 @@
             "title": "Seat Trades",
             "type": "array"
           },
+          "sell_disclosure_present": {
+            "description": "来源是否提供了可用的卖出方向披露。",
+            "title": "Sell Disclosure Present",
+            "type": "boolean"
+          },
           "source_code": {
             "description": "数据来源代码；龙虎榜事实可来自 eastmoney 或 tushare。",
             "enum": [
@@ -3473,6 +3546,53 @@
             "format": "date",
             "title": "Trade Date",
             "type": "string"
+          },
+          "trigger_end_date": {
+            "description": "触发条件窗口结束交易日。",
+            "format": "date",
+            "title": "Trigger End Date",
+            "type": "string"
+          },
+          "trigger_occurrence_count": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源披露的触发条件发生次数；未披露时为空。",
+            "title": "Trigger Occurrence Count"
+          },
+          "trigger_start_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "触发条件窗口开始交易日；来源无法可靠确定时为空。",
+            "title": "Trigger Start Date"
+          },
+          "trigger_window_basis": {
+            "description": "触发条件窗口口径；MARKET_SESSIONS 为市场交易日，SECURITY_TRADED_SESSIONS 为证券实际交易日。",
+            "enum": [
+              "MARKET_SESSIONS",
+              "SECURITY_TRADED_SESSIONS"
+            ],
+            "title": "Trigger Window Basis",
+            "type": "string"
+          },
+          "trigger_window_sessions": {
+            "description": "触发条件窗口包含的交易会话数。",
+            "minimum": 1.0,
+            "title": "Trigger Window Sessions",
+            "type": "integer"
           },
           "turnover_amount": {
             "anyOf": [
@@ -3505,9 +3625,13 @@
           "event_id",
           "symbol",
           "trade_date",
-          "period_type",
-          "period_start_date",
-          "period_end_date",
+          "trigger_window_basis",
+          "trigger_window_sessions",
+          "trigger_start_date",
+          "trigger_end_date",
+          "amount_period_basis",
+          "amount_period_start_date",
+          "amount_period_end_date",
           "reason_code",
           "reason_name",
           "reason_type",
@@ -3520,6 +3644,9 @@
           "lhb_buy_amount",
           "lhb_sell_amount",
           "net_amount",
+          "buy_disclosure_present",
+          "sell_disclosure_present",
+          "data_quality_codes",
           "source_code",
           "source_record_id",
           "seat_trades"
@@ -3702,6 +3829,55 @@
       "DragonTigerSeatTradeOccurrenceItem": {
         "additionalProperties": false,
         "properties": {
+          "amount_period_basis": {
+            "description": "金额统计区间口径；无法可靠确定时为 SOURCE_UNSPECIFIED。",
+            "enum": [
+              "MARKET_SESSIONS",
+              "SECURITY_TRADED_SESSIONS",
+              "SOURCE_UNSPECIFIED"
+            ],
+            "title": "Amount Period Basis",
+            "type": "string"
+          },
+          "amount_period_end_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "金额统计区间结束交易日；未披露时为空。",
+            "title": "Amount Period End Date"
+          },
+          "amount_period_sessions": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "金额统计区间包含的交易会话数；未披露时为空。",
+            "title": "Amount Period Sessions"
+          },
+          "amount_period_start_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "金额统计区间开始交易日；未披露时为空。",
+            "title": "Amount Period Start Date"
+          },
           "buy_amount": {
             "anyOf": [
               {
@@ -3714,6 +3890,11 @@
             ],
             "description": "买入金额，单位为人民币元。",
             "title": "Buy Amount"
+          },
+          "buy_disclosure_present": {
+            "description": "来源是否提供了可用的买入方向披露。",
+            "title": "Buy Disclosure Present",
+            "type": "boolean"
           },
           "buy_rank": {
             "anyOf": [
@@ -3728,6 +3909,14 @@
             ],
             "description": "席位在买入榜中的名次；未进入买入榜时为空。",
             "title": "Buy Rank"
+          },
+          "data_quality_codes": {
+            "description": "与该龙虎榜事实关联的数据质量代码列表。",
+            "items": {
+              "type": "string"
+            },
+            "title": "Data Quality Codes",
+            "type": "array"
           },
           "event_id": {
             "description": "标准化龙虎榜事件 UUID。",
@@ -3757,15 +3946,6 @@
             ],
             "description": "净买入金额，单位为人民币元。",
             "title": "Net Amount"
-          },
-          "period_type": {
-            "description": "统计周期；DAY 为普通榜，THREE_DAY 为三日榜。",
-            "enum": [
-              "DAY",
-              "THREE_DAY"
-            ],
-            "title": "Period Type",
-            "type": "string"
           },
           "reason_code": {
             "description": "上榜原因代码。",
@@ -3814,6 +3994,11 @@
             "description": "卖出金额，单位为人民币元。",
             "title": "Sell Amount"
           },
+          "sell_disclosure_present": {
+            "description": "来源是否提供了可用的卖出方向披露。",
+            "title": "Sell Disclosure Present",
+            "type": "boolean"
+          },
           "sell_rank": {
             "anyOf": [
               {
@@ -3838,6 +4023,53 @@
             "format": "date",
             "title": "Trade Date",
             "type": "string"
+          },
+          "trigger_end_date": {
+            "description": "触发条件窗口结束交易日。",
+            "format": "date",
+            "title": "Trigger End Date",
+            "type": "string"
+          },
+          "trigger_occurrence_count": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源披露的触发条件发生次数；未披露时为空。",
+            "title": "Trigger Occurrence Count"
+          },
+          "trigger_start_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "触发条件窗口开始交易日；来源无法可靠确定时为空。",
+            "title": "Trigger Start Date"
+          },
+          "trigger_window_basis": {
+            "description": "触发条件窗口口径；MARKET_SESSIONS 为市场交易日，SECURITY_TRADED_SESSIONS 为证券实际交易日。",
+            "enum": [
+              "MARKET_SESSIONS",
+              "SECURITY_TRADED_SESSIONS"
+            ],
+            "title": "Trigger Window Basis",
+            "type": "string"
+          },
+          "trigger_window_sessions": {
+            "description": "触发条件窗口包含的交易会话数。",
+            "minimum": 1.0,
+            "title": "Trigger Window Sessions",
+            "type": "integer"
           }
         },
         "required": [
@@ -3852,7 +4084,16 @@
           "event_id",
           "symbol",
           "trade_date",
-          "period_type",
+          "trigger_window_basis",
+          "trigger_window_sessions",
+          "trigger_start_date",
+          "trigger_end_date",
+          "amount_period_basis",
+          "amount_period_start_date",
+          "amount_period_end_date",
+          "buy_disclosure_present",
+          "sell_disclosure_present",
+          "data_quality_codes",
           "reason_code",
           "reason_name"
         ],
@@ -6086,7 +6327,7 @@
     },
     "/api/v1/dragon-tiger/events/by-date": {
       "get": {
-        "description": "按指定交易日精确查询普通榜或三日榜事件及合并后的席位行为，不回退其他日期。",
+        "description": "按指定交易日精确查询龙虎榜事件、触发窗口及席位行为，不回退其他日期。",
         "operationId": "dragon_tiger_events_by_date_api_v1_dragon_tiger_events_by_date_get",
         "parameters": [
           {
@@ -6102,16 +6343,16 @@
             }
           },
           {
-            "description": "统计周期；DAY 为普通榜，THREE_DAY 为三日榜。",
+            "description": "触发条件窗口口径；MARKET_SESSIONS 为市场交易日，SECURITY_TRADED_SESSIONS 为证券实际交易日。",
             "in": "query",
-            "name": "period_type",
+            "name": "trigger_window_basis",
             "required": false,
             "schema": {
               "anyOf": [
                 {
                   "enum": [
-                    "DAY",
-                    "THREE_DAY"
+                    "MARKET_SESSIONS",
+                    "SECURITY_TRADED_SESSIONS"
                   ],
                   "type": "string"
                 },
@@ -6119,8 +6360,27 @@
                   "type": "null"
                 }
               ],
-              "description": "可选统计周期；空值返回普通榜和三日榜。",
-              "title": "Period Type"
+              "description": "可选触发窗口基准。",
+              "title": "Trigger Window Basis"
+            }
+          },
+          {
+            "description": "触发条件窗口包含的交易会话数。",
+            "in": "query",
+            "name": "trigger_window_sessions",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "可选触发窗口交易会话数。",
+              "title": "Trigger Window Sessions"
             }
           },
           {
@@ -6247,16 +6507,16 @@
             }
           },
           {
-            "description": "统计周期；DAY 为普通榜，THREE_DAY 为三日榜。",
+            "description": "触发条件窗口口径；MARKET_SESSIONS 为市场交易日，SECURITY_TRADED_SESSIONS 为证券实际交易日。",
             "in": "query",
-            "name": "period_type",
+            "name": "trigger_window_basis",
             "required": false,
             "schema": {
               "anyOf": [
                 {
                   "enum": [
-                    "DAY",
-                    "THREE_DAY"
+                    "MARKET_SESSIONS",
+                    "SECURITY_TRADED_SESSIONS"
                   ],
                   "type": "string"
                 },
@@ -6264,8 +6524,27 @@
                   "type": "null"
                 }
               ],
-              "description": "可选统计周期；空值返回普通榜和三日榜。",
-              "title": "Period Type"
+              "description": "可选触发窗口基准。",
+              "title": "Trigger Window Basis"
+            }
+          },
+          {
+            "description": "触发条件窗口包含的交易会话数。",
+            "in": "query",
+            "name": "trigger_window_sessions",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "可选触发窗口交易会话数。",
+              "title": "Trigger Window Sessions"
             }
           },
           {

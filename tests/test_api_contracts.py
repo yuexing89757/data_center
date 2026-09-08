@@ -349,10 +349,26 @@ def test_dragon_tiger_replaces_trading_billboard_contracts() -> None:
     item = fastapi["components"]["schemas"]["DragonTigerEventItem"]
     assert item["properties"]["close_price"]["anyOf"][0]["type"] == "string"
     assert "seat_trades" in item["properties"]
+    assert "trigger_window_basis" in item["properties"]
+    assert "amount_period_basis" in item["properties"]
+    assert "buy_disclosure_present" in item["properties"]
+    assert "data_quality_codes" in item["properties"]
     metrics = fastapi["components"]["schemas"]["DragonTigerCapitalMetricsItem"]
     assert metrics["properties"]["top5_buy_concentration"]["anyOf"][0]["type"] == "string"
 
+    date_body = postgrest["components"]["requestBodies"]["DragonTigerEventsByDate"]
+    date_properties = date_body["content"]["application/json"]["schema"]["properties"]
+    assert "p_trigger_window_basis" in date_properties
+    assert "p_trigger_window_sessions" in date_properties
+    symbol_tool = next(
+        tool for tool in agent["tools"]
+        if tool["endpoint"] == "query_dragon_tiger_events_by_symbol"
+    )
+    assert "p_trigger_window_basis" in symbol_tool["input_schema"]["properties"]
+    assert "p_trigger_window_sessions" in symbol_tool["input_schema"]["properties"]
+
     serialized = dumps([postgrest, agent, fastapi], ensure_ascii=False).lower()
+    assert "period_type" not in serialized
     assert "query_trading_billboard_by_date" not in serialized
     assert "/api/v1/trading-billboard" not in serialized
     assert "tradingbillboarditem" not in serialized

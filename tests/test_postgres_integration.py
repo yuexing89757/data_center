@@ -7599,11 +7599,23 @@ def test_dragon_tiger_persistence_and_replacement_rpcs(database_engine: Engine) 
         page = cast(
             Mapping[str, object],
             connection.scalar(
-                text("select api_v1.query_dragon_tiger_events_by_date(:day, null, 100, 0)"),
+                text("""
+                    select api_v1.query_dragon_tiger_events_by_date(
+                        :day, 'MARKET_SESSIONS', 1, 100, 0
+                    )
+                """),
                 {"day": TRADE_DATE},
             ),
         )
         assert page["total_count"] == 1
+        item = cast(list[Mapping[str, object]], page["items"])[0]
+        assert item["trigger_window_basis"] == "MARKET_SESSIONS"
+        assert item["trigger_window_sessions"] == 1
+        assert item["amount_period_basis"] == "MARKET_SESSIONS"
+        assert item["buy_disclosure_present"] is True
+        assert item["sell_disclosure_present"] is True
+        assert item["data_quality_codes"] == []
+        assert "period_type" not in item
         assert (
             connection.scalar(
                 text("select count(*) from billboard.seat_trade where source_event_id=:event"),
@@ -7647,12 +7659,14 @@ def test_dragon_tiger_persistence_and_replacement_rpcs(database_engine: Engine) 
             Mapping[str, object],
             connection.scalar(
                 text("select api_v1.query_dragon_tiger_event_metrics(:event_id)"),
-                {"event_id": cast(list[Mapping[str, object]], page["items"])[0]["event_id"]},
+                {"event_id": item["event_id"]},
             ),
         )
         assert metrics["institution_buy_amount"] == "120"
         assert metrics["institution_sell_amount"] == "20"
         assert metrics["institution_net_amount"] == "100"
+        assert metrics["amount_period_verified"] is True
+        assert metrics["data_quality_codes"] == []
         assert (
             connection.scalar(
                 text(
