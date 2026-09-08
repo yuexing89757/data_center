@@ -181,9 +181,19 @@ git commit -m "refactor: model dragon tiger disclosure windows"
     [
         ("连续三个交易日内涨幅偏离值累计达到20%", "MARKET_SESSIONS", 3, None),
         ("连续3个交易日内涨幅偏离值累计达到20%", "MARKET_SESSIONS", 3, None),
-        ("有价格涨跌幅限制的连续10个交易日内收盘价格涨幅偏离值累计达到100%的证券", "MARKET_SESSIONS", 10, None),
+        (
+            "有价格涨跌幅限制的连续10个交易日内收盘价格涨幅偏离值累计达到100%的证券",
+            "MARKET_SESSIONS",
+            10,
+            None,
+        ),
         ("连续10个交易日内4次出现同正向异常波动的证券", "MARKET_SESSIONS", 10, 4),
-        ("北交所股票最近3个有成交的交易日以内收盘价涨跌幅偏离值累计达到+40%(-40%)", "SECURITY_TRADED_SESSIONS", 3, None),
+        (
+            "北交所股票最近3个有成交的交易日以内收盘价涨跌幅偏离值累计达到+40%(-40%)",
+            "SECURITY_TRADED_SESSIONS",
+            3,
+            None,
+        ),
     ],
 )
 def test_maps_verified_trigger_windows(reason, basis, sessions, occurrences) -> None:
@@ -278,8 +288,13 @@ def test_dragon_tiger_reliable_seat_key_accepts_temporal_renames(database_engine
     persistence.publish_success(_prepared_event("10488161", "旧北京分公司", date(2025, 1, 2)))
     persistence.publish_success(_prepared_event("10488161", "北京第二分公司", date(2026, 8, 20)))
 
-    identities = _fetch_all(database_engine, "select seat_id from billboard.trading_seat_source_identity where source_seat_key='10488161'")
-    aliases = _fetch_all(database_engine, "select alias_name from billboard.trading_seat_alias order by alias_name")
+    identities = _fetch_all(
+        database_engine,
+        "select seat_id from billboard.trading_seat_source_identity where source_seat_key='10488161'",
+    )
+    aliases = _fetch_all(
+        database_engine, "select alias_name from billboard.trading_seat_alias order by alias_name"
+    )
     assert len(identities) == 1
     assert {row[0] for row in aliases} == {"旧北京分公司", "北京第二分公司"}
 ```

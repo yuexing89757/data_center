@@ -31,6 +31,7 @@ from market_data_center.domain.stock_pool import (
     MAINBOARD_LIMIT_DOWN_POOL,
     MAINBOARD_LIMIT_UP_POOL,
 )
+from market_data_center.dragon_tiger_recovery import DragonTigerOrphanRecovery
 from market_data_center.dragon_tiger_service import (
     DragonTigerBackfillSummary,
     DragonTigerCollectionSummary,
@@ -127,6 +128,32 @@ def main() -> None:
     )
     persistence = PostgreSQLPersistence(engine)
     raw_store = LocalRawStore(settings.raw_data_root)
+
+    if args.dataset == "dragon-tiger-raw-recovery":
+        try:
+            dry_run = _validate_dragon_tiger_recovery_args(args)
+            recovery = DragonTigerOrphanRecovery(
+                raw_store=raw_store,
+                persistence=PostgreSQLDragonTigerPersistence(engine),
+            )
+            recovery_summary = recovery.register(recovery.scan(), dry_run=dry_run)
+            print(dumps(asdict(recovery_summary), ensure_ascii=False, sort_keys=True, default=str))
+        except Exception as error:
+            print(
+                dumps(
+                    {
+                        "status": "failed",
+                        "operation": args.dataset,
+                        "error_type": type(error).__name__,
+                    },
+                    sort_keys=True,
+                ),
+                file=stderr,
+            )
+            raise SystemExit(1) from None
+        finally:
+            engine.dispose()
+        return
 
     if args.dataset in {"shareholder-count-daily", "shareholder-count-backfill"}:
         workflow_code = (
@@ -1182,6 +1209,12 @@ def _validate_dragon_tiger_args(
     return None, start, end
 
 
+def _validate_dragon_tiger_recovery_args(args: Namespace) -> bool:
+    if args.execute and not args.confirm:
+        raise ValueError("DragonTiger Raw recovery execution requires confirmation")
+    return bool(args.dry_run)
+
+
 def _run_dragon_tiger_command(args: Namespace) -> None:
     exact, start, end = _validate_dragon_tiger_args(args)
     settings = WorkerSettings()  # type: ignore[call-arg]
@@ -1271,6 +1304,14 @@ def _parser() -> ArgumentParser:
         required=True,
         help="confirm source-rights review before this explicit collection command",
     )
+    recovery = subparsers.add_parser(
+        "dragon-tiger-raw-recovery",
+        help="scan or register immutable DragonTiger Raw objects missing database lineage",
+    )
+    recovery_mode = recovery.add_mutually_exclusive_group(required=True)
+    recovery_mode.add_argument("--dry-run", action="store_true")
+    recovery_mode.add_argument("--execute", action="store_true")
+    recovery.add_argument("--confirm", action="store_true")
     subparsers.add_parser("security", help="synchronize the security master")
     subparsers.add_parser("security-bse", help="synchronize Tushare BSE L/D/P security master")
 

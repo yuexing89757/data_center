@@ -191,6 +191,7 @@ def _event_id(row: SourceRow) -> str:
 
 def _raw_row(kind: str, page: int, index: int, row: SourceRow) -> RawRow:
     return {
+        "raw_schema_version": SCHEMA_VERSION,
         "record_kind": kind,
         "source_page": str(page),
         "source_index": str(index),

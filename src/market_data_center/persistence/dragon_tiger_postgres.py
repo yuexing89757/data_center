@@ -148,6 +148,38 @@ class PostgreSQLDragonTigerPersistence:
             _update_run(connection, run)
             _insert_quality(connection, quality)
 
+    def orphan_raw_state(self, ingestion_id: UUID, object_path: str, content_sha256: str) -> str:
+        with self._engine.connect() as connection:
+            row = connection.execute(
+                text("""
+                    select run.ingestion_id, manifest.object_path, manifest.content_sha256
+                    from ingestion.ingestion_run run
+                    left join ingestion.raw_manifest manifest
+                      on manifest.ingestion_id = run.ingestion_id
+                    where run.ingestion_id=:ingestion_id
+                """),
+                {"ingestion_id": ingestion_id},
+            ).one_or_none()
+        if row is None:
+            return "unregistered"
+        if row.object_path == object_path and row.content_sha256 == content_sha256:
+            return "already_registered"
+        return "conflict"
+
+    def register_orphan_raw(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest,
+        quality: Sequence[QualityResult],
+    ) -> None:
+        _require_run(run, IngestionStatus.FAILED)
+        if run.ingestion_id != manifest.ingestion_id:
+            raise ValueError("DragonTiger orphan manifest does not match its run")
+        with self._engine.begin() as connection:
+            _insert_run(connection, run)
+            _insert_manifest(connection, manifest)
+            _insert_quality(connection, quality)
+
     def commit_success(
         self,
         run: IngestionRun,

@@ -13,6 +13,7 @@ from market_data_center.cli import (
     _one_month_before,
     _parser,
     _validate_dragon_tiger_args,
+    _validate_dragon_tiger_recovery_args,
     run_daily_workflow,
     run_stock_daily_indicator_workflow,
 )
@@ -51,6 +52,17 @@ def test_cli_accepts_explicit_tushare_bse_security_sync() -> None:
 
     assert args.dataset == "security-bse"
     assert args.provider == "tushare"
+
+
+def test_dragon_tiger_orphan_recovery_requires_execute_confirmation() -> None:
+    dry = _parser().parse_args(["dragon-tiger-raw-recovery", "--dry-run"])
+    execute = _parser().parse_args(["dragon-tiger-raw-recovery", "--execute"])
+    confirmed = _parser().parse_args(["dragon-tiger-raw-recovery", "--execute", "--confirm"])
+
+    assert _validate_dragon_tiger_recovery_args(dry) is True
+    with pytest.raises(ValueError, match="confirmation"):
+        _validate_dragon_tiger_recovery_args(execute)
+    assert _validate_dragon_tiger_recovery_args(confirmed) is False
 
 
 def test_dragon_tiger_cli_accepts_exact_date_or_complete_range() -> None:

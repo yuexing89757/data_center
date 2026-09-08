@@ -25,13 +25,6 @@ class DragonTigerAmountPeriodBasis(StrEnum):
     SOURCE_UNSPECIFIED = "SOURCE_UNSPECIFIED"
 
 
-class DragonTigerPeriodType(StrEnum):
-    """Temporary import compatibility until provider migration is complete."""
-
-    DAY = "DAY"
-    THREE_DAY = "THREE_DAY"
-
-
 class DragonTigerReasonType(StrEnum):
     PRICE_DEVIATION = "PRICE_DEVIATION"
     TURNOVER = "TURNOVER"

@@ -181,7 +181,11 @@ def _result_statistics(result: object) -> tuple[int, int, int, ExecutionStatus]:
         accepted = sum(item.accepted_events + item.accepted_seat_trades for item in result.results)
         rejected = sum(item.filtered_rows for item in result.results)
         status = (
-            ExecutionStatus.FAILED if result.failed_date is not None else ExecutionStatus.SUCCEEDED
+            ExecutionStatus.PARTIAL
+            if result.failed_dates and result.completed_dates
+            else ExecutionStatus.FAILED
+            if result.failed_dates
+            else ExecutionStatus.SUCCEEDED
         )
         return fetched, accepted, rejected, status
     if isinstance(result, DailyBarBulkSummary):
