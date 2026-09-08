@@ -542,7 +542,7 @@ class TushareBseSecurityProvider(TushareProvider):
             request_params={**batch.request_params, "exchange_scope": "BSE"},
             schema_version=batch.schema_version,
             record_factory=lambda: tuple(
-                record for record in batch.records if record.exchange is Exchange.BSE
+                _map_security(row) for row in batch.raw_rows if _is_bse_security_row(row)
             ),
         )
 
@@ -566,13 +566,12 @@ def normalize_tushare_raw(
     if expected is None or schema_version != expected:
         raise ProviderError(f"unsupported Tushare Raw schema: {schema_version}")
     if dataset_code is DatasetCode.SECURITY:
-        records = tuple(_map_security(row) for row in raw_rows)
         scope = request_params.get("exchange_scope")
         if scope is None:
-            return records
+            return tuple(_map_security(row) for row in raw_rows)
         if scope != "BSE":
             raise ProviderError("unsupported Tushare security exchange_scope")
-        return tuple(record for record in records if record.exchange is Exchange.BSE)
+        return tuple(_map_security(row) for row in raw_rows if _is_bse_security_row(row))
     if dataset_code is DatasetCode.TRADING_CALENDAR:
         start_date = _request_date(request_params, "start_date")
         end_date = _request_date(request_params, "end_date")
@@ -648,6 +647,10 @@ def _raw_value(value: object) -> str:
     if isinstance(value, date):
         return value.strftime("%Y%m%d")
     return str(value)
+
+
+def _is_bse_security_row(row: Mapping[str, str]) -> bool:
+    return row["ts_code"].strip().upper().endswith(".BJ")
 
 
 def _map_security(row: Mapping[str, str]) -> SecurityRecord:
