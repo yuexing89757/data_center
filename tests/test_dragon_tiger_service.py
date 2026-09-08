@@ -1,5 +1,4 @@
-from dataclasses import replace
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import cast
 from uuid import UUID
@@ -7,40 +6,57 @@ from uuid import UUID
 import pytest
 
 from market_data_center.domain.dragon_tiger import (
+    DragonTigerAmountPeriod,
+    DragonTigerAmountPeriodBasis,
     DragonTigerEventDraft,
-    DragonTigerPeriodType,
+    DragonTigerNormalizationResult,
     DragonTigerReason,
     DragonTigerReasonType,
+    DragonTigerSourceFinding,
+    DragonTigerTriggerWindow,
+    DragonTigerWindowBasis,
     SeatTradeRecord,
 )
-from market_data_center.domain.ingestion import IngestionRun, QualityResult, RawManifest
+from market_data_center.domain.ingestion import (
+    IngestionRun,
+    IngestionStatus,
+    QualityResult,
+    QualitySeverity,
+    RawManifest,
+)
 from market_data_center.dragon_tiger_service import (
+    DragonTigerCollectionError,
     DragonTigerCollectionSummary,
     DragonTigerService,
 )
-from market_data_center.providers.contracts import ProviderBatch
+from market_data_center.providers.contracts import DragonTigerProviderBatch, ProviderError
 from market_data_center.raw_store import StoredRawObject
 
 TRADE_DATE = date(2026, 8, 20)
 INGESTION_ID = UUID("00000000-0000-0000-0000-000000000101")
 RAW_ID = UUID("00000000-0000-0000-0000-000000000102")
+QUALITY_IDS = tuple(UUID(int=value) for value in range(0x103, 0x120))
 
 
-def _draft(period: DragonTigerPeriodType) -> DragonTigerEventDraft:
+def _draft(
+    *,
+    trade_date: date = TRADE_DATE,
+    basis: DragonTigerWindowBasis = DragonTigerWindowBasis.MARKET_SESSIONS,
+    sessions: int = 3,
+) -> DragonTigerEventDraft:
     reason = DragonTigerReason(
-        reason_code=f"PRICE_DEVIATION_{period.value}",
+        reason_code=f"PRICE_DEVIATION_{basis.value}_{sessions}",
         reason_name="价格偏离",
         reason_type=DragonTigerReasonType.PRICE_DEVIATION,
-        period_type=period,
         source_code="eastmoney",
         source_reason_code="01",
         source_reason_name="测试原因",
     )
     trade = SeatTradeRecord(
-        source_record_id="event-1:seat-1",
-        source_event_id="event-1",
+        source_record_id=f"event-{trade_date}:seat-1",
+        source_event_id=f"event-{trade_date}",
         symbol="SSE:600000",
-        trade_date=TRADE_DATE,
+        trade_date=trade_date,
         seat_id=None,
         seat_source_key="seat-1",
         seat_name_raw="测试营业部",
@@ -53,12 +69,22 @@ def _draft(period: DragonTigerPeriodType) -> DragonTigerEventDraft:
         source_code="eastmoney",
     )
     return DragonTigerEventDraft(
-        source_record_id="event-1",
+        source_record_id=f"event-{trade_date}",
         symbol="SSE:600000",
-        trade_date=TRADE_DATE,
-        period_type=period,
-        period_start_date=TRADE_DATE if period is DragonTigerPeriodType.DAY else None,
-        period_end_date=TRADE_DATE,
+        trade_date=trade_date,
+        trigger_window=DragonTigerTriggerWindow(
+            basis=basis,
+            session_count=sessions,
+            occurrence_count=None,
+            start_date=None,
+            end_date=trade_date,
+        ),
+        amount_period=DragonTigerAmountPeriod(
+            basis=DragonTigerAmountPeriodBasis.SOURCE_UNSPECIFIED,
+            session_count=None,
+            start_date=None,
+            end_date=None,
+        ),
         reason=reason,
         reason_name_raw="测试原因",
         close_price=Decimal("10"),
@@ -68,57 +94,63 @@ def _draft(period: DragonTigerPeriodType) -> DragonTigerEventDraft:
         amplitude=None,
         lhb_buy_amount=Decimal("100"),
         lhb_sell_amount=Decimal("20"),
+        buy_disclosure_present=True,
+        sell_disclosure_present=True,
         seat_trades=(trade,),
         source_code="eastmoney",
-    )
-
-
-def _draft_on_date(trade_date: date) -> DragonTigerEventDraft:
-    draft = _draft(DragonTigerPeriodType.DAY)
-    return replace(
-        draft,
-        trade_date=trade_date,
-        period_start_date=trade_date,
-        period_end_date=trade_date,
-        seat_trades=tuple(replace(trade, trade_date=trade_date) for trade in draft.seat_trades),
     )
 
 
 class FakeProvider:
     source_code = "eastmoney"
 
-    def __init__(self, events: list[str], period: DragonTigerPeriodType) -> None:
+    def __init__(
+        self,
+        events: list[str],
+        *,
+        draft: DragonTigerEventDraft | None = None,
+        findings: tuple[DragonTigerSourceFinding, ...] = (),
+        fail: str | None = None,
+    ) -> None:
         self.events = events
-        self.period = period
-        self.draft: DragonTigerEventDraft | None = None
+        self.draft = draft
+        self.findings = findings
+        self.fail = fail
 
-    def fetch_dragon_tiger(self, trade_date: date) -> ProviderBatch[DragonTigerEventDraft]:
+    def fetch_dragon_tiger(self, trade_date: date) -> DragonTigerProviderBatch:
         self.events.append("fetch")
+        if self.fail == "provider":
+            raise ProviderError("secret provider detail")
 
-        def normalize() -> tuple[DragonTigerEventDraft, ...]:
+        def normalize() -> DragonTigerNormalizationResult:
             self.events.append("normalize")
-            assert "raw" in self.events
-            return (self.draft or _draft(self.period),)
+            if self.fail == "normalize":
+                raise ProviderError("secret normalization detail")
+            return DragonTigerNormalizationResult(
+                events=(self.draft or _draft(trade_date=trade_date),),
+                findings=self.findings,
+            )
 
-        return ProviderBatch(
+        return DragonTigerProviderBatch(
             raw_rows=(
                 {"record_kind": "summary", "payload_json": "{}"},
                 {"record_kind": "seat", "payload_json": "{}"},
             ),
             request_params={"trade_date": trade_date.isoformat()},
-            schema_version="eastmoney.dragon_tiger.v2",
-            record_factory=normalize,
+            schema_version="eastmoney.dragon_tiger.v3",
+            normalization_factory=normalize,
         )
 
 
 class FakeRawStore:
-    def __init__(self, events: list[str]) -> None:
+    def __init__(self, events: list[str], *, fail: bool = False) -> None:
         self.events = events
+        self.fail = fail
 
     def write_jsonl(self, **kwargs: object) -> StoredRawObject:
         self.events.append("raw")
-        assert kwargs["provider"] == "eastmoney"
-        assert kwargs["dataset"] == "dragon_tiger"
+        if self.fail:
+            raise OSError("secret filesystem detail")
         return StoredRawObject(
             object_path="eastmoney/dragon_tiger/test.jsonl",
             content_sha256="a" * 64,
@@ -130,119 +162,221 @@ class FakeRawStore:
 
 
 class FakePersistence:
-    def __init__(self, events: list[str]) -> None:
+    def __init__(self, events: list[str], *, fail: str | None = None) -> None:
         self.events = events
-        self.records = ()
+        self.fail = fail
+        self.records: tuple[object, ...] = ()
+        self.manifest: RawManifest | None = None
         self.failed_run: IngestionRun | None = None
+        self.quality: tuple[QualityResult, ...] = ()
 
     def is_trading_day(self, trade_date: date) -> bool:
-        return trade_date == TRADE_DATE
+        return trade_date.weekday() < 5
 
     def period_start_date(self, trade_date: date, session_count: int) -> date:
-        self.events.append(f"period:{session_count}")
-        assert trade_date == TRADE_DATE
-        return date(2026, 8, 18)
+        self.events.append(f"market-period:{session_count}")
+        return trade_date - timedelta(days=session_count - 1)
+
+    def security_traded_period_start_date(
+        self, symbol: str, trade_date: date, session_count: int
+    ) -> date:
+        self.events.append(f"security-period:{symbol}:{session_count}")
+        return trade_date - timedelta(days=session_count - 1)
 
     def known_stock_symbols(self, trade_date: date) -> frozenset[str]:
         return frozenset({"SSE:600000"})
 
     def known_trading_dates(self, start_date: date, end_date: date) -> frozenset[date]:
-        return frozenset({date(2026, 8, 18), date(2026, 8, 19), TRADE_DATE})
+        return frozenset(
+            start_date + timedelta(days=i) for i in range((end_date - start_date).days + 1)
+        )
 
-    def commit_success(
+    def succeeded_dates(self, start_date: date, end_date: date) -> frozenset[date]:
+        return frozenset()
+
+    def begin_ingestion(self, run: IngestionRun) -> None:
+        self.events.append("begin")
+        assert run.status is IngestionStatus.RUNNING
+
+    def attach_raw_manifest(self, run: IngestionRun, manifest: RawManifest) -> None:
+        self.events.append("manifest")
+        if self.fail == "manifest":
+            raise RuntimeError("secret manifest detail")
+        self.manifest = manifest
+
+    def publish_success(
         self,
         run: IngestionRun,
-        manifest: RawManifest,
         quality: tuple[QualityResult, ...],
         records: tuple[object, ...],
     ) -> DragonTigerCollectionSummary:
-        self.events.append("commit")
+        self.events.append("publish")
+        if self.fail == "publish":
+            raise RuntimeError("secret database detail")
         self.records = records
+        self.quality = quality
         return DragonTigerCollectionSummary(
             status=run.status.value,
             ingestion_id=run.ingestion_id,
-            trade_date=TRADE_DATE,
+            trade_date=cast(object, records[0]).trade_date,
             fetched_rows=run.fetched_rows,
             accepted_events=len(records),
             accepted_seat_trades=1,
             filtered_rows=run.rejected_rows,
         )
 
-    def commit_failure(
-        self,
-        run: IngestionRun,
-        manifest: RawManifest | None,
-        quality: tuple[QualityResult, ...],
-    ) -> None:
+    def complete_failure(self, run: IngestionRun, quality: tuple[QualityResult, ...]) -> None:
         self.events.append("failure")
         self.failed_run = run
+        self.quality = quality
 
 
 def _service(
-    period: DragonTigerPeriodType,
+    *,
+    draft: DragonTigerEventDraft | None = None,
+    findings: tuple[DragonTigerSourceFinding, ...] = (),
+    provider_fail: str | None = None,
+    raw_fail: bool = False,
+    persistence_fail: str | None = None,
 ) -> tuple[DragonTigerService, FakePersistence, list[str]]:
     events: list[str] = []
-    persistence = FakePersistence(events)
-    service = DragonTigerService(
-        persistence=persistence,
-        raw_store=FakeRawStore(events),
-        provider=FakeProvider(events, period),
-        clock=lambda: datetime(2026, 8, 20, 12, tzinfo=UTC),
-        uuid_factory=iter((INGESTION_ID, RAW_ID)).__next__,
+    persistence = FakePersistence(events, fail=persistence_fail)
+    ids = iter((INGESTION_ID, RAW_ID, *QUALITY_IDS))
+    return (
+        DragonTigerService(
+            persistence=persistence,
+            raw_store=FakeRawStore(events, fail=raw_fail),
+            provider=FakeProvider(events, draft=draft, findings=findings, fail=provider_fail),
+            clock=lambda: datetime(2026, 8, 20, 12, tzinfo=UTC),
+            uuid_factory=ids.__next__,
+        ),
+        persistence,
+        events,
     )
-    return service, persistence, events
 
 
-def test_collect_writes_raw_before_normalization_and_commits_once() -> None:
-    service, persistence, events = _service(DragonTigerPeriodType.DAY)
+def test_collect_durably_registers_run_and_manifest_before_normalization() -> None:
+    service, persistence, events = _service()
 
     summary = service.collect(TRADE_DATE)
 
-    assert events == ["fetch", "raw", "normalize", "commit"]
+    assert events == [
+        "begin",
+        "fetch",
+        "raw",
+        "manifest",
+        "normalize",
+        "market-period:3",
+        "publish",
+    ]
     assert summary.accepted_events == 1
-    assert summary.fetched_rows == 2
-    assert summary.filtered_rows == 0
-    assert persistence.records[0].period_start_date == TRADE_DATE
+    assert persistence.manifest is not None
 
 
-def test_collect_resolves_three_day_start_from_the_unified_calendar() -> None:
-    service, persistence, events = _service(DragonTigerPeriodType.THREE_DAY)
+def test_publish_failure_keeps_registered_manifest_and_marks_failed() -> None:
+    service, persistence, events = _service(persistence_fail="publish")
 
-    service.collect(TRADE_DATE)
+    with pytest.raises(DragonTigerCollectionError) as caught:
+        service.collect(TRADE_DATE)
 
-    assert "period:3" in events
-    assert persistence.records[0].period_start_date == date(2026, 8, 18)
+    assert caught.value.code == "DT_FACT_PUBLISH_FAILED"
+    assert caught.value.phase == "publish"
+    assert events[-2:] == ["publish", "failure"]
+    assert persistence.manifest is not None
+    assert persistence.failed_run is not None
+    assert persistence.failed_run.error_summary == "DT_FACT_PUBLISH_FAILED:publish"
+    assert "secret" not in persistence.failed_run.error_summary
 
 
 @pytest.mark.parametrize(
-    ("draft", "message"),
+    ("provider_fail", "raw_fail", "persistence_fail", "code", "phase"),
     [
-        (replace(_draft(DragonTigerPeriodType.DAY), source_code="tushare"), "source"),
-        (
-            _draft_on_date(date(2026, 8, 19)),
-            "date",
-        ),
+        ("provider", False, None, "DT_PROVIDER_FETCH_FAILED", "fetch"),
+        (None, True, None, "DT_RAW_WRITE_FAILED", "raw"),
+        (None, False, "manifest", "DT_MANIFEST_ATTACH_FAILED", "manifest"),
+        ("normalize", False, None, "DT_NORMALIZATION_FAILED", "normalize"),
     ],
 )
-def test_collect_rejects_provider_or_date_lineage_mismatch(
-    draft: DragonTigerEventDraft, message: str
+def test_collect_uses_stable_phase_error_codes(
+    provider_fail: str | None,
+    raw_fail: bool,
+    persistence_fail: str | None,
+    code: str,
+    phase: str,
 ) -> None:
-    events: list[str] = []
-    provider = FakeProvider(events, DragonTigerPeriodType.DAY)
-    provider.draft = draft
-    persistence = FakePersistence(events)
-    service = DragonTigerService(
-        persistence=persistence,
-        raw_store=FakeRawStore(events),
-        provider=provider,
-        clock=lambda: datetime(2026, 8, 20, 12, tzinfo=UTC),
-        uuid_factory=iter(
-            (INGESTION_ID, RAW_ID, UUID("00000000-0000-0000-0000-000000000103"))
-        ).__next__,
+    service, persistence, _ = _service(
+        provider_fail=provider_fail,
+        raw_fail=raw_fail,
+        persistence_fail=persistence_fail,
     )
 
-    with pytest.raises(ValueError, match=message):
+    with pytest.raises(DragonTigerCollectionError) as caught:
         service.collect(TRADE_DATE)
 
-    assert events == ["fetch", "raw", "normalize", "failure"]
+    assert (caught.value.code, caught.value.phase) == (code, phase)
     assert persistence.failed_run is not None
+    assert persistence.failed_run.error_summary == f"{code}:{phase}"
+
+
+def test_collect_publishes_source_findings_as_nonblocking_quality() -> None:
+    finding = DragonTigerSourceFinding(
+        rule_code="DT_ZERO_ACTIVITY_PLACEHOLDER_FILTERED",
+        severity=QualitySeverity.WARNING,
+        source_event_id="event-1",
+        report_kind="BUY",
+        occurrence_count=1,
+        filtered_count=1,
+    )
+    service, persistence, _ = _service(findings=(finding,))
+
+    summary = service.collect(TRADE_DATE)
+
+    assert summary.filtered_rows == 1
+    assert persistence.quality[0].rule_code == finding.rule_code
+    assert persistence.quality[0].severity is QualitySeverity.WARNING
+    assert persistence.quality[0].blocks_core_write is False
+
+
+def test_collect_resolves_security_traded_session_window() -> None:
+    draft = _draft(basis=DragonTigerWindowBasis.SECURITY_TRADED_SESSIONS)
+    service, persistence, events = _service(draft=draft)
+
+    service.collect(TRADE_DATE)
+
+    assert "security-period:SSE:600000:3" in events
+    assert cast(object, persistence.records[0]).trigger_window.start_date == date(2026, 8, 18)
+
+
+def test_backfill_continues_after_a_failed_trading_date() -> None:
+    service, _, _ = _service()
+    attempted: list[date] = []
+
+    def collect(day: date) -> DragonTigerCollectionSummary:
+        attempted.append(day)
+        if day == date(2026, 8, 19):
+            raise DragonTigerCollectionError("DT_PROVIDER_FETCH_FAILED", "fetch")
+        return DragonTigerCollectionSummary(
+            status="succeeded",
+            ingestion_id=INGESTION_ID,
+            trade_date=day,
+            fetched_rows=2,
+            accepted_events=1,
+            accepted_seat_trades=1,
+            filtered_rows=0,
+        )
+
+    service.collect = collect  # type: ignore[method-assign]
+    summary = service.backfill(date(2026, 8, 18), date(2026, 8, 20))
+
+    assert attempted == [date(2026, 8, 18), date(2026, 8, 19), date(2026, 8, 20)]
+    assert summary.completed_dates == (date(2026, 8, 18), date(2026, 8, 20))
+    assert [(failure.trade_date, failure.error_code) for failure in summary.failed_dates] == [
+        (date(2026, 8, 19), "DT_PROVIDER_FETCH_FAILED")
+    ]
+
+
+def test_backfill_accepts_730_days_but_rejects_731() -> None:
+    service, _, _ = _service()
+    service.backfill(TRADE_DATE, TRADE_DATE + timedelta(days=729))
+    with pytest.raises(ValueError, match="730"):
+        service.backfill(TRADE_DATE, TRADE_DATE + timedelta(days=730))

@@ -58,6 +58,28 @@ class PostgreSQLDragonTigerPersistence:
             raise ValueError("trading calendar cannot resolve the requested period")
         return cast(date, min(rows))
 
+    def security_traded_period_start_date(
+        self, symbol: str, trade_date: date, session_count: int
+    ) -> date:
+        if session_count < 1:
+            raise ValueError("session_count must be positive")
+        with self._engine.connect() as connection:
+            rows = connection.scalars(
+                text("""
+                    select trade_date from core.daily_bar
+                    where symbol=:symbol and trade_date <= :trade_date and volume > 0
+                    order by trade_date desc limit :session_count
+                """),
+                {
+                    "symbol": symbol,
+                    "trade_date": trade_date,
+                    "session_count": session_count,
+                },
+            ).all()
+        if len(rows) != session_count:
+            raise ValueError("daily bars cannot resolve the requested traded-session window")
+        return cast(date, min(rows))
+
     def known_stock_symbols(self, trade_date: date) -> frozenset[str]:
         with self._engine.connect() as connection:
             symbols = connection.scalars(
@@ -82,6 +104,49 @@ class PostgreSQLDragonTigerPersistence:
                 {"start_date": start_date, "end_date": end_date},
             ).all()
         return frozenset(dates)
+
+    def succeeded_dates(self, start_date: date, end_date: date) -> frozenset[date]:
+        with self._engine.connect() as connection:
+            values = connection.scalars(
+                text("""
+                    select distinct event.trade_date
+                    from billboard.dragon_tiger_event event
+                    join ingestion.ingestion_run run
+                      on run.ingestion_id = event.ingestion_id
+                    where run.dataset_code='dragon_tiger'
+                      and run.status='succeeded'
+                      and event.trade_date between :start_date and :end_date
+                """),
+                {"start_date": start_date, "end_date": end_date},
+            ).all()
+        return frozenset(values)
+
+    def begin_ingestion(self, run: IngestionRun) -> None:
+        _require_run(run, IngestionStatus.RUNNING)
+        with self._engine.begin() as connection:
+            _insert_run(connection, run)
+
+    def attach_raw_manifest(self, run: IngestionRun, manifest: RawManifest) -> None:
+        _require_run(run, IngestionStatus.RUNNING)
+        if manifest.ingestion_id != run.ingestion_id:
+            raise ValueError("DragonTiger manifest ingestion_id does not match its run")
+        with self._engine.begin() as connection:
+            _update_running_run(connection, run, manifest.row_count)
+            _insert_manifest(connection, manifest)
+
+    def publish_success(
+        self,
+        run: IngestionRun,
+        quality: Sequence[QualityResult],
+        records: Sequence[DragonTigerEventRecord],
+    ) -> DragonTigerCollectionSummary:
+        return self._commit(run, None, quality, records, insert_run=False)
+
+    def complete_failure(self, run: IngestionRun, quality: Sequence[QualityResult]) -> None:
+        _require_run(run, IngestionStatus.FAILED)
+        with self._engine.begin() as connection:
+            _update_run(connection, run)
+            _insert_quality(connection, quality)
 
     def commit_success(
         self,
@@ -504,15 +569,34 @@ def _insert_run(connection: Connection, run: IngestionRun) -> None:
 
 
 def _update_run(connection: Connection, run: IngestionRun) -> None:
-    connection.execute(
+    result = connection.execute(
         text("""
             update ingestion.ingestion_run set status=:status, finished_at=:finished_at,
                 fetched_rows=:fetched_rows, accepted_rows=:accepted_rows,
                 rejected_rows=:rejected_rows, error_summary=:error_summary
-            where ingestion_id=:ingestion_id
+            where ingestion_id=:ingestion_id and status='running'
         """),
         _run_params(run),
     )
+    if result.rowcount != 1:
+        raise RuntimeError("DT_INGESTION_STATE_CONFLICT")
+
+
+def _update_running_run(connection: Connection, run: IngestionRun, fetched_rows: int) -> None:
+    result = connection.execute(
+        text("""
+            update ingestion.ingestion_run set
+                request_params=cast(:request_params as jsonb), fetched_rows=:fetched_rows
+            where ingestion_id=:ingestion_id and status='running'
+        """),
+        {
+            "ingestion_id": run.ingestion_id,
+            "request_params": _json(run.request_params),
+            "fetched_rows": fetched_rows,
+        },
+    )
+    if result.rowcount != 1:
+        raise RuntimeError("DT_INGESTION_STATE_CONFLICT")
 
 
 def _run_params(run: IngestionRun) -> dict[str, object]:
