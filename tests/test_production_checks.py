@@ -93,6 +93,20 @@ def test_dragon_tiger_replacement_migration_is_bounded_private_and_read_only() -
     assert all(token not in migration for token in ("schtasks", "crontab", "oncalendar"))
 
 
+def test_fastapi_preflight_uses_repaired_dragon_tiger_function_signatures() -> None:
+    assert (
+        "api_v1.query_dragon_tiger_events_by_date(date,text,integer,integer,integer)"
+        in PUBLISHED_FUNCTIONS
+    )
+    assert (
+        "api_v1.query_dragon_tiger_events_by_symbol(text,date,date,text,integer,integer,integer)"
+        in PUBLISHED_FUNCTIONS
+    )
+    assert "api_v1.query_dragon_tiger_events_by_date(date,text,integer,integer)" not in (
+        PUBLISHED_FUNCTIONS
+    )
+
+
 def test_auction_series_five_level_migration_is_bounded_and_preserves_history() -> None:
     migration = (
         (MIGRATION_DIR / "20260818000100_enrich_call_auction_market_series.sql")
