@@ -116,6 +116,7 @@ class StubReliabilityPersistence:
         self.recovery_args: tuple[datetime, datetime, str] | None = None
         self.dragon_tiger_stock_queries: list[tuple[set[str], date]] = []
         self.dragon_tiger_known_symbols: set[str] | None = None
+        self.dragon_tiger_security_start_available = True
 
     def create_ingestion_run(self, run: IngestionRun) -> None:
         self.created.append(run)
@@ -146,7 +147,9 @@ class StubReliabilityPersistence:
 
     def dragon_tiger_security_traded_period_start_date(
         self, symbol: str, trade_date: date, session_count: int
-    ) -> date:
+    ) -> date | None:
+        if not self.dragon_tiger_security_start_available:
+            return None
         return trade_date - timedelta(days=session_count - 1)
 
     def known_trading_dates(self, dates: Collection[date]) -> set[date]:
@@ -513,6 +516,32 @@ def test_dragon_tiger_replay_rejects_an_all_filtered_batch(tmp_path: Path) -> No
     assert len(persistence.rejected_commits) == 1
 
 
+def test_dragon_tiger_replay_keeps_missing_security_traded_start_as_quality(
+    tmp_path: Path,
+) -> None:
+    store = LocalRawStore(tmp_path)
+    source = _dragon_tiger_source(
+        store,
+        request_date="2026-07-29",
+        symbol="920273.BJ",
+        explanation="北交所股票最近3个有成交的交易日以内收盘价涨跌幅偏离值累计达到+40%(-40%)",
+    )
+    persistence = StubReliabilityPersistence(source)
+    persistence.dragon_tiger_security_start_available = False
+
+    replay = RawReplayService(
+        raw_store=store,
+        persistence=persistence,
+        clock=lambda: NOW,
+        uuid_factory=lambda: REPLAY_RUN_ID,
+    ).replay(SOURCE_RUN_ID)
+
+    assert replay.status == "succeeded"
+    _, _, records, findings = persistence.dragon_tiger_commits[0]
+    assert records[0].trigger_window.start_date is None
+    assert any(item.rule_code == "DT_TRIGGER_START_UNAVAILABLE" for item in findings)
+
+
 def test_raw_replay_normalizes_and_commits_capital_facts(tmp_path: Path) -> None:
     store = LocalRawStore(tmp_path)
     source = _source(
@@ -849,16 +878,22 @@ def test_cross_source_comparison_reports_differences_without_writes(tmp_path: Pa
     assert persistence.daily_commits == []
 
 
-def _dragon_tiger_source(store: LocalRawStore, *, request_date: str) -> ReplaySource:
+def _dragon_tiger_source(
+    store: LocalRawStore,
+    *,
+    request_date: str,
+    symbol: str = "600000.SH",
+    explanation: str = "测试原因",
+) -> ReplaySource:
     common = {
         "TRADE_ID": "replay-event",
-        "SECUCODE": "600000.SH",
+        "SECUCODE": symbol,
         "TRADE_DATE": "2026-07-29 00:00:00",
     }
     summary = {
         **common,
         "CHANGE_TYPE": "106001",
-        "EXPLANATION": "测试原因",
+        "EXPLANATION": explanation,
         "BILLBOARD_BUY_AMT": "600",
         "BILLBOARD_SELL_AMT": "400",
         "BILLBOARD_NET_AMT": "200",

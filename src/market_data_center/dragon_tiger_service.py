@@ -82,7 +82,7 @@ class DragonTigerPersistence(Protocol):
 
     def security_traded_period_start_date(
         self, symbol: str, trade_date: date, session_count: int
-    ) -> date: ...
+    ) -> date | None: ...
 
     def known_stock_symbols(self, trade_date: date) -> frozenset[str]: ...
 
@@ -164,7 +164,9 @@ class DragonTigerService:
             self._attach_manifest(run, manifest)
             normalization = self._normalize(batch)
             records = self._resolve_windows(normalization.events, trade_date)
-            quality = self._source_quality(run.ingestion_id, normalization.findings)
+            quality = self._source_quality(
+                run.ingestion_id, normalization.findings
+            ) + self._trigger_start_quality(run.ingestion_id, records)
             validation = self._validate(records, trade_date)
             if validation.findings:
                 quality += self._domain_quality(run.ingestion_id, validation.findings)
@@ -321,9 +323,12 @@ class DragonTigerService:
     ) -> DragonTigerValidationResult:
         try:
             period_start = min(
-                record.trigger_window.start_date
-                for record in records
-                if record.trigger_window.start_date is not None
+                (
+                    record.trigger_window.start_date
+                    for record in records
+                    if record.trigger_window.start_date is not None
+                ),
+                default=trade_date,
             )
             return validate_dragon_tiger_events(
                 records,
@@ -397,6 +402,28 @@ class DragonTigerService:
                 },
             )
             for finding in findings
+        )
+
+    def _trigger_start_quality(
+        self, ingestion_id: UUID, records: Sequence[DragonTigerEventRecord]
+    ) -> tuple[QualityResult, ...]:
+        return tuple(
+            QualityResult(
+                quality_result_id=self._uuid_factory(),
+                ingestion_id=ingestion_id,
+                dataset_code=DatasetCode.DRAGON_TIGER,
+                rule_code="DT_TRIGGER_START_UNAVAILABLE",
+                severity=QualitySeverity.WARNING,
+                status=QualityStatus.FAILED,
+                message="Security-traded trigger start is unavailable from confirmed Daily Bars",
+                natural_key={"source_event_id": record.source_record_id},
+                details={
+                    "trigger_window_basis": record.trigger_window.basis.value,
+                    "trigger_window_sessions": record.trigger_window.session_count,
+                },
+            )
+            for record in records
+            if record.trigger_window.start_date is None
         )
 
     def _domain_quality(
