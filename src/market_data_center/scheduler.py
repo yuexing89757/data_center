@@ -63,6 +63,7 @@ from market_data_center.providers.pytdx_pool import (
     load_endpoint_pool,
     refresh_endpoint_pool,
 )
+from market_data_center.providers.tushare import TushareBseSecurityProvider
 from market_data_center.raw_store import LocalRawStore
 from market_data_center.regulation_benchmark_service import RegulationBenchmarkService
 from market_data_center.regulation_service import RegulationService
@@ -79,6 +80,7 @@ from market_data_center.scheduling_catalog import (
     PYTDX_POOL_REFRESH_JOB_ID,
     REGULATION_DAILY_CALCULATION_JOB_ID,
     SCHEDULER_TIMEZONE,
+    SECURITY_BSE_JOB_ID,
     SHAREHOLDER_COUNT_DAILY_JOB_ID,
     STALE_RUN_RECOVERY_JOB_ID,
     STOCK_DAILY_INDICATOR_JOB_ID,
@@ -619,6 +621,36 @@ def run_today_limit_up_snapshot_job() -> None:
         engine.dispose()
 
 
+def run_security_bse_job() -> None:
+    """Synchronize the all-status BSE security catalog before DragonTiger collection."""
+    settings = WorkerSettings()  # type: ignore[call-arg]
+    scheduling = SchedulerSettings()
+    engine = create_engine(
+        sqlalchemy_url(settings.database_url.get_secret_value()), pool_pre_ping=True
+    )
+    try:
+        fire_time = _scheduled_job_fire_time(SECURITY_BSE_JOB_ID, scheduling)
+        execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
+            WorkflowCode.SECURITY_BSE_DAILY,
+            fire_time,
+            TriggerSource.SCHEDULED,
+        )
+        try:
+            with TushareBseSecurityProvider.default() as provider:
+                pipeline = IngestionPipeline(
+                    provider=provider,
+                    raw_store=LocalRawStore(settings.raw_data_root),
+                    persistence=PostgreSQLPersistence(engine),
+                )
+                execution.step("sync_bse_security", 1, pipeline.ingest_securities)
+        except BaseException as error:
+            execution.fail(error)
+            raise
+        execution.succeed()
+    finally:
+        engine.dispose()
+
+
 def run_dragon_tiger_job() -> None:
     """Collect one exact Shanghai trading-date billboard batch when opt-in is enabled."""
     settings = WorkerSettings()  # type: ignore[call-arg]
@@ -630,13 +662,15 @@ def run_dragon_tiger_job() -> None:
         fire_time = _scheduled_job_fire_time(DRAGON_TIGER_JOB_ID, scheduling)
         trade_date = fire_time.astimezone(ZoneInfo(SCHEDULER_TIMEZONE)).date()
         persistence = PostgreSQLDragonTigerPersistence(engine)
-        execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
+        operations = PostgreSQLOperationsPersistence(engine)
+        execution = WorkflowExecutionService(operations).start(
             WorkflowCode.DRAGON_TIGER_DAILY,
             fire_time,
             TriggerSource.SCHEDULED,
         )
         try:
             if persistence.is_trading_day(trade_date):
+                _require_dragon_tiger_bse_prerequisite(operations, trade_date)
                 service = DragonTigerService(
                     persistence=persistence,
                     raw_store=LocalRawStore(settings.raw_data_root),
@@ -651,6 +685,13 @@ def run_dragon_tiger_job() -> None:
         execution.succeed()
     finally:
         engine.dispose()
+
+
+def _require_dragon_tiger_bse_prerequisite(
+    operations: PostgreSQLOperationsPersistence, trade_date: date
+) -> None:
+    if not operations.has_succeeded_on_date(WorkflowCode.SECURITY_BSE_DAILY, trade_date):
+        raise ProviderError("DT_BSE_SECURITY_PREREQUISITE_FAILED")
 
 
 def run_regulation_daily_calculation_job() -> None:
@@ -812,6 +853,7 @@ def build_scheduler(settings: SchedulerSettings | None = None) -> BlockingSchedu
         TODAY_LIMIT_UP_SNAPSHOT_JOB_ID: run_today_limit_up_snapshot_job,
         CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID: run_close_price_new_highs_120d_job,
         BOARD_INDEX_DAILY_BAR_JOB_ID: run_board_index_daily_bar_job,
+        SECURITY_BSE_JOB_ID: run_security_bse_job,
         DRAGON_TIGER_JOB_ID: run_dragon_tiger_job,
         REGULATION_DAILY_CALCULATION_JOB_ID: run_regulation_daily_calculation_job,
         DATA_CLEANUP_JOB_ID: run_data_cleanup_job,

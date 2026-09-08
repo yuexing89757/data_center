@@ -57,6 +57,7 @@ from market_data_center.providers import (
     ProviderRouter,
     ProviderRoutingError,
     RoutedResult,
+    TushareBseSecurityProvider,
     available_board_index_provider_codes,
     available_provider_codes,
     create_board_index_provider,
@@ -451,6 +452,7 @@ def main() -> None:
     if (
         args.dataset
         in {
+            "security-bse",
             "stock-daily-indicator",
             "stock-daily-indicators-bulk",
             "deducted-profit-daily",
@@ -621,6 +623,15 @@ def _run_explicit(
     persistence: PostgreSQLPersistence,
     raw_store: LocalRawStore,
 ) -> IngestionRun | DailyBarBulkSummary | None:
+    if args.dataset == "security-bse":
+        if args.provider != "tushare":
+            raise SystemExit("security-bse requires --provider tushare")
+        with TushareBseSecurityProvider.default() as provider:
+            return IngestionPipeline(
+                provider=provider,
+                raw_store=raw_store,
+                persistence=persistence,
+            ).ingest_securities()
     with create_provider(args.provider) as provider:
         pipeline = IngestionPipeline(
             provider=provider,
@@ -1095,6 +1106,7 @@ def _commit_daily_bar_batches(
 def _dataset_code(dataset: str) -> DatasetCode:
     return {
         "security": DatasetCode.SECURITY,
+        "security-bse": DatasetCode.SECURITY,
         "trading-calendar": DatasetCode.TRADING_CALENDAR,
         "daily-bar": DatasetCode.DAILY_BAR,
         "capital": DatasetCode.CAPITAL,
@@ -1104,7 +1116,7 @@ def _dataset_code(dataset: str) -> DatasetCode:
 
 
 def _execute(args: Namespace, pipeline: IngestionPipeline) -> IngestionRun:
-    if args.dataset == "security":
+    if args.dataset in {"security", "security-bse"}:
         return pipeline.ingest_securities()
     if args.dataset == "capital":
         return pipeline.ingest_capital(args.source_symbol, mode=args.mode)
@@ -1197,7 +1209,7 @@ def _run_dragon_tiger_command(args: Namespace) -> None:
 
                 def collect_range() -> DragonTigerBackfillSummary:
                     summary = service.backfill(start, end)
-                    if summary.failed_date is not None:
+                    if summary.failed_dates:
                         raise _DragonTigerBackfillStopped(summary)
                     return summary
 
@@ -1260,6 +1272,7 @@ def _parser() -> ArgumentParser:
         help="confirm source-rights review before this explicit collection command",
     )
     subparsers.add_parser("security", help="synchronize the security master")
+    subparsers.add_parser("security-bse", help="synchronize Tushare BSE L/D/P security master")
 
     calendar = subparsers.add_parser("trading-calendar", help="synchronize natural-day calendar")
     _add_date_range(calendar)

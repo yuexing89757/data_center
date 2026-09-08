@@ -46,6 +46,13 @@ def test_cli_still_accepts_an_explicit_provider() -> None:
     assert args.provider == "pytdx"
 
 
+def test_cli_accepts_explicit_tushare_bse_security_sync() -> None:
+    args = _parser().parse_args(["--provider", "tushare", "security-bse"])
+
+    assert args.dataset == "security-bse"
+    assert args.provider == "tushare"
+
+
 def test_dragon_tiger_cli_accepts_exact_date_or_complete_range() -> None:
     exact = _parser().parse_args(
         [

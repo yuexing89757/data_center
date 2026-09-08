@@ -34,6 +34,7 @@ NOW = datetime(2026, 8, 2, 10, tzinfo=UTC)
 
 def test_dragon_tiger_daily_is_a_distinct_workflow_identity() -> None:
     assert WorkflowCode("dragon_tiger_daily") is WorkflowCode.DRAGON_TIGER_DAILY
+    assert WorkflowCode("security_bse_daily") is WorkflowCode.SECURITY_BSE_DAILY
 
 
 class MemoryOperationsPersistence:
@@ -131,6 +132,7 @@ def test_job_catalog_is_stable_and_references_defined_workflows() -> None:
     assert workflows["shareholder_count_daily"].step_codes == ("shareholder_count_daily",)
     assert workflows["shareholder_count_backfill"].step_codes == ("shareholder_count_backfill",)
     assert workflows["dragon_tiger_daily"].step_codes == ("collect_dragon_tiger",)
+    assert workflows["security_bse_daily"].step_codes == ("sync_bse_security",)
     assert workflows["data_cleanup"].step_codes == ("cleanup_call_auction_market_series_snapshots",)
     assert all(job.timezone == "Asia/Shanghai" for job in jobs)
     assert {workflow.value for workflow in WorkflowCode} == set(workflows)

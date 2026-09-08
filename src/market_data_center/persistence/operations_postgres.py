@@ -1,6 +1,6 @@
 """PostgreSQL repository for the operations bounded context."""
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import Engine, text
@@ -57,6 +57,20 @@ insert into operations.workflow_run (
                 _workflow_parameters(run),
             )
         return run
+
+    def has_succeeded_on_date(self, workflow_code: WorkflowCode, trade_date: date) -> bool:
+        with self._engine.connect() as connection:
+            value = connection.scalar(
+                text("""
+                    select exists (
+                        select 1 from operations.workflow_run
+                        where workflow_code=:workflow_code and status='succeeded'
+                          and (scheduled_for at time zone 'Asia/Shanghai')::date=:trade_date
+                    )
+                """),
+                {"workflow_code": workflow_code.value, "trade_date": trade_date},
+            )
+        return value is True
 
     def start_job(self, workflow_run_id: UUID, job_code: str, sequence_no: int) -> JobExecution:
         now = datetime.now(UTC)
