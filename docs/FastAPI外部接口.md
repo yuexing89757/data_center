@@ -29,9 +29,10 @@ DragonTiger 提供四个数据库只读路由：按精确日期查询事件、�
 席位 UUID 查询行为，以及按事件 UUID 查询即时计算的客观资金指标。路径分别为
 `/api/v1/dragon-tiger/events/by-date`、`/api/v1/dragon-tiger/events/by-symbol/{code}`、
 `/api/v1/dragon-tiger/seats/{seat_id}/trades` 和
-`/api/v1/dragon-tiger/events/{event_id}/metrics`。事件支持 `DAY`/`THREE_DAY` 周期；日期区间最长
-366 个自然日，`limit` 为 1..500，`offset` 为 0..10000。所有数值为 Decimal 字符串；接口不回退
-日期、不访问数据源、不触发采集或 Raw 重放，也不返回主观评分或策略标签。
+`/api/v1/dragon-tiger/events/{event_id}/metrics`。日期和股票路由删除旧 `period_type`，改为可选
+`trigger_window_basis`/`trigger_window_sessions` 过滤；响应分别提供触发窗口、金额周期、买卖披露状态
+和安全质量码。日期区间最长 366 个自然日，`limit` 为 1..500，`offset` 为 0..10000。所有数值为
+Decimal 字符串；接口不回退日期、不访问数据源、不触发采集或 Raw 重放，也不返回主观评分或策略标签。
 
 Keep the application on `127.0.0.1`. Public authentication, HTTPS/domain, reverse proxy, firewall,
 rate limits, request-log retention, and API-key rotation are separate deployment decisions. See

@@ -72,14 +72,17 @@ pytdx 还可从通达信 `T0002/hq_cache` 读取行业和概念完整快照，�
 20:30 执行 Tushare 每日指标，并每小时恢复超时停留在 `running` 的采集批次。单线程执行器
 保证任务不重叠，PostgreSQL advisory lock 保证同一时刻只有一个 Scheduler 实例持有主锁。
 
-DragonTiger 任务固定为周一至周五 20:30，但默认 `DRAGON_TIGER_ENABLED=false`，生产环境必须在
-数据来源权利审查留档后才可启用。显式手工采集为
+Tushare 北交所 `L/D/P` 全状态证券任务固定为周一至周五 20:15，DragonTiger 固定为 20:30；两者
+默认分别由 `SECURITY_BSE_ENABLED=false` 和 `DRAGON_TIGER_ENABLED=false` 关闭，生产环境必须在
+数据来源权利审查及凭据预检留档后才可启用。DragonTiger 当日任务要求同日 BSE 前置任务成功。
+显式手工采集为
 `market-data-center dragon-tiger-collect --trade-date YYYY-MM-DD --confirm-eastmoney-source-terms-reviewed`；
-回填使用 `--start-date/--end-date` 且最长 366 个自然日。新 Raw 使用
-`eastmoney/dragon_tiger/YYYY/MM/DD/<ingestion_id>.jsonl` 与 `eastmoney.dragon_tiger.v2`；历史
-`eastmoney.trading_billboard.v1` 仍可由新 normalizer 回放。普通榜和三日榜统一为事件，三日榜起点
-由 `CN_A_SHARE` 交易日历解析。未知证券、父子身份不一致或金额/排名不合法均作为硬失败，不跨日期、
-不切换来源拼批次。
+回填使用 `--start-date/--end-date` 且最长 730 个自然日，已成功日期自动跳过，单日失败不会阻断
+后续日期。新 Raw 使用 `eastmoney/dragon_tiger/YYYY/MM/DD/<ingestion_id>.jsonl` 与
+`eastmoney.dragon_tiger.v3`；历史 `eastmoney.trading_billboard.v1`、`eastmoney.dragon_tiger.v2`
+仍可由版本化 normalizer 回放。孤儿 Raw 先执行 `dragon-tiger-raw-recovery --dry-run`，只有审阅结果后
+才执行 `--execute --confirm`。触发窗口和金额统计周期分别记录；未知证券、原因语义冲突或金额/排名
+不合法均作为硬失败，不跨日期、不切换来源拼批次。
 
 每天 20:00（包括周末）执行扣非净利润增量同步。该任务按披露变化发现受影响证券，不按
 交易日触发，也不进行全市场历史回填；详见 ADR-0020。
@@ -149,6 +152,7 @@ SCHEDULER_STORE_PATH=/var/lib/market-data-center/scheduler/jobs.sqlite
 EOD_QUOTE_SNAPSHOT_ENABLED=true
 CALL_AUCTION_MARKET_SERIES_ENABLED=true
 DATA_CLEANUP_ENABLED=true
+SECURITY_BSE_ENABLED=false
 DRAGON_TIGER_ENABLED=false
 BOARD_INDEX_DAILY_BAR_ENABLED=true
 SHAREHOLDER_COUNT_DAILY_ENABLED=false

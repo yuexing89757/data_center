@@ -97,6 +97,25 @@ def test_dragon_tiger_cli_accepts_exact_date_or_complete_range() -> None:
     )
 
 
+def test_dragon_tiger_cli_accepts_2025_to_present_repair_range() -> None:
+    ranged = _parser().parse_args(
+        [
+            "dragon-tiger-collect",
+            "--start-date",
+            "2025-01-01",
+            "--end-date",
+            "2026-09-08",
+            "--confirm-eastmoney-source-terms-reviewed",
+        ]
+    )
+
+    assert _validate_dragon_tiger_args(ranged) == (
+        None,
+        date(2025, 1, 1),
+        date(2026, 9, 8),
+    )
+
+
 def test_dragon_tiger_cli_rejects_missing_confirmation_or_mixed_dates() -> None:
     with pytest.raises(SystemExit):
         _parser().parse_args(["dragon-tiger-collect", "--trade-date", "2026-08-17"])
@@ -138,7 +157,7 @@ def test_dragon_tiger_cli_rejects_incomplete_or_unbounded_range() -> None:
         [
             "dragon-tiger-collect",
             "--start-date",
-            "2025-08-17",
+            "2024-08-17",
             "--end-date",
             "2026-08-18",
             "--confirm-eastmoney-source-terms-reviewed",
@@ -147,7 +166,7 @@ def test_dragon_tiger_cli_rejects_incomplete_or_unbounded_range() -> None:
 
     with pytest.raises(ValueError, match="both"):
         _validate_dragon_tiger_args(incomplete)
-    with pytest.raises(ValueError, match="366"):
+    with pytest.raises(ValueError, match="730"):
         _validate_dragon_tiger_args(unbounded)
 
 

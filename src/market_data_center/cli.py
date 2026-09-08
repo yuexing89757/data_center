@@ -100,9 +100,9 @@ class StockDailyIndicatorWorkflowResult:
     deleted_rows: int
 
 
-class _DragonTigerBackfillStopped(RuntimeError):
+class _DragonTigerBackfillIncomplete(RuntimeError):
     def __init__(self, summary: DragonTigerBackfillSummary) -> None:
-        super().__init__("DragonTiger backfill stopped at the first failed date")
+        super().__init__("DragonTiger backfill completed with failed dates")
         self.summary = summary
 
 
@@ -1204,8 +1204,8 @@ def _validate_dragon_tiger_args(
         raise ValueError("--start-date and --end-date must both be provided")
     if start > end:
         raise ValueError("start_date must not follow end_date")
-    if (end - start).days > 365:
-        raise ValueError("DragonTiger range is bounded to 366 calendar days")
+    if (end - start).days > 729:
+        raise ValueError("DragonTiger range is bounded to 730 calendar days")
     return None, start, end
 
 
@@ -1243,7 +1243,7 @@ def _run_dragon_tiger_command(args: Namespace) -> None:
                 def collect_range() -> DragonTigerBackfillSummary:
                     summary = service.backfill(start, end)
                     if summary.failed_dates:
-                        raise _DragonTigerBackfillStopped(summary)
+                        raise _DragonTigerBackfillIncomplete(summary)
                     return summary
 
                 result = execution.step("collect_dragon_tiger", 1, collect_range)
@@ -1251,7 +1251,7 @@ def _run_dragon_tiger_command(args: Namespace) -> None:
             execution.fail(error)
             payload: object = (
                 asdict(error.summary)
-                if isinstance(error, _DragonTigerBackfillStopped)
+                if isinstance(error, _DragonTigerBackfillIncomplete)
                 else {
                     "status": "failed",
                     "operation": "dragon-tiger-collect",
