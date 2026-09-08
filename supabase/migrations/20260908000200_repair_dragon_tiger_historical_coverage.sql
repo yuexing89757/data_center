@@ -39,6 +39,20 @@ begin
     ) then
         raise exception 'DT_LEGACY_PERIOD_MAPPING_UNSUPPORTED' using errcode = '23514';
     end if;
+    if exists (
+        select 1
+        from billboard.dragon_tiger_event event
+        where event.lhb_buy_amount is null
+          and event.lhb_sell_amount is null
+          and not exists (
+              select 1
+              from billboard.seat_trade trade
+              where trade.event_id = event.event_id
+                and (trade.buy_rank is not null or trade.sell_rank is not null)
+          )
+    ) then
+        raise exception 'DT_LEGACY_DISCLOSURE_MAPPING_UNSUPPORTED' using errcode = '23514';
+    end if;
 end
 $$;
 
@@ -151,10 +165,10 @@ set trigger_window_basis = 'MARKET_SESSIONS',
     trigger_occurrence_count = null,
     trigger_start_date = period_start_date,
     trigger_end_date = period_end_date,
-    amount_period_basis = 'MARKET_SESSIONS',
-    amount_period_sessions = case period_type when 'DAY' then 1 else 3 end,
-    amount_period_start_date = period_start_date,
-    amount_period_end_date = period_end_date,
+    amount_period_basis = 'SOURCE_UNSPECIFIED',
+    amount_period_sessions = null,
+    amount_period_start_date = null,
+    amount_period_end_date = null,
     buy_disclosure_present = (
         lhb_buy_amount is not null or exists (
             select 1 from billboard.seat_trade trade

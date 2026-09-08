@@ -401,6 +401,8 @@ def test_dragon_tiger_repair_migration_versions_windows_and_seat_identity() -> N
     ):
         assert column in migration
     assert "drop column period_type" in migration
+    assert "amount_period_basis = 'source_unspecified'" in migration
+    assert "dt_legacy_disclosure_mapping_unsupported" in migration
     assert "enable row level security" in migration
     assert "to market_data_worker" in migration
 
