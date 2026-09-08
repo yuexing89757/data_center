@@ -4,6 +4,7 @@ from typing import cast
 
 from pydantic import SecretStr
 
+from market_data_center.migrations import MIGRATION_DIR
 from market_data_center.public_api import create_app
 from market_data_center.public_api.queries import PublicQueryService
 from market_data_center.settings import ApiSettings
@@ -358,6 +359,35 @@ def test_dragon_tiger_replaces_trading_billboard_contracts() -> None:
     assert "billboard.entry" not in serialized
     assert "billboard.seat" not in serialized
     assert "payload_json" not in serialized
+
+
+def test_dragon_tiger_repair_migration_versions_windows_and_seat_identity() -> None:
+    migration = (
+        (MIGRATION_DIR / "20260908000200_repair_dragon_tiger_historical_coverage.sql")
+        .read_text(encoding="utf-8")
+        .lower()
+    )
+
+    assert "create table billboard.trading_seat_source_identity" in migration
+    assert "unique (source_code, source_seat_key)" in migration
+    assert "unique (identity_id, alias_name)" in migration
+    for column in (
+        "trigger_window_basis",
+        "trigger_window_sessions",
+        "trigger_occurrence_count",
+        "trigger_start_date",
+        "trigger_end_date",
+        "amount_period_basis",
+        "amount_period_sessions",
+        "amount_period_start_date",
+        "amount_period_end_date",
+        "buy_disclosure_present",
+        "sell_disclosure_present",
+    ):
+        assert column in migration
+    assert "drop column period_type" in migration
+    assert "enable row level security" in migration
+    assert "to market_data_worker" in migration
 
 
 def test_close_price_new_highs_contract_is_no_input_strict_and_bounded() -> None:

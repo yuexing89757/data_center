@@ -43,10 +43,13 @@ from market_data_center.domain import (
     DatasetCode,
     DeductedProfitRecord,
     DistributionRecord,
+    DragonTigerAmountPeriod,
+    DragonTigerAmountPeriodBasis,
     DragonTigerEventRecord,
-    DragonTigerPeriodType,
     DragonTigerReason,
     DragonTigerReasonType,
+    DragonTigerTriggerWindow,
+    DragonTigerWindowBasis,
     Exchange,
     IngestionEnvelope,
     IngestionRun,
@@ -7482,7 +7485,6 @@ def test_dragon_tiger_persistence_and_replacement_rpcs(database_engine: Engine) 
         reason_code="PRICE_DEVIATION_DAY_TEST",
         reason_name="日涨幅偏离值达到7%",
         reason_type=DragonTigerReasonType.PRICE_DEVIATION,
-        period_type=DragonTigerPeriodType.DAY,
         source_code="eastmoney",
         source_reason_code="106001",
         source_reason_name="日涨幅偏离值达到7%",
@@ -7491,9 +7493,19 @@ def test_dragon_tiger_persistence_and_replacement_rpcs(database_engine: Engine) 
         source_record_id=source_event_id,
         symbol=SYMBOL,
         trade_date=TRADE_DATE,
-        period_type=DragonTigerPeriodType.DAY,
-        period_start_date=TRADE_DATE,
-        period_end_date=TRADE_DATE,
+        trigger_window=DragonTigerTriggerWindow(
+            basis=DragonTigerWindowBasis.MARKET_SESSIONS,
+            session_count=1,
+            occurrence_count=None,
+            start_date=TRADE_DATE,
+            end_date=TRADE_DATE,
+        ),
+        amount_period=DragonTigerAmountPeriod(
+            basis=DragonTigerAmountPeriodBasis.MARKET_SESSIONS,
+            session_count=1,
+            start_date=TRADE_DATE,
+            end_date=TRADE_DATE,
+        ),
         reason=reason,
         reason_name_raw=reason.reason_name,
         close_price=Decimal("10.50"),
@@ -7503,6 +7515,8 @@ def test_dragon_tiger_persistence_and_replacement_rpcs(database_engine: Engine) 
         amplitude=Decimal("11.00"),
         lhb_buy_amount=Decimal("600"),
         lhb_sell_amount=Decimal("400"),
+        buy_disclosure_present=True,
+        sell_disclosure_present=True,
         seat_trades=(
             SeatTradeRecord(
                 source_record_id=f"{source_event_id}:seat:A123",
@@ -7608,14 +7622,27 @@ def test_dragon_tiger_persistence_and_replacement_rpcs(database_engine: Engine) 
         assert (
             connection.scalar(
                 text("""
-                    select count(*) from billboard.trading_seat_alias
+                    select count(*)
+                    from billboard.trading_seat_source_identity
                     where source_code='eastmoney' and source_seat_key='A123'
-                      and alias_name='某机构席位(更名)' and seat_id=:seat_id
+                      and seat_id=:seat_id
                 """),
                 {"seat_id": seat_id},
             )
             == 1
         )
+        aliases = connection.scalars(
+            text("""
+                select alias.alias_name
+                from billboard.trading_seat_alias alias
+                join billboard.trading_seat_source_identity identity
+                  on identity.identity_id = alias.identity_id
+                where identity.source_code='eastmoney'
+                  and identity.source_seat_key='A123'
+                order by alias.alias_name
+            """)
+        ).all()
+        assert set(aliases) == {"某机构席位", "某机构席位(更名)"}
         metrics = cast(
             Mapping[str, object],
             connection.scalar(
@@ -7643,37 +7670,16 @@ def test_dragon_tiger_persistence_and_replacement_rpcs(database_engine: Engine) 
         )
 
 
-def test_dragon_tiger_resolves_a_keyless_trade_only_through_an_explicit_alias(
+def test_dragon_tiger_does_not_create_an_identity_for_a_keyless_trade(
     database_engine: Engine,
 ) -> None:
     _prepare_api_data(database_engine)
-    with database_engine.begin() as connection:
-        seat_id = connection.scalar(
-            text("""
-                insert into billboard.trading_seat (
-                    canonical_name, seat_type, first_seen_date, last_seen_date
-                ) values ('标准营业部', 'BROKER', :initial_day, :initial_day)
-                returning seat_id
-            """),
-            {"initial_day": TRADE_DATE + timedelta(days=5)},
-        )
-        connection.execute(
-            text("""
-                insert into billboard.trading_seat_alias (
-                    seat_id, source_code, source_seat_key, alias_name
-                ) values (:seat_id, 'tushare', null, '来源精确别名')
-            """),
-            {"seat_id": seat_id},
-        )
-    assert isinstance(seat_id, UUID)
-
     ingestion_id = uuid4()
     source_event_id = f"tushare-dragon-{ingestion_id}"
     reason = DragonTigerReason(
         reason_code="PRICE_DEVIATION_DAY_TUSHARE_TEST",
         reason_name="日涨幅偏离值达到7%",
         reason_type=DragonTigerReasonType.PRICE_DEVIATION,
-        period_type=DragonTigerPeriodType.DAY,
         source_code="tushare",
         source_reason_code="tushare-test",
         source_reason_name="日涨幅偏离值达到7%",
@@ -7682,9 +7688,19 @@ def test_dragon_tiger_resolves_a_keyless_trade_only_through_an_explicit_alias(
         source_record_id=source_event_id,
         symbol=SYMBOL,
         trade_date=TRADE_DATE,
-        period_type=DragonTigerPeriodType.DAY,
-        period_start_date=TRADE_DATE,
-        period_end_date=TRADE_DATE,
+        trigger_window=DragonTigerTriggerWindow(
+            basis=DragonTigerWindowBasis.MARKET_SESSIONS,
+            session_count=1,
+            occurrence_count=None,
+            start_date=TRADE_DATE,
+            end_date=TRADE_DATE,
+        ),
+        amount_period=DragonTigerAmountPeriod(
+            basis=DragonTigerAmountPeriodBasis.MARKET_SESSIONS,
+            session_count=1,
+            start_date=TRADE_DATE,
+            end_date=TRADE_DATE,
+        ),
         reason=reason,
         reason_name_raw=reason.reason_name,
         close_price=Decimal("10.50"),
@@ -7694,6 +7710,8 @@ def test_dragon_tiger_resolves_a_keyless_trade_only_through_an_explicit_alias(
         amplitude=None,
         lhb_buy_amount=Decimal("100"),
         lhb_sell_amount=Decimal("20"),
+        buy_disclosure_present=True,
+        sell_disclosure_present=True,
         seat_trades=(
             SeatTradeRecord(
                 source_record_id=f"{source_event_id}:buy:1",
@@ -7743,20 +7761,17 @@ def test_dragon_tiger_resolves_a_keyless_trade_only_through_an_explicit_alias(
         assert (
             connection.scalar(
                 text("""
-                    select seat_id from billboard.seat_trade
-                    where source_event_id=:event
-                """),
+                select seat_id from billboard.seat_trade
+                where source_event_id=:event
+            """),
                 {"event": source_event_id},
             )
-            == seat_id
+            is None
         )
-        assert connection.execute(
-            text("""
-                select first_seen_date, last_seen_date
-                from billboard.trading_seat where seat_id=:seat_id
-            """),
-            {"seat_id": seat_id},
-        ).one() == (TRADE_DATE, TRADE_DATE + timedelta(days=5))
+        assert (
+            connection.scalar(text("select count(*) from billboard.trading_seat_source_identity"))
+            == 0
+        )
 
 
 def test_replay_stock_lookup_enforces_type_and_lifecycle(database_engine: Engine) -> None:
