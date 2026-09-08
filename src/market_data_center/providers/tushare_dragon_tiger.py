@@ -8,13 +8,17 @@ from decimal import Decimal, InvalidOperation
 from hashlib import sha256
 
 from market_data_center.domain.dragon_tiger import (
+    DragonTigerAmountPeriod,
+    DragonTigerAmountPeriodBasis,
     DragonTigerEventDraft,
-    DragonTigerPeriodType,
+    DragonTigerNormalizationResult,
     DragonTigerReason,
     DragonTigerReasonType,
+    DragonTigerTriggerWindow,
+    DragonTigerWindowBasis,
     SeatTradeRecord,
 )
-from market_data_center.providers.contracts import ProviderBatch, ProviderError, RawRow
+from market_data_center.providers.contracts import DragonTigerProviderBatch, ProviderError, RawRow
 from market_data_center.providers.tushare import TushareClient
 
 TOP_LIST_FIELDS = (
@@ -57,7 +61,7 @@ class TushareDragonTigerAdapter:
     def __init__(self, client: TushareClient) -> None:
         self._client = client
 
-    def fetch_dragon_tiger(self, trade_date: date) -> ProviderBatch[DragonTigerEventDraft]:
+    def fetch_dragon_tiger(self, trade_date: date) -> DragonTigerProviderBatch:
         params = {"trade_date": trade_date.strftime("%Y%m%d")}
         try:
             summaries = tuple(self._client.query("top_list", params=params, fields=TOP_LIST_FIELDS))
@@ -68,7 +72,7 @@ class TushareDragonTigerAdapter:
             [_raw_row("summary", index, row) for index, row in enumerate(summaries)]
             + [_raw_row("seat", index, row) for index, row in enumerate(details)]
         )
-        return ProviderBatch(
+        return DragonTigerProviderBatch(
             raw_rows=raw_rows,
             request_params={
                 "trade_date": trade_date.isoformat(),
@@ -79,13 +83,13 @@ class TushareDragonTigerAdapter:
                 },
             },
             schema_version=SCHEMA_VERSION,
-            record_factory=lambda: _normalize(summaries, details, trade_date),
+            normalization_factory=lambda: _normalize(summaries, details, trade_date),
         )
 
 
 def normalize_tushare_dragon_tiger_raw(
     rows: Sequence[RawRow], schema_version: str
-) -> tuple[DragonTigerEventDraft, ...]:
+) -> DragonTigerNormalizationResult:
     if schema_version != SCHEMA_VERSION:
         raise ProviderError("unsupported Tushare DragonTiger Raw schema")
     grouped: dict[str, list[SourceRow]] = {"summary": [], "seat": []}
@@ -110,7 +114,7 @@ def _normalize(
     summaries: tuple[SourceRow, ...],
     details: tuple[SourceRow, ...],
     requested_date: date,
-) -> tuple[DragonTigerEventDraft, ...]:
+) -> DragonTigerNormalizationResult:
     if not summaries or not details:
         raise ProviderError("Tushare DragonTiger requires both summary and seat rows")
     detail_groups: dict[tuple[date, str, str], list[SourceRow]] = {}
@@ -133,13 +137,12 @@ def _normalize(
         source_details = detail_groups.get(key)
         if not source_details:
             raise ProviderError("Tushare DragonTiger detail cannot join a summary event")
-        period = _period_type(reason_name)
+        trigger = _trigger_window(reason_name, trade_date)
         reason_type = _reason_type(reason_name)
         reason = DragonTigerReason(
-            reason_code=_reason_code(reason_type, period, reason_name),
+            reason_code=_reason_code(reason_type, trigger, reason_name),
             reason_name=reason_name,
             reason_type=reason_type,
-            period_type=period,
             source_code="tushare",
             source_reason_code=sha256(reason_name.encode("utf-8")).hexdigest()[:16],
             source_reason_name=reason_name,
@@ -149,9 +152,8 @@ def _normalize(
                 source_record_id=source_record_id,
                 symbol=symbol,
                 trade_date=trade_date,
-                period_type=period,
-                period_start_date=trade_date if period is DragonTigerPeriodType.DAY else None,
-                period_end_date=trade_date,
+                trigger_window=trigger,
+                amount_period=_amount_period(trigger),
                 reason=reason,
                 reason_name_raw=reason_name,
                 close_price=_decimal(summary, "close"),
@@ -161,6 +163,8 @@ def _normalize(
                 amplitude=None,
                 lhb_buy_amount=_decimal(summary, "l_buy"),
                 lhb_sell_amount=_decimal(summary, "l_sell"),
+                buy_disclosure_present=True,
+                sell_disclosure_present=True,
                 seat_trades=_seat_trades(source_record_id, symbol, trade_date, source_details),
                 source_code="tushare",
             )
@@ -168,7 +172,7 @@ def _normalize(
     unmatched = set(detail_groups) - summary_keys
     if unmatched:
         raise ProviderError("Tushare DragonTiger detail cannot join a summary event")
-    return tuple(events)
+    return DragonTigerNormalizationResult(tuple(events))
 
 
 def _seat_trades(
@@ -220,14 +224,35 @@ def _event_id(key: tuple[date, str, str]) -> str:
     return sha256(value.encode("utf-8")).hexdigest()
 
 
-def _period_type(reason: str) -> DragonTigerPeriodType:
-    if "连续三个交易日" in reason:
-        return DragonTigerPeriodType.THREE_DAY
+def _trigger_window(reason: str, trade_date: date) -> DragonTigerTriggerWindow:
+    if "连续三个交易日" in reason or "连续3个交易日" in reason:
+        return DragonTigerTriggerWindow(
+            basis=DragonTigerWindowBasis.MARKET_SESSIONS,
+            session_count=3,
+            occurrence_count=None,
+            start_date=None,
+            end_date=trade_date,
+        )
     if "交易日" in reason or re.search(
         r"(?:最近|连续).{0,16}日|[二两三四五六七八九十2-9]+个?日内", reason
     ):
-        raise ProviderError("Tushare DragonTiger period is unsupported")
-    return DragonTigerPeriodType.DAY
+        raise ProviderError("DT_PERIOD_MAPPING_UNSUPPORTED")
+    return DragonTigerTriggerWindow(
+        basis=DragonTigerWindowBasis.MARKET_SESSIONS,
+        session_count=1,
+        occurrence_count=None,
+        start_date=trade_date,
+        end_date=trade_date,
+    )
+
+
+def _amount_period(trigger: DragonTigerTriggerWindow) -> DragonTigerAmountPeriod:
+    return DragonTigerAmountPeriod(
+        basis=DragonTigerAmountPeriodBasis.MARKET_SESSIONS,
+        session_count=trigger.session_count,
+        start_date=trigger.start_date,
+        end_date=trigger.end_date,
+    )
 
 
 def _reason_type(reason: str) -> DragonTigerReasonType:
@@ -246,11 +271,11 @@ def _reason_type(reason: str) -> DragonTigerReasonType:
 
 def _reason_code(
     reason_type: DragonTigerReasonType,
-    period: DragonTigerPeriodType,
+    trigger: DragonTigerTriggerWindow,
     reason_name: str,
 ) -> str:
     digest = sha256(reason_name.strip().encode("utf-8")).hexdigest()[:12].upper()
-    return f"{reason_type.value}_{period.value}_{digest}"
+    return f"{reason_type.value}_{trigger.basis.value}_{trigger.session_count}_0_{digest}"
 
 
 def _seat_sort_key(row: SourceRow, side: str) -> tuple[object, ...]:

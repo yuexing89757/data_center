@@ -5,7 +5,10 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
-from market_data_center.domain.dragon_tiger import DragonTigerPeriodType
+from market_data_center.domain.dragon_tiger import (
+    DragonTigerAmountPeriodBasis,
+    DragonTigerWindowBasis,
+)
 from market_data_center.providers.contracts import ProviderError
 from market_data_center.providers.eastmoney_dragon_tiger import (
     BUY_REPORT,
@@ -13,15 +16,20 @@ from market_data_center.providers.eastmoney_dragon_tiger import (
     SELL_REPORT,
     SUMMARY_REPORT,
     EastmoneyDragonTigerAdapter,
+)
+from market_data_center.providers.eastmoney_dragon_tiger_normalizer import (
+    map_eastmoney_trigger_window,
     normalize_eastmoney_dragon_tiger_raw,
 )
 
 TRADE_DATE = date(2026, 8, 20)
 
 
-def _summary(reason: str = "日价格涨幅偏离值达到7%") -> dict[str, object]:
+def _summary(
+    reason: str = "日价格涨幅偏离值达到7%", event_id: str = "event-1"
+) -> dict[str, object]:
     return {
-        "TRADE_ID": "event-1",
+        "TRADE_ID": event_id,
         "SECUCODE": "600000.SH",
         "TRADE_DATE": "2026-08-20 00:00:00",
         "CHANGE_TYPE": "106001",
@@ -40,16 +48,17 @@ def _seat(
     name: str,
     buy: str | None,
     sell: str | None,
+    event_id: str = "event-1",
 ) -> dict[str, object]:
     return {
-        "TRADE_ID": "event-1",
+        "TRADE_ID": event_id,
         "SECUCODE": "600000.SH",
         "TRADE_DATE": "2026-08-20 00:00:00",
         "OPERATEDEPT_CODE": code,
         "OPERATEDEPT_NAME": name,
         "BUY": buy,
         "SELL": sell,
-        "NET": "999999",
+        "NET": None if buy is None or sell is None else str(Decimal(buy) - Decimal(sell)),
         "TOTAL_BUYRIO": None,
         "TOTAL_SELLRIO": None,
     }
@@ -79,111 +88,179 @@ def _adapter(
         query = parse_qs(urlparse(url).query)
         report = query["reportName"][0]
         rows = rows_by_report[report]
-        return {
-            "success": True,
-            "result": {"count": len(rows), "pages": 1, "data": rows},
-        }
+        return {"success": True, "result": {"count": len(rows), "pages": 1, "data": rows}}
 
     return EastmoneyDragonTigerAdapter(request)
 
 
-def test_adapter_merges_only_reliably_identified_cross_side_seats() -> None:
-    batch = _adapter().fetch_dragon_tiger(TRADE_DATE)
-    event = batch.records[0]
+def _event(adapter: EastmoneyDragonTigerAdapter):
+    return adapter.fetch_dragon_tiger(TRADE_DATE).normalization.events[0]
+
+
+@pytest.mark.parametrize(
+    ("reason", "basis", "sessions", "occurrences"),
+    [
+        ("连续三个交易日内涨幅偏离值累计达到20%", "MARKET_SESSIONS", 3, None),
+        ("连续3个交易日内涨幅偏离值累计达到20%", "MARKET_SESSIONS", 3, None),
+        (
+            "有价格涨跌幅限制的连续10个交易日内收盘价格涨幅偏离值累计达到100%的证券",
+            "MARKET_SESSIONS",
+            10,
+            None,
+        ),
+        ("连续10个交易日内4次出现同正向异常波动的证券", "MARKET_SESSIONS", 10, 4),
+        (
+            "北交所股票最近3个有成交的交易日以内收盘价涨跌幅偏离值累计达到+40%(-40%)",
+            "SECURITY_TRADED_SESSIONS",
+            3,
+            None,
+        ),
+    ],
+)
+def test_maps_verified_trigger_windows(
+    reason: str, basis: str, sessions: int, occurrences: int | None
+) -> None:
+    result = map_eastmoney_trigger_window(reason, TRADE_DATE)
+    assert result.basis.value == basis
+    assert result.session_count == sessions
+    assert result.occurrence_count == occurrences
+
+
+def test_adapter_keeps_amount_period_unspecified_when_only_trigger_is_known() -> None:
+    event = _event(_adapter(_reports("连续10个交易日内4次出现同正向异常波动的证券")))
+
+    assert event.trigger_window.session_count == 10
+    assert event.amount_period.basis is DragonTigerAmountPeriodBasis.SOURCE_UNSPECIFIED
+
+
+def test_adapter_rejects_an_unknown_multi_day_period_with_a_stable_code() -> None:
+    with pytest.raises(ProviderError, match="DT_PERIOD_MAPPING_UNSUPPORTED"):
+        _event(_adapter(_reports("最近五个交易日涨幅累计达到30%")))
+
+
+def test_adapter_merges_reliably_identified_cross_side_seats_by_code() -> None:
+    event = _event(_adapter())
 
     reliable = next(trade for trade in event.seat_trades if trade.seat_source_key == "100")
     anonymous = [trade for trade in event.seat_trades if trade.seat_source_key is None]
     assert reliable.buy_amount == Decimal("80")
     assert reliable.sell_amount == Decimal("40")
-    assert reliable.net_amount == Decimal("40")
     assert reliable.buy_rank == 1
     assert reliable.sell_rank == 1
     assert len(anonymous) == 2
-    assert all(trade.seat_id is None and trade.is_institution for trade in anonymous)
 
 
-def test_adapter_never_merges_placeholder_institutions_even_with_a_nonzero_code() -> None:
+def test_adapter_uses_reliable_code_even_when_the_name_changed() -> None:
     reports = _reports()
-    reports[BUY_REPORT][1]["OPERATEDEPT_CODE"] = "INST"
-    reports[SELL_REPORT][1]["OPERATEDEPT_CODE"] = "INST"
+    reports[SELL_REPORT][0]["OPERATEDEPT_NAME"] = "更名后的证券营业部"
 
-    institutions = [
-        trade
-        for trade in _adapter(reports).fetch_dragon_tiger(TRADE_DATE).records[0].seat_trades
-        if trade.is_institution
+    reliable = [
+        trade for trade in _event(_adapter(reports)).seat_trades if trade.seat_source_key == "100"
     ]
 
-    assert len(institutions) == 2
-    assert all(trade.seat_source_key is None for trade in institutions)
+    assert len(reliable) == 1
+    assert reliable[0].buy_rank == 1
+    assert reliable[0].sell_rank == 1
 
 
-def test_adapter_keeps_rows_separate_when_one_seat_code_has_conflicting_names() -> None:
+def test_adapter_preserves_exact_duplicate_raw_and_filters_the_standard_fact() -> None:
     reports = _reports()
-    reports[SELL_REPORT][0]["OPERATEDEPT_NAME"] = "另一证券营业部"
+    reports[BUY_REPORT].append(dict(reports[BUY_REPORT][0]))
 
-    trades = _adapter(reports).fetch_dragon_tiger(TRADE_DATE).records[0].seat_trades
-    conflicting = [
-        trade for trade in trades if trade.seat_name_raw in {"某证券营业部", "另一证券营业部"}
-    ]
+    batch = _adapter(reports).fetch_dragon_tiger(TRADE_DATE)
+    result = batch.normalization
 
-    assert len(conflicting) == 2
-    assert all(trade.seat_source_key is None for trade in conflicting)
-    assert {trade.buy_rank for trade in conflicting} == {1, None}
-    assert {trade.sell_rank for trade in conflicting} == {1, None}
+    assert len(batch.raw_rows) == 6
+    assert len(result.events[0].seat_trades) == 3
+    assert result.findings[0].rule_code == "DT_SOURCE_DUPLICATE_FILTERED"
+    assert result.findings[0].filtered_count == 1
 
 
-def test_adapter_preserves_missing_opposing_amount_instead_of_source_net() -> None:
-    event = _adapter().fetch_dragon_tiger(TRADE_DATE).records[0]
-    buy_institution = next(trade for trade in event.seat_trades if trade.buy_rank == 2)
+def test_adapter_filters_explicit_zero_activity_placeholder_but_keeps_raw() -> None:
+    reports = _reports()
+    zero = _seat("0", "深股通投资者", "0", "0")
+    reports[BUY_REPORT].append(zero)
 
-    assert buy_institution.sell_amount is None
-    assert buy_institution.net_amount is None
+    batch = _adapter(reports).fetch_dragon_tiger(TRADE_DATE)
+    result = batch.normalization
 
-
-def test_adapter_classifies_three_day_without_guessing_the_start_date() -> None:
-    event = (
-        _adapter(_reports("连续三个交易日内涨幅偏离值累计达到20%"))
-        .fetch_dragon_tiger(TRADE_DATE)
-        .records[0]
+    assert any("深股通投资者" in row["payload_json"] for row in batch.raw_rows)
+    assert all(
+        not (trade.buy_amount == 0 and trade.sell_amount == 0)
+        for trade in result.events[0].seat_trades
     )
-
-    assert event.period_type is DragonTigerPeriodType.THREE_DAY
-    assert event.period_start_date is None
-    assert event.period_end_date == TRADE_DATE
-
-
-def test_adapter_rejects_an_unknown_multi_day_period() -> None:
-    with pytest.raises(ProviderError, match="period is unsupported"):
-        tuple(
-            _adapter(_reports("最近五个交易日涨幅累计达到30%"))
-            .fetch_dragon_tiger(TRADE_DATE)
-            .records
-        )
-
-
-def test_raw_round_trip_is_deterministic_and_v2_versioned() -> None:
-    batch = _adapter().fetch_dragon_tiger(TRADE_DATE)
-
-    assert batch.schema_version == SCHEMA_VERSION
-    assert normalize_eastmoney_dragon_tiger_raw(batch.raw_rows, batch.schema_version) == tuple(
-        batch.records
+    assert any(
+        finding.rule_code == "DT_ZERO_ACTIVITY_PLACEHOLDER_FILTERED" for finding in result.findings
     )
 
 
-def test_historical_trading_billboard_v1_raw_is_replayable_by_new_normalizer() -> None:
-    batch = _adapter().fetch_dragon_tiger(TRADE_DATE)
-
-    assert normalize_eastmoney_dragon_tiger_raw(
-        batch.raw_rows, "eastmoney.trading_billboard.v1"
-    ) == tuple(batch.records)
-
-
-def test_adapter_rejects_a_partial_three_report_response() -> None:
+def test_adapter_accepts_a_buy_only_disclosure() -> None:
     reports = _reports()
     reports[SELL_REPORT] = []
 
-    with pytest.raises(ProviderError, match="both buy and sell"):
-        tuple(_adapter(reports).fetch_dragon_tiger(TRADE_DATE).records)
+    event = _event(_adapter(reports))
+
+    assert event.buy_disclosure_present is True
+    assert event.sell_disclosure_present is False
+    assert any(trade.buy_rank is not None for trade in event.seat_trades)
+
+
+def test_adapter_uses_event_filtered_reads_for_multi_page_details() -> None:
+    calls: list[tuple[str, int, str]] = []
+    reports = _reports()
+
+    def request(url: str, timeout: float) -> Mapping[str, object]:
+        query = parse_qs(urlparse(url).query)
+        report = query["reportName"][0]
+        page = int(query["pageNumber"][0])
+        source_filter = query["filter"][0]
+        calls.append((report, page, source_filter))
+        rows = reports[report]
+        if report == BUY_REPORT and "TRADE_ID='event-1'" not in source_filter:
+            return {"success": True, "result": {"count": len(rows), "pages": 2, "data": rows}}
+        return {"success": True, "result": {"count": len(rows), "pages": 1, "data": rows}}
+
+    batch = EastmoneyDragonTigerAdapter(request).fetch_dragon_tiger(TRADE_DATE)
+
+    assert batch.normalization.events
+    assert any(
+        report == BUY_REPORT and "TRADE_ID='event-1'" in source_filter
+        for report, _, source_filter in calls
+    )
+    assert not any(report == BUY_REPORT and page == 2 for report, page, _ in calls)
+
+
+def test_adapter_rejects_event_filtered_details_when_declared_total_is_not_retrieved() -> None:
+    reports = _reports()
+
+    def request(url: str, timeout: float) -> Mapping[str, object]:
+        query = parse_qs(urlparse(url).query)
+        report = query["reportName"][0]
+        source_filter = query["filter"][0]
+        rows = reports[report]
+        if report == BUY_REPORT and "TRADE_ID='event-1'" not in source_filter:
+            return {"success": True, "result": {"count": len(rows) + 1, "pages": 2, "data": rows}}
+        return {"success": True, "result": {"count": len(rows), "pages": 1, "data": rows}}
+
+    with pytest.raises(ProviderError, match="DT_SOURCE_COUNT_MISMATCH"):
+        EastmoneyDragonTigerAdapter(request).fetch_dragon_tiger(TRADE_DATE)
+
+
+def test_raw_round_trip_is_deterministic_and_v3_versioned() -> None:
+    batch = _adapter().fetch_dragon_tiger(TRADE_DATE)
+
+    assert batch.schema_version == SCHEMA_VERSION == "eastmoney.dragon_tiger.v3"
+    assert (
+        normalize_eastmoney_dragon_tiger_raw(batch.raw_rows, batch.schema_version)
+        == batch.normalization
+    )
+
+
+def test_historical_v1_and_v2_raw_are_replayable() -> None:
+    batch = _adapter().fetch_dragon_tiger(TRADE_DATE)
+
+    for schema in ("eastmoney.trading_billboard.v1", "eastmoney.dragon_tiger.v2"):
+        assert normalize_eastmoney_dragon_tiger_raw(batch.raw_rows, schema).events
 
 
 def test_adapter_keeps_bse_stock_for_domain_security_validation() -> None:
@@ -193,4 +270,7 @@ def test_adapter_keeps_bse_stock_for_domain_security_validation() -> None:
         for row in reports[report]:
             row["SECUCODE"] = "920000.BJ"
 
-    assert _adapter(reports).fetch_dragon_tiger(TRADE_DATE).records[0].symbol == "BSE:920000"
+    event = _event(_adapter(reports))
+
+    assert event.symbol == "BSE:920000"
+    assert event.trigger_window.basis is DragonTigerWindowBasis.MARKET_SESSIONS
