@@ -132,6 +132,27 @@ class FakeClient:
         raise AssertionError(api_name)
 
 
+class FakeBseBoundaryClient(FakeClient):
+    def query(
+        self, api_name: str, *, params: Mapping[str, str], fields: Sequence[str]
+    ) -> Sequence[Mapping[str, object]]:
+        rows = super().query(api_name, params=params, fields=fields)
+        if api_name != "stock_basic" or params["list_status"] != "L":
+            return rows
+        return (
+            *rows,
+            {
+                "ts_code": "T600018.SH",
+                "symbol": "T600018",
+                "name": "非标准特殊代码",
+                "exchange": "SSE",
+                "list_status": "L",
+                "list_date": "19991110",
+                "delist_date": None,
+            },
+        )
+
+
 def test_security_mapping_fetches_all_source_statuses() -> None:
     client = FakeClient()
     records = TushareProvider(client).fetch_securities().records
@@ -146,16 +167,16 @@ def test_security_mapping_fetches_all_source_statuses() -> None:
 
 
 def test_tushare_bse_security_keeps_full_raw_and_publishes_only_bse() -> None:
-    batch = TushareBseSecurityProvider(FakeClient()).fetch_securities()
+    batch = TushareBseSecurityProvider(FakeBseBoundaryClient()).fetch_securities()
 
-    assert len(batch.raw_rows) == 3
+    assert len(batch.raw_rows) == 4
     assert [record.symbol for record in batch.records] == ["BSE:920000"]
     assert batch.request_params["exchange_scope"] == "BSE"
     assert batch.request_params["list_statuses"] == ["L", "D", "P"]
 
 
 def test_tushare_bse_security_raw_replay_keeps_the_scope() -> None:
-    batch = TushareBseSecurityProvider(FakeClient()).fetch_securities()
+    batch = TushareBseSecurityProvider(FakeBseBoundaryClient()).fetch_securities()
 
     records = normalize_tushare_raw(
         DatasetCode.SECURITY,
