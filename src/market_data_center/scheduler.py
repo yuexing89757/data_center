@@ -22,6 +22,7 @@ from apscheduler.triggers.cron import CronTrigger  # type: ignore[import-untyped
 from apscheduler.triggers.interval import IntervalTrigger  # type: ignore[import-untyped]
 from sqlalchemy import URL, create_engine
 
+from market_data_center.auction_series_archive_service import AuctionSeriesArchiveService
 from market_data_center.board_index_daily_schedule import collect_board_index_daily_bar_gap
 from market_data_center.call_auction_market_series_service import (
     CallAuctionMarketSeriesService,
@@ -70,6 +71,7 @@ from market_data_center.regulation_service import RegulationService
 from market_data_center.reliability import recover_stale_runs
 from market_data_center.scheduling_catalog import (
     BOARD_INDEX_DAILY_BAR_JOB_ID,
+    CALL_AUCTION_MARKET_SERIES_ARCHIVE_JOB_ID,
     CALL_AUCTION_MARKET_SERIES_JOB_ID,
     CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID,
     DAILY_RUN_JOB_ID,
@@ -777,6 +779,40 @@ def run_data_cleanup_job() -> None:
         engine.dispose()
 
 
+def run_call_auction_market_series_archive_job() -> None:
+    """Archive completed auction-series facts into the six-month history table."""
+    settings = WorkerSettings()  # type: ignore[call-arg]
+    scheduling = SchedulerSettings()
+    engine = create_engine(
+        sqlalchemy_url(settings.database_url.get_secret_value()), pool_pre_ping=True
+    )
+    try:
+        fire_time = _scheduled_job_fire_time(
+            CALL_AUCTION_MARKET_SERIES_ARCHIVE_JOB_ID,
+            scheduling,
+            weekdays_only=False,
+        )
+        reference_date = fire_time.astimezone(ZoneInfo(SCHEDULER_TIMEZONE)).date()
+        execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
+            WorkflowCode.CALL_AUCTION_MARKET_SERIES_ARCHIVE,
+            fire_time,
+            TriggerSource.SCHEDULED,
+        )
+        try:
+            service = AuctionSeriesArchiveService(PostgreSQLPersistence(engine))
+            execution.step(
+                "archive_call_auction_market_series_snapshots",
+                1,
+                lambda: service.run(reference_date),
+            )
+        except BaseException as error:
+            execution.fail(error)
+            raise
+        execution.succeed()
+    finally:
+        engine.dispose()
+
+
 def _scheduled_fire_time(
     hour: int,
     minute: int,
@@ -850,6 +886,7 @@ def build_scheduler(settings: SchedulerSettings | None = None) -> BlockingSchedu
         STOCK_POOL_JOB_ID: run_stock_pool_job,
         EOD_QUOTE_SNAPSHOT_JOB_ID: run_eod_quote_snapshot_job,
         CALL_AUCTION_MARKET_SERIES_JOB_ID: run_call_auction_market_series_job,
+        CALL_AUCTION_MARKET_SERIES_ARCHIVE_JOB_ID: (run_call_auction_market_series_archive_job),
         TODAY_LIMIT_UP_SNAPSHOT_JOB_ID: run_today_limit_up_snapshot_job,
         CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID: run_close_price_new_highs_120d_job,
         BOARD_INDEX_DAILY_BAR_JOB_ID: run_board_index_daily_bar_job,

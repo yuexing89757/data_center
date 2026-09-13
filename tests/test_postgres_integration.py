@@ -1147,7 +1147,65 @@ def test_cleanup_persistence_selects_latest_completed_trading_dates(
         persistence.latest_completed_trading_dates(date(2026, 9, 7), 0)
 
 
-def test_cleanup_persistence_deletes_only_old_series_details(
+def test_archive_persistence_copies_series_details_idempotently(
+    database_engine: Engine,
+) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    trading_dates = (
+        date(2026, 8, 31),
+        date(2026, 9, 1),
+        date(2026, 9, 2),
+        date(2026, 9, 3),
+    )
+    with database_engine.begin() as connection:
+        _insert_call_auction_security_universe(connection)
+        for trading_date in trading_dates:
+            _seed_cleanup_series_detail(connection, trading_date)
+        connection.execute(
+            text("""
+                update realtime.call_auction_market_series_snapshot
+                set bid1_price = 10.0000,
+                    bid1_volume = 560200,
+                    bid2_volume = 10743200,
+                    ask1_price = 10.0100,
+                    ask1_volume = 0
+            """)
+        )
+
+    assert persistence.archive_call_auction_market_series_snapshots(date(2026, 9, 4)) == (4, 4)
+    assert persistence.archive_call_auction_market_series_snapshots(date(2026, 9, 4)) == (4, 0)
+
+    with database_engine.connect() as connection:
+        rows = (
+            connection.execute(
+                text("""
+                select trade_date, symbol, sample_seq, batch_code, last_price,
+                       previous_close, bid1_price, bid1_volume, bid2_price,
+                       bid2_volume, ask1_price, ask1_volume, source_code,
+                       value_semantics
+                from realtime.call_auction_market_series_snapshot_history
+                order by trade_date
+            """)
+            )
+            .mappings()
+            .all()
+        )
+
+    assert [row["trade_date"] for row in rows] == list(trading_dates)
+    assert all(row["symbol"] == "SSE:600000" for row in rows)
+    assert all(row["sample_seq"] == 0 for row in rows)
+    assert all(row["batch_code"] == "091500" for row in rows)
+    assert all(row["bid1_price"] == Decimal("10.0000") for row in rows)
+    assert all(row["bid1_volume"] == 560200 for row in rows)
+    assert all(row["bid2_price"] is None for row in rows)
+    assert all(row["bid2_volume"] == 10743200 for row in rows)
+    assert all(row["ask1_price"] == Decimal("10.0100") for row in rows)
+    assert all(row["ask1_volume"] == 0 for row in rows)
+    assert all(row["source_code"] == "pytdx_hq" for row in rows)
+    assert all(row["value_semantics"] == "auction_indicative" for row in rows)
+
+
+def test_cleanup_persistence_deletes_only_fully_archived_old_series_details(
     database_engine: Engine,
 ) -> None:
     persistence = PostgreSQLPersistence(database_engine)
@@ -1162,8 +1220,19 @@ def test_cleanup_persistence_deletes_only_old_series_details(
         for trading_date in trading_dates:
             _seed_cleanup_series_detail(connection, trading_date)
 
-    deleted = persistence.delete_call_auction_market_series_snapshots_before(date(2026, 9, 2))
+    with pytest.raises(RuntimeError, match="not fully archived"):
+        persistence.verify_and_delete_archived_call_auction_market_series_snapshots_before(
+            date(2026, 9, 2)
+        )
 
+    assert persistence.archive_call_auction_market_series_snapshots(date(2026, 9, 2)) == (2, 2)
+    verified, deleted = (
+        persistence.verify_and_delete_archived_call_auction_market_series_snapshots_before(
+            date(2026, 9, 2)
+        )
+    )
+
+    assert verified == 2
     assert deleted == 2
     with database_engine.begin() as connection:
         assert connection.execute(
@@ -1219,6 +1288,36 @@ def test_cleanup_persistence_deletes_only_old_series_details(
     assert payload["rounds"][0]["items"] == []
 
 
+def test_cleanup_persistence_deletes_expired_history_only(
+    database_engine: Engine,
+) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    trading_dates = (date(2026, 8, 31), date(2026, 9, 1), date(2026, 9, 2))
+    with database_engine.begin() as connection:
+        _insert_call_auction_security_universe(connection)
+        for trading_date in trading_dates:
+            _seed_cleanup_series_detail(connection, trading_date)
+
+    assert persistence.archive_call_auction_market_series_snapshots(date(2026, 9, 3)) == (3, 3)
+    assert (
+        persistence.delete_call_auction_market_series_snapshot_history_before(date(2026, 9, 2)) == 2
+    )
+
+    with database_engine.connect() as connection:
+        remaining = (
+            connection.execute(
+                text("""
+                select trade_date
+                from realtime.call_auction_market_series_snapshot_history
+                order by trade_date
+            """)
+            )
+            .scalars()
+            .all()
+        )
+    assert remaining == [date(2026, 9, 2)]
+
+
 def test_only_worker_can_delete_series_snapshot_details(
     migrated_database_url: str,
 ) -> None:
@@ -1233,6 +1332,27 @@ def test_only_worker_can_delete_series_snapshot_details(
                 connection.execute(
                     "delete from realtime.call_auction_market_series_snapshot where false"
                 )
+            connection.execute("rollback")
+
+
+def test_only_worker_can_read_insert_and_delete_series_snapshot_history(
+    migrated_database_url: str,
+) -> None:
+    relation = sql.Identifier("realtime", "call_auction_market_series_snapshot_history")
+    with psycopg.connect(migrated_database_url, autocommit=True) as connection:
+        connection.execute("set role market_data_worker")
+        connection.execute(sql.SQL("select 1 from {} where false").format(relation))
+        connection.execute(sql.SQL("delete from {} where false").format(relation))
+        with pytest.raises(InsufficientPrivilege):
+            connection.execute(
+                sql.SQL("update {} set source_code = source_code where false").format(relation)
+            )
+        connection.execute("rollback")
+
+        for role in ("anon", "authenticated", "market_data_api"):
+            connection.execute(sql.SQL("set role {}").format(sql.Identifier(role)))
+            with pytest.raises(InsufficientPrivilege):
+                connection.execute(sql.SQL("select 1 from {} where false").format(relation))
             connection.execute("rollback")
 
 

@@ -273,8 +273,55 @@ order by trade_date desc
 limit :limit
 """)
 
+COUNT_CALL_AUCTION_MARKET_SERIES_SNAPSHOTS_BEFORE = text("""
+select count(*)
+from realtime.call_auction_market_series_snapshot
+where trade_date < :reference_date
+""")
+
+ARCHIVE_CALL_AUCTION_MARKET_SERIES_SNAPSHOTS_BEFORE = text("""
+insert into realtime.call_auction_market_series_snapshot_history (
+    trade_date, ingestion_id, session_id, sample_seq, scheduled_at, symbol,
+    observed_at, last_price, previous_close, high_price, low_price,
+    cumulative_volume, cumulative_amount, source_code, created_at, batch_code,
+    bid1_price, bid1_volume, bid2_price, bid2_volume, bid3_price, bid3_volume,
+    bid4_price, bid4_volume, bid5_price, bid5_volume,
+    ask1_price, ask1_volume, ask2_price, ask2_volume, ask3_price, ask3_volume,
+    ask4_price, ask4_volume, ask5_price, ask5_volume, value_semantics
+)
+select
+    trade_date, ingestion_id, session_id, sample_seq, scheduled_at, symbol,
+    observed_at, last_price, previous_close, high_price, low_price,
+    cumulative_volume, cumulative_amount, source_code, created_at, batch_code,
+    bid1_price, bid1_volume, bid2_price, bid2_volume, bid3_price, bid3_volume,
+    bid4_price, bid4_volume, bid5_price, bid5_volume,
+    ask1_price, ask1_volume, ask2_price, ask2_volume, ask3_price, ask3_volume,
+    ask4_price, ask4_volume, ask5_price, ask5_volume, value_semantics
+from realtime.call_auction_market_series_snapshot
+where trade_date < :reference_date
+on conflict (trade_date, ingestion_id, symbol) do nothing
+""")
+
+COUNT_UNARCHIVED_CALL_AUCTION_MARKET_SERIES_SNAPSHOTS_BEFORE = text("""
+select count(*)
+from realtime.call_auction_market_series_snapshot source
+where source.trade_date < :cutoff_date
+  and not exists (
+      select 1
+      from realtime.call_auction_market_series_snapshot_history history
+      where history.trade_date = source.trade_date
+        and history.ingestion_id = source.ingestion_id
+        and history.symbol = source.symbol
+  )
+""")
+
 DELETE_CALL_AUCTION_MARKET_SERIES_SNAPSHOTS_BEFORE = text("""
 delete from realtime.call_auction_market_series_snapshot
+where trade_date < :cutoff_date
+""")
+
+DELETE_CALL_AUCTION_MARKET_SERIES_SNAPSHOT_HISTORY_BEFORE = text("""
+delete from realtime.call_auction_market_series_snapshot_history
 where trade_date < :cutoff_date
 """)
 
@@ -1186,10 +1233,54 @@ group by trade_date
             ).scalars()
             return tuple(rows)
 
-    def delete_call_auction_market_series_snapshots_before(self, cutoff_date: date) -> int:
+    def archive_call_auction_market_series_snapshots(
+        self,
+        reference_date: date,
+    ) -> tuple[int, int]:
         with self._engine.begin() as connection:
+            scanned_rows = connection.scalar(
+                COUNT_CALL_AUCTION_MARKET_SERIES_SNAPSHOTS_BEFORE,
+                {"reference_date": reference_date},
+            )
+            result = connection.execute(
+                ARCHIVE_CALL_AUCTION_MARKET_SERIES_SNAPSHOTS_BEFORE,
+                {"reference_date": reference_date},
+            )
+        return int(scanned_rows or 0), result.rowcount
+
+    def verify_and_delete_archived_call_auction_market_series_snapshots_before(
+        self,
+        cutoff_date: date,
+    ) -> tuple[int, int]:
+        with self._engine.begin() as connection:
+            connection.execute(
+                text("lock table realtime.call_auction_market_series_snapshot in share mode")
+            )
+            verified_rows = connection.scalar(
+                COUNT_CALL_AUCTION_MARKET_SERIES_SNAPSHOTS_BEFORE,
+                {"reference_date": cutoff_date},
+            )
+            missing_rows = connection.scalar(
+                COUNT_UNARCHIVED_CALL_AUCTION_MARKET_SERIES_SNAPSHOTS_BEFORE,
+                {"cutoff_date": cutoff_date},
+            )
+            if missing_rows:
+                raise RuntimeError(
+                    f"online auction snapshots are not fully archived: {missing_rows} rows missing"
+                )
             result = connection.execute(
                 DELETE_CALL_AUCTION_MARKET_SERIES_SNAPSHOTS_BEFORE,
+                {"cutoff_date": cutoff_date},
+            )
+        return int(verified_rows or 0), result.rowcount
+
+    def delete_call_auction_market_series_snapshot_history_before(
+        self,
+        cutoff_date: date,
+    ) -> int:
+        with self._engine.begin() as connection:
+            result = connection.execute(
+                DELETE_CALL_AUCTION_MARKET_SERIES_SNAPSHOT_HISTORY_BEFORE,
                 {"cutoff_date": cutoff_date},
             )
         return result.rowcount

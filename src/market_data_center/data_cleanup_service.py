@@ -1,7 +1,7 @@
 """Fail-closed retention cleanup for call-auction series detail facts."""
 
-from dataclasses import dataclass
 from calendar import monthrange
+from dataclasses import dataclass
 from datetime import date
 from typing import Protocol
 

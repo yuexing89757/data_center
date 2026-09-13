@@ -122,6 +122,9 @@ def test_job_catalog_is_stable_and_references_defined_workflows() -> None:
     assert workflows["call_auction_market_series"].step_codes == (
         "collect_call_auction_market_series",
     )
+    assert workflows["call_auction_market_series_archive"].step_codes == (
+        "archive_call_auction_market_series_snapshots",
+    )
     assert workflows["stale_run_recovery"].step_codes[-1] == (
         "recover_call_auction_market_series_sessions"
     )
@@ -197,6 +200,11 @@ def test_job_catalog_owns_all_fixed_schedules() -> None:
     assert cleanup.day_of_week is None
     assert (cleanup.hour, cleanup.minute) == (3, 0)
     assert cleanup.enabled is True
+    archive = jobs["call-auction-market-series-archive-daily"]
+    assert archive.workflow_code == "call_auction_market_series_archive"
+    assert archive.day_of_week is None
+    assert (archive.hour, archive.minute) == (2, 30)
+    assert archive.enabled is True
 
 
 def test_catalog_registers_hourly_pytdx_pool_refresh() -> None:

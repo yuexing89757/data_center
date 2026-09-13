@@ -12,6 +12,7 @@ SHAREHOLDER_COUNT_DAILY_JOB_ID = "shareholder-count-daily"
 STOCK_POOL_JOB_ID = "mainboard-price-limit-stock-pools-daily"
 EOD_QUOTE_SNAPSHOT_JOB_ID = "eod-quote-snapshot-daily"
 CALL_AUCTION_MARKET_SERIES_JOB_ID = "call-auction-market-series"
+CALL_AUCTION_MARKET_SERIES_ARCHIVE_JOB_ID = "call-auction-market-series-archive-daily"
 TODAY_LIMIT_UP_SNAPSHOT_JOB_ID = "today-limit-up-snapshot-daily"
 PYTDX_POOL_REFRESH_JOB_ID = "pytdx-pool-refresh"
 CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID = "close-price-new-highs-120d-daily"
@@ -123,6 +124,12 @@ WORKFLOW_DEFINITIONS = (
         "沪深全市场开盘竞价序列快照",
         "在开盘集合竞价期间按固定轮次采集沪深上市股票的完整来源快照。",
         ("collect_call_auction_market_series",),
+    ),
+    WorkflowDefinition(
+        "call_auction_market_series_archive",
+        "集合竞价序列快照历史归档",
+        "把已结束交易日的全部竞价序列事实幂等归档到六个月历史表。",
+        ("archive_call_auction_market_series_snapshots",),
     ),
     WorkflowDefinition(
         "call_auction_snapshot",
@@ -379,16 +386,30 @@ def job_definitions(settings: SchedulerSettings) -> tuple[JobDefinition, ...]:
             minute=30,
         ),
         JobDefinition(
+            CALL_AUCTION_MARKET_SERIES_ARCHIVE_JOB_ID,
+            "集合竞价序列快照历史归档",
+            "归档当前上海日期以前尚未归档的竞价序列事实。",
+            "call_auction_market_series_archive",
+            "cron",
+            "每天 02:30",
+            timezone,
+            settings.call_auction_market_series_archive_enabled,
+            timeout,
+            "幂等重试; 归档失败时 03:00 清理校验将阻止在线数据清理。",
+            hour=2,
+            minute=30,
+        ),
+        JobDefinition(
             DATA_CLEANUP_JOB_ID,
             "数据清理任务",
-            "清理三个已完成交易日以前的沪深全市场开盘竞价序列快照。",
+            "校验归档后清理在线快照, 并清理六个月以前的历史快照。",
             "data_cleanup",
             "cron",
             "每天 03:00",
             timezone,
             settings.data_cleanup_enabled,
             timeout,
-            "缺少三个已完成交易日时失败并保持数据不变; 下一日自动重试。",
+            "归档缺失或缺少三个已完成交易日时保持在线数据不变; 下一日自动重试。",
             hour=3,
             minute=0,
         ),

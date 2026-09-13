@@ -33,6 +33,7 @@ class SchedulerSettings(BaseSettings):
     worker_admin_port: int = Field(default=8765, ge=1, le=65_535)
     eod_quote_snapshot_enabled: bool = True
     call_auction_market_series_enabled: bool = True
+    call_auction_market_series_archive_enabled: bool = True
     data_cleanup_enabled: bool = True
     # Remains opt-in until the new migration and provider preflight are explicitly deployed.
     today_limit_up_snapshot_enabled: bool = False

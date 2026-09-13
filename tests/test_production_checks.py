@@ -1006,3 +1006,70 @@ def test_auction_series_cleanup_migration_is_narrow_and_non_destructive() -> Non
             "audit.quality_result",
         )
     )
+
+
+def test_auction_series_history_migration_is_partitioned_and_least_privilege() -> None:
+    migration = (
+        (PROJECT_ROOT / "supabase/migrations/20260913000200_add_auction_series_history_archive.sql")
+        .read_text(encoding="utf-8")
+        .lower()
+    )
+    normalized = " ".join(migration.split())
+
+    assert "create table realtime.call_auction_market_series_snapshot_history" in migration
+    assert "partition by range (trade_date)" in normalized
+    assert "primary key (trade_date, ingestion_id, symbol)" in normalized
+    assert (
+        "on realtime.call_auction_market_series_snapshot_history (trade_date, symbol, sample_seq)"
+    ) in normalized
+    assert (
+        "like realtime.call_auction_market_series_snapshot including defaults "
+        "including constraints including storage"
+    ) in normalized
+    assert "'call_auction_market_series_archive'" in migration
+    assert (
+        "grant select, insert, delete on realtime.call_auction_market_series_snapshot_history "
+        "to market_data_worker"
+    ) in normalized
+    assert "grant update" not in migration
+    assert "insert into realtime.call_auction_market_series_snapshot_history" not in migration
+    assert "delete from realtime.call_auction_market_series_snapshot_history" not in migration
+    assert "truncate" not in migration
+    assert "vacuum" not in migration
+    assert "detach partition" not in migration
+
+
+def test_auction_series_history_operations_are_documented_without_dynamic_schedule() -> None:
+    active_docs = "\n".join(
+        path.read_text(encoding="utf-8").lower()
+        for path in (
+            PROJECT_ROOT / "README.md",
+            PROJECT_ROOT / "docs/Worker日常采集与调度.md",
+            PROJECT_ROOT / "docs/Worker调度系统.md",
+            PROJECT_ROOT / "docs/集合竞价五档采集运行手册.md",
+            PROJECT_ROOT / "docs/数据库导航.md",
+            PROJECT_ROOT / "docs/最小生产发布运行手册.md",
+        )
+    )
+    for expected in (
+        "call-auction-market-series-archive-daily",
+        "02:30",
+        "call_auction_market_series_snapshot_history",
+        "六个自然月",
+        "32 轮",
+        "partial",
+        "fail closed",
+    ):
+        assert expected in active_docs
+
+    environment_templates = "\n".join(
+        path.read_text(encoding="utf-8").lower()
+        for path in (
+            PROJECT_ROOT / ".env.example",
+            PROJECT_ROOT / "deploy/linux/market-data-center.env.example",
+        )
+    )
+    assert "call_auction_market_series_archive_enabled=true" in environment_templates
+    assert "call_auction_market_series_archive_hour" not in environment_templates
+    assert "call_auction_market_series_archive_minute" not in environment_templates
+    assert "call_auction_market_series_history_retention" not in environment_templates

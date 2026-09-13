@@ -141,11 +141,14 @@ It returns SSE/SZSE stocks whose exact Decimal percentage is strictly greater th
 from highest to lowest. Both rounds must come from one coherent successful session; the API never
 mixes sessions or dates, and does not trigger collection.
 
-The default-enabled `data-cleanup-daily` Worker job runs every day at 03:00 Asia/Shanghai. It
-deletes only `realtime.call_auction_market_series_snapshot` details older than the latest three
-completed `CN_A_SHARE` trading days. Session/round metadata, Raw and lineage records, quality and
-operations history, the historical standalone snapshot facts, and monthly partitions are retained. Its time,
-retention count, and target table are code-owned; `.env` exposes only `DATA_CLEANUP_ENABLED`.
+The default-enabled `call-auction-market-series-archive-daily` Worker job runs every day at 02:30
+Asia/Shanghai and idempotently copies all completed-date online facts into the monthly partitioned
+`realtime.call_auction_market_series_snapshot_history` table. At 03:00, `data-cleanup-daily`
+deletes online details older than the latest three completed `CN_A_SHARE` trading days only after
+every target row is verified in history, then deletes history older than six calendar months.
+Archive gaps fail closed. Session/round metadata, Raw and lineage records, quality and operations
+history remain retained. Times, retention rules, and target tables are code-owned; `.env` exposes
+only the two enable switches.
 
 DragonTiger collection is opt-in and remains disabled until source-rights review is recorded
 (`DRAGON_TIGER_ENABLED=false`). The `dragon-tiger-collect` command requires

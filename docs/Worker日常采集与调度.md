@@ -191,18 +191,21 @@ select to_regclass('realtime.call_auction_market_series_snapshot_' ||
 `sample_seq`和异常类型定位，禁止补造Round。`collected_at`是来源采集完成时间，不是Writer提交时间，
 可用Session `finished_at`观察队列排空后的实际完成时刻。`partial` 且 `attempt_count=2` 通常表示两个节点都未完整覆盖冻结全集；`missed_sampling_round` 表示
 Worker 到达时已经越过该轮 deadline；节点池为空会在建立 Session 前失败；分区查询返回 null 时停止
-Worker 并走受保护 migration，Worker 自身不得执行 DDL。Raw 和 Manifest 长期保留。`数据清理任务`
-每天 03:00（Asia/Shanghai）读取当前上海日期以前最近三个 `CN_A_SHARE` 交易日，只删除
-`realtime.call_auction_market_series_snapshot` 中早于最老保留日的明细。若交易日历不足三个已完成
-交易日，任务在 DELETE 前失败并保持数据不变。Session、Round、Raw、Manifest、IngestionRun、
+Worker 并走受保护 migration，Worker 自身不得执行 DDL。Raw 和 Manifest 长期保留。每天 02:30，
+`call-auction-market-series-archive-daily` 将当前上海日期以前的全部 32 轮完整或 partial 来源事实
+幂等复制到按月分区的 `realtime.call_auction_market_series_snapshot_history`。每天 03:00，`数据清理任务`
+读取当前上海日期以前最近三个 `CN_A_SHARE` 交易日，并在同一事务中确认每条待删明细均已归档后，
+才删除 `realtime.call_auction_market_series_snapshot` 中早于最老保留日的明细；缺一行即失败并保持
+在线数据不变。随后独立清理早于六个自然月的历史明细。Session、Round、Raw、Manifest、IngestionRun、
 QualityResult、operations 记录以及历史 `call_auction_market_snapshot` 均不清理；因此已清理
 日期的查询仍可返回保留轮次，但 `items` 为空并报告请求代码缺失。任务仅执行事务性 DML，不删除或
 分离月度分区，也不执行 VACUUM/TRUNCATE；删除后的空间可由 PostgreSQL 复用，但不保证数据库文件
 立即缩小。初始分区覆盖至 2027-09-30，后续月份仍必须通过新的 ordered migration 创建。
 
-清理时间、三交易日口径和目标表固定在代码目录中，`.env` 只能通过
-`DATA_CLEANUP_ENABLED=true|false` 启用或停用任务。迁移只添加受限 Worker DELETE 权限和 workflow
-约束，不删除现有数据；部署后的首次 03:00 调度才执行实际清理。
+归档/清理时间、三交易日与六自然月口径和目标表固定在代码目录中，`.env` 只能通过
+`CALL_AUCTION_MARKET_SERIES_ARCHIVE_ENABLED=true|false` 和 `DATA_CLEANUP_ENABLED=true|false`
+启用或停用任务。迁移只建表、分区、受限 Worker 权限和 workflow 约束，不复制或删除现有数据；
+生产迁移部署后首次 02:30 才执行实际归档。
 
 ## 股票每日指标定时采集
 
