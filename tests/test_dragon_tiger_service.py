@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import cast
@@ -109,11 +110,13 @@ class FakeProvider:
         events: list[str],
         *,
         draft: DragonTigerEventDraft | None = None,
+        drafts: tuple[DragonTigerEventDraft, ...] | None = None,
         findings: tuple[DragonTigerSourceFinding, ...] = (),
         fail: str | None = None,
     ) -> None:
         self.events = events
         self.draft = draft
+        self.drafts = drafts
         self.findings = findings
         self.fail = fail
 
@@ -127,7 +130,7 @@ class FakeProvider:
             if self.fail == "normalize":
                 raise ProviderError("secret normalization detail")
             return DragonTigerNormalizationResult(
-                events=(self.draft or _draft(trade_date=trade_date),),
+                events=self.drafts or (self.draft or _draft(trade_date=trade_date),),
                 findings=self.findings,
             )
 
@@ -236,6 +239,7 @@ class FakePersistence:
 def _service(
     *,
     draft: DragonTigerEventDraft | None = None,
+    drafts: tuple[DragonTigerEventDraft, ...] | None = None,
     findings: tuple[DragonTigerSourceFinding, ...] = (),
     provider_fail: str | None = None,
     raw_fail: bool = False,
@@ -248,7 +252,13 @@ def _service(
         DragonTigerService(
             persistence=persistence,
             raw_store=FakeRawStore(events, fail=raw_fail),
-            provider=FakeProvider(events, draft=draft, findings=findings, fail=provider_fail),
+            provider=FakeProvider(
+                events,
+                draft=draft,
+                drafts=drafts,
+                findings=findings,
+                fail=provider_fail,
+            ),
             clock=lambda: datetime(2026, 8, 20, 12, tzinfo=UTC),
             uuid_factory=ids.__next__,
         ),
@@ -337,6 +347,33 @@ def test_collect_publishes_source_findings_as_nonblocking_quality() -> None:
     assert persistence.quality[0].rule_code == finding.rule_code
     assert persistence.quality[0].severity is QualitySeverity.WARNING
     assert persistence.quality[0].blocks_core_write is False
+
+
+def test_collect_filters_unknown_security_as_nonblocking_quality() -> None:
+    known = _draft()
+    unknown_trade = replace(
+        known.seat_trades[0],
+        source_record_id="unknown-event:seat-1",
+        source_event_id="unknown-event",
+        symbol="SZSE:000001",
+    )
+    unknown = replace(
+        known,
+        source_record_id="unknown-event",
+        symbol="SZSE:000001",
+        seat_trades=(unknown_trade,),
+    )
+    service, persistence, _ = _service(drafts=(known, unknown))
+
+    summary = service.collect(TRADE_DATE)
+
+    assert summary.accepted_events == 1
+    assert summary.filtered_rows == 2
+    finding = next(
+        item for item in persistence.quality if item.rule_code == "dragon_tiger.unknown_security"
+    )
+    assert finding.severity is QualitySeverity.WARNING
+    assert finding.blocks_core_write is False
 
 
 def test_collect_resolves_security_traded_session_window() -> None:

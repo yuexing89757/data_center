@@ -170,8 +170,26 @@ class DragonTigerService:
             validation = self._validate(records, trade_date)
             if validation.findings:
                 quality += self._domain_quality(run.ingestion_id, validation.findings)
-                raise DragonTigerValidationError("DT_DOMAIN_VALIDATION_FAILED", "validation")
-            filtered_rows = sum(item.filtered_count for item in normalization.findings)
+                blocking_findings = tuple(
+                    item
+                    for item in validation.findings
+                    if item.rule_code != "dragon_tiger.unknown_security"
+                )
+                if blocking_findings:
+                    raise DragonTigerValidationError("DT_DOMAIN_VALIDATION_FAILED", "validation")
+            rejected_source_ids = {
+                str(item.natural_key["source_record_id"])
+                for item in validation.findings
+                if item.rule_code == "dragon_tiger.unknown_security"
+            }
+            domain_filtered_rows = sum(
+                1 + len(record.seat_trades)
+                for record in records
+                if record.source_record_id in rejected_source_ids
+            )
+            filtered_rows = (
+                sum(item.filtered_count for item in normalization.findings) + domain_filtered_rows
+            )
             if filtered_rows > stored.row_count:
                 raise DragonTigerValidationError("DT_SOURCE_FINDING_COUNT_INVALID", "validation")
             completed = replace(
@@ -435,7 +453,11 @@ class DragonTigerService:
                 ingestion_id=ingestion_id,
                 dataset_code=DatasetCode.DRAGON_TIGER,
                 rule_code=finding.rule_code,
-                severity=QualitySeverity.ERROR,
+                severity=(
+                    QualitySeverity.WARNING
+                    if finding.rule_code == "dragon_tiger.unknown_security"
+                    else QualitySeverity.ERROR
+                ),
                 status=QualityStatus.FAILED,
                 message=finding.message,
                 natural_key=finding.natural_key,
