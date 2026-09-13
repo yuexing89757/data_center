@@ -58,15 +58,28 @@
 ```python
 def test_mapping_requires_review_metadata_and_valid_range() -> None:
     with pytest.raises(ValueError, match="valid range"):
-        HotMoneySeatMapping(actor_code="FO_SHAN", seat_id=SEAT_ID,
-            source_alias_name="某营业部", valid_from=date(2026, 1, 2),
-            valid_to=date(2026, 1, 1), evidence_note="reviewed disclosure",
-            review_status=HotMoneyReviewStatus.APPROVED, catalog_version="v1")
+        HotMoneySeatMapping(
+            actor_code="FO_SHAN",
+            seat_id=SEAT_ID,
+            source_alias_name="某营业部",
+            valid_from=date(2026, 1, 2),
+            valid_to=date(2026, 1, 1),
+            evidence_note="reviewed disclosure",
+            review_status=HotMoneyReviewStatus.APPROVED,
+            catalog_version="v1",
+        )
+
 
 @pytest.mark.parametrize(
     ("buy", "sell", "expected"),
-    [("100", None, True), ("100", "0", True), ("100", "99", True),
-     ("100", "100", False), ("100", "101", False), (None, "100", False)],
+    [
+        ("100", None, True),
+        ("100", "0", True),
+        ("100", "99", True),
+        ("100", "100", False),
+        ("100", "101", False),
+        (None, "100", False),
+    ],
 )
 def test_effective_buy_requires_positive_net_buy(buy, sell, expected) -> None:
     assert is_effective_buy(_participation(buy, sell)) is expected
@@ -86,12 +99,14 @@ class HotMoneyReviewStatus(StrEnum):
     REJECTED = "REJECTED"
     PENDING = "PENDING"
 
+
 @dataclass(frozen=True, slots=True)
 class HotMoneyActor:
     actor_code: str
     canonical_name: str
     aliases: tuple[str, ...]
     is_active: bool = True
+
 
 @dataclass(frozen=True, slots=True)
 class HotMoneySeatMapping:
@@ -104,11 +119,16 @@ class HotMoneySeatMapping:
     review_status: HotMoneyReviewStatus
     catalog_version: str
 
+
 def is_effective_buy(participation: SeatParticipation) -> bool:
-    return participation.buy_amount is not None and participation.buy_amount > 0 and (
-        participation.sell_amount is None
-        or participation.sell_amount == 0
-        or participation.buy_amount > participation.sell_amount
+    return (
+        participation.buy_amount is not None
+        and participation.buy_amount > 0
+        and (
+            participation.sell_amount is None
+            or participation.sell_amount == 0
+            or participation.buy_amount > participation.sell_amount
+        )
     )
 ```
 
@@ -151,6 +171,7 @@ def test_hot_money_schema_is_worker_only_and_effective_dated() -> None:
     assert "exclude using gist" in sql
     assert "enable row level security" in sql
     assert "revoke all on all tables in schema billboard from public" in sql
+
 
 def test_missing_repair_dates_excludes_any_successful_fact_date(database) -> None:
     assert persistence.missing_repair_dates(START, END) == (MISSING_DATE,)
@@ -260,6 +281,7 @@ def test_catalog_rejects_generic_and_unreviewed_mapping() -> None:
     with pytest.raises(ValueError, match="generic seat alias"):
         validate_hot_money_catalog(candidate)
 
+
 def test_catalog_dry_run_does_not_write() -> None:
     summary = service.sync(_valid_catalog(), dry_run=True)
     assert summary.validated_mapping_count == 1
@@ -320,6 +342,7 @@ def test_repair_only_collects_dates_returned_by_missing_selector() -> None:
     assert result.candidate_dates == 1
     assert result.succeeded_dates == 1
 
+
 def test_repair_continues_after_one_date_failure() -> None:
     result = service.repair(START, END)
     assert result.failed_dates == ((FIRST_DATE, "DT_PROVIDER_FETCH_FAILED"),)
@@ -349,9 +372,11 @@ class DragonTigerHistoryRepairSummary:
     event_count: int
     seat_trade_count: int
 
+
 class DragonTigerHistoryRepairService:
-    def repair(self, start_date: date, end_date: date, *, dry_run: bool = False
-               ) -> DragonTigerHistoryRepairSummary:
+    def repair(
+        self, start_date: date, end_date: date, *, dry_run: bool = False
+    ) -> DragonTigerHistoryRepairSummary:
         candidates = self._persistence.missing_repair_dates(start_date, end_date)
         if dry_run:
             return DragonTigerHistoryRepairSummary(len(candidates), 0, (), 0, 0)
@@ -400,6 +425,7 @@ def test_materialize_excludes_outcomes_available_after_as_of_date() -> None:
     service.materialize(date(2026, 9, 11))
     assert persistence.written[0].t5_sample_count == 0
 
+
 def test_profile_job_runs_after_daily_bar_and_dragon_tiger_jobs() -> None:
     job = job_definition("dragon-tiger-seat-profile-daily", settings)
     assert (job.hour, job.minute) == (21, 0)
@@ -416,12 +442,14 @@ Expected: failure because the service, workflow and job are absent.
 ```python
 PROFILE_ALGORITHM_VERSION = "trading-seat-profile-v1"
 
+
 @dataclass(frozen=True, slots=True)
 class DragonTigerProfileSummary:
     as_of_date: date
     eligible_seat_count: int
     profile_count: int
     skipped_outcome_count: int
+
 
 class DragonTigerProfileService:
     def materialize(self, as_of_date: date) -> DragonTigerProfileSummary:
@@ -478,12 +506,19 @@ git commit -m "feat: materialize dragon tiger seat profiles"
 ```python
 def test_capital_components_requires_exact_date_and_six_digit_code(client) -> None:
     assert client.get("/api/v1/dragon-tiger/stocks/600000/capital-components").status_code == 422
-    assert client.get("/api/v1/dragon-tiger/stocks/60000/capital-components",
-                      params={"trade_date":"2026-09-11"}).status_code == 422
+    assert (
+        client.get(
+            "/api/v1/dragon-tiger/stocks/60000/capital-components",
+            params={"trade_date": "2026-09-11"},
+        ).status_code
+        == 422
+    )
+
 
 def test_capital_components_does_not_fallback(fake_service, client) -> None:
-    response = client.get("/api/v1/dragon-tiger/stocks/600000/capital-components",
-                          params={"trade_date":"2026-09-11"})
+    response = client.get(
+        "/api/v1/dragon-tiger/stocks/600000/capital-components", params={"trade_date": "2026-09-11"}
+    )
     assert response.status_code == 404
 ```
 
@@ -513,6 +548,7 @@ class DragonTigerSeatProfileItem(ApiModel):
     t5_sample_count: int
     t5_win_rate: Decimal | None
     t5_avg_return: Decimal | None
+
 
 class DragonTigerCapitalComponentsResponse(ApiModel):
     trade_date: date
