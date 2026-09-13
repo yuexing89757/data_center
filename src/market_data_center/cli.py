@@ -1283,7 +1283,10 @@ def _dragon_tiger_provider(provider_code: str) -> DragonTigerProvider:
 
         settings = TushareSettings()  # type: ignore[call-arg]
         return TushareDragonTigerAdapter(
-            TushareHttpClient(settings.tushare_token.get_secret_value())
+            TushareHttpClient(
+                settings.tushare_token.get_secret_value(),
+                endpoint=settings.tushare_endpoint,
+            )
         )
     if provider_code not in {AUTO_PROVIDER_CODE, "eastmoney"}:
         raise ValueError("DragonTiger provider must be eastmoney or tushare")

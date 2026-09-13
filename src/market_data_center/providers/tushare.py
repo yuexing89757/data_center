@@ -243,7 +243,7 @@ class TushareProvider(AbstractContextManager["TushareProvider"]):
         if not token:
             raise ProviderError("TUSHARE_TOKEN is required for the Tushare provider")
         return cls(
-            TushareHttpClient(token),
+            TushareHttpClient(token, endpoint=settings.tushare_endpoint),
             shareholder_count_request_interval_seconds=(
                 60 / settings.tushare_shareholder_count_max_calls_per_minute
             ),

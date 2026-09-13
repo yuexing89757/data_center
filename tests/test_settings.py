@@ -104,6 +104,7 @@ def test_tushare_shareholder_count_rate_limit_has_safe_default() -> None:
     settings = TushareSettings(tushare_token=SecretStr("unused"), _env_file=None)
 
     assert settings.tushare_shareholder_count_max_calls_per_minute == 180
+    assert settings.tushare_endpoint == "https://api.tushare.pro"
 
 
 @pytest.mark.parametrize("value", [0, 201])
