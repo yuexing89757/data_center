@@ -26,18 +26,36 @@ def _headers() -> dict[str, str]:
 
 class FakeQueryService:
     def __init__(self) -> None:
-        self.calls: list[tuple[date, Decimal]] = []
+        self.calls: list[tuple[date, Decimal, Decimal | None, Decimal, Decimal | None]] = []
 
     def ready(self) -> None:
         return None
 
-    def auction_grab_lines(self, trade_date: date, threshold_n: Decimal) -> dict[str, object]:
-        self.calls.append((trade_date, threshold_n))
+    def auction_grab_lines(
+        self,
+        trade_date: date,
+        min_grab_line_pct: Decimal,
+        max_grab_line_pct: Decimal | None,
+        min_change_pct: Decimal,
+        max_change_pct: Decimal | None,
+    ) -> dict[str, object]:
+        self.calls.append(
+            (
+                trade_date,
+                min_grab_line_pct,
+                max_grab_line_pct,
+                min_change_pct,
+                max_change_pct,
+            )
+        )
         return {
             "trade_date": trade_date,
             "session_id": "00000000-0000-0000-0000-000000000057",
             "session_status": "succeeded",
-            "threshold_n": threshold_n,
+            "min_grab_line_pct": min_grab_line_pct,
+            "max_grab_line_pct": max_grab_line_pct,
+            "min_change_pct": min_change_pct,
+            "max_change_pct": max_change_pct,
             "first_batch_code": "092453",
             "final_batch_code": "092520",
             "count": 1,
@@ -46,6 +64,7 @@ class FakeQueryService:
                     "code": "600000",
                     "name": "浦发银行",
                     "grab_line_pct": Decimal("2.0000000000"),
+                    "change_pct_092520": Decimal("5.0000000000"),
                     "trade_date": trade_date,
                 }
             ],
@@ -72,13 +91,17 @@ def test_call_auction_grab_line_models_preserve_exact_percentages() -> None:
         code="600000",
         name="浦发银行",
         grab_line_pct=Decimal("2.0000000000"),
+        change_pct_092520=Decimal("5.0000000000"),
         trade_date=date(2026, 9, 7),
     )
     response = response_type(
         trade_date=date(2026, 9, 7),
         session_id="00000000-0000-0000-0000-000000000057",
         session_status="succeeded",
-        threshold_n=Decimal("1.25"),
+        min_grab_line_pct=Decimal("1.25"),
+        max_grab_line_pct=Decimal("3.25"),
+        min_change_pct=Decimal("3.50"),
+        max_change_pct=Decimal("6.50"),
         first_batch_code="092453",
         final_batch_code="092520",
         count=1,
@@ -86,6 +109,7 @@ def test_call_auction_grab_line_models_preserve_exact_percentages() -> None:
     )
 
     assert response.items[0].grab_line_pct == Decimal("2.0000000000")
+    assert response.items[0].change_pct_092520 == Decimal("5.0000000000")
 
 
 def test_call_auction_grab_line_query_uses_required_date_and_threshold() -> None:
@@ -94,7 +118,10 @@ def test_call_auction_grab_line_query_uses_required_date_and_threshold() -> None
         "trade_date": "2026-09-07",
         "session_id": "00000000-0000-0000-0000-000000000057",
         "session_status": "succeeded",
-        "threshold_n": "1.25",
+        "min_grab_line_pct": "1.25",
+        "max_grab_line_pct": "3.25",
+        "min_change_pct": "3.50",
+        "max_change_pct": "6.50",
         "first_batch_code": "092453",
         "final_batch_code": "092520",
         "count": 0,
@@ -124,17 +151,26 @@ def test_call_auction_grab_line_query_uses_required_date_and_threshold() -> None
             return StubConnection()
 
     service = PostgreSQLPublicQueryService(StubEngine())  # type: ignore[arg-type]
-    response = service.auction_grab_lines(date(2026, 9, 7), Decimal("1.25"))
+    response = service.auction_grab_lines(
+        date(2026, 9, 7),
+        Decimal("1.25"),
+        Decimal("3.25"),
+        Decimal("3.50"),
+        Decimal("6.50"),
+    )
 
     assert response.count == 0
     assert "query_call_auction_grab_lines" in calls[-1][0]
     assert calls[-1][1] == {
         "trade_date": date(2026, 9, 7),
-        "threshold_n": Decimal("1.25"),
+        "min_grab_line_pct": Decimal("1.25"),
+        "max_grab_line_pct": Decimal("3.25"),
+        "min_change_pct": Decimal("3.50"),
+        "max_change_pct": Decimal("6.50"),
     }
 
 
-def test_call_auction_grab_lines_requires_trade_date_and_defaults_n() -> None:
+def test_call_auction_grab_lines_requires_trade_date_and_defaults_open_ranges() -> None:
     service = FakeQueryService()
 
     missing_date = _client(service).get(
@@ -149,13 +185,17 @@ def test_call_auction_grab_lines_requires_trade_date_and_defaults_n() -> None:
 
     assert missing_date.status_code == 422
     assert response.status_code == 200
-    assert service.calls == [(date(2026, 9, 7), Decimal("0"))]
-    assert response.json()["threshold_n"] == "0"
+    assert service.calls == [(date(2026, 9, 7), Decimal("0"), None, Decimal("0"), None)]
+    assert response.json()["min_grab_line_pct"] == "0"
+    assert response.json()["max_grab_line_pct"] is None
+    assert response.json()["min_change_pct"] == "0"
+    assert response.json()["max_change_pct"] is None
     assert response.json()["items"] == [
         {
             "code": "600000",
             "name": "浦发银行",
             "grab_line_pct": "2.0000000000",
+            "change_pct_092520": "5.0000000000",
             "trade_date": "2026-09-07",
         }
     ]
@@ -165,16 +205,61 @@ def test_call_auction_grab_lines_passes_decimal_n_and_documents_formula() -> Non
     service = FakeQueryService()
     response = _client(service).get(
         "/api/v1/call-auction-grab-lines",
-        params={"trade_date": "2026-09-07", "n": "1.25"},
+        params={
+            "trade_date": "2026-09-07",
+            "min_grab_line_pct": "1.25",
+            "max_grab_line_pct": "3.25",
+            "min_change_pct": "3.50",
+            "max_change_pct": "6.50",
+        },
         headers=_headers(),
     )
     schema = _client(service).get("/openapi.json").json()
     operation = schema["paths"]["/api/v1/call-auction-grab-lines"]["get"]
 
     assert response.status_code == 200
-    assert service.calls == [(date(2026, 9, 7), Decimal("1.25"))]
+    assert service.calls == [
+        (
+            date(2026, 9, 7),
+            Decimal("1.25"),
+            Decimal("3.25"),
+            Decimal("3.50"),
+            Decimal("6.50"),
+        )
+    ]
     assert "09:25:20" in operation["description"]
     assert "09:24:53" in operation["description"]
     assert "严格大于" in operation["description"]
     assert operation["parameters"][0]["description"]
     assert operation["parameters"][1]["description"]
+    assert operation["parameters"][2]["description"]
+    assert operation["parameters"][3]["description"]
+    assert operation["parameters"][4]["description"]
+
+
+def test_call_auction_grab_lines_rejects_closed_or_reversed_ranges() -> None:
+    service = FakeQueryService()
+    client = _client(service)
+
+    equal_grab_line = client.get(
+        "/api/v1/call-auction-grab-lines",
+        params={
+            "trade_date": "2026-09-07",
+            "min_grab_line_pct": "2",
+            "max_grab_line_pct": "2",
+        },
+        headers=_headers(),
+    )
+    reversed_change = client.get(
+        "/api/v1/call-auction-grab-lines",
+        params={
+            "trade_date": "2026-09-07",
+            "min_change_pct": "5",
+            "max_change_pct": "4",
+        },
+        headers=_headers(),
+    )
+
+    assert equal_grab_line.status_code == 422
+    assert reversed_change.status_code == 422
+    assert service.calls == []

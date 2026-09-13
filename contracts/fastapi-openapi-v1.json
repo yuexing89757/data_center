@@ -742,6 +742,12 @@
       "CallAuctionGrabLineItem": {
         "additionalProperties": false,
         "properties": {
+          "change_pct_092520": {
+            "description": "09:25:20 涨跌幅, 即 (09:25:20价格 - 昨收价) / 昨收价 * 100。",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Change Pct 092520",
+            "type": "string"
+          },
           "code": {
             "description": "六位股票代码。",
             "pattern": "^[0-9]{6}$",
@@ -777,6 +783,7 @@
           "code",
           "name",
           "grab_line_pct",
+          "change_pct_092520",
           "trade_date"
         ],
         "title": "CallAuctionGrabLineItem",
@@ -812,6 +819,44 @@
             "title": "Items",
             "type": "array"
           },
+          "max_change_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "09:25:20 涨跌幅开区间最大值; null 表示不限制。",
+            "title": "Max Change Pct"
+          },
+          "max_grab_line_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "抢筹线开区间最大值, 单位为百分比; null 表示不限制。",
+            "title": "Max Grab Line Pct"
+          },
+          "min_change_pct": {
+            "description": "09:25:20 涨跌幅开区间最小值。",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Min Change Pct",
+            "type": "string"
+          },
+          "min_grab_line_pct": {
+            "description": "抢筹线开区间最小值, 单位为百分比。",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Min Grab Line Pct",
+            "type": "string"
+          },
           "session_id": {
             "description": "被选择的单一集合竞价序列会话标识。",
             "format": "uuid",
@@ -827,12 +872,6 @@
             "title": "Session Status",
             "type": "string"
           },
-          "threshold_n": {
-            "description": "筛选阈值 N, 单位为百分比。",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Threshold N",
-            "type": "string"
-          },
           "trade_date": {
             "description": "查询交易日, 格式为 YYYY-MM-DD。",
             "format": "date",
@@ -844,7 +883,10 @@
           "trade_date",
           "session_id",
           "session_status",
-          "threshold_n",
+          "min_grab_line_pct",
+          "max_grab_line_pct",
+          "min_change_pct",
+          "max_change_pct",
           "first_batch_code",
           "final_batch_code",
           "count",
@@ -5478,7 +5520,7 @@
     },
     "/api/v1/call-auction-grab-lines": {
       "get": {
-        "description": "读取指定交易日同一沪深全市场集合竞价序列会话的 09:24:53 与 09:25:20 成功批次，按（09:25:20价格－09:24:53价格）÷昨收价×100 计算抢筹线。仅返回抢筹线严格大于参数 n 的沪深上市股票，结果按抢筹线从高到低排列。两个批次不会跨会话拼接，缺少完整批次时返回404，不回退日期。",
+        "description": "读取指定交易日同一沪深全市场集合竞价序列会话的 09:24:53 与 09:25:20 成功批次，按（09:25:20价格－09:24:53价格）÷昨收价×100 计算抢筹线。支持按抢筹线和 09:25:20 价格相对昨收的涨跌幅分别进行开区间筛选，数值必须严格大于最小值，并在设置最大值时严格小于最大值。结果按抢筹线从高到低排列。两个批次不会跨会话拼接，缺少完整批次时返回404，不回退日期。",
         "operationId": "auction_grab_lines_api_v1_call_auction_grab_lines_get",
         "parameters": [
           {
@@ -5494,9 +5536,9 @@
             }
           },
           {
-            "description": "抢筹线筛选阈值N，单位为百分比，默认0。",
+            "description": "抢筹线开区间最小值，单位为百分比。",
             "in": "query",
-            "name": "n",
+            "name": "min_grab_line_pct",
             "required": false,
             "schema": {
               "anyOf": [
@@ -5509,8 +5551,72 @@
                 }
               ],
               "default": "0",
-              "description": "抢筹线筛选阈值 N，单位为百分比，默认 0。",
-              "title": "N"
+              "description": "抢筹线最小值（不含），单位为百分比，默认 0。",
+              "title": "Min Grab Line Pct"
+            }
+          },
+          {
+            "description": "抢筹线开区间最大值；null 表示不限制。",
+            "in": "query",
+            "name": "max_grab_line_pct",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "抢筹线最大值（不含），单位为百分比；默认不限制。",
+              "title": "Max Grab Line Pct"
+            }
+          },
+          {
+            "description": "09:25:20 涨跌幅开区间最小值，单位为百分比。",
+            "in": "query",
+            "name": "min_change_pct",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                }
+              ],
+              "default": "0",
+              "description": "09:25:20 涨跌幅最小值（不含），单位为百分比，默认 0。",
+              "title": "Min Change Pct"
+            }
+          },
+          {
+            "description": "09:25:20 涨跌幅开区间最大值；null 表示不限制。",
+            "in": "query",
+            "name": "max_change_pct",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "09:25:20 涨跌幅最大值（不含），单位为百分比；默认不限制。",
+              "title": "Max Change Pct"
             }
           }
         ],

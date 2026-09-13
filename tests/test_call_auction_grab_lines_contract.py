@@ -18,15 +18,25 @@ def test_checked_in_fastapi_contract_exposes_grab_lines() -> None:
 
     assert parameters["trade_date"]["required"] is True
     assert parameters["trade_date"]["schema"]["format"] == "date"
-    assert parameters["n"]["required"] is False
-    assert parameters["n"]["schema"]["default"] == "0"
+    assert "n" not in parameters
+    assert parameters["min_grab_line_pct"]["required"] is False
+    assert parameters["min_grab_line_pct"]["schema"]["default"] == "0"
+    assert parameters["max_grab_line_pct"]["required"] is False
+    assert parameters["min_change_pct"]["required"] is False
+    assert parameters["min_change_pct"]["schema"]["default"] == "0"
+    assert parameters["max_change_pct"]["required"] is False
     assert response["properties"]["count"]["maximum"] == 10_000
     assert response["properties"]["first_batch_code"]["const"] == "092453"
     assert item["properties"]["code"]["pattern"] == "^[0-9]{6}$"
     assert item["properties"]["grab_line_pct"]["type"] == "string"
+    assert item["properties"]["change_pct_092520"]["type"] == "string"
+    assert response["properties"]["min_change_pct"]["type"] == "string"
     assert "09:24:53" in operation["description"]
     assert {"401", "404", "422", "503"}.issubset(operation["responses"])
 
 
 def test_fastapi_release_preflight_requires_grab_line_rpc() -> None:
-    assert "api_v1.query_call_auction_grab_lines(date,numeric)" in PUBLISHED_FUNCTIONS
+    assert (
+        "api_v1.query_call_auction_grab_lines(date,numeric,numeric,numeric,numeric)"
+        in PUBLISHED_FUNCTIONS
+    )

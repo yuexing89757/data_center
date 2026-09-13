@@ -174,7 +174,7 @@ FastAPI 请求字段名为 `batch_code`，PostgREST 参数名为 `p_batch_code`�
 
 ## 14. 抢筹线读取
 
-`api_v1.query_call_auction_grab_lines(p_trade_date,p_threshold_n)` 对指定交易日选择单一竞价
+`api_v1.query_call_auction_grab_lines` 对指定交易日选择单一竞价
 Session，并从该 Session 的精确 `092453`（sample_seq=30）和 `092520`（sample_seq=31）成功
 Round读取沪深上市股票事实。09:24:53 使用 `auction_indicative` 指示价，09:25:20 使用
 `opening_trade` 开盘成交价；两个时点必须同时存在、价格为正、`previous_close` 一致且为正；缺失
@@ -183,9 +183,11 @@ Session，也不回退交易日。
 
 抢筹线使用 Decimal 精确计算：
 `(09:25:20价格 - 09:24:53价格) / previous_close * 100`。筛选采用未舍入值严格大于
-`p_threshold_n`，输出值舍入到10位小数，按未舍入值降序、六位代码升序稳定排序。
+抢筹线与 `09:25:20` 涨跌幅分别采用严格开区间筛选；两个最小值默认0，两个最大值
+默认不限制。输出两项百分比并舍入到10位小数，按未舍入抢筹线降序、六位代码升序稳定排序。
 
-FastAPI 通过 `GET /api/v1/call-auction-grab-lines?trade_date=YYYY-MM-DD&n=0` 代理该 RPC。
+FastAPI 通过 `GET /api/v1/call-auction-grab-lines` 代理该 RPC，查询参数为交易日以及两项
+指标各自的最小值和可选最大值。
 `trade_date` 必填，`n` 是默认0的百分比点阈值。列表项只公开六位 `code`、历史有效 `name`、
 `grab_line_pct` 和 `trade_date`；响应外层同时公开所选 Session、状态、阈值、两个批次码及数量。
 该只读查询候选全集上限为10000，语句超时10秒，仅授权 `market_data_api`，不访问行情源、不触发

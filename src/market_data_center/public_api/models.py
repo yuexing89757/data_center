@@ -646,6 +646,9 @@ class CallAuctionGrabLineItem(ApiModel):
     grab_line_pct: Decimal = Field(
         description="抢筹线百分比, 即 (09:25:20价格 - 09:24:53价格) / 昨收价 * 100。"
     )
+    change_pct_092520: Decimal = Field(
+        description="09:25:20 涨跌幅, 即 (09:25:20价格 - 昨收价) / 昨收价 * 100。"
+    )
     trade_date: date = Field(description="交易日, 格式为 YYYY-MM-DD。")
 
 
@@ -653,7 +656,14 @@ class CallAuctionGrabLineResponse(ApiModel):
     trade_date: date = Field(description="查询交易日, 格式为 YYYY-MM-DD。")
     session_id: UUID = Field(description="被选择的单一集合竞价序列会话标识。")
     session_status: Literal["succeeded", "partial"] = Field(description="序列会话状态。")
-    threshold_n: Decimal = Field(description="筛选阈值 N, 单位为百分比。")
+    min_grab_line_pct: Decimal = Field(description="抢筹线开区间最小值, 单位为百分比。")
+    max_grab_line_pct: Decimal | None = Field(
+        description="抢筹线开区间最大值, 单位为百分比; null 表示不限制。"
+    )
+    min_change_pct: Decimal = Field(description="09:25:20 涨跌幅开区间最小值。")
+    max_change_pct: Decimal | None = Field(
+        description="09:25:20 涨跌幅开区间最大值; null 表示不限制。"
+    )
     first_batch_code: Literal["092453"] = Field(description="起始比较批次。")
     final_batch_code: Literal["092520"] = Field(description="结束比较批次。")
     count: int = Field(ge=0, le=10_000, description="返回股票数量。")

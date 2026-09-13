@@ -211,13 +211,47 @@ where ingestion_id in (:first_ingestion_id, :final_ingestion_id)
         connection.execute(text("set local role market_data_api"))
         query_started = perf_counter()
         payload = connection.scalar(
-            text("select api_v1.query_call_auction_grab_lines(:day, :threshold_n)"),
-            {"day": trade_date, "threshold_n": Decimal("1.00")},
+            text(
+                "select api_v1.query_call_auction_grab_lines("
+                ":day, :min_grab_line_pct, :max_grab_line_pct, "
+                ":min_change_pct, :max_change_pct)"
+            ),
+            {
+                "day": trade_date,
+                "min_grab_line_pct": Decimal("1.00"),
+                "max_grab_line_pct": Decimal("3.00"),
+                "min_change_pct": Decimal("4.00"),
+                "max_change_pct": Decimal("6.00"),
+            },
         )
         query_elapsed_seconds = perf_counter() - query_started
         boundary_payload = connection.scalar(
-            text("select api_v1.query_call_auction_grab_lines(:day, :threshold_n)"),
-            {"day": trade_date, "threshold_n": Decimal("2.00")},
+            text(
+                "select api_v1.query_call_auction_grab_lines("
+                ":day, :min_grab_line_pct, :max_grab_line_pct, "
+                ":min_change_pct, :max_change_pct)"
+            ),
+            {
+                "day": trade_date,
+                "min_grab_line_pct": Decimal("2.00"),
+                "max_grab_line_pct": None,
+                "min_change_pct": Decimal("4.00"),
+                "max_change_pct": None,
+            },
+        )
+        change_boundary_payload = connection.scalar(
+            text(
+                "select api_v1.query_call_auction_grab_lines("
+                ":day, :min_grab_line_pct, :max_grab_line_pct, "
+                ":min_change_pct, :max_change_pct)"
+            ),
+            {
+                "day": trade_date,
+                "min_grab_line_pct": Decimal("1.00"),
+                "max_grab_line_pct": None,
+                "min_change_pct": Decimal("5.00"),
+                "max_change_pct": None,
+            },
         )
         connection.execute(text("reset role"))
 
@@ -225,7 +259,7 @@ where ingestion_id in (:first_ingestion_id, :final_ingestion_id)
             text("""
 select has_function_privilege(
     'market_data_api',
-    'api_v1.query_call_auction_grab_lines(date,numeric)',
+    'api_v1.query_call_auction_grab_lines(date,numeric,numeric,numeric,numeric)',
     'execute'
 )
 """)
@@ -234,24 +268,32 @@ select has_function_privilege(
             text("""
 select 'statement_timeout=10s' = any(proconfig)
 from pg_proc
-where oid = 'api_v1.query_call_auction_grab_lines(date,numeric)'::regprocedure
+where oid = (
+    'api_v1.query_call_auction_grab_lines(date,numeric,numeric,numeric,numeric)'
+)::regprocedure
 """)
         )
 
     assert payload["trade_date"] == "2026-09-07"
     assert payload["session_id"] == str(session_id)
     assert payload["session_status"] == "partial"
-    assert Decimal(str(payload["threshold_n"])) == Decimal("1.00")
+    assert Decimal(str(payload["min_grab_line_pct"])) == Decimal("1.00")
+    assert Decimal(str(payload["max_grab_line_pct"])) == Decimal("3.00")
+    assert Decimal(str(payload["min_change_pct"])) == Decimal("4.00")
+    assert Decimal(str(payload["max_change_pct"])) == Decimal("6.00")
     assert payload["first_batch_code"] == "092453"
     assert payload["final_batch_code"] == "092520"
     assert payload["count"] == 1
     assert payload["items"][0]["code"] == "600000"
     assert payload["items"][0]["name"] == "浦发银行"
     assert Decimal(str(payload["items"][0]["grab_line_pct"])) == Decimal("2.0000000000")
+    assert Decimal(str(payload["items"][0]["change_pct_092520"])) == Decimal("5.0000000000")
     assert payload["items"][0]["trade_date"] == "2026-09-07"
     assert query_elapsed_seconds < 2
     assert boundary_payload["count"] == 0
     assert boundary_payload["items"] == []
+    assert change_boundary_payload["count"] == 0
+    assert change_boundary_payload["items"] == []
 
 
 def test_call_auction_grab_lines_requires_an_exact_complete_pair(
@@ -261,7 +303,7 @@ def test_call_auction_grab_lines_requires_an_exact_complete_pair(
         connection.execute(text("set local role market_data_api"))
         with pytest.raises(DBAPIError) as raised:
             connection.scalar(
-                text("select api_v1.query_call_auction_grab_lines(:day, 0)"),
+                text("select api_v1.query_call_auction_grab_lines(:day, 0, null, 0, null)"),
                 {"day": date(2026, 9, 3)},
             )
 

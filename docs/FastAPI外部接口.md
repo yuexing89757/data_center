@@ -111,7 +111,10 @@ either bid-1 input is missing, all three values are `null`. From 09:25 onward it
 and preserves the provider's actual trade price, cumulative volume and amount. Rows written before
 this contract are labeled `legacy_source_quote`; their historical values are not rewritten.
 
-`GET /api/v1/call-auction-grab-lines?trade_date=YYYY-MM-DD&n=0` requires one exact trading date;
+`GET /api/v1/call-auction-grab-lines?trade_date=YYYY-MM-DD&min_grab_line_pct=0&min_change_pct=0`
+requires one exact trading date; `max_grab_line_pct` and `max_change_pct` are optional upper
+bounds. Both metrics use strict open-range filtering, and each result includes the 09:25:20
+change percentage relative to previous close.
 `n` is an optional Decimal percentage-point threshold and defaults to zero. For each SSE/SZSE
 stock valid on that date (by IPO/delisting dates), the database calculates
 `(09:25:20 price - 09:24:53 price) / previous close * 100` from the

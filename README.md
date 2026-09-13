@@ -134,7 +134,8 @@ batch code and bid/ask levels 1–5; a missing price with positive volume is pre
 fact. The retired limit-up-pool auction collector is not registered by the Worker, while its
 historical workflow and stored facts remain readable.
 
-`GET /api/v1/call-auction-grab-lines?trade_date=YYYY-MM-DD&n=0` calculates the exact-date
+`GET /api/v1/call-auction-grab-lines?trade_date=YYYY-MM-DD&min_grab_line_pct=0&min_change_pct=0`
+calculates the exact-date
 full-market auction price move from 09:24:53 to 09:25:20 relative to the stored previous close.
 It returns SSE/SZSE stocks whose exact Decimal percentage is strictly greater than `n`, ordered
 from highest to lowest. Both rounds must come from one coherent successful session; the API never

@@ -640,7 +640,9 @@ def create_app(
         description=(
             "读取指定交易日同一沪深全市场集合竞价序列会话的 09:24:53 与 09:25:20 "
             "成功批次，按（09:25:20价格－09:24:53价格）÷昨收价×100 计算抢筹线。"
-            "仅返回抢筹线严格大于参数 n 的沪深上市股票，结果按抢筹线从高到低排列。"
+            "支持按抢筹线和 09:25:20 价格相对昨收的涨跌幅分别进行开区间筛选，"
+            "数值必须严格大于最小值，并在设置最大值时严格小于最大值。"
+            "结果按抢筹线从高到低排列。"
             "两个批次不会跨会话拼接，缺少完整批次时返回404，不回退日期。"
         ),
     )
@@ -651,12 +653,34 @@ def create_app(
             date,
             Query(description="必传交易日，格式为 YYYY-MM-DD，例如 2026-09-04。"),
         ],
-        n: Annotated[
+        min_grab_line_pct: Annotated[
             Decimal,
-            Query(description="抢筹线筛选阈值 N，单位为百分比，默认 0。"),
+            Query(description="抢筹线最小值（不含），单位为百分比，默认 0。"),
         ] = Decimal("0"),
+        max_grab_line_pct: Annotated[
+            Decimal | None,
+            Query(description="抢筹线最大值（不含），单位为百分比；默认不限制。"),
+        ] = None,
+        min_change_pct: Annotated[
+            Decimal,
+            Query(description="09:25:20 涨跌幅最小值（不含），单位为百分比，默认 0。"),
+        ] = Decimal("0"),
+        max_change_pct: Annotated[
+            Decimal | None,
+            Query(description="09:25:20 涨跌幅最大值（不含），单位为百分比；默认不限制。"),
+        ] = None,
     ) -> CallAuctionGrabLineResponse:
-        return service.auction_grab_lines(trade_date, n)
+        if max_grab_line_pct is not None and max_grab_line_pct <= min_grab_line_pct:
+            raise HTTPException(status_code=422, detail="抢筹线最大值必须大于最小值")
+        if max_change_pct is not None and max_change_pct <= min_change_pct:
+            raise HTTPException(status_code=422, detail="涨跌幅最大值必须大于最小值")
+        return service.auction_grab_lines(
+            trade_date,
+            min_grab_line_pct,
+            max_grab_line_pct,
+            min_change_pct,
+            max_change_pct,
+        )
 
     @app.get(
         "/api/v1/call-auction-indicative-details",

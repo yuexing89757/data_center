@@ -149,7 +149,10 @@ select api_v1.query_call_auction_one_price_patterns(
 QUERY_AUCTION_GRAB_LINES = text("""
 select api_v1.query_call_auction_grab_lines(
     p_trade_date => :trade_date,
-    p_threshold_n => :threshold_n
+    p_min_grab_line_pct => :min_grab_line_pct,
+    p_max_grab_line_pct => :max_grab_line_pct,
+    p_min_change_pct => :min_change_pct,
+    p_max_change_pct => :max_change_pct
 ) as payload
 """)
 
@@ -262,7 +265,12 @@ class PublicQueryService(Protocol):
     ) -> CallAuctionOnePricePatternResponse: ...
 
     def auction_grab_lines(
-        self, trade_date: date, threshold_n: Decimal
+        self,
+        trade_date: date,
+        min_grab_line_pct: Decimal,
+        max_grab_line_pct: Decimal | None,
+        min_change_pct: Decimal,
+        max_change_pct: Decimal | None,
     ) -> CallAuctionGrabLineResponse: ...
 
     def auction_indicative_details(
@@ -476,11 +484,22 @@ class PostgreSQLPublicQueryService:
         return CallAuctionOnePricePatternResponse.model_validate(rows[0]["payload"])
 
     def auction_grab_lines(
-        self, trade_date: date, threshold_n: Decimal
+        self,
+        trade_date: date,
+        min_grab_line_pct: Decimal,
+        max_grab_line_pct: Decimal | None,
+        min_change_pct: Decimal,
+        max_change_pct: Decimal | None,
     ) -> CallAuctionGrabLineResponse:
         rows = self._execute(
             QUERY_AUCTION_GRAB_LINES,
-            {"trade_date": trade_date, "threshold_n": threshold_n},
+            {
+                "trade_date": trade_date,
+                "min_grab_line_pct": min_grab_line_pct,
+                "max_grab_line_pct": max_grab_line_pct,
+                "min_change_pct": min_change_pct,
+                "max_change_pct": max_change_pct,
+            },
             statement_timeout_ms=10_000,
         )
         if not rows or rows[0]["payload"] is None:
