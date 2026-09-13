@@ -233,7 +233,6 @@ def test_adapter_rejects_duplicate_summary_with_conflicting_market_fact() -> Non
             .fetch_dragon_tiger(date(2026, 8, 20))
             .normalization
         )
-    )
 
 
 def test_adapter_rejects_an_unknown_multi_day_period() -> None:
