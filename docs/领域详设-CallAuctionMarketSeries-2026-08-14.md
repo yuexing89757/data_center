@@ -2,8 +2,8 @@
 
 > 状态：有效，已实现
 > 日期：2026-08-14
-> GitHub Issue：#48、#54、#72
-> 上级决策：`adr/ADR-0034-沪深全市场开盘竞价序列快照.md`、`adr/ADR-0051-竞价序列采集与单Writer解耦.md`（Accepted）
+> GitHub Issue：#48、#54、#72、#78
+> 上级决策：`adr/ADR-0034-沪深全市场开盘竞价序列快照.md`、`adr/ADR-0051-竞价序列采集与单Writer解耦.md`、`adr/ADR-0054-竞价序列快照六个月历史归档.md`（Accepted）
 
 ## 1. 领域职责
 
@@ -140,9 +140,18 @@ JobStore仅保存调度定义，WorkflowRun/JobExecution、Session/Round和Inges
 
 ## 10. 容量与保留
 
-以5,208只估算：每轮5,208行、每天166,656行、每年约4,166万行。PostgreSQL只保留最近12个完整月份；Raw、Manifest、IngestionRun和质量结果长期保留。
+以5,208只估算：每轮5,208行、每天166,656行、每年约4,166万行。在线Snapshot表只保留最近
+三个已完成交易日；独立历史Snapshot表滚动保留六个自然月；Raw、Manifest、IngestionRun、Session、
+Round和质量结果长期保留。
 
 分区创建和删除是受保护migration操作，不属于Worker任务。删除旧分区前核对Raw/Manifest和备份；不得为释放空间直接删除未验证来源事实。
+
+### 10.1 历史归档
+
+每天02:30，Worker把在线表中严格早于当前上海日期且尚未归档的全部合法Snapshot按原自然键写入
+`realtime.call_auction_market_series_snapshot_history`。完整和partial会话均保留，重复执行不更新
+既有历史事实。03:00在线清理在同一事务中逐自然键验证待删行已经归档；存在缺失时fail closed。
+在线安全清理后，历史表删除早于六个自然月截止日的行。任务不创建或删除分区，不改变公共API读取边界。
 
 ## 11. 读取边界
 
