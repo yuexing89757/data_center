@@ -94,6 +94,11 @@ from market_data_center.domain.ingestion import (
     RawFileFormat,
     RawManifest,
 )
+from market_data_center.domain.hot_money import (
+    HotMoneyActor,
+    HotMoneyReviewStatus,
+    HotMoneySeatMapping,
+)
 from market_data_center.domain.realtime_quote import (
     CallAuctionMarketSnapshotRecord,
     FiveLevelQuoteMetric,
@@ -251,6 +256,9 @@ __all__ = [
     "IngestionEnvelope",
     "IngestionRun",
     "IngestionStatus",
+    "HotMoneyActor",
+    "HotMoneyReviewStatus",
+    "HotMoneySeatMapping",
     "Market",
     "MarketCapitalizationRecord",
     "OrderBookLevel",

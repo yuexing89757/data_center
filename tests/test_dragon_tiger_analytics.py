@@ -21,9 +21,37 @@ from market_data_center.dragon_tiger_analytics import (
     SeatParticipation,
     build_trading_seat_profile,
     calculate_dragon_tiger_capital_metrics,
+    is_effective_buy,
 )
 
 SEAT_ID = UUID("00000000-0000-0000-0000-000000000001")
+
+
+def _participation(buy: str | None, sell: str | None) -> SeatParticipation:
+    return SeatParticipation(
+        event_source_record_id="event-effective-buy",
+        seat_id=SEAT_ID,
+        event_date=date(2026, 8, 18),
+        buy_amount=None if buy is None else Decimal(buy),
+        sell_amount=None if sell is None else Decimal(sell),
+    )
+
+
+@pytest.mark.parametrize(
+    ("buy", "sell", "expected"),
+    [
+        ("100", None, True),
+        ("100", "0", True),
+        ("100", "99", True),
+        ("100", "100", False),
+        ("100", "101", False),
+        (None, "100", False),
+    ],
+)
+def test_effective_buy_requires_positive_net_buy(
+    buy: str | None, sell: str | None, expected: bool
+) -> None:
+    assert is_effective_buy(_participation(buy, sell)) is expected
 
 
 def _trade(
@@ -203,7 +231,7 @@ def test_profile_excludes_labels_not_available_at_the_as_of_date() -> None:
     assert profile.consecutive_participation_rate == Decimal("0")
 
 
-def test_profile_preserves_missing_participation_amounts() -> None:
+def test_profile_excludes_non_buy_participation_and_its_outcomes() -> None:
     profile = build_trading_seat_profile(
         seat_id=SEAT_ID,
         participations=(
@@ -215,7 +243,17 @@ def test_profile_preserves_missing_participation_amounts() -> None:
                 sell_amount=Decimal("20"),
             ),
         ),
-        outcomes=(),
+        outcomes=(
+            SeatOutcome(
+                event_source_record_id="event-18",
+                seat_id=SEAT_ID,
+                event_date=date(2026, 8, 18),
+                horizon_sessions=1,
+                return_value=Decimal("0.5"),
+                label_available_date=date(2026, 8, 19),
+                return_definition="unadjusted_close_to_close",
+            ),
+        ),
         as_of_date=date(2026, 8, 20),
         algorithm_version="seat-profile-v1",
         metric_definition="return_value > 0",
@@ -224,8 +262,11 @@ def test_profile_preserves_missing_participation_amounts() -> None:
         trading_dates=(date(2026, 8, 18), date(2026, 8, 19), date(2026, 8, 20)),
     )
 
-    assert profile.total_buy_amount is None
-    assert profile.total_sell_amount == Decimal("20")
+    assert profile.total_lhb_count == 0
+    assert profile.total_buy_amount == Decimal("0")
+    assert profile.total_sell_amount == Decimal("0")
+    assert profile.t1_sample_count == 0
+    assert profile.t1_win_rate is None
 
 
 def test_profile_calculates_versioned_consecutive_session_participation() -> None:

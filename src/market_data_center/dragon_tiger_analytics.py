@@ -149,12 +149,18 @@ def build_trading_seat_profile(
     if tuple(sorted(set(trading_dates))) != trading_dates:
         raise ValueError("trading_dates must be unique and ascending")
     known_trading_dates = tuple(item for item in trading_dates if item <= as_of_date)
-    known_participations = tuple(
+    candidate_participations = tuple(
         item for item in participations if item.seat_id == seat_id and item.event_date <= as_of_date
     )
-    participation_by_event = {item.event_source_record_id: item for item in known_participations}
-    if len(participation_by_event) != len(known_participations):
+    candidate_participation_by_event = {
+        item.event_source_record_id: item for item in candidate_participations
+    }
+    if len(candidate_participation_by_event) != len(candidate_participations):
         raise ValueError("seat profile contains duplicate participation event identities")
+    known_participations = tuple(
+        item for item in candidate_participations if is_effective_buy(item)
+    )
+    participation_by_event = {item.event_source_record_id: item for item in known_participations}
     candidate_outcomes = tuple(
         item for item in outcomes if item.seat_id == seat_id and item.event_date <= as_of_date
     )
@@ -164,11 +170,14 @@ def build_trading_seat_profile(
     if len(outcome_keys) != len(candidate_outcomes):
         raise ValueError("seat profile contains duplicate event horizon outcomes")
     for outcome in candidate_outcomes:
-        participation = participation_by_event.get(outcome.event_source_record_id)
+        participation = candidate_participation_by_event.get(outcome.event_source_record_id)
         if participation is None or participation.event_date != outcome.event_date:
             raise ValueError("seat profile outcome has no matching participation event")
     known_outcomes = tuple(
-        item for item in candidate_outcomes if item.label_available_date <= as_of_date
+        item
+        for item in candidate_outcomes
+        if item.label_available_date <= as_of_date
+        and item.event_source_record_id in participation_by_event
     )
     if any(item.return_definition != return_definition for item in known_outcomes):
         raise ValueError("seat outcome return_definition does not match the profile")
@@ -201,6 +210,14 @@ def build_trading_seat_profile(
         consecutive_participation_sample_count=consecutive_samples,
         consecutive_participation_rate=consecutive_rate,
     )
+
+
+def is_effective_buy(participation: SeatParticipation) -> bool:
+    """Return whether a seat observation represents positive effective buying."""
+
+    buy = participation.buy_amount
+    sell = participation.sell_amount
+    return buy is not None and buy > 0 and (sell is None or sell == 0 or buy > sell)
 
 
 def _concentration(event: DragonTigerEventRecord, side: str, top_n: int) -> Decimal | None:
