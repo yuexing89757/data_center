@@ -302,6 +302,22 @@ def test_default_loads_token_from_dotenv(tmp_path: Path, monkeypatch: MonkeyPatc
     assert isinstance(TushareProvider.default(), TushareProvider)
 
 
+def test_default_loads_compatible_endpoint_from_dotenv(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
+    monkeypatch.delenv("TUSHARE_TOKEN", raising=False)
+    monkeypatch.delenv("TUSHARE_ENDPOINT", raising=False)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text(
+        "TUSHARE_TOKEN=test-token\nTUSHARE_ENDPOINT=https://gateway.example.test/\n",
+        encoding="utf-8",
+    )
+
+    provider = TushareProvider.default()
+
+    assert provider._client._endpoint == "https://gateway.example.test/"  # type: ignore[attr-defined]
+
+
 def test_source_symbol_maps_all_supported_exchanges() -> None:
     provider = TushareProvider(FakeClient())
 
