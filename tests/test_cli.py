@@ -116,9 +116,49 @@ def test_dragon_tiger_cli_accepts_2025_to_present_repair_range() -> None:
     )
 
 
+def test_dragon_tiger_cli_accepts_tushare_history_repair_confirmation() -> None:
+    ranged = _parser().parse_args(
+        [
+            "--provider",
+            "tushare",
+            "dragon-tiger-collect",
+            "--start-date",
+            "2024-09-13",
+            "--end-date",
+            "2026-09-11",
+            "--confirm-tushare-source-terms-reviewed",
+        ]
+    )
+
+    assert _validate_dragon_tiger_args(ranged) == (
+        None,
+        date(2024, 9, 13),
+        date(2026, 9, 11),
+    )
+
+
+def test_dragon_tiger_cli_requires_confirmation_for_selected_provider() -> None:
+    tushare = _parser().parse_args(
+        [
+            "--provider",
+            "tushare",
+            "dragon-tiger-collect",
+            "--trade-date",
+            "2026-09-11",
+            "--confirm-eastmoney-source-terms-reviewed",
+        ]
+    )
+
+    with pytest.raises(ValueError, match="Tushare source terms"):
+        _validate_dragon_tiger_args(tushare)
+
+
 def test_dragon_tiger_cli_rejects_missing_confirmation_or_mixed_dates() -> None:
-    with pytest.raises(SystemExit):
-        _parser().parse_args(["dragon-tiger-collect", "--trade-date", "2026-08-17"])
+    missing_confirmation = _parser().parse_args(
+        ["dragon-tiger-collect", "--trade-date", "2026-08-17"]
+    )
+    with pytest.raises(ValueError, match="Eastmoney source terms"):
+        _validate_dragon_tiger_args(missing_confirmation)
     with pytest.raises(SystemExit):
         _parser().parse_args(
             [

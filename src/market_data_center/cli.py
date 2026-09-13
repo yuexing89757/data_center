@@ -71,7 +71,7 @@ from market_data_center.reliability import (
     compare_daily_bar_sources,
     recover_stale_runs,
 )
-from market_data_center.settings import WorkerSettings
+from market_data_center.settings import TushareSettings, WorkerSettings
 from market_data_center.shareholder_count_batch import ShareholderCountSyncSummary
 from market_data_center.shareholder_count_service import (
     ShareholderCountBackfillTarget,
@@ -1191,8 +1191,13 @@ def _execute(args: Namespace, pipeline: IngestionPipeline) -> IngestionRun:
 def _validate_dragon_tiger_args(
     args: Namespace,
 ) -> tuple[date | None, date | None, date | None]:
-    if not args.confirm_eastmoney_source_terms_reviewed:
+    provider_code = "eastmoney" if args.provider == AUTO_PROVIDER_CODE else args.provider
+    if provider_code not in {"eastmoney", "tushare"}:
+        raise ValueError("DragonTiger provider must be eastmoney or tushare")
+    if provider_code == "eastmoney" and not args.confirm_eastmoney_source_terms_reviewed:
         raise ValueError("Eastmoney source terms review confirmation is required")
+    if provider_code == "tushare" and not args.confirm_tushare_source_terms_reviewed:
+        raise ValueError("Tushare source terms review confirmation is required")
     exact = date.fromisoformat(args.trade_date) if args.trade_date else None
     start = date.fromisoformat(args.start_date) if args.start_date else None
     end = date.fromisoformat(args.end_date) if args.end_date else None
@@ -1230,7 +1235,7 @@ def _run_dragon_tiger_command(args: Namespace) -> None:
         service = DragonTigerService(
             persistence=PostgreSQLDragonTigerPersistence(engine),
             raw_store=LocalRawStore(settings.raw_data_root),
-            provider=_eastmoney_dragon_tiger_provider(),
+            provider=_dragon_tiger_provider(args.provider),
         )
         try:
             result: DragonTigerCollectionSummary | DragonTigerBackfillSummary
@@ -1269,7 +1274,19 @@ def _run_dragon_tiger_command(args: Namespace) -> None:
         engine.dispose()
 
 
-def _eastmoney_dragon_tiger_provider() -> DragonTigerProvider:
+def _dragon_tiger_provider(provider_code: str) -> DragonTigerProvider:
+    if provider_code == "tushare":
+        from market_data_center.providers.tushare import TushareHttpClient
+        from market_data_center.providers.tushare_dragon_tiger import (
+            TushareDragonTigerAdapter,
+        )
+
+        settings = TushareSettings()  # type: ignore[call-arg]
+        return TushareDragonTigerAdapter(
+            TushareHttpClient(settings.tushare_token.get_secret_value())
+        )
+    if provider_code not in {AUTO_PROVIDER_CODE, "eastmoney"}:
+        raise ValueError("DragonTiger provider must be eastmoney or tushare")
     from market_data_center.providers.eastmoney_dragon_tiger import (
         EastmoneyDragonTigerAdapter,
     )
@@ -1301,8 +1318,12 @@ def _parser() -> ArgumentParser:
     dragon_tiger.add_argument(
         "--confirm-eastmoney-source-terms-reviewed",
         action="store_true",
-        required=True,
         help="confirm source-rights review before this explicit collection command",
+    )
+    dragon_tiger.add_argument(
+        "--confirm-tushare-source-terms-reviewed",
+        action="store_true",
+        help="confirm Tushare source-rights review before explicit collection",
     )
     recovery = subparsers.add_parser(
         "dragon-tiger-raw-recovery",
