@@ -1,9 +1,10 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import cast
 from uuid import uuid4
 
 import pytest
 
+from market_data_center.auction_series_archive_service import AuctionSeriesArchiveSummary
 from market_data_center.call_auction_market_series_service import (
     CallAuctionMarketSeriesSummary,
 )
@@ -376,7 +377,10 @@ def test_execution_service_records_data_cleanup_deleted_rows() -> None:
     summary = DataCleanupSummary(
         cutoff_date=NOW.date(),
         retained_trading_days=3,
+        verified_rows=123,
         deleted_rows=123,
+        history_cutoff_date=date(2026, 2, 2),
+        history_deleted_rows=45,
     )
 
     execution.step(
@@ -388,9 +392,28 @@ def test_execution_service_records_data_cleanup_deleted_rows() -> None:
 
     job = persistence.finished_jobs[0]
     workflow = persistence.finished_workflows[0]
-    assert (job.fetched_rows, job.accepted_rows, job.rejected_rows) == (123, 123, 0)
+    assert (job.fetched_rows, job.accepted_rows, job.rejected_rows) == (168, 168, 0)
     assert job.status is ExecutionStatus.SUCCEEDED
-    assert workflow.accepted_rows == 123
+    assert workflow.accepted_rows == 168
+
+
+def test_execution_service_records_auction_series_archive_statistics() -> None:
+    persistence = MemoryOperationsPersistence()
+    execution = WorkflowExecutionService(cast(PostgreSQLOperationsPersistence, persistence)).start(
+        WorkflowCode.DATA_CLEANUP, NOW, TriggerSource.SCHEDULED
+    )
+    summary = AuctionSeriesArchiveSummary(
+        reference_date=NOW.date(),
+        scanned_rows=100,
+        inserted_rows=70,
+        existing_rows=30,
+    )
+
+    execution.step("archive_call_auction_market_series_snapshots", 1, lambda: summary)
+    execution.succeed()
+
+    job = persistence.finished_jobs[0]
+    assert (job.fetched_rows, job.accepted_rows, job.rejected_rows) == (100, 70, 0)
 
 
 def test_execution_service_records_close_price_new_high_snapshot_statistics() -> None:

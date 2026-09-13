@@ -4,6 +4,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import TypeVar
 
+from market_data_center.auction_series_archive_service import AuctionSeriesArchiveSummary
 from market_data_center.call_auction_market_series_service import (
     CallAuctionMarketSeriesSummary,
 )
@@ -130,8 +131,15 @@ def safe_error_summary(error: BaseException) -> str:
 def _result_statistics(result: object) -> tuple[int, int, int, ExecutionStatus]:
     if isinstance(result, DataCleanupSummary):
         return (
-            result.deleted_rows,
-            result.deleted_rows,
+            result.verified_rows + result.history_deleted_rows,
+            result.deleted_rows + result.history_deleted_rows,
+            0,
+            ExecutionStatus.SUCCEEDED,
+        )
+    if isinstance(result, AuctionSeriesArchiveSummary):
+        return (
+            result.scanned_rows,
+            result.inserted_rows,
             0,
             ExecutionStatus.SUCCEEDED,
         )
