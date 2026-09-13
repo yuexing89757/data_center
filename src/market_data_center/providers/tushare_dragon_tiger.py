@@ -14,10 +14,12 @@ from market_data_center.domain.dragon_tiger import (
     DragonTigerNormalizationResult,
     DragonTigerReason,
     DragonTigerReasonType,
+    DragonTigerSourceFinding,
     DragonTigerTriggerWindow,
     DragonTigerWindowBasis,
     SeatTradeRecord,
 )
+from market_data_center.domain.ingestion import QualitySeverity
 from market_data_center.providers.contracts import DragonTigerProviderBatch, ProviderError, RawRow
 from market_data_center.providers.tushare import TushareClient
 
@@ -118,10 +120,23 @@ def _normalize(
     if not summaries or not details:
         raise ProviderError("Tushare DragonTiger requires both summary and seat rows")
     detail_groups: dict[tuple[date, str, str], list[SourceRow]] = {}
+    findings: list[DragonTigerSourceFinding] = []
+    filtered_counts: dict[tuple[tuple[date, str, str], str, str], int] = {}
     for row in details:
         key = (_source_date(row), _symbol(row), _required_text(row, "reason"))
+        if key[1].startswith("BSE:"):
+            filter_key = (key, "top_inst", "DT_BSE_SECURITY_FILTERED")
+            filtered_counts[filter_key] = filtered_counts.get(filter_key, 0) + 1
+            continue
+        buy_amount = _decimal(row, "buy")
+        sell_amount = _decimal(row, "sell")
+        if (buy_amount is None or buy_amount == 0) and (sell_amount is None or sell_amount == 0):
+            filter_key = (key, "top_inst", "DT_ZERO_ACTIVITY_PLACEHOLDER_FILTERED")
+            filtered_counts[filter_key] = filtered_counts.get(filter_key, 0) + 1
+            continue
         detail_groups.setdefault(key, []).append(row)
     summary_keys: set[tuple[date, str, str]] = set()
+    summary_rows: dict[tuple[date, str, str], SourceRow] = {}
     events: list[DragonTigerEventDraft] = []
     for summary in summaries:
         trade_date = _source_date(summary)
@@ -130,9 +145,22 @@ def _normalize(
         symbol = _symbol(summary)
         reason_name = _required_text(summary, "reason")
         key = (trade_date, symbol, reason_name)
+        if symbol.startswith("BSE:"):
+            filter_key = (key, "top_list", "DT_BSE_SECURITY_FILTERED")
+            filtered_counts[filter_key] = filtered_counts.get(filter_key, 0) + 1
+            continue
         if key in summary_keys:
-            raise ProviderError("Tushare DragonTiger duplicate summary identity")
+            previous = {
+                field: value for field, value in summary_rows[key].items() if field != "name"
+            }
+            candidate = {field: value for field, value in summary.items() if field != "name"}
+            if _canonical_json(previous) != _canonical_json(candidate):
+                raise ProviderError("Tushare DragonTiger conflicting duplicate summary")
+            filter_key = (key, "top_list", "DT_SOURCE_DUPLICATE_FILTERED")
+            filtered_counts[filter_key] = filtered_counts.get(filter_key, 0) + 1
+            continue
         summary_keys.add(key)
+        summary_rows[key] = summary
         source_record_id = _event_id(key)
         source_details = detail_groups.get(key)
         if not source_details:
@@ -170,9 +198,29 @@ def _normalize(
             )
         )
     unmatched = set(detail_groups) - summary_keys
-    if unmatched:
-        raise ProviderError("Tushare DragonTiger detail cannot join a summary event")
-    return DragonTigerNormalizationResult(tuple(events))
+    for key in sorted(unmatched):
+        findings.append(
+            DragonTigerSourceFinding(
+                rule_code="DT_TUSHARE_UNMATCHED_DETAIL_FILTERED",
+                severity=QualitySeverity.WARNING,
+                source_event_id=_event_id(key),
+                report_kind="top_inst",
+                occurrence_count=len(detail_groups[key]),
+                filtered_count=len(detail_groups[key]),
+            )
+        )
+    for (key, report_kind, rule_code), count in sorted(filtered_counts.items()):
+        findings.append(
+            DragonTigerSourceFinding(
+                rule_code=rule_code,
+                severity=QualitySeverity.WARNING,
+                source_event_id=_event_id(key),
+                report_kind=report_kind,
+                occurrence_count=count,
+                filtered_count=count,
+            )
+        )
+    return DragonTigerNormalizationResult(tuple(events), tuple(findings))
 
 
 def _seat_trades(
