@@ -80,7 +80,7 @@ BlockingScheduler
 - `cron` 类型 → `CronTrigger(day_of_week, hour, minute, timezone)`
 - `interval` 类型 → `IntervalTrigger(hours=N, timezone)`
 
-## 定时任务目录（16 个 job）
+## 定时任务目录（17 个 job）
 
 任务定义在 `scheduling_catalog.py`。每个 job 有：`code`（APScheduler job id）、`display_name`、`workflow_code`、`trigger_type`、计划时间、`enabled`、`timeout_seconds`、`recovery_policy`。
 
@@ -95,15 +95,16 @@ BlockingScheduler
 | 5 | `daily-run` | 日 K 与基础数据更新 | `daily_market` | cron 周一至周五 | 20:00 | ✅ |
 | 6 | `deducted-profit-daily` | 扣非净利润增量同步 | `deducted_profit` | cron 每天 | 20:00 | ✅ |
 | 7 | `stock-daily-indicators-daily` | 股票每日指标更新 | `stock_daily_indicator` | cron 周一至周五 | 20:30 | ✅ |
-| 8 | `dragon-tiger-daily` | 股票龙虎榜采集 | `dragon_tiger_daily` | cron 周一至周五 | 20:30 | 默认关闭 |
-| 9 | `shareholder-count-daily` | 股东人数每日增量同步 | `shareholder_count_daily` | cron 每天 | 21:00 | 默认关闭 |
-| 10 | `mainboard-price-limit-stock-pools-daily` | 沪深主板昨日涨跌停股票池 | `stock_pool` | cron 周一至周五 | 21:00 | ✅ |
-| 11 | `eod-quote-snapshot-daily` | 收盘五档快照 | `eod_quote_snapshot` | cron 周一至周五 | 21:10 | ✅ |
-| 12 | `close-price-new-highs-120d-daily` | 沪深120交易日收盘新高快照 | `close_price_new_highs_120d` | cron 周一至周五 | 21:30 | ✅ |
-| 13 | `today-limit-up-snapshot-daily` | 同日涨停不可变快照 | `today_limit_up_snapshot` | cron 周一至周五 | 22:00 | 默认关闭 |
-| 14 | `regulation-daily-calculation` | 监管异动规则与T+1预警测算 | `regulation_daily_calculation` | cron 周一至周五 | 22:30 | 默认关闭 |
-| 15 | `recover-stale-ingestion-runs` | 陈旧运行恢复 | `stale_run_recovery` | interval | 每 1 小时 | ✅ |
-| 16 | `pytdx-pool-refresh` | PYTDX 节点池刷新 | `pytdx_pool_refresh` | interval | 每 1 小时 | ✅ |
+| 8 | `security-bse-daily` | 北交所证券目录同步 | `security_bse_daily` | cron 周一至周五 | 20:15 | 默认关闭 |
+| 9 | `dragon-tiger-daily` | 股票龙虎榜采集 | `dragon_tiger_daily` | cron 周一至周五 | 20:30 | 默认关闭 |
+| 10 | `shareholder-count-daily` | 股东人数每日增量同步 | `shareholder_count_daily` | cron 每天 | 21:00 | 默认关闭 |
+| 11 | `mainboard-price-limit-stock-pools-daily` | 沪深主板昨日涨跌停股票池 | `stock_pool` | cron 周一至周五 | 21:00 | ✅ |
+| 12 | `eod-quote-snapshot-daily` | 收盘五档快照 | `eod_quote_snapshot` | cron 周一至周五 | 21:10 | ✅ |
+| 13 | `close-price-new-highs-120d-daily` | 沪深120交易日收盘新高快照 | `close_price_new_highs_120d` | cron 周一至周五 | 21:30 | ✅ |
+| 14 | `today-limit-up-snapshot-daily` | 同日涨停不可变快照 | `today_limit_up_snapshot` | cron 周一至周五 | 22:00 | 默认关闭 |
+| 15 | `regulation-daily-calculation` | 监管异动规则与T+1预警测算 | `regulation_daily_calculation` | cron 周一至周五 | 22:30 | 默认关闭 |
+| 16 | `recover-stale-ingestion-runs` | 陈旧运行恢复 | `stale_run_recovery` | interval | 每 1 小时 | ✅ |
+| 17 | `pytdx-pool-refresh` | PYTDX 节点池刷新 | `pytdx_pool_refresh` | interval | 每 1 小时 | ✅ |
 
 > 时间与调度策略固定在代码目录，不能通过 `.env` 覆盖。全市场序列从 2026-09-07 起固定为
 > 09:15:00--09:24:40 每 20 秒一轮，再采 09:24:53 和 09:25:20，共 32 轮、每批最多 80 只；
