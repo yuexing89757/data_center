@@ -317,6 +317,40 @@ def test_adapter_filters_duplicate_summary_when_only_name_differs() -> None:
     assert finding.filtered_count == 1
 
 
+def test_adapter_keeps_precise_summary_over_source_rounded_duplicate() -> None:
+    responses = _responses()
+    rounded = responses["top_list"][0]
+    rounded.update(
+        {
+            "l_buy": "323383200",
+            "l_sell": "199943000",
+            "l_amount": "523326200",
+            "net_amount": "123440200",
+        }
+    )
+    precise = dict(rounded)
+    precise.update(
+        {
+            "l_buy": "323383102.12",
+            "l_sell": "199943005.39",
+            "l_amount": "523326107.51",
+            "net_amount": "123440096.73",
+        }
+    )
+    responses["top_list"].append(precise)
+
+    result = (
+        TushareDragonTigerAdapter(FakeClient(responses))
+        .fetch_dragon_tiger(date(2026, 8, 20))
+        .normalization
+    )
+
+    assert len(result.events) == 1
+    assert result.events[0].lhb_buy_amount == Decimal("323383102.12")
+    assert result.events[0].lhb_sell_amount == Decimal("199943005.39")
+    assert any(item.rule_code == "DT_SOURCE_ROUNDED_DUPLICATE_FILTERED" for item in result.findings)
+
+
 def test_adapter_rejects_duplicate_summary_with_conflicting_market_fact() -> None:
     responses = _responses()
     duplicate = dict(responses["top_list"][0])

@@ -160,38 +160,41 @@ def _normalize(
         if filtered:
             filter_key = (key, "top_inst", "DT_SOURCE_DUPLICATE_FILTERED")
             filtered_counts[filter_key] = filtered_counts.get(filter_key, 0) + filtered
-    distinct_summary_keys = {
-        (_source_date(row), _symbol(row), _required_text(row, "reason"))
-        for row in summaries
-        if not _symbol(row).startswith("BSE:")
-    }
-    summary_keys: set[tuple[date, str, str]] = set()
-    matched_detail_keys: set[tuple[date, str, str]] = set()
     summary_rows: dict[tuple[date, str, str], SourceRow] = {}
-    events: list[DragonTigerEventDraft] = []
     for summary in summaries:
         trade_date = _source_date(summary)
         if trade_date != requested_date:
             raise ProviderError("Tushare DragonTiger response date mismatch")
-        symbol = _symbol(summary)
-        reason_name = _required_text(summary, "reason")
-        key = (trade_date, symbol, reason_name)
-        if symbol.startswith("BSE:"):
+        key = (trade_date, _symbol(summary), _required_text(summary, "reason"))
+        if key[1].startswith("BSE:"):
             filter_key = (key, "top_list", "DT_BSE_SECURITY_FILTERED")
             filtered_counts[filter_key] = filtered_counts.get(filter_key, 0) + 1
             continue
-        if key in summary_keys:
-            previous = {
-                field: value for field, value in summary_rows[key].items() if field != "name"
-            }
-            candidate = {field: value for field, value in summary.items() if field != "name"}
-            if _canonical_json(previous) != _canonical_json(candidate):
-                raise ProviderError("Tushare DragonTiger conflicting duplicate summary")
-            filter_key = (key, "top_list", "DT_SOURCE_DUPLICATE_FILTERED")
-            filtered_counts[filter_key] = filtered_counts.get(filter_key, 0) + 1
+        previous = summary_rows.get(key)
+        if previous is None:
+            summary_rows[key] = summary
             continue
-        summary_keys.add(key)
-        summary_rows[key] = summary
+        previous_without_name = {
+            field: value for field, value in previous.items() if field != "name"
+        }
+        candidate_without_name = {
+            field: value for field, value in summary.items() if field != "name"
+        }
+        if _canonical_json(previous_without_name) == _canonical_json(candidate_without_name):
+            rule_code = "DT_SOURCE_DUPLICATE_FILTERED"
+        else:
+            preferred = _prefer_precise_summary(previous, summary)
+            if preferred is None:
+                raise ProviderError("Tushare DragonTiger conflicting duplicate summary")
+            summary_rows[key] = preferred
+            rule_code = "DT_SOURCE_ROUNDED_DUPLICATE_FILTERED"
+        filter_key = (key, "top_list", rule_code)
+        filtered_counts[filter_key] = filtered_counts.get(filter_key, 0) + 1
+    distinct_summary_keys = set(summary_rows)
+    matched_detail_keys: set[tuple[date, str, str]] = set()
+    events: list[DragonTigerEventDraft] = []
+    for key, summary in summary_rows.items():
+        trade_date, symbol, reason_name = key
         source_record_id = _event_id(key)
         source_details = detail_groups.get(key)
         if not source_details:
@@ -343,6 +346,38 @@ def _deduplicate_truncated_seat_aliases(
 def _is_truncated_seat_alias(first: str, second: str) -> bool:
     shorter, longer = sorted((first, second), key=len)
     return longer == f"{shorter}营业部"
+
+
+def _prefer_precise_summary(first: SourceRow, second: SourceRow) -> SourceRow | None:
+    amount_fields = {"l_buy", "l_sell", "l_amount", "net_amount"}
+    ignored = amount_fields | {"name"}
+    first_other = {field: value for field, value in first.items() if field not in ignored}
+    second_other = {field: value for field, value in second.items() if field not in ignored}
+    if _canonical_json(first_other) != _canonical_json(second_other):
+        return None
+
+    def is_rounded(row: SourceRow) -> bool:
+        values = [_decimal(row, field) for field in amount_fields]
+        return all(value is not None and value % Decimal(100) == 0 for value in values)
+
+    first_rounded = is_rounded(first)
+    second_rounded = is_rounded(second)
+    if first_rounded == second_rounded:
+        return None
+    rounded, precise = (first, second) if first_rounded else (second, first)
+    tolerances = {
+        "l_buy": Decimal(100),
+        "l_sell": Decimal(100),
+        "l_amount": Decimal(200),
+        "net_amount": Decimal(200),
+    }
+    if any(
+        abs((_decimal(rounded, field) or Decimal(0)) - (_decimal(precise, field) or Decimal(0)))
+        >= tolerance
+        for field, tolerance in tolerances.items()
+    ):
+        return None
+    return precise
 
 
 def _event_id(key: tuple[date, str, str]) -> str:
