@@ -39,6 +39,7 @@ class WorkflowCode(StrEnum):
     SHAREHOLDER_COUNT_BACKFILL = "shareholder_count_backfill"
     SECURITY_BSE_DAILY = "security_bse_daily"
     DRAGON_TIGER_DAILY = "dragon_tiger_daily"
+    DRAGON_TIGER_SEAT_PROFILE = "dragon_tiger_seat_profile"
     REGULATION_DAILY_CALCULATION = "regulation_daily_calculation"
     DATA_CLEANUP = "data_cleanup"
 

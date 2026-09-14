@@ -84,6 +84,12 @@ Tushare 北交所 `L/D/P` 全状态证券任务固定为周一至周五 20:15，
 才执行 `--execute --confirm`。触发窗口和金额统计周期分别记录；未知证券、原因语义冲突或金额/排名
 不合法均作为硬失败，不跨日期、不切换来源拼批次。
 
+游资目录使用仓库内版本化审核清单，先执行
+`market-data-center hot-money-catalog-sync --catalog catalogs/hot_money_roster.v1.json --dry-run`
+校验，再使用 `--execute --confirm` 原子发布。禁止根据营业部名称自动推断游资身份。席位画像任务
+`dragon-tiger-seat-profile-daily` 固定工作日 21:00，在同日 `daily_market` 和
+`dragon_tiger_daily` 成功后运行；默认由 `DRAGON_TIGER_SEAT_PROFILE_ENABLED=false` 关闭。
+
 每天 20:00（包括周末）执行扣非净利润增量同步。该任务按披露变化发现受影响证券，不按
 交易日触发，也不进行全市场历史回填；详见 ADR-0020。
 

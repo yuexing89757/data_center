@@ -51,6 +51,9 @@ from market_data_center.domain import (
     DragonTigerTriggerWindow,
     DragonTigerWindowBasis,
     Exchange,
+    HotMoneyActor,
+    HotMoneyReviewStatus,
+    HotMoneySeatMapping,
     IngestionEnvelope,
     IngestionRun,
     IngestionStatus,
@@ -85,6 +88,8 @@ from market_data_center.domain.call_auction_market_series import (
 )
 from market_data_center.domain.operations import ExecutionStatus, TriggerSource, WorkflowCode
 from market_data_center.domain.today_limit_up import TodayLimitUpSnapshotStatus
+from market_data_center.dragon_tiger_analytics import TradingSeatProfile
+from market_data_center.hot_money_catalog_service import HotMoneyCatalog
 from market_data_center.migrations import MIGRATION_DIR, apply_migrations
 from market_data_center.persistence import PostgreSQLDerivedPersistence, PostgreSQLPersistence
 from market_data_center.persistence.call_auction_market_series_postgres import (
@@ -96,6 +101,10 @@ from market_data_center.persistence.close_price_new_highs_postgres import (
 from market_data_center.persistence.dragon_tiger_postgres import (
     PostgreSQLDragonTigerPersistence,
 )
+from market_data_center.persistence.dragon_tiger_profile_postgres import (
+    PostgreSQLDragonTigerProfilePersistence,
+)
+from market_data_center.persistence.hot_money_postgres import PostgreSQLHotMoneyPersistence
 from market_data_center.persistence.operations_postgres import PostgreSQLOperationsPersistence
 from market_data_center.persistence.regulation_postgres import (
     PostgreSQLRegulationPersistence,
@@ -7906,6 +7915,153 @@ def test_dragon_tiger_does_not_create_an_identity_for_a_keyless_trade(
             connection.scalar(text("select count(*) from billboard.trading_seat_source_identity"))
             == 0
         )
+
+
+def test_hot_money_catalog_is_published_atomically(database_engine: Engine) -> None:
+    seat_id = uuid4()
+    reviewed_at = datetime(2026, 9, 13, 12, tzinfo=UTC)
+    with database_engine.begin() as connection:
+        connection.execute(
+            text("""
+insert into billboard.trading_seat (
+ seat_id,canonical_name,seat_type,first_seen_date,last_seen_date
+) values (:seat_id,'测试营业部','BROKER',:day,:day)
+"""),
+            {"seat_id": seat_id, "day": TRADE_DATE},
+        )
+    catalog = HotMoneyCatalog(
+        catalog_version="v1",
+        reviewed_at=reviewed_at,
+        actors=(HotMoneyActor("TEST_ACTOR", "测试游资", ("测试别名",)),),
+        mappings=(
+            HotMoneySeatMapping(
+                actor_code="TEST_ACTOR",
+                seat_id=seat_id,
+                source_alias_name="测试营业部",
+                valid_from=TRADE_DATE,
+                valid_to=None,
+                evidence_note="人工复核测试证据",
+                review_status=HotMoneyReviewStatus.APPROVED,
+                reviewed_at=reviewed_at,
+                catalog_version="v1",
+            ),
+        ),
+    )
+
+    persistence = PostgreSQLHotMoneyPersistence(database_engine)
+    persistence.replace_catalog(catalog)
+    persistence.replace_catalog(catalog)
+
+    with database_engine.connect() as connection:
+        actor = (
+            connection.execute(
+                text("""
+select canonical_name,aliases,is_active
+from billboard.hot_money_actor where actor_code='TEST_ACTOR'
+""")
+            )
+            .mappings()
+            .one()
+        )
+        mapping = (
+            connection.execute(
+                text("""
+select seat_id,review_status,catalog_version
+from billboard.hot_money_seat_mapping
+""")
+            )
+            .mappings()
+            .one()
+        )
+    assert actor == {
+        "canonical_name": "测试游资",
+        "aliases": ["测试别名"],
+        "is_active": True,
+    }
+    assert mapping == {
+        "seat_id": seat_id,
+        "review_status": "APPROVED",
+        "catalog_version": "v1",
+    }
+
+
+def test_dragon_tiger_profile_publication_is_idempotent(database_engine: Engine) -> None:
+    seat_id = uuid4()
+    calculation_id = uuid4()
+    as_of_date = date(2026, 9, 11)
+    with database_engine.begin() as connection:
+        connection.execute(
+            text("""
+insert into billboard.trading_seat (
+ seat_id,canonical_name,seat_type,first_seen_date,last_seen_date
+) values (:seat_id,'画像测试营业部','BROKER',:day,:day)
+"""),
+            {"seat_id": seat_id, "day": as_of_date},
+        )
+    profile = TradingSeatProfile(
+        seat_id=seat_id,
+        as_of_date=as_of_date,
+        algorithm_version="trading-seat-profile-v1",
+        metric_definition="return_value > 0",
+        return_definition="(future_unadjusted_close / event_unadjusted_close) - 1",
+        participation_definition="next_session_participation / eligible_participation_sessions",
+        total_lhb_count=2,
+        total_buy_amount=Decimal("300"),
+        total_sell_amount=Decimal("50"),
+        t1_sample_count=2,
+        t1_win_rate=Decimal("0.5"),
+        t1_avg_return=Decimal("0.01"),
+        t3_sample_count=1,
+        t3_win_rate=Decimal("1"),
+        t3_avg_return=Decimal("0.03"),
+        t5_sample_count=0,
+        t5_win_rate=None,
+        t5_avg_return=None,
+        consecutive_participation_sample_count=1,
+        consecutive_participation_rate=Decimal("1"),
+    )
+    persistence = PostgreSQLDragonTigerProfilePersistence(database_engine)
+
+    first = persistence.replace_profiles(
+        (profile,),
+        calculation_id=calculation_id,
+        input_watermark_date=as_of_date,
+        input_hash="a" * 64,
+    )
+    repeated = persistence.replace_profiles(
+        (profile,),
+        calculation_id=uuid4(),
+        input_watermark_date=as_of_date,
+        input_hash="a" * 64,
+    )
+
+    with database_engine.connect() as connection:
+        row = (
+            connection.execute(
+                text("""
+select calculation_id,total_lhb_count,t1_win_rate,t5_win_rate
+from billboard.trading_seat_profile_daily
+where seat_id=:seat_id and as_of_date=:as_of_date
+"""),
+                {"seat_id": seat_id, "as_of_date": as_of_date},
+            )
+            .mappings()
+            .one()
+        )
+        run_count = connection.scalar(
+            text("""
+select count(*) from derived.calculation_run
+where calculation_code='dragon_tiger_seat_profile'
+""")
+        )
+    assert first == repeated == 1
+    assert row == {
+        "calculation_id": calculation_id,
+        "total_lhb_count": 2,
+        "t1_win_rate": Decimal("0.5"),
+        "t5_win_rate": None,
+    }
+    assert run_count == 1
 
 
 def test_replay_stock_lookup_enforces_type_and_lifecycle(database_engine: Engine) -> None:

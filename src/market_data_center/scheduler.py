@@ -32,6 +32,7 @@ from market_data_center.close_price_new_highs_service import ClosePriceNewHighsS
 from market_data_center.data_cleanup_service import DataCleanupService
 from market_data_center.database_urls import sqlalchemy_url
 from market_data_center.domain.operations import TriggerSource, WorkflowCode
+from market_data_center.dragon_tiger_profile_service import DragonTigerProfileService
 from market_data_center.dragon_tiger_service import DragonTigerService
 from market_data_center.operations_service import WorkflowExecutionService
 from market_data_center.persistence import PostgreSQLPersistence
@@ -44,6 +45,9 @@ from market_data_center.persistence.close_price_new_highs_postgres import (
 )
 from market_data_center.persistence.dragon_tiger_postgres import (
     PostgreSQLDragonTigerPersistence,
+)
+from market_data_center.persistence.dragon_tiger_profile_postgres import (
+    PostgreSQLDragonTigerProfilePersistence,
 )
 from market_data_center.persistence.operations_postgres import PostgreSQLOperationsPersistence
 from market_data_center.persistence.regulation_postgres import (
@@ -78,6 +82,7 @@ from market_data_center.scheduling_catalog import (
     DATA_CLEANUP_JOB_ID,
     DEDUCTED_PROFIT_JOB_ID,
     DRAGON_TIGER_JOB_ID,
+    DRAGON_TIGER_SEAT_PROFILE_JOB_ID,
     EOD_QUOTE_SNAPSHOT_JOB_ID,
     PYTDX_POOL_REFRESH_JOB_ID,
     REGULATION_DAILY_CALCULATION_JOB_ID,
@@ -696,6 +701,49 @@ def _require_dragon_tiger_bse_prerequisite(
         raise ProviderError("DT_BSE_SECURITY_PREREQUISITE_FAILED")
 
 
+def run_dragon_tiger_seat_profile_job() -> None:
+    """Materialize exact-date, point-in-time-safe stable-seat profiles."""
+    settings = WorkerSettings()  # type: ignore[call-arg]
+    scheduling = SchedulerSettings()
+    engine = create_engine(
+        sqlalchemy_url(settings.database_url.get_secret_value()), pool_pre_ping=True
+    )
+    try:
+        fire_time = _scheduled_job_fire_time(DRAGON_TIGER_SEAT_PROFILE_JOB_ID, scheduling)
+        trade_date = fire_time.astimezone(ZoneInfo(SCHEDULER_TIMEZONE)).date()
+        persistence = PostgreSQLDragonTigerProfilePersistence(engine)
+        operations = PostgreSQLOperationsPersistence(engine)
+        execution = WorkflowExecutionService(operations).start(
+            WorkflowCode.DRAGON_TIGER_SEAT_PROFILE,
+            fire_time,
+            TriggerSource.SCHEDULED,
+        )
+        try:
+            if persistence.is_trading_day(trade_date):
+                _require_dragon_tiger_profile_prerequisites(operations, trade_date)
+                execution.step(
+                    "materialize_dragon_tiger_seat_profiles",
+                    1,
+                    lambda: DragonTigerProfileService(persistence).materialize(trade_date),
+                )
+            else:
+                execution.step("materialize_dragon_tiger_seat_profiles", 1, lambda: 0)
+        except BaseException as error:
+            execution.fail(error)
+            raise
+        execution.succeed()
+    finally:
+        engine.dispose()
+
+
+def _require_dragon_tiger_profile_prerequisites(
+    operations: PostgreSQLOperationsPersistence, trade_date: date
+) -> None:
+    for prerequisite in (WorkflowCode.DAILY_MARKET, WorkflowCode.DRAGON_TIGER_DAILY):
+        if not operations.has_succeeded_on_date(prerequisite, trade_date):
+            raise ProviderError("DT_PROFILE_PREREQUISITE_FAILED")
+
+
 def run_regulation_daily_calculation_job() -> None:
     """Calculate exact-date regulation status and T+1 condition warnings."""
     settings = WorkerSettings()  # type: ignore[call-arg]
@@ -892,6 +940,7 @@ def build_scheduler(settings: SchedulerSettings | None = None) -> BlockingSchedu
         BOARD_INDEX_DAILY_BAR_JOB_ID: run_board_index_daily_bar_job,
         SECURITY_BSE_JOB_ID: run_security_bse_job,
         DRAGON_TIGER_JOB_ID: run_dragon_tiger_job,
+        DRAGON_TIGER_SEAT_PROFILE_JOB_ID: run_dragon_tiger_seat_profile_job,
         REGULATION_DAILY_CALCULATION_JOB_ID: run_regulation_daily_calculation_job,
         DATA_CLEANUP_JOB_ID: run_data_cleanup_job,
         PYTDX_POOL_REFRESH_JOB_ID: run_pytdx_pool_refresh_job,

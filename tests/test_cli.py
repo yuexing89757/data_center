@@ -14,6 +14,7 @@ from market_data_center.cli import (
     _parser,
     _validate_dragon_tiger_args,
     _validate_dragon_tiger_recovery_args,
+    _validate_hot_money_catalog_args,
     run_daily_workflow,
     run_stock_daily_indicator_workflow,
 )
@@ -63,6 +64,27 @@ def test_dragon_tiger_orphan_recovery_requires_execute_confirmation() -> None:
     with pytest.raises(ValueError, match="confirmation"):
         _validate_dragon_tiger_recovery_args(execute)
     assert _validate_dragon_tiger_recovery_args(confirmed) is False
+
+
+def test_hot_money_catalog_sync_requires_execute_confirmation() -> None:
+    dry = _parser().parse_args(["hot-money-catalog-sync", "--catalog", "catalog.json", "--dry-run"])
+    execute = _parser().parse_args(
+        ["hot-money-catalog-sync", "--catalog", "catalog.json", "--execute"]
+    )
+    confirmed = _parser().parse_args(
+        [
+            "hot-money-catalog-sync",
+            "--catalog",
+            "catalog.json",
+            "--execute",
+            "--confirm",
+        ]
+    )
+
+    assert _validate_hot_money_catalog_args(dry) is True
+    with pytest.raises(ValueError, match="confirmation"):
+        _validate_hot_money_catalog_args(execute)
+    assert _validate_hot_money_catalog_args(confirmed) is False
 
 
 def test_dragon_tiger_cli_accepts_exact_date_or_complete_range() -> None:

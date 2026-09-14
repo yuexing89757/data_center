@@ -23,6 +23,7 @@ def test_optional_scheduled_tasks_default_enabled() -> None:
     assert settings.shareholder_count_daily_enabled is False
     assert settings.security_bse_enabled is False
     assert settings.dragon_tiger_enabled is False
+    assert settings.dragon_tiger_seat_profile_enabled is False
 
 
 def test_optional_scheduled_tasks_can_be_disabled_by_environment(monkeypatch) -> None:
@@ -44,9 +45,11 @@ def test_optional_scheduled_tasks_can_be_disabled_by_environment(monkeypatch) ->
 def test_dragon_tiger_schedule_requires_explicit_opt_in(monkeypatch) -> None:
     monkeypatch.setenv("DRAGON_TIGER_ENABLED", "true")
     monkeypatch.setenv("SECURITY_BSE_ENABLED", "true")
+    monkeypatch.setenv("DRAGON_TIGER_SEAT_PROFILE_ENABLED", "true")
 
     assert SchedulerSettings(_env_file=None).dragon_tiger_enabled is True
     assert SchedulerSettings(_env_file=None).security_bse_enabled is True
+    assert SchedulerSettings(_env_file=None).dragon_tiger_seat_profile_enabled is True
 
 
 def test_task_timing_is_not_part_of_environment_settings() -> None:

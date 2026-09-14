@@ -7,6 +7,7 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime, timedelta
 from functools import partial
 from json import dumps
+from pathlib import Path
 from sys import stderr, stdin
 from time import monotonic
 from typing import cast
@@ -37,6 +38,10 @@ from market_data_center.dragon_tiger_service import (
     DragonTigerCollectionSummary,
     DragonTigerService,
 )
+from market_data_center.hot_money_catalog_service import (
+    HotMoneyCatalogService,
+    load_hot_money_catalog,
+)
 from market_data_center.operations_service import WorkflowExecution, WorkflowExecutionService
 from market_data_center.persistence import (
     PostgreSQLDerivedPersistence,
@@ -50,6 +55,7 @@ from market_data_center.persistence.auction_postgres import PostgreSQLAuctionPer
 from market_data_center.persistence.close_price_new_highs_postgres import (
     PostgreSQLClosePriceNewHighsPersistence,
 )
+from market_data_center.persistence.hot_money_postgres import PostgreSQLHotMoneyPersistence
 from market_data_center.pipeline import BoardIndexIngestionPipeline, IngestionPipeline
 from market_data_center.providers import (
     DragonTigerProvider,
@@ -121,6 +127,9 @@ def main() -> None:
         )
     if args.dataset == "dragon-tiger-collect":
         _run_dragon_tiger_command(args)
+        return
+    if args.dataset == "hot-money-catalog-sync":
+        _run_hot_money_catalog_command(args)
         return
     settings = WorkerSettings()  # type: ignore[call-arg]
     engine = create_engine(
@@ -1220,6 +1229,41 @@ def _validate_dragon_tiger_recovery_args(args: Namespace) -> bool:
     return bool(args.dry_run)
 
 
+def _validate_hot_money_catalog_args(args: Namespace) -> bool:
+    if args.execute and not args.confirm:
+        raise ValueError("hot-money catalog execution requires confirmation")
+    return bool(args.dry_run)
+
+
+def _run_hot_money_catalog_command(args: Namespace) -> None:
+    settings = WorkerSettings()  # type: ignore[call-arg]
+    engine = create_engine(
+        sqlalchemy_url(settings.database_url.get_secret_value()), pool_pre_ping=True
+    )
+    try:
+        catalog = load_hot_money_catalog(Path(args.catalog))
+        summary = HotMoneyCatalogService(PostgreSQLHotMoneyPersistence(engine)).sync(
+            catalog,
+            dry_run=_validate_hot_money_catalog_args(args),
+        )
+        print(dumps(asdict(summary), ensure_ascii=False, sort_keys=True, default=str))
+    except Exception as error:
+        print(
+            dumps(
+                {
+                    "status": "failed",
+                    "operation": args.dataset,
+                    "error_type": type(error).__name__,
+                },
+                sort_keys=True,
+            ),
+            file=stderr,
+        )
+        raise SystemExit(1) from None
+    finally:
+        engine.dispose()
+
+
 def _run_dragon_tiger_command(args: Namespace) -> None:
     exact, start, end = _validate_dragon_tiger_args(args)
     settings = WorkerSettings()  # type: ignore[call-arg]
@@ -1336,6 +1380,15 @@ def _parser() -> ArgumentParser:
     recovery_mode.add_argument("--dry-run", action="store_true")
     recovery_mode.add_argument("--execute", action="store_true")
     recovery.add_argument("--confirm", action="store_true")
+    catalog = subparsers.add_parser(
+        "hot-money-catalog-sync",
+        help="validate or atomically publish the reviewed hot-money seat catalog",
+    )
+    catalog.add_argument("--catalog", required=True)
+    catalog_mode = catalog.add_mutually_exclusive_group(required=True)
+    catalog_mode.add_argument("--dry-run", action="store_true")
+    catalog_mode.add_argument("--execute", action="store_true")
+    catalog.add_argument("--confirm", action="store_true")
     subparsers.add_parser("security", help="synchronize the security master")
     subparsers.add_parser("security-bse", help="synchronize Tushare BSE L/D/P security master")
 

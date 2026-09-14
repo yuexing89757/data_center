@@ -19,6 +19,7 @@ CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID = "close-price-new-highs-120d-daily"
 BOARD_INDEX_DAILY_BAR_JOB_ID = "board-index-883423-daily-bar"
 SECURITY_BSE_JOB_ID = "security-bse-daily"
 DRAGON_TIGER_JOB_ID = "dragon-tiger-daily"
+DRAGON_TIGER_SEAT_PROFILE_JOB_ID = "dragon-tiger-seat-profile-daily"
 REGULATION_DAILY_CALCULATION_JOB_ID = "regulation-daily-calculation"
 DATA_CLEANUP_JOB_ID = "data-cleanup-daily"
 SCHEDULER_TIMEZONE = "Asia/Shanghai"
@@ -172,6 +173,12 @@ WORKFLOW_DEFINITIONS = (
         "股票龙虎榜采集",
         "采集东方财富每日上榜证券汇总及买入/卖出前五席位。",
         ("collect_dragon_tiger",),
+    ),
+    WorkflowDefinition(
+        "dragon_tiger_seat_profile",
+        "龙虎榜席位每日画像",
+        "在同日日线与龙虎榜完成后物化时点安全的 T+1/T+3/T+5 席位画像。",
+        ("materialize_dragon_tiger_seat_profiles",),
     ),
     WorkflowDefinition(
         "regulation_daily_calculation",
@@ -369,6 +376,21 @@ def job_definitions(settings: SchedulerSettings) -> tuple[JobDefinition, ...]:
             day_of_week="mon-fri",
             hour=20,
             minute=30,
+        ),
+        JobDefinition(
+            DRAGON_TIGER_SEAT_PROFILE_JOB_ID,
+            "龙虎榜席位每日画像",
+            "物化稳定席位的 T+1/T+3/T+5 历史胜率与平均收益。",
+            "dragon_tiger_seat_profile",
+            "cron",
+            "周一至周五 21:00",
+            timezone,
+            settings.dragon_tiger_seat_profile_enabled,
+            timeout,
+            "同日 daily_market 或 dragon_tiger_daily 未成功时失败, 下一交易日或手工执行重试",
+            day_of_week="mon-fri",
+            hour=21,
+            minute=0,
         ),
         JobDefinition(
             REGULATION_DAILY_CALCULATION_JOB_ID,

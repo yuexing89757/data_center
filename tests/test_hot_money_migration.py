@@ -23,3 +23,4 @@ def test_profile_schema_preserves_version_and_input_watermark() -> None:
     assert "primary key (seat_id, as_of_date, algorithm_version)" in sql
     assert "input_watermark_date date not null" in sql
     assert "calculation_id uuid not null references derived.calculation_run" in sql
+    assert "'dragon_tiger_seat_profile'" in sql

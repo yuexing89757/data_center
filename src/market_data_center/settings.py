@@ -45,6 +45,8 @@ class SchedulerSettings(BaseSettings):
     security_bse_enabled: bool = False
     # Opt-in until source-rights and protected deployment review are complete.
     dragon_tiger_enabled: bool = False
+    # Opt-in until the profile migration and reviewed catalog are deployed.
+    dragon_tiger_seat_profile_enabled: bool = False
     # Opt-in until benchmark coverage and the ordered migration are deployed.
     regulation_daily_enabled: bool = False
 

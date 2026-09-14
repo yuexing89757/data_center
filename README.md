@@ -160,6 +160,13 @@ Historical collection is resumable, continues after individual-date failures, an
 730 calendar days. Orphan files can first be inspected with `dragon-tiger-raw-recovery --dry-run`
 and registered only with `--execute --confirm`.
 
+Reviewed hot-money actors and effective-dated stable-seat mappings are maintained in the
+versioned `catalogs/hot_money_roster.v1.json` file. Validate it with
+`market-data-center hot-money-catalog-sync --catalog catalogs/hot_money_roster.v1.json --dry-run`
+before an explicitly confirmed publish. The opt-in `dragon-tiger-seat-profile-daily` Worker job
+runs at 21:00 on weekdays after same-date Daily Market and DragonTiger success, and materializes
+versioned T+1/T+3/T+5 objective seat profiles without producing a subjective score.
+
 Authenticated reads are `GET /api/v1/dragon-tiger/events/by-date`,
 `GET /api/v1/dragon-tiger/events/by-symbol/{code}`,
 `GET /api/v1/dragon-tiger/seats/{seat_id}/trades`, and
