@@ -53,6 +53,7 @@ TOP_INST_FIELDS = (
     "reason",
 )
 SCHEMA_VERSION = "tushare.dragon_tiger.v1"
+MAX_DETAIL_REPAIR_SYMBOLS = 100
 
 type SourceRow = Mapping[str, object]
 
@@ -67,12 +68,30 @@ class TushareDragonTigerAdapter:
         params = {"trade_date": trade_date.strftime("%Y%m%d")}
         try:
             summaries = tuple(self._client.query("top_list", params=params, fields=TOP_LIST_FIELDS))
-            details = tuple(self._client.query("top_inst", params=params, fields=TOP_INST_FIELDS))
+            details = list(self._client.query("top_inst", params=params, fields=TOP_INST_FIELDS))
+            summary_symbols = {
+                str(row.get("ts_code", ""))
+                for row in summaries
+                if not str(row.get("ts_code", "")).upper().endswith(".BJ")
+            }
+            detail_symbols = {str(row.get("ts_code", "")) for row in details}
+            missing_symbols = sorted(summary_symbols - detail_symbols)
+            if len(missing_symbols) > MAX_DETAIL_REPAIR_SYMBOLS:
+                raise ProviderError("Tushare DragonTiger bulk detail response is incomplete")
+            for symbol in missing_symbols:
+                details.extend(
+                    self._client.query(
+                        "top_inst",
+                        params={**params, "ts_code": symbol},
+                        fields=TOP_INST_FIELDS,
+                    )
+                )
         except Exception as error:
             raise ProviderError("Tushare DragonTiger request failed") from error
+        detail_rows = tuple(details)
         raw_rows = tuple(
             [_raw_row("summary", index, row) for index, row in enumerate(summaries)]
-            + [_raw_row("seat", index, row) for index, row in enumerate(details)]
+            + [_raw_row("seat", index, row) for index, row in enumerate(detail_rows)]
         )
         return DragonTigerProviderBatch(
             raw_rows=raw_rows,
@@ -81,11 +100,11 @@ class TushareDragonTigerAdapter:
                 "apis": ["top_list", "top_inst"],
                 "source_counts": {
                     "top_list": len(summaries),
-                    "top_inst": len(details),
+                    "top_inst": len(detail_rows),
                 },
             },
             schema_version=SCHEMA_VERSION,
-            normalization_factory=lambda: _normalize(summaries, details, trade_date),
+            normalization_factory=lambda: _normalize(summaries, detail_rows, trade_date),
         )
 
 
@@ -135,7 +154,19 @@ def _normalize(
             filtered_counts[filter_key] = filtered_counts.get(filter_key, 0) + 1
             continue
         detail_groups.setdefault(key, []).append(row)
+    for key, rows in tuple(detail_groups.items()):
+        deduplicated, filtered = _deduplicate_truncated_seat_aliases(rows)
+        detail_groups[key] = deduplicated
+        if filtered:
+            filter_key = (key, "top_inst", "DT_SOURCE_DUPLICATE_FILTERED")
+            filtered_counts[filter_key] = filtered_counts.get(filter_key, 0) + filtered
+    distinct_summary_keys = {
+        (_source_date(row), _symbol(row), _required_text(row, "reason"))
+        for row in summaries
+        if not _symbol(row).startswith("BSE:")
+    }
     summary_keys: set[tuple[date, str, str]] = set()
+    matched_detail_keys: set[tuple[date, str, str]] = set()
     summary_rows: dict[tuple[date, str, str], SourceRow] = {}
     events: list[DragonTigerEventDraft] = []
     for summary in summaries:
@@ -164,7 +195,30 @@ def _normalize(
         source_record_id = _event_id(key)
         source_details = detail_groups.get(key)
         if not source_details:
-            raise ProviderError("Tushare DragonTiger detail cannot join a summary event")
+            candidates = [
+                (detail_key, rows)
+                for detail_key, rows in detail_groups.items()
+                if detail_key[:2] == key[:2]
+            ]
+            symbol_summary_keys = {
+                summary_key for summary_key in distinct_summary_keys if summary_key[:2] == key[:2]
+            }
+            if len(candidates) != 1 or len(symbol_summary_keys) != 1:
+                raise ProviderError("Tushare DragonTiger detail cannot join a summary event")
+            detail_key, source_details = candidates[0]
+            findings.append(
+                DragonTigerSourceFinding(
+                    rule_code="DT_TUSHARE_REASON_ALIAS_JOINED",
+                    severity=QualitySeverity.WARNING,
+                    source_event_id=source_record_id,
+                    report_kind="top_inst",
+                    occurrence_count=len(source_details),
+                    filtered_count=0,
+                )
+            )
+            matched_detail_keys.add(detail_key)
+        else:
+            matched_detail_keys.add(key)
         trigger = _trigger_window(reason_name, trade_date)
         reason_type = _reason_type(reason_name)
         reason = DragonTigerReason(
@@ -197,7 +251,7 @@ def _normalize(
                 source_code="tushare",
             )
         )
-    unmatched = set(detail_groups) - summary_keys
+    unmatched = set(detail_groups) - matched_detail_keys
     for key in sorted(unmatched):
         findings.append(
             DragonTigerSourceFinding(
@@ -267,17 +321,57 @@ def _seat_trades(
     return tuple(result)
 
 
+def _deduplicate_truncated_seat_aliases(
+    rows: Sequence[SourceRow],
+) -> tuple[list[SourceRow], int]:
+    groups: dict[str, list[SourceRow]] = {}
+    for row in rows:
+        facts = {field: value for field, value in row.items() if field != "exalter"}
+        groups.setdefault(_canonical_json(facts), []).append(row)
+    result: list[SourceRow] = []
+    filtered = 0
+    for same_facts in groups.values():
+        names = [_required_text(row, "exalter") for row in same_facts]
+        if len(same_facts) == 2 and _is_truncated_seat_alias(*names):
+            result.append(max(same_facts, key=lambda row: len(_required_text(row, "exalter"))))
+            filtered += 1
+        else:
+            result.extend(same_facts)
+    return result, filtered
+
+
+def _is_truncated_seat_alias(first: str, second: str) -> bool:
+    shorter, longer = sorted((first, second), key=len)
+    return longer == f"{shorter}营业部"
+
+
 def _event_id(key: tuple[date, str, str]) -> str:
     value = "|".join((key[0].isoformat(), key[1], key[2]))
     return sha256(value.encode("utf-8")).hexdigest()
 
 
 def _trigger_window(reason: str, trade_date: date) -> DragonTigerTriggerWindow:
-    if "连续三个交易日" in reason or "连续3个交易日" in reason:
+    window_match = re.search(r"连续(三个|3个|十个|10个|三十个|30个)交易日", reason)
+    sessions = {
+        "三个": 3,
+        "3个": 3,
+        "十个": 10,
+        "10个": 10,
+        "三十个": 30,
+        "30个": 30,
+    }.get(window_match.group(1) if window_match else "")
+    if sessions is not None:
+        occurrence_match = re.search(r"交易日内([三四34])次出现", reason)
+        occurrences = {
+            "三": 3,
+            "3": 3,
+            "四": 4,
+            "4": 4,
+        }.get(occurrence_match.group(1) if occurrence_match else "")
         return DragonTigerTriggerWindow(
             basis=DragonTigerWindowBasis.MARKET_SESSIONS,
-            session_count=3,
-            occurrence_count=None,
+            session_count=sessions,
+            occurrence_count=occurrences,
             start_date=None,
             end_date=trade_date,
         )
@@ -295,6 +389,13 @@ def _trigger_window(reason: str, trade_date: date) -> DragonTigerTriggerWindow:
 
 
 def _amount_period(trigger: DragonTigerTriggerWindow) -> DragonTigerAmountPeriod:
+    if trigger.session_count not in {1, 3}:
+        return DragonTigerAmountPeriod(
+            basis=DragonTigerAmountPeriodBasis.SOURCE_UNSPECIFIED,
+            session_count=None,
+            start_date=None,
+            end_date=None,
+        )
     return DragonTigerAmountPeriod(
         basis=DragonTigerAmountPeriodBasis.MARKET_SESSIONS,
         session_count=trigger.session_count,

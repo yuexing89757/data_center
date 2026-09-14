@@ -169,6 +169,102 @@ def test_adapter_classifies_three_day_reason_without_calendar_guessing() -> None
     assert event.amount_period.basis is DragonTigerAmountPeriodBasis.MARKET_SESSIONS
 
 
+@pytest.mark.parametrize(
+    ("reason", "sessions", "occurrences"),
+    [
+        ("有价格涨跌幅限制的连续10个交易日内收盘价格涨幅偏离值累计达到100%的证券", 10, None),
+        ("有价格涨跌幅限制的连续30个交易日内收盘价格涨幅偏离值累计达到200%的证券", 30, None),
+        ("连续10个交易日内4次出现同正向异常波动的证券", 10, 4),
+    ],
+)
+def test_adapter_maps_verified_long_windows_without_inventing_amount_period(
+    reason: str, sessions: int, occurrences: int | None
+) -> None:
+    responses = _responses()
+    responses["top_list"][0]["reason"] = reason
+    for row in responses["top_inst"]:
+        row["reason"] = reason
+
+    event = (
+        TushareDragonTigerAdapter(FakeClient(responses))
+        .fetch_dragon_tiger(date(2026, 8, 20))
+        .normalization.events[0]
+    )
+
+    assert event.trigger_window.session_count == sessions
+    assert event.trigger_window.occurrence_count == occurrences
+    assert event.amount_period.basis is DragonTigerAmountPeriodBasis.SOURCE_UNSPECIFIED
+    assert event.amount_period.session_count is None
+
+
+def test_adapter_joins_a_unique_source_reason_alias_for_one_symbol() -> None:
+    responses = _responses()
+    responses["top_list"][0]["reason"] = "日价格涨幅偏离值达到12.66%"
+    for row in responses["top_inst"]:
+        row["reason"] = "日涨幅偏离值达到7%的前5只证券"
+
+    result = (
+        TushareDragonTigerAdapter(FakeClient(responses))
+        .fetch_dragon_tiger(date(2026, 8, 20))
+        .normalization
+    )
+
+    assert len(result.events) == 1
+    assert result.events[0].reason_name_raw == "日价格涨幅偏离值达到12.66%"
+    assert any(item.rule_code == "DT_TUSHARE_REASON_ALIAS_JOINED" for item in result.findings)
+
+
+def test_adapter_filters_truncated_duplicate_seat_with_identical_amount_facts() -> None:
+    responses = _responses()
+    original = responses["top_inst"][1]
+    original["exalter"] = "某证券股份有限公司上海证券"
+    for index in range(4):
+        row = dict(original)
+        row["exalter"] = f"卖出营业部{index}"
+        row["sell"] = str(50 + index)
+        responses["top_inst"].append(row)
+    duplicate = dict(original)
+    duplicate["exalter"] = "某证券股份有限公司上海证券营业部"
+    responses["top_inst"].append(duplicate)
+
+    result = (
+        TushareDragonTigerAdapter(FakeClient(responses))
+        .fetch_dragon_tiger(date(2026, 8, 20))
+        .normalization
+    )
+
+    assert len([trade for trade in result.events[0].seat_trades if trade.sell_rank]) == 5
+    assert any(item.rule_code == "DT_SOURCE_DUPLICATE_FILTERED" for item in result.findings)
+
+
+def test_adapter_refetches_details_for_symbols_missing_from_bulk_response() -> None:
+    responses = _responses()
+    second = dict(responses["top_list"][0])
+    second["ts_code"] = "600001.SH"
+    responses["top_list"].append(second)
+
+    class RepairingClient(FakeClient):
+        def query(
+            self, api_name: str, *, params: Mapping[str, str], fields: Sequence[str]
+        ) -> Sequence[Mapping[str, object]]:
+            self.calls.append((api_name, params, fields))
+            if api_name == "top_inst" and params.get("ts_code") == "600001.SH":
+                repaired = []
+                for row in self.responses["top_inst"]:
+                    item = dict(row)
+                    item["ts_code"] = "600001.SH"
+                    repaired.append(item)
+                return repaired
+            return self.responses[api_name]
+
+    client = RepairingClient(responses)
+    batch = TushareDragonTigerAdapter(client).fetch_dragon_tiger(date(2026, 8, 20))
+
+    assert len(batch.normalization.events) == 2
+    assert any(call[1].get("ts_code") == "600001.SH" for call in client.calls)
+    assert any("600001.SH" in row["payload_json"] for row in batch.raw_rows)
+
+
 def test_adapter_keeps_unmatched_detail_in_raw_and_reports_filtered_finding() -> None:
     responses = _responses()
     responses["top_inst"][0]["reason"] = "另一个原因"
