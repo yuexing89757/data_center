@@ -87,13 +87,16 @@ class EastmoneyDragonTigerAdapter:
         probe_rows = list(first_rows)
         event_rows: list[PagedRow] = []
         retrieved_count = 0
-        for event_id in event_ids:
-            payload = self._request_page(report, trade_date, 1, event_id=event_id)
-            rows, event_count, event_pages = _page_rows(payload, 1)
-            if event_pages > 1 or event_count != len(rows) or event_count > 5:
-                raise ProviderError("DT_SOURCE_COUNT_MISMATCH")
-            event_rows.extend(rows)
-            retrieved_count += event_count
+        try:
+            for event_id in event_ids:
+                payload = self._request_page(report, trade_date, 1, event_id=event_id)
+                rows, event_count, event_pages = _page_rows(payload, 1)
+                if event_pages > 1 or event_count != len(rows) or event_count > 5:
+                    raise ProviderError("DT_SOURCE_COUNT_MISMATCH")
+                event_rows.extend(rows)
+                retrieved_count += event_count
+        except ProviderError:
+            return self._fetch_paginated(report, trade_date)
         if retrieved_count != count:
             raise ProviderError("DT_SOURCE_COUNT_MISMATCH")
         return tuple((*probe_rows, *event_rows)), count

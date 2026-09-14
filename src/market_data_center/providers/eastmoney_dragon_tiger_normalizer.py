@@ -382,7 +382,19 @@ def _seat_sort_key(row: SourceRow, side: str) -> tuple[object, ...]:
 
 
 def _is_placeholder_seat_name(name: str) -> bool:
-    return name in {"机构专用", "沪股通专用", "深股通专用", "北向资金专用"}
+    return name in {
+        "机构专用",
+        "沪股通专用",
+        "沪股通",
+        "深股通专用",
+        "深股通投资者",
+        "北向资金专用",
+        "机构",
+        "机构投资者",
+        "自然人",
+        "中小投资者",
+        "其他自然人",
+    }
 
 
 def _stock_symbol(row: SourceRow) -> str | None:

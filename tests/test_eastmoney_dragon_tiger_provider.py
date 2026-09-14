@@ -163,6 +163,24 @@ def test_adapter_uses_reliable_code_even_when_the_name_changed() -> None:
     assert reliable[0].sell_rank == 1
 
 
+def test_adapter_treats_aggregate_investor_codes_as_anonymous() -> None:
+    reports = _reports()
+    reports[BUY_REPORT].extend(
+        [
+            _seat("10000128629", "自然人", "30", None),
+            _seat("10000128629", "中小投资者", "40", None),
+        ]
+    )
+
+    event = _event(_adapter(reports))
+
+    aggregate = [
+        trade for trade in event.seat_trades if trade.seat_name_raw in {"自然人", "中小投资者"}
+    ]
+    assert len(aggregate) == 2
+    assert all(trade.seat_source_key is None for trade in aggregate)
+
+
 def test_adapter_preserves_exact_duplicate_raw_and_filters_the_standard_fact() -> None:
     reports = _reports()
     reports[BUY_REPORT].append(dict(reports[BUY_REPORT][0]))
@@ -228,6 +246,32 @@ def test_adapter_uses_event_filtered_reads_for_multi_page_details() -> None:
         for report, _, source_filter in calls
     )
     assert not any(report == BUY_REPORT and page == 2 for report, page, _ in calls)
+
+
+def test_adapter_falls_back_to_count_checked_pages_when_event_filter_is_unavailable() -> None:
+    calls: list[tuple[str, int, str]] = []
+    reports = _reports()
+
+    def request(url: str, timeout: float) -> Mapping[str, object]:
+        query = parse_qs(urlparse(url).query)
+        report = query["reportName"][0]
+        page = int(query["pageNumber"][0])
+        source_filter = query["filter"][0]
+        calls.append((report, page, source_filter))
+        rows = reports[report]
+        if report == SUMMARY_REPORT:
+            return {"success": True, "result": {"count": 1, "pages": 1, "data": rows}}
+        if "TRADE_ID='event-1'" in source_filter:
+            return {"success": False, "result": None}
+        return {
+            "success": True,
+            "result": {"count": len(rows), "pages": 2, "data": [rows[page - 1]]},
+        }
+
+    batch = EastmoneyDragonTigerAdapter(request).fetch_dragon_tiger(TRADE_DATE)
+
+    assert batch.normalization.events
+    assert any(report == BUY_REPORT and page == 2 for report, page, _ in calls)
 
 
 def test_adapter_rejects_event_filtered_details_when_declared_total_is_not_retrieved() -> None:
