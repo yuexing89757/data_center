@@ -1,10 +1,14 @@
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
+from market_data_center.domain.hot_money import HotMoneyActor
 from market_data_center.hot_money_catalog_service import (
+    HotMoneyCatalog,
     HotMoneyCatalogService,
     load_hot_money_catalog,
+    write_hot_money_catalog,
 )
 
 
@@ -69,3 +73,17 @@ def test_catalog_execute_publishes_complete_candidate(tmp_path: Path) -> None:
     HotMoneyCatalogService(persistence).sync(catalog, dry_run=False)
 
     assert persistence.calls == [catalog]
+
+
+def test_hot_money_catalog_write_round_trips(tmp_path: Path) -> None:
+    catalog = HotMoneyCatalog(
+        "tushare-hm-20260914-v1",
+        datetime(2026, 9, 14, 15, tzinfo=UTC),
+        (HotMoneyActor("HM_ALPHA", "游资甲", ()),),
+        (),
+    )
+    path = tmp_path / "catalog.json"
+
+    write_hot_money_catalog(catalog, path)
+
+    assert load_hot_money_catalog(path) == catalog

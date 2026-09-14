@@ -1,8 +1,11 @@
 """Atomic PostgreSQL publication of the reviewed hot-money catalog."""
 
+from datetime import date
+
 from sqlalchemy import Engine, text
 
 from market_data_center.hot_money_catalog_service import HotMoneyCatalog
+from market_data_center.hot_money_tushare_catalog import StableSeatTradeFact
 
 
 class PostgreSQLHotMoneyPersistence:
@@ -68,3 +71,28 @@ from billboard.hot_money_actor where actor_code=:actor_code
                         "catalog_version": mapping.catalog_version,
                     },
                 )
+
+    def load_matchable_seat_facts(
+        self, start_date: date, end_date: date
+    ) -> tuple[StableSeatTradeFact, ...]:
+        with self._engine.connect() as connection:
+            rows = connection.execute(
+                text("""
+select distinct trade_date,symbol,buy_amount,sell_amount,seat_id
+from billboard.seat_trade
+where trade_date between :start_date and :end_date
+  and seat_id is not null
+order by trade_date,symbol,buy_amount nulls first,sell_amount nulls first,seat_id
+"""),
+                {"start_date": start_date, "end_date": end_date},
+            )
+            return tuple(
+                StableSeatTradeFact(
+                    row.trade_date,
+                    row.symbol,
+                    row.buy_amount,
+                    row.sell_amount,
+                    row.seat_id,
+                )
+                for row in rows
+            )

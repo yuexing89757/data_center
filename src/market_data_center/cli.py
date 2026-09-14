@@ -41,6 +41,11 @@ from market_data_center.dragon_tiger_service import (
 from market_data_center.hot_money_catalog_service import (
     HotMoneyCatalogService,
     load_hot_money_catalog,
+    write_hot_money_catalog,
+)
+from market_data_center.hot_money_tushare_catalog import (
+    TushareHotMoneyCatalogSource,
+    build_reviewed_hot_money_catalog,
 )
 from market_data_center.operations_service import WorkflowExecution, WorkflowExecutionService
 from market_data_center.persistence import (
@@ -130,6 +135,9 @@ def main() -> None:
         return
     if args.dataset == "hot-money-catalog-sync":
         _run_hot_money_catalog_command(args)
+        return
+    if args.dataset == "hot-money-catalog-build":
+        _run_hot_money_catalog_build_command(args)
         return
     settings = WorkerSettings()  # type: ignore[call-arg]
     engine = create_engine(
@@ -1235,6 +1243,75 @@ def _validate_hot_money_catalog_args(args: Namespace) -> bool:
     return bool(args.dry_run)
 
 
+def _validate_hot_money_catalog_build_args(args: Namespace) -> tuple[date, date]:
+    if not args.confirm_tushare_source_terms_reviewed:
+        raise ValueError("Tushare source terms review confirmation is required")
+    start_date = date.fromisoformat(args.start_date)
+    end_date = date.fromisoformat(args.end_date)
+    if start_date > end_date:
+        raise ValueError("start_date must not follow end_date")
+    if (end_date - start_date).days > 729:
+        raise ValueError("hot-money catalog range is bounded to 730 calendar days")
+    return start_date, end_date
+
+
+def _run_hot_money_catalog_build_command(args: Namespace) -> None:
+    from market_data_center.providers.tushare import TushareHttpClient
+
+    start_date, end_date = _validate_hot_money_catalog_build_args(args)
+    worker_settings = WorkerSettings()  # type: ignore[call-arg]
+    tushare_settings = TushareSettings()  # type: ignore[call-arg]
+    engine = create_engine(
+        sqlalchemy_url(worker_settings.database_url.get_secret_value()), pool_pre_ping=True
+    )
+    try:
+        source = TushareHotMoneyCatalogSource(
+            TushareHttpClient(
+                tushare_settings.tushare_token.get_secret_value(),
+                endpoint=tushare_settings.tushare_endpoint,
+            )
+        )
+        persistence = PostgreSQLHotMoneyPersistence(engine)
+        result = build_reviewed_hot_money_catalog(
+            source.fetch_roster(),
+            source.fetch_details(start_date, end_date),
+            persistence.load_matchable_seat_facts(start_date, end_date),
+            catalog_version=args.catalog_version,
+            reviewed_at=datetime.now(SHANGHAI_TIME_ZONE),
+        )
+        write_hot_money_catalog(result.catalog, Path(args.output))
+        print(
+            dumps(
+                {
+                    "catalog_version": result.catalog.catalog_version,
+                    "actor_count": len(result.catalog.actors),
+                    "mapping_count": result.matched_mapping_count,
+                    "unmatched_detail_count": result.unmatched_detail_count,
+                    "ambiguous_detail_count": result.ambiguous_detail_count,
+                    "conflicting_seat_count": result.conflicting_seat_count,
+                    "conflicting_organization_count": result.conflicting_organization_count,
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+        )
+    except Exception as error:
+        print(
+            dumps(
+                {
+                    "status": "failed",
+                    "operation": args.dataset,
+                    "error_type": type(error).__name__,
+                },
+                sort_keys=True,
+            ),
+            file=stderr,
+        )
+        raise SystemExit(1) from None
+    finally:
+        engine.dispose()
+
+
 def _run_hot_money_catalog_command(args: Namespace) -> None:
     settings = WorkerSettings()  # type: ignore[call-arg]
     engine = create_engine(
@@ -1389,6 +1466,19 @@ def _parser() -> ArgumentParser:
     catalog_mode.add_argument("--dry-run", action="store_true")
     catalog_mode.add_argument("--execute", action="store_true")
     catalog.add_argument("--confirm", action="store_true")
+    catalog_build = subparsers.add_parser(
+        "hot-money-catalog-build",
+        help="build a reviewed hot-money catalog from exact Tushare transaction matches",
+    )
+    catalog_build.add_argument("--start-date", required=True)
+    catalog_build.add_argument("--end-date", required=True)
+    catalog_build.add_argument("--catalog-version", required=True)
+    catalog_build.add_argument("--output", required=True)
+    catalog_build.add_argument(
+        "--confirm-tushare-source-terms-reviewed",
+        action="store_true",
+        help="confirm source-rights review before explicit catalog construction",
+    )
     subparsers.add_parser("security", help="synchronize the security master")
     subparsers.add_parser("security-bse", help="synchronize Tushare BSE L/D/P security master")
 

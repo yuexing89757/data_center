@@ -76,6 +76,40 @@ def load_hot_money_catalog(path: Path) -> HotMoneyCatalog:
     return HotMoneyCatalog(version, reviewed_at, actors, mappings)
 
 
+def write_hot_money_catalog(catalog: HotMoneyCatalog, path: Path) -> None:
+    document = {
+        "catalog_version": catalog.catalog_version,
+        "reviewed_at": catalog.reviewed_at.isoformat() if catalog.reviewed_at else None,
+        "actors": [
+            {
+                "actor_code": actor.actor_code,
+                "canonical_name": actor.canonical_name,
+                "aliases": list(actor.aliases),
+                "is_active": actor.is_active,
+            }
+            for actor in catalog.actors
+        ],
+        "mappings": [
+            {
+                "actor_code": mapping.actor_code,
+                "seat_id": str(mapping.seat_id),
+                "source_alias_name": mapping.source_alias_name,
+                "valid_from": (
+                    mapping.valid_from.isoformat() if mapping.valid_from is not None else None
+                ),
+                "valid_to": mapping.valid_to.isoformat() if mapping.valid_to is not None else None,
+                "evidence_note": mapping.evidence_note,
+                "review_status": mapping.review_status.value,
+            }
+            for mapping in catalog.mappings
+        ],
+    }
+    path.write_text(
+        json.dumps(document, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
 def _mapping(
     row: Mapping[str, object], *, version: str, catalog_reviewed_at: datetime | None
 ) -> HotMoneySeatMapping:

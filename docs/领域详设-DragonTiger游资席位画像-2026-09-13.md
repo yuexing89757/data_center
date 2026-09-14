@@ -59,8 +59,13 @@ Tushare 缺失日期独立修复 -> Raw ──┘                 │
 `APPROVED` 映射必须失败。只有 `APPROVED` 且交易日在有效期内的记录参与公共查询。清单以仓库内
 版本化数据文件维护，由显式同步命令校验后写入；不开放远程修改 API。
 
-Tushare 只有席位名称时不自动创建 `seat_id`。人工清单可以把一个明确的 Tushare 来源别名映射到
-已有稳定席位，并以有效期和证据记录该判断；泛化“机构专用”等名称禁止映射为游资。
+Tushare 只有席位名称时不自动创建 `seat_id`。`hm_list` 提供游资名录及其来源机构关系；`hm_detail`
+提供逐日股票、买入额和卖出额证据。金额按已验证的来源披露精度四舍五入到 100 元；只有
+`(trade_date, symbol, buy_amount, sell_amount)` 与现有 `SeatTrade` 中带稳定 `seat_id` 的事实在该
+精度上精确且唯一匹配时，才可为该关系生成审核通过的候选映射。
+简称或相似名称不参与匹配；无匹配、多候选、同一来源机构落到多个席位或同一席位落到多个游资时
+跳过并记录计数。候选清单写入仓库接受版本审查后，才由显式同步命令原子发布；泛化“机构专用”等
+名称仍禁止映射为游资。
 
 ## 4. 席位收益和画像
 
@@ -88,6 +93,8 @@ win_h = return_h > 0
 
 - `dragon_tiger_history_repair`：显式 CLI，接受有界日期范围、dry-run 和执行确认；逐交易日提交。
 - `hot_money_catalog_sync`：显式 CLI，读取版本化清单，先校验再原子发布，不进入每日调度。
+- `hot_money_catalog_build`：显式 CLI，按月读取不超过 730 个自然日的 `hm_list` / `hm_detail`，仅以
+  精确唯一的交易事实匹配生成候选 JSON；不直接写数据库、不进入每日调度。
 - `dragon_tiger_seat_profile_daily`：Worker 代码任务，交易日收盘且所需日线可用后运行；幂等重算当日
   画像，失败可重试且不影响 DragonTiger 原始采集。
 

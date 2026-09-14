@@ -15,6 +15,7 @@ from market_data_center.cli import (
     _validate_dragon_tiger_args,
     _validate_dragon_tiger_recovery_args,
     _validate_hot_money_catalog_args,
+    _validate_hot_money_catalog_build_args,
     run_daily_workflow,
     run_stock_daily_indicator_workflow,
 )
@@ -85,6 +86,52 @@ def test_hot_money_catalog_sync_requires_execute_confirmation() -> None:
     with pytest.raises(ValueError, match="confirmation"):
         _validate_hot_money_catalog_args(execute)
     assert _validate_hot_money_catalog_args(confirmed) is False
+
+
+def test_hot_money_catalog_build_requires_source_review_and_bounded_range() -> None:
+    args = _parser().parse_args(
+        [
+            "hot-money-catalog-build",
+            "--start-date",
+            "2024-09-15",
+            "--end-date",
+            "2026-09-14",
+            "--catalog-version",
+            "tushare-hm-20260914-v1",
+            "--output",
+            "catalog.json",
+            "--confirm-tushare-source-terms-reviewed",
+        ]
+    )
+
+    assert _validate_hot_money_catalog_build_args(args) == (
+        date(2024, 9, 15),
+        date(2026, 9, 14),
+    )
+
+    args.confirm_tushare_source_terms_reviewed = False
+    with pytest.raises(ValueError, match="source terms"):
+        _validate_hot_money_catalog_build_args(args)
+
+
+def test_hot_money_catalog_build_rejects_more_than_730_days() -> None:
+    args = _parser().parse_args(
+        [
+            "hot-money-catalog-build",
+            "--start-date",
+            "2024-09-14",
+            "--end-date",
+            "2026-09-14",
+            "--catalog-version",
+            "v1",
+            "--output",
+            "catalog.json",
+            "--confirm-tushare-source-terms-reviewed",
+        ]
+    )
+
+    with pytest.raises(ValueError, match="730"):
+        _validate_hot_money_catalog_build_args(args)
 
 
 def test_dragon_tiger_cli_accepts_exact_date_or_complete_range() -> None:
