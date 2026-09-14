@@ -1,6 +1,2249 @@
 {
-  "catalog_version": "v1",
-  "reviewed_at": null,
-  "actors": [],
-  "mappings": []
+  "actors": [
+    {
+      "actor_code": "HM_F13A4EA5446B",
+      "aliases": [],
+      "canonical_name": "92科比",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_744700AB932B",
+      "aliases": [],
+      "canonical_name": "Asking",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_1FC058F172BC",
+      "aliases": [],
+      "canonical_name": "N周二",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_81490349E9C4",
+      "aliases": [],
+      "canonical_name": "T王",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_D98FF8497933",
+      "aliases": [],
+      "canonical_name": "bike770",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_1E8C43B97C06",
+      "aliases": [],
+      "canonical_name": "zhouyu1933",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_7D4DEC0CFC2B",
+      "aliases": [],
+      "canonical_name": "一瞬流光",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_06AC57C65334",
+      "aliases": [],
+      "canonical_name": "三板组",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_6D5476595772",
+      "aliases": [],
+      "canonical_name": "上塘路",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_DA2F84657D82",
+      "aliases": [],
+      "canonical_name": "上海溧阳路",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_86F2BF5A0071",
+      "aliases": [],
+      "canonical_name": "上海超短帮",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_335AB1390A1C",
+      "aliases": [],
+      "canonical_name": "中信总部",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_DEE572809F5D",
+      "aliases": [],
+      "canonical_name": "中山东路",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_35628AEEB3A9",
+      "aliases": [],
+      "canonical_name": "乔帮主",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_736D2297EEC4",
+      "aliases": [],
+      "canonical_name": "交易猿",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_0A8D5125C67D",
+      "aliases": [],
+      "canonical_name": "交易者单骑",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_D2234AB16004",
+      "aliases": [],
+      "canonical_name": "低位挖掘",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_61F0BB406B6E",
+      "aliases": [],
+      "canonical_name": "余哥",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_F6932B125BF0",
+      "aliases": [],
+      "canonical_name": "佛山系",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_D514E52A7EDB",
+      "aliases": [],
+      "canonical_name": "作手新一",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_483DC54F2C67",
+      "aliases": [],
+      "canonical_name": "六一路",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_1B82D8EF3E0A",
+      "aliases": [],
+      "canonical_name": "列夫",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_957992E844A4",
+      "aliases": [],
+      "canonical_name": "北京中关村",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_C4402230DBDE",
+      "aliases": [],
+      "canonical_name": "北京帮",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_B5801963452D",
+      "aliases": [],
+      "canonical_name": "北京炒家",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_09C776B56AC8",
+      "aliases": [],
+      "canonical_name": "华鑫宁波分",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_8BAAF146CFB5",
+      "aliases": [],
+      "canonical_name": "南京帮",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_0F8DDC6CEA20",
+      "aliases": [],
+      "canonical_name": "原六一中路",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_82CD1BE9E06F",
+      "aliases": [],
+      "canonical_name": "古北路",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_4B7CC5C92371",
+      "aliases": [],
+      "canonical_name": "叶庆均",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_453BDCCF728D",
+      "aliases": [],
+      "canonical_name": "呼家楼",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_53A3FFF636B0",
+      "aliases": [],
+      "canonical_name": "和平路",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_3ACF25CDE1D3",
+      "aliases": [],
+      "canonical_name": "境外机构",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_3D98D5523873",
+      "aliases": [],
+      "canonical_name": "大小说家",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_31C00A0D4760",
+      "aliases": [],
+      "canonical_name": "天童南路",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_55411C5B5B7D",
+      "aliases": [],
+      "canonical_name": "孙哥",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_4EBF58DFCED1",
+      "aliases": [],
+      "canonical_name": "宁波和源路",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_2093CC6EC08F",
+      "aliases": [],
+      "canonical_name": "宁波桑田路",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_6C81C569E51E",
+      "aliases": [],
+      "canonical_name": "宁波解放南",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_167AB2F34B71",
+      "aliases": [],
+      "canonical_name": "小棉袄",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_4B34E95E3B3D",
+      "aliases": [],
+      "canonical_name": "小睿睿",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_DE37BBFFA071",
+      "aliases": [],
+      "canonical_name": "小鳄鱼",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_EA90D495CE3C",
+      "aliases": [],
+      "canonical_name": "屠文斌",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_31D88B46AB42",
+      "aliases": [],
+      "canonical_name": "山东帮",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_CE0F5618DC60",
+      "aliases": [],
+      "canonical_name": "广东帮",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_400111A4CF83",
+      "aliases": [],
+      "canonical_name": "徐晓",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_D3D456BF4C49",
+      "aliases": [],
+      "canonical_name": "徐留胜",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_E39A9C1FC6C9",
+      "aliases": [],
+      "canonical_name": "思明南路",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_658D0A95D5E2",
+      "aliases": [],
+      "canonical_name": "成泉系",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_D192BFA9F179",
+      "aliases": [],
+      "canonical_name": "成都系",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_999AE9AAF869",
+      "aliases": [],
+      "canonical_name": "招商深南东",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_D5B757C69EBE",
+      "aliases": [],
+      "canonical_name": "撬板王",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_423D154613D3",
+      "aliases": [],
+      "canonical_name": "敢死队",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_5EBF39CA1AD4",
+      "aliases": [],
+      "canonical_name": "新生代",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_D5118EAED49B",
+      "aliases": [],
+      "canonical_name": "方新侠",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_AB3D53F9B85B",
+      "aliases": [],
+      "canonical_name": "曲江池",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_2F68E094FFB1",
+      "aliases": [],
+      "canonical_name": "机构专用",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_0C9DB22EBE62",
+      "aliases": [],
+      "canonical_name": "杭州帮",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_020FFE517CA4",
+      "aliases": [],
+      "canonical_name": "校长",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_8D1ACDEB87FF",
+      "aliases": [],
+      "canonical_name": "欢乐海岸",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_1AF6FFD974A7",
+      "aliases": [],
+      "canonical_name": "歌神",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_474CAE93D112",
+      "aliases": [],
+      "canonical_name": "正经哥",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_38CEC9B68AEF",
+      "aliases": [],
+      "canonical_name": "毛老板",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_C2BFBBD13D36",
+      "aliases": [],
+      "canonical_name": "沪股通专用",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_CDC6EA7C7CD4",
+      "aliases": [],
+      "canonical_name": "流沙河",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_7F3B8052E6B0",
+      "aliases": [],
+      "canonical_name": "浙江帮",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_89D231C48A2E",
+      "aliases": [],
+      "canonical_name": "涅盘重升",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_B011E450A324",
+      "aliases": [],
+      "canonical_name": "消闲派",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_0A72D8499AE9",
+      "aliases": [],
+      "canonical_name": "涪陵广场路",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_BF2A73CE2487",
+      "aliases": [],
+      "canonical_name": "深圳帮",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_B574BF06C676",
+      "aliases": [],
+      "canonical_name": "深股通专用",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_F8205EB4F965",
+      "aliases": [],
+      "canonical_name": "温州帮",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_7B003160C09A",
+      "aliases": [],
+      "canonical_name": "湖州劳动路",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_8970AD64CBBA",
+      "aliases": [],
+      "canonical_name": "湖滨四季",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_9889B64E3425",
+      "aliases": [],
+      "canonical_name": "湖里大道",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_18874687F92B",
+      "aliases": [],
+      "canonical_name": "炒新一族",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_42DEAF2615E5",
+      "aliases": [],
+      "canonical_name": "炒股养家",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_3A7493659D29",
+      "aliases": [],
+      "canonical_name": "牛散唐汉若",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_2066CF14EFB7",
+      "aliases": [],
+      "canonical_name": "牛散朱彬",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_F6441D89CA65",
+      "aliases": [],
+      "canonical_name": "独股一剑",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_CC76195B456E",
+      "aliases": [],
+      "canonical_name": "玉兰路",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_04A5F984698B",
+      "aliases": [],
+      "canonical_name": "王海祥",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_64C83FFB708C",
+      "aliases": [],
+      "canonical_name": "瑞鹤仙",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_452C0DAD322E",
+      "aliases": [],
+      "canonical_name": "申港广东分",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_940EB09CA6CC",
+      "aliases": [],
+      "canonical_name": "益田路",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_8B0B06D756D0",
+      "aliases": [],
+      "canonical_name": "真爱坤",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_88BA14272B3D",
+      "aliases": [],
+      "canonical_name": "秋千",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_CC60BD77CA33",
+      "aliases": [],
+      "canonical_name": "竞价抢筹",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_42AE258C8855",
+      "aliases": [],
+      "canonical_name": "章盟主",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_5D3AC2591CFE",
+      "aliases": [],
+      "canonical_name": "粉葛",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_AB14CF79BE06",
+      "aliases": [],
+      "canonical_name": "紫阳东路",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_41830D03FBAD",
+      "aliases": [],
+      "canonical_name": "红岭路",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_9DA9E35CD5F2",
+      "aliases": [],
+      "canonical_name": "花呗哥",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_CE2CBB79C550",
+      "aliases": [],
+      "canonical_name": "苏南帮",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_640F23A21220",
+      "aliases": [],
+      "canonical_name": "苏州帮",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_9C68D56B46D6",
+      "aliases": [],
+      "canonical_name": "落升(江南神鹰)",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_D5500677B214",
+      "aliases": [],
+      "canonical_name": "著名刺客",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_5AF22E05C5EA",
+      "aliases": [],
+      "canonical_name": "葛卫东",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_523918625105",
+      "aliases": [],
+      "canonical_name": "西安西大街",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_DC3680D17B8E",
+      "aliases": [],
+      "canonical_name": "西湖国贸",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_FB91266C9D56",
+      "aliases": [],
+      "canonical_name": "赵老哥",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_7C6D4C313583",
+      "aliases": [],
+      "canonical_name": "越王大道",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_3D609CEC5603",
+      "aliases": [],
+      "canonical_name": "轮回666",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_342B3683DF6D",
+      "aliases": [],
+      "canonical_name": "量化基金",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_9E462D0A1AD4",
+      "aliases": [],
+      "canonical_name": "量化打板",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_CA9731D1D11A",
+      "aliases": [],
+      "canonical_name": "量化抢筹",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_9F3A35B34755",
+      "aliases": [],
+      "canonical_name": "金开大道",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_DC790D25BDE2",
+      "aliases": [],
+      "canonical_name": "金田路",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_EDD10A04D16B",
+      "aliases": [],
+      "canonical_name": "鑫多多",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_D2E8B3274803",
+      "aliases": [],
+      "canonical_name": "陈小群",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_4245E8BCDE0B",
+      "aliases": [],
+      "canonical_name": "隐秀路",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_248103605141",
+      "aliases": [],
+      "canonical_name": "飞云江路",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_707D604000F2",
+      "aliases": [],
+      "canonical_name": "首板挖掘",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_5C479202F8D6",
+      "aliases": [],
+      "canonical_name": "骑牛",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_CFF91C8F9002",
+      "aliases": [],
+      "canonical_name": "高毅邻山",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_016F53E66730",
+      "aliases": [],
+      "canonical_name": "高送转专家",
+      "is_active": true
+    },
+    {
+      "actor_code": "HM_41759A37B0AE",
+      "aliases": [],
+      "canonical_name": "龙飞虎",
+      "is_active": true
+    }
+  ],
+  "catalog_version": "tushare-hm-20260914-v1",
+  "mappings": [
+    {
+      "actor_code": "HM_744700AB932B",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-09-07; last=2026-09-07; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "888d61bb-67ec-48af-9bb5-857ad2f54429",
+      "source_alias_name": "兴业证券福州湖东路",
+      "valid_from": "2026-09-07",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_1FC058F172BC",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=7; first=2026-08-04; last=2026-08-31; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "5424bb92-fdb6-4be0-973c-3a0bdde4c912",
+      "source_alias_name": "中信证券杭州凤起路",
+      "valid_from": "2026-08-04",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_81490349E9C4",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=147; first=2026-08-03; last=2026-09-11; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "23c51bab-edd5-4876-8577-77e11af7373c",
+      "source_alias_name": "东方财富证券拉萨东环路第二",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_81490349E9C4",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=2; first=2026-08-07; last=2026-08-24; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "2dc7ad43-aacb-435c-83a6-7bdc28e8083b",
+      "source_alias_name": "国金证券上海奉贤区金碧路",
+      "valid_from": "2026-08-07",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_81490349E9C4",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=48; first=2026-08-03; last=2026-09-11; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "3159cab1-dbcf-40f9-885b-28de8f07a81a",
+      "source_alias_name": "东方财富证券拉萨团结路第二",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_81490349E9C4",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=58; first=2026-08-03; last=2026-09-11; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "8076015f-c6a6-4584-b7f6-651bd7ef9940",
+      "source_alias_name": "东方财富证券拉萨东环路第一",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_81490349E9C4",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=100; first=2026-08-03; last=2026-09-11; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "91efc9f9-0d48-4a0c-bcc7-17e6a4a65e17",
+      "source_alias_name": "东方财富证券拉萨团结路第一",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_81490349E9C4",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=57; first=2026-08-03; last=2026-09-11; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "a8c68a3f-e44b-4df0-80d4-9db0d0ff106e",
+      "source_alias_name": "东方财富证券山南香曲东路",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_81490349E9C4",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=190; first=2026-08-03; last=2026-09-11; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "ae1f1248-2c50-457b-b204-a63e9c76a99b",
+      "source_alias_name": "东方财富证券拉萨金融城南环路",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_81490349E9C4",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-09-10; last=2026-09-10; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "ba1632f8-344f-49ba-90d0-fb0329478517",
+      "source_alias_name": "国金证券上海互联网证券分公司",
+      "valid_from": "2026-09-10",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_81490349E9C4",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=21; first=2026-08-04; last=2026-09-11; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "baeb30ed-3df3-4ba1-9983-5da192502774",
+      "source_alias_name": "东方财富证券拉萨东城区江苏大道",
+      "valid_from": "2026-08-04",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_06AC57C65334",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-11; last=2026-08-11; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "115d672d-53df-494a-a0ae-8bef39a9f2ca",
+      "source_alias_name": "南京证券温州市府路",
+      "valid_from": "2026-08-11",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_06AC57C65334",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-07; last=2026-08-07; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "491ee104-b468-4974-8f4b-088a649976ed",
+      "source_alias_name": "华鑫证券杭州分公司",
+      "valid_from": "2026-08-07",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_06AC57C65334",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=2; first=2026-08-19; last=2026-08-31; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "8b05f8cf-7359-47d4-a0ff-afb2225f1345",
+      "source_alias_name": "华鑫证券上海源深路",
+      "valid_from": "2026-08-19",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_06AC57C65334",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-09-01; last=2026-09-01; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "d532bb2e-3040-47c9-a550-6a2879d8b126",
+      "source_alias_name": "招商证券深圳建安路",
+      "valid_from": "2026-09-01",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_06AC57C65334",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=3; first=2026-08-03; last=2026-08-26; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "e18ac061-6480-4415-a8ab-d5ceeb9038bf",
+      "source_alias_name": "华鑫证券深圳益田路",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_6D5476595772",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=3; first=2026-08-24; last=2026-09-04; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "576c0909-9d41-4f11-9208-48cc0cac6855",
+      "source_alias_name": "联储证券浙江分公司",
+      "valid_from": "2026-08-24",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_86F2BF5A0071",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=34; first=2026-08-03; last=2026-09-11; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "04919120-7643-4a79-9ed9-4d13eb118118",
+      "source_alias_name": "国泰海通证券上海静安区新闸路",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_DEE572809F5D",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=13; first=2026-08-03; last=2026-09-11; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "2737f6d6-a30b-46ed-a25d-991b414e31d8",
+      "source_alias_name": "国泰海通证券上海松江区中山东路",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_D2234AB16004",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=2; first=2026-08-14; last=2026-09-07; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "064c5ed2-1216-40e1-abf3-02433bd99ac7",
+      "source_alias_name": "东吴证券苏州石路",
+      "valid_from": "2026-08-14",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_D2234AB16004",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-14; last=2026-08-14; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "102183f1-4d47-4332-a349-1925869ff633",
+      "source_alias_name": "东莞证券浙江分公司",
+      "valid_from": "2026-08-14",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_D2234AB16004",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=2; first=2026-08-31; last=2026-09-01; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "2b2dfd92-6d34-4f00-aab2-825cf92451c4",
+      "source_alias_name": "东莞证券北京分公司",
+      "valid_from": "2026-08-31",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_D2234AB16004",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=6; first=2026-08-03; last=2026-09-09; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "376f5093-428b-4d10-8cd5-ca9f36ff0a54",
+      "source_alias_name": "东方财富证券江苏分公司",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_D2234AB16004",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=3; first=2026-09-03; last=2026-09-07; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "56c4fc4c-4d78-4b43-a46f-a73c0301d8b1",
+      "source_alias_name": "兴业证券深圳分公司",
+      "valid_from": "2026-09-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_D2234AB16004",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=2; first=2026-09-04; last=2026-09-07; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "5903a699-db9e-4515-beab-7d0f921fd61d",
+      "source_alias_name": "兴业证券厦门穆厝路",
+      "valid_from": "2026-09-04",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_D2234AB16004",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=3; first=2026-08-17; last=2026-09-07; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "729e8674-5e93-42d5-98e0-f2e584eb212a",
+      "source_alias_name": "东莞证券厦门分公司",
+      "valid_from": "2026-08-17",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_D2234AB16004",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=5; first=2026-08-03; last=2026-09-09; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "7fb3790d-fa9d-4c0c-ab24-777afde3f338",
+      "source_alias_name": "华鑫证券佛山南海海五路",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_D2234AB16004",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=8; first=2026-08-03; last=2026-09-10; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "9bf44af4-7f30-4377-a4d3-d2af9520d7f7",
+      "source_alias_name": "东莞证券四川分公司",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_D2234AB16004",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-09-08; last=2026-09-08; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "a9f32429-20c4-4e3c-980b-3e5eff3991e8",
+      "source_alias_name": "东莞证券北京西城太平街",
+      "valid_from": "2026-09-08",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_D2234AB16004",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=6; first=2026-08-03; last=2026-09-09; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "c07f2cd3-9dd9-4f85-b368-50d89c4bd49d",
+      "source_alias_name": "华鑫证券上海东大名路",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_D2234AB16004",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=2; first=2026-08-17; last=2026-08-24; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "ed199541-5855-430c-919c-842920990660",
+      "source_alias_name": "国融证券青岛分公司",
+      "valid_from": "2026-08-17",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_D2234AB16004",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=3; first=2026-09-09; last=2026-09-10; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "ed213020-e293-433d-a1da-09985b3be9be",
+      "source_alias_name": "华福证券福州湖东路",
+      "valid_from": "2026-09-09",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_61F0BB406B6E",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-07; last=2026-08-07; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "9e740a54-f3f0-4a82-8ce7-f55ff84a6997",
+      "source_alias_name": "甬兴证券四川分公司",
+      "valid_from": "2026-08-07",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_F6932B125BF0",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-19; last=2026-08-19; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "68f93252-970a-478d-93a7-9c10873bff1b",
+      "source_alias_name": "长江证券佛山普澜二路",
+      "valid_from": "2026-08-19",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_F6932B125BF0",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=9; first=2026-08-14; last=2026-09-10; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "d766d366-c476-47d5-89f7-d53d7bdaa65e",
+      "source_alias_name": "国泰海通证券三亚迎宾路",
+      "valid_from": "2026-08-14",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_F6932B125BF0",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-09-10; last=2026-09-10; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "ef94962b-9973-46ea-9a3d-3ebe7ac0c858",
+      "source_alias_name": "华泰证券广州兴民路",
+      "valid_from": "2026-09-10",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_D514E52A7EDB",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=28; first=2026-08-03; last=2026-09-11; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "ac4db7d2-b227-4808-a216-584e73a8c96d",
+      "source_alias_name": "国泰海通证券南京太平南路",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_957992E844A4",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=19; first=2026-08-10; last=2026-09-11; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "52c49cc0-5d0f-4fd9-a091-280316b85320",
+      "source_alias_name": "中国银河证券北京中关村大街",
+      "valid_from": "2026-08-10",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_C4402230DBDE",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-27; last=2026-08-27; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "8c2797d0-af9b-45ae-88b4-7dba6da38e31",
+      "source_alias_name": "招商证券北京车公庄西路",
+      "valid_from": "2026-08-27",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_09C776B56AC8",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-26; last=2026-08-26; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "f373f84a-0633-4a0b-b00d-a71e94be00a1",
+      "source_alias_name": "华鑫证券宁波分公司",
+      "valid_from": "2026-08-26",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_8BAAF146CFB5",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-17; last=2026-08-17; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "88cf6c97-cd5a-4d7c-8163-b65df2f0871d",
+      "source_alias_name": "华泰证券宁波柳汀街",
+      "valid_from": "2026-08-17",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_0F8DDC6CEA20",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-14; last=2026-08-14; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "6d9b4bf5-7c0e-4552-84f5-db9b96cc715d",
+      "source_alias_name": "东北证券武汉香港路",
+      "valid_from": "2026-08-14",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_453BDCCF728D",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=31; first=2026-08-03; last=2026-09-11; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "0d92112b-dbc2-4273-a77a-092f496f6d9e",
+      "source_alias_name": "中信建投证券北京东城分公司",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_453BDCCF728D",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=2; first=2026-08-19; last=2026-09-11; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "b34f34e2-23a0-493a-87ce-4c357d531a67",
+      "source_alias_name": "中信证券北京总部",
+      "valid_from": "2026-08-19",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_453BDCCF728D",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-26; last=2026-08-26; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "cf0ddb26-893d-4de2-b823-1341c99a190a",
+      "source_alias_name": "中信建投证券北京朝外大街",
+      "valid_from": "2026-08-26",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_3D98D5523873",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=4; first=2026-08-04; last=2026-08-14; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "6b32ef62-5cb2-474b-9994-318a279b73cf",
+      "source_alias_name": "中信建投证券福州东街",
+      "valid_from": "2026-08-04",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_55411C5B5B7D",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-09-08; last=2026-09-08; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "95ea1ca8-bead-42a7-8d18-632dc3c150e2",
+      "source_alias_name": "中信证券上海溧阳路",
+      "valid_from": "2026-09-08",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_4EBF58DFCED1",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=4; first=2026-08-03; last=2026-09-04; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "f5fa6431-ca4a-4bbf-8a87-57409d92caa5",
+      "source_alias_name": "甬兴证券宁波和源路",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_2093CC6EC08F",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=5; first=2026-08-24; last=2026-09-10; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "06f9aef5-6f80-48eb-8bda-c932c01e96a8",
+      "source_alias_name": "国盛证券宁波桑田路",
+      "valid_from": "2026-08-24",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_167AB2F34B71",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-09-04; last=2026-09-04; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "6fdc9d65-f9c3-4799-8181-12a2b3daa3dd",
+      "source_alias_name": "上海证券上海证券上海分公司",
+      "valid_from": "2026-09-04",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_DE37BBFFA071",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-26; last=2026-08-26; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "79e2a827-6244-4a56-ba0d-4d4c87528009",
+      "source_alias_name": "中国中金财富证券南京龙蟠中路",
+      "valid_from": "2026-08-26",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_EA90D495CE3C",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-09-03; last=2026-09-03; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "c6a6e552-6c86-4d1d-a800-98f72cdf007a",
+      "source_alias_name": "平安证券宁波海晏北路",
+      "valid_from": "2026-09-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_31D88B46AB42",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-10; last=2026-08-10; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "a12bda2a-efeb-4484-ac13-99dd96bf8ef2",
+      "source_alias_name": "华泰证券厦门厦禾路",
+      "valid_from": "2026-08-10",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_31D88B46AB42",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=2; first=2026-09-08; last=2026-09-09; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "bd777d4e-5dff-46be-a5e3-367f9de49fe4",
+      "source_alias_name": "东海证券厦门嘉禾路",
+      "valid_from": "2026-09-08",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_31D88B46AB42",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=3; first=2026-08-11; last=2026-09-09; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "cbd3bf8b-b6c1-4f5b-aaa3-e43339b8cf62",
+      "source_alias_name": "东方证券厦门仙岳路",
+      "valid_from": "2026-08-11",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_31D88B46AB42",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-03; last=2026-08-03; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "fe3e3d96-ca7e-48a2-807c-3e851447d039",
+      "source_alias_name": "中信证券厦门分公司",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_CE0F5618DC60",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-19; last=2026-08-19; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "50766638-2894-4346-80fb-25f571929d17",
+      "source_alias_name": "财通证券温岭中华路",
+      "valid_from": "2026-08-19",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_CE0F5618DC60",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-24; last=2026-08-24; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "d4a19d86-e3cc-488f-8768-518530e6ad92",
+      "source_alias_name": "德邦证券上海岳州路",
+      "valid_from": "2026-08-24",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_D3D456BF4C49",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=5; first=2026-08-19; last=2026-09-10; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "f4b4842c-2e9d-49d2-8aab-0654e033e0b7",
+      "source_alias_name": "华泰证券深圳益田路荣超商务中心",
+      "valid_from": "2026-08-19",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_E39A9C1FC6C9",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=2; first=2026-08-24; last=2026-08-31; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "36b8d9ae-5e10-444d-8215-3ff14797337f",
+      "source_alias_name": "东莞证券湖北分公司",
+      "valid_from": "2026-08-24",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_E39A9C1FC6C9",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=9; first=2026-08-07; last=2026-09-11; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "bb369b71-c0b5-4fed-b63c-e583519176be",
+      "source_alias_name": "东亚前海证券上海分公司",
+      "valid_from": "2026-08-07",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_658D0A95D5E2",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-24; last=2026-08-24; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "bb894b88-1fb2-4381-828c-a72d2988e4c3",
+      "source_alias_name": "中国国际金融北京建国门外大街",
+      "valid_from": "2026-08-24",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_D192BFA9F179",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=20; first=2026-08-03; last=2026-09-09; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "20b920b2-c7e5-45d2-8efb-c8f7d1c9a099",
+      "source_alias_name": "国泰海通证券成都北一环路",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_D192BFA9F179",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-04; last=2026-08-04; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "67fefc21-0ce8-43a0-ada9-c4157bf03fb9",
+      "source_alias_name": "华泰证券成都天府广场",
+      "valid_from": "2026-08-04",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_999AE9AAF869",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-19; last=2026-08-19; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "119a8465-ab14-4774-95d5-ad5b15c93ad4",
+      "source_alias_name": "招商证券深圳深南东路",
+      "valid_from": "2026-08-19",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_423D154613D3",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=7; first=2026-08-04; last=2026-09-10; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "3aac1cb6-8f61-40b2-9110-74cfb2263ae2",
+      "source_alias_name": "平安证券深圳深南东路罗湖商务中心",
+      "valid_from": "2026-08-04",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_423D154613D3",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-19; last=2026-08-19; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "712d3ad2-1fa1-43b5-bee8-d7a6c1099d98",
+      "source_alias_name": "中泰证券上海建国中路",
+      "valid_from": "2026-08-19",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_D5118EAED49B",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=2; first=2026-08-07; last=2026-08-14; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "2456c39e-ac10-4ddd-a549-32bb5bb68d77",
+      "source_alias_name": "中信证券西安朱雀大街",
+      "valid_from": "2026-08-07",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_AB3D53F9B85B",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-04; last=2026-08-04; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "d086bb08-6e0e-43e0-8f87-605b075d6b53",
+      "source_alias_name": "国投证券西安曲江池南路",
+      "valid_from": "2026-08-04",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_0C9DB22EBE62",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-17; last=2026-08-17; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "1dd9dd17-c388-457d-8c6e-bf8f71bb444f",
+      "source_alias_name": "中国银河证券杭州凤起路",
+      "valid_from": "2026-08-17",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_0C9DB22EBE62",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-31; last=2026-08-31; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "8fec0f44-c351-4f1c-8d62-3b69c1f8f4ad",
+      "source_alias_name": "光大证券杭州延安路",
+      "valid_from": "2026-08-31",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_0C9DB22EBE62",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=4; first=2026-08-04; last=2026-09-01; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "b3eb61c4-5168-46d4-b811-f2f3613275d1",
+      "source_alias_name": "中信建投证券杭州庆春路",
+      "valid_from": "2026-08-04",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_8D1ACDEB87FF",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-09-10; last=2026-09-10; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "2b765914-b481-484d-84fc-1735673019c1",
+      "source_alias_name": "中泰证券深圳分公司",
+      "valid_from": "2026-09-10",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_8D1ACDEB87FF",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=8; first=2026-08-03; last=2026-09-09; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "887f385f-ffc2-4b8a-a703-8292acd4b8e2",
+      "source_alias_name": "中信证券深圳分公司",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_8D1ACDEB87FF",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-27; last=2026-08-27; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "9678869f-7332-441d-ac16-d42588aae067",
+      "source_alias_name": "华泰证券深圳分公司",
+      "valid_from": "2026-08-27",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_8D1ACDEB87FF",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=3; first=2026-08-24; last=2026-09-10; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "c011c846-bb50-422d-bc26-9a92ca8155f1",
+      "source_alias_name": "国金证券深圳湾一号",
+      "valid_from": "2026-08-24",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_8D1ACDEB87FF",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-09-11; last=2026-09-11; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "c377489f-bbc2-4eab-8ccc-88fa9c2a3de4",
+      "source_alias_name": "广发证券深圳福华一路",
+      "valid_from": "2026-09-11",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_1AF6FFD974A7",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-17; last=2026-08-17; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "dbeea28f-f909-4565-afee-b2922dfbdd45",
+      "source_alias_name": "中国中金财富证券杭州江河汇",
+      "valid_from": "2026-08-17",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_38CEC9B68AEF",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-19; last=2026-08-19; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "a16cf34b-de1f-431f-a96c-b3c83db4d2f5",
+      "source_alias_name": "广发证券上海浦东新区东方路",
+      "valid_from": "2026-08-19",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_89D231C48A2E",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=2; first=2026-09-07; last=2026-09-09; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "fc96b023-f2ff-4706-b309-f7773dccadda",
+      "source_alias_name": "上海证券苏州人民路",
+      "valid_from": "2026-09-07",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_B011E450A324",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-26; last=2026-08-26; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "df066e58-c5cc-43e2-ac5a-1fd5f40fd33b",
+      "source_alias_name": "国泰海通证券宜昌沿江大道",
+      "valid_from": "2026-08-26",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_F8205EB4F965",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-14; last=2026-08-14; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "048ce0c4-2c39-411c-a070-b19df269e859",
+      "source_alias_name": "平安证券温州市府路",
+      "valid_from": "2026-08-14",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_F8205EB4F965",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-07; last=2026-08-07; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "07c7d358-029b-4347-9ba3-15818e54d05d",
+      "source_alias_name": "招商证券深圳深南大道车公庙",
+      "valid_from": "2026-08-07",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_F8205EB4F965",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=2; first=2026-08-07; last=2026-08-10; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "0a507b46-ee40-43a0-b98f-6103917c22f8",
+      "source_alias_name": "中信建投证券武汉中北路",
+      "valid_from": "2026-08-07",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_F8205EB4F965",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=2; first=2026-08-14; last=2026-08-17; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "0f79b3f3-8a91-4516-9e3d-eb1cf3f18802",
+      "source_alias_name": "国泰海通证券绍兴劳动路",
+      "valid_from": "2026-08-14",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_F8205EB4F965",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-24; last=2026-08-24; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "1036477b-5fe9-4dc1-be7e-35a88bdec884",
+      "source_alias_name": "金元证券浙江分公司",
+      "valid_from": "2026-08-24",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_F8205EB4F965",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=2; first=2026-08-19; last=2026-08-31; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "2400cde2-1100-4624-90bc-cd9626678f8b",
+      "source_alias_name": "平安证券河南分公司",
+      "valid_from": "2026-08-19",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_F8205EB4F965",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-09-10; last=2026-09-10; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "275d9631-6efc-4c75-b419-0e916d4f2511",
+      "source_alias_name": "中信证券乐清金溪路",
+      "valid_from": "2026-09-10",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_F8205EB4F965",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-10; last=2026-08-10; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "3f550d98-9aab-4635-8730-fa451d306f86",
+      "source_alias_name": "中信建投证券慈溪三北西大街",
+      "valid_from": "2026-08-10",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_F8205EB4F965",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=2; first=2026-08-04; last=2026-09-04; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "413b3cf3-1af4-440c-9a30-49f82a62f63b",
+      "source_alias_name": "长城证券广州天河北路",
+      "valid_from": "2026-08-04",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_F8205EB4F965",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-19; last=2026-08-19; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "45e535f8-3717-4daf-a6d8-675b1411a373",
+      "source_alias_name": "申万宏源证券上海杨浦区隆昌路",
+      "valid_from": "2026-08-19",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_F8205EB4F965",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-31; last=2026-08-31; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "6090553a-aac2-405e-a3e6-73a531d5c8a2",
+      "source_alias_name": "中信证券温岭万昌中路",
+      "valid_from": "2026-08-31",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_F8205EB4F965",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-09-09; last=2026-09-09; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "6ac332ec-5c38-4d17-b648-4980a31f7161",
+      "source_alias_name": "平安证券广州华夏路",
+      "valid_from": "2026-09-09",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_F8205EB4F965",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=2; first=2026-09-07; last=2026-09-10; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "6de41265-e987-4553-b004-7b4b4fc0c890",
+      "source_alias_name": "国投证券成都交子大道",
+      "valid_from": "2026-09-07",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_F8205EB4F965",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-03; last=2026-08-03; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "71e7a186-bd8e-482c-b8bf-b4bf248c8a51",
+      "source_alias_name": "华泰证券永嘉阳光大道",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_F8205EB4F965",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-24; last=2026-08-24; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "7287107f-4b06-4f8a-b289-a9d41a51582a",
+      "source_alias_name": "五矿证券杭州中山北路",
+      "valid_from": "2026-08-24",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_F8205EB4F965",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-04; last=2026-08-04; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "8f1aac82-118a-48fc-98ef-f308baacd14b",
+      "source_alias_name": "国泰海通证券上海普陀区大渡河路",
+      "valid_from": "2026-08-04",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_F8205EB4F965",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-03; last=2026-08-03; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "8ffaa595-902e-427a-8650-2d9fd0e3145a",
+      "source_alias_name": "平安证券深圳金田路",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_F8205EB4F965",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=2; first=2026-09-10; last=2026-09-11; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "94ea315f-a45c-47fb-91eb-b660f69eed9e",
+      "source_alias_name": "国泰海通证券顺德大良",
+      "valid_from": "2026-09-10",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_F8205EB4F965",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-09-11; last=2026-09-11; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "a8536f0a-379e-4f99-bcec-3f09e2fcccc7",
+      "source_alias_name": "招商证券上海肇嘉浜路",
+      "valid_from": "2026-09-11",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_F8205EB4F965",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=2; first=2026-08-03; last=2026-08-07; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "aa144262-20cd-4e7f-8918-4dc0afe05f0c",
+      "source_alias_name": "平安证券福州长乐北路",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_F8205EB4F965",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-14; last=2026-08-14; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "b18c15e4-4afc-44f5-aec0-742ca9c31204",
+      "source_alias_name": "招商证券成都人民南路",
+      "valid_from": "2026-08-14",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_F8205EB4F965",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-09-07; last=2026-09-07; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "b95510c4-2a64-47a8-bce3-beca29932e18",
+      "source_alias_name": "国投证券上海黄浦区中山南路",
+      "valid_from": "2026-09-07",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_F8205EB4F965",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-04; last=2026-08-04; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "c040a0fb-9a12-4569-bebc-02bc6b9f0831",
+      "source_alias_name": "平安证券山东分公司",
+      "valid_from": "2026-08-04",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_F8205EB4F965",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-04; last=2026-08-04; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "c34d582e-c6d8-4b7e-a0ee-f72deeaa8cd9",
+      "source_alias_name": "中银国际证券宁波药行街",
+      "valid_from": "2026-08-04",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_F8205EB4F965",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=25; first=2026-08-03; last=2026-09-11; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "c89fecdb-ce33-4119-9b91-d6c6f9dcbee5",
+      "source_alias_name": "平安证券浙江分公司",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_F8205EB4F965",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-19; last=2026-08-19; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "d14c5ef7-8681-4670-9380-5c917d138a23",
+      "source_alias_name": "长江证券台州市府大道",
+      "valid_from": "2026-08-19",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_F8205EB4F965",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-09-07; last=2026-09-07; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "d27b71b6-7687-4f6c-920d-c649bc0881a5",
+      "source_alias_name": "信达证券福建分公司",
+      "valid_from": "2026-09-07",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_F8205EB4F965",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=2; first=2026-08-31; last=2026-09-01; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "da029183-772c-4850-a9b6-901f8fa78416",
+      "source_alias_name": "浙商证券路桥数码街",
+      "valid_from": "2026-08-31",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_F8205EB4F965",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-10; last=2026-08-10; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "e5b0cb87-de2c-4451-be76-7bce46ce1fb1",
+      "source_alias_name": "华泰证券常州和平北路",
+      "valid_from": "2026-08-10",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_F8205EB4F965",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=3; first=2026-08-26; last=2026-09-11; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "ed3377c8-132e-46ca-8a1a-c838bc68e1cd",
+      "source_alias_name": "华泰证券江阴福泰路",
+      "valid_from": "2026-08-26",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_F8205EB4F965",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-26; last=2026-08-26; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "ee13df16-b98c-4e61-b210-f8196c193be8",
+      "source_alias_name": "东兴证券福州五四路",
+      "valid_from": "2026-08-26",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_F8205EB4F965",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-24; last=2026-08-24; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "fcfb8db4-72da-45fd-9a61-85f0efe66eb6",
+      "source_alias_name": "东吴证券常熟商城中路",
+      "valid_from": "2026-08-24",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_9889B64E3425",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=2; first=2026-08-03; last=2026-08-10; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "013ce661-ba30-40b7-ad6b-71f462a156db",
+      "source_alias_name": "国泰海通证券上海闵行区号文路",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_9889B64E3425",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=3; first=2026-08-26; last=2026-09-09; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "40c193ce-2fd2-447e-8198-5b307080c34c",
+      "source_alias_name": "兴业证券厦门湖里大道",
+      "valid_from": "2026-08-26",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_18874687F92B",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=10; first=2026-08-03; last=2026-09-09; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "4076029f-0363-419c-b421-6fde6a0decdb",
+      "source_alias_name": "华泰证券上海武定路",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_18874687F92B",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=4; first=2026-08-03; last=2026-09-08; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "98672d39-089a-4b63-93b0-1d7222237b15",
+      "source_alias_name": "华泰证券上海普陀区江宁路",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_18874687F92B",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=2; first=2026-08-03; last=2026-08-24; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "a49a3551-3d90-435c-9c25-f9d8c489aef4",
+      "source_alias_name": "华泰证券上海静安区广中西路",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_42DEAF2615E5",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=8; first=2026-08-10; last=2026-09-11; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "12dd6e4d-2ec3-49e7-80d3-2e6904d60753",
+      "source_alias_name": "华鑫证券上海茅台路",
+      "valid_from": "2026-08-10",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_42DEAF2615E5",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-07; last=2026-08-07; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "43816cd6-3bff-42fd-bb65-aa016b0fe638",
+      "source_alias_name": "浙商证券绍兴解放北路",
+      "valid_from": "2026-08-07",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_42DEAF2615E5",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-03; last=2026-08-03; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "812c54c3-59db-4d2d-9676-32871cafacc4",
+      "source_alias_name": "华鑫证券上海新松江路",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_42DEAF2615E5",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=2; first=2026-08-11; last=2026-08-11; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "9ca93311-58e5-468c-966b-f32dd19abc4e",
+      "source_alias_name": "华鑫证券上海宛平南路",
+      "valid_from": "2026-08-11",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_42DEAF2615E5",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=3; first=2026-08-31; last=2026-09-09; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "d1f87f24-71f6-4174-bdc6-a199b1769a3b",
+      "source_alias_name": "华鑫证券北京光华路",
+      "valid_from": "2026-08-31",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_F6441D89CA65",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=6; first=2026-08-04; last=2026-08-26; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "15640efb-1ea5-4b47-8105-5451211f7063",
+      "source_alias_name": "华泰证券北京月坛南街",
+      "valid_from": "2026-08-04",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_CC76195B456E",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=8; first=2026-08-03; last=2026-09-08; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "11ec8191-e341-4b07-965f-be654bb789d1",
+      "source_alias_name": "东莞证券南京分公司",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_04A5F984698B",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=4; first=2026-08-10; last=2026-09-08; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "e8aebc9a-5d7c-4423-b3a9-bd670b2fc021",
+      "source_alias_name": "财通证券绍兴人民中路",
+      "valid_from": "2026-08-10",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_64C83FFB708C",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-27; last=2026-08-27; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "0e55da6f-65e3-4f98-b101-aa15caacd80a",
+      "source_alias_name": "诚通证券宜昌东山大道",
+      "valid_from": "2026-08-27",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_64C83FFB708C",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=2; first=2026-08-19; last=2026-08-31; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "d1ce4189-e1cc-43e7-9a11-629de516ce69",
+      "source_alias_name": "中国银河证券宜昌新世纪",
+      "valid_from": "2026-08-19",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_8B0B06D756D0",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-11; last=2026-08-11; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "784ca737-4b7d-4fc8-9060-9cdcb1d9007d",
+      "source_alias_name": "国泰海通证券襄阳檀溪路",
+      "valid_from": "2026-08-11",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_42AE258C8855",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=67; first=2026-08-03; last=2026-09-11; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "303ae3c7-5140-4e50-8aff-7649152d1c5b",
+      "source_alias_name": "国泰海通证券上海长宁区江苏路",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_42AE258C8855",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=3; first=2026-09-04; last=2026-09-07; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "4c75cad2-9fbd-4b6c-806b-1dcf09b05063",
+      "source_alias_name": "国泰海通证券宁波广福街",
+      "valid_from": "2026-09-04",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_5D3AC2591CFE",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=10; first=2026-08-03; last=2026-09-09; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "44fa8ff1-3999-4d2b-83a6-d2a2ec988d43",
+      "source_alias_name": "东亚前海证券深圳分公司",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_AB14CF79BE06",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=40; first=2026-08-04; last=2026-09-11; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "d494ca51-34af-4b83-8eb8-0881b64d2f3b",
+      "source_alias_name": "国泰海通证券武汉紫阳东路",
+      "valid_from": "2026-08-04",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_41830D03FBAD",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=4; first=2026-08-04; last=2026-08-27; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "fdb71858-cb77-459a-b3fa-3a3e7f8d1a8b",
+      "source_alias_name": "华泰证券深圳彩田路",
+      "valid_from": "2026-08-04",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_CE2CBB79C550",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=17; first=2026-08-14; last=2026-09-10; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "314d985e-2c1a-4c44-8afd-acad0eb71143",
+      "source_alias_name": "中国银河证券北京学院南路",
+      "valid_from": "2026-08-14",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_CE2CBB79C550",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-09-01; last=2026-09-01; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "81999fa6-796a-4604-9e8c-1d1862c81890",
+      "source_alias_name": "华泰证券南京江宁天元东路",
+      "valid_from": "2026-09-01",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_CE2CBB79C550",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=2; first=2026-08-11; last=2026-09-09; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "c1bf5828-ba76-42d9-8142-35eec7fb72bc",
+      "source_alias_name": "东莞证券苏州聚茂街",
+      "valid_from": "2026-08-11",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_640F23A21220",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=2; first=2026-08-11; last=2026-08-19; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "adcd7761-630a-45a8-a3d5-dbfdfa73f83a",
+      "source_alias_name": "华泰证券苏州人民路",
+      "valid_from": "2026-08-11",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_FB91266C9D56",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-11; last=2026-08-11; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "53917ac4-4e4c-4a5f-a375-6b466c84cdb5",
+      "source_alias_name": "华泰证券浙江分公司",
+      "valid_from": "2026-08-11",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_342B3683DF6D",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=14; first=2026-08-04; last=2026-09-07; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "161ca6ea-ca9c-4277-842f-5716e619b797",
+      "source_alias_name": "摩根大通证券(中国)上海银城中路",
+      "valid_from": "2026-08-04",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_342B3683DF6D",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=2; first=2026-08-07; last=2026-08-10; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "1fd2b916-275b-4a2c-950a-5d817ddcbbd5",
+      "source_alias_name": "中信证券深圳滨海大道",
+      "valid_from": "2026-08-07",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_342B3683DF6D",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-11; last=2026-08-11; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "31cb93b3-b49c-4c6f-b42f-7694136f99e2",
+      "source_alias_name": "中信证券北京安外大街",
+      "valid_from": "2026-08-11",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_342B3683DF6D",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=35; first=2026-08-03; last=2026-09-11; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "3c569472-0239-4642-b5fa-da4b79637dcf",
+      "source_alias_name": "瑞银证券上海花园石桥路",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_342B3683DF6D",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=85; first=2026-08-03; last=2026-09-11; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "403fdc53-0501-447b-8355-3d5908cab429",
+      "source_alias_name": "中国国际金融上海分公司",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_342B3683DF6D",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=83; first=2026-08-03; last=2026-09-11; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "4523aac1-bb62-4b53-a2c0-11eee0553cf2",
+      "source_alias_name": "中信证券上海分公司",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_342B3683DF6D",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=159; first=2026-08-03; last=2026-09-11; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "8fa22062-0cc9-4481-a3ba-3fa42f8b769d",
+      "source_alias_name": "高盛(中国)证券上海浦东新区世纪大道",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_342B3683DF6D",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=200; first=2026-08-03; last=2026-09-11; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "90c8d6e5-48f4-4662-82a1-2b05e81cc448",
+      "source_alias_name": "国泰海通证券总部",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_342B3683DF6D",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-09-01; last=2026-09-01; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "a568f9c3-69ac-4f2d-b7c1-6986091cd77b",
+      "source_alias_name": "中国中金财富证券北京建国门外大街",
+      "valid_from": "2026-09-01",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_342B3683DF6D",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=3; first=2026-08-03; last=2026-09-01; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "c7813cd4-90ef-41b9-a7ad-21b49953812a",
+      "source_alias_name": "华泰证券总部",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_342B3683DF6D",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=5; first=2026-08-10; last=2026-09-03; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "d5f1f033-8dc9-4300-8cba-8ee7e79d11ef",
+      "source_alias_name": "平安证券深圳分公司",
+      "valid_from": "2026-08-10",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_9E462D0A1AD4",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=36; first=2026-08-07; last=2026-09-11; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "1670987c-03fb-420e-b641-6a7e613a10ef",
+      "source_alias_name": "国新证券北京中关村大街",
+      "valid_from": "2026-08-07",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_9E462D0A1AD4",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-10; last=2026-08-10; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "1b050169-5ee9-4782-90ed-438f5dbe5ce7",
+      "source_alias_name": "国新证券长沙韶山路",
+      "valid_from": "2026-08-10",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_9E462D0A1AD4",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=3; first=2026-08-24; last=2026-09-07; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "1eb040fb-19a2-4fe5-8b24-af7bd66b074f",
+      "source_alias_name": "华鑫证券南京清凉门大街",
+      "valid_from": "2026-08-24",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_9E462D0A1AD4",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=88; first=2026-08-04; last=2026-09-11; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "60054830-8e38-47c7-8553-31ced09ce6de",
+      "source_alias_name": "开源证券西安西大街",
+      "valid_from": "2026-08-04",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_9E462D0A1AD4",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=12; first=2026-08-03; last=2026-09-11; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "75f96a15-6b61-4d98-aa27-5278afbfb892",
+      "source_alias_name": "中泰证券常州惠国路",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_9E462D0A1AD4",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-09-07; last=2026-09-07; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "86e87d14-511f-4a5d-ab92-afb132a69981",
+      "source_alias_name": "华鑫证券上海梅园路",
+      "valid_from": "2026-09-07",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_9E462D0A1AD4",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=7; first=2026-08-03; last=2026-09-08; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "9074318c-1fb2-4baa-8629-406debc350a9",
+      "source_alias_name": "华鑫证券上海陆家嘴",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_9E462D0A1AD4",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=2; first=2026-08-31; last=2026-09-04; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "90a5f1e5-39bb-4681-b96f-475e260899f6",
+      "source_alias_name": "东方证券常熟李闸路",
+      "valid_from": "2026-08-31",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_9E462D0A1AD4",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=2; first=2026-08-03; last=2026-09-07; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "9c81a951-2459-4b08-803d-b130039c0bab",
+      "source_alias_name": "华鑫证券湖州大线场路",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_9E462D0A1AD4",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-09-07; last=2026-09-07; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "a8a20af3-52cf-471e-b111-c21fdf72a5a8",
+      "source_alias_name": "华鑫证券上海金山",
+      "valid_from": "2026-09-07",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_9E462D0A1AD4",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-11; last=2026-08-11; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "b3b22ed1-e988-402f-b887-00af2e8a2d74",
+      "source_alias_name": "天风证券浙江分公司",
+      "valid_from": "2026-08-11",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_9E462D0A1AD4",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-09-03; last=2026-09-03; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "b7648e56-5acd-4201-8495-e8a6fd47d58c",
+      "source_alias_name": "麦高证券成都丽都路",
+      "valid_from": "2026-09-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_9E462D0A1AD4",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=2; first=2026-08-26; last=2026-08-31; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "c66e15ef-e300-407b-8cde-7c010bf854f9",
+      "source_alias_name": "中信证券上海徐汇区漕溪北路",
+      "valid_from": "2026-08-26",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_9E462D0A1AD4",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-03; last=2026-08-03; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "e09eea56-e72b-4aa3-b8b0-78780519305b",
+      "source_alias_name": "华鑫证券成都交子大道",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_9E462D0A1AD4",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=3; first=2026-08-31; last=2026-09-03; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "f400fafc-a656-44cb-aa5b-4d2f9b31732d",
+      "source_alias_name": "东方证券无锡梁清路",
+      "valid_from": "2026-08-31",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_9E462D0A1AD4",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=73; first=2026-08-03; last=2026-09-03; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "f9c03e93-834c-4258-9ac6-04dca5abc80a",
+      "source_alias_name": "开源证券西安太华路",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_9E462D0A1AD4",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=6; first=2026-08-04; last=2026-09-11; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "fdd298c3-656e-42ee-82fc-53033a5ad2ba",
+      "source_alias_name": "华鑫证券上海分公司",
+      "valid_from": "2026-08-04",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_9F3A35B34755",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-14; last=2026-08-14; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "e6c7f900-c0ea-491d-b490-ba5e099d7865",
+      "source_alias_name": "方正证券重庆金开大道",
+      "valid_from": "2026-08-14",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_DC790D25BDE2",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-09-03; last=2026-09-03; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "c6d8009e-0cb7-4f80-b114-380df8b293a7",
+      "source_alias_name": "光大证券深圳金田路",
+      "valid_from": "2026-09-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_EDD10A04D16B",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-03; last=2026-08-03; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "da3208bb-e6f3-4ab2-a994-d9469a6133e4",
+      "source_alias_name": "广发证券南京汉中路",
+      "valid_from": "2026-08-03",
+      "valid_to": null
+    },
+    {
+      "actor_code": "HM_5C479202F8D6",
+      "evidence_note": "Tushare hm_list/hm_detail exact transaction-fact match after half-up normalization to CNY 100 precision; observations=1; first=2026-08-31; last=2026-08-31; source_aliases=1",
+      "review_status": "APPROVED",
+      "seat_id": "5442f4dc-9203-4b72-9078-4afbf778c859",
+      "source_alias_name": "中国银河证券重庆民族路",
+      "valid_from": "2026-08-31",
+      "valid_to": null
+    }
+  ],
+  "reviewed_at": "2026-09-14T17:53:44.372075+08:00"
 }
