@@ -13,7 +13,10 @@ from market_data_center.domain.today_limit_up import (
     TodayLimitUpMember,
     UpstreamState,
 )
-from market_data_center.persistence.today_limit_up_postgres import TodayLimitUpFillSummary
+from market_data_center.persistence.today_limit_up_postgres import (
+    TodayLimitUpFillSummary,
+    _member,
+)
 from market_data_center.providers.akshare_limit_up import AkshareCurrentDayLimitUpProvider
 from market_data_center.providers.contracts import ProviderBatch
 from market_data_center.raw_store import LocalRawStore
@@ -85,6 +88,59 @@ def test_member_rejects_substituted_market_cap() -> None:
             free_float_shares=100,
             free_float_market_cap_cny=Decimal("1099"),
         )
+
+
+def _limit_up_member_row(**overrides: object) -> dict[str, object]:
+    row: dict[str, object] = {
+        "symbol": "SSE:600000",
+        "code": "600000",
+        "historical_name": "浦发银行",
+        "close": Decimal("11"),
+        "previous_close": Decimal("10"),
+        "limit_price": Decimal("11"),
+        "free_float_shares": 100,
+        "bid1_price": None,
+        "bid1_volume": None,
+        "bid2_price": None,
+        "bid2_volume": None,
+        "bid3_price": None,
+        "bid3_volume": None,
+        "bid4_price": None,
+        "bid4_volume": None,
+        "bid5_price": None,
+        "bid5_volume": None,
+        "daily_bar_volume": 1000,
+        "daily_bar_amount": Decimal("11000"),
+        "indicator_turnover": None,
+        "computed_consecutive_days": 0,
+    }
+    row.update(overrides)
+    return row
+
+
+def test_member_keeps_missing_streak_when_indicator_history_is_unknown() -> None:
+    member = _member(_limit_up_member_row(), None)
+    assert member.consecutive_limit_up_days is None
+
+
+def test_member_uses_positive_fallback_streak_from_indicator_history() -> None:
+    member = _member(_limit_up_member_row(computed_consecutive_days=2), None)
+    assert member.consecutive_limit_up_days == 2
+
+
+def test_member_prefers_source_streak_over_fallback() -> None:
+    source = LimitUpSourceRecord(
+        trade_date=date(2026, 8, 11),
+        symbol="SSE:600000",
+        source_name=None,
+        first_limit_up_at=None,
+        last_limit_up_at=None,
+        open_count=None,
+        source_reported_sealed_funds_cny=None,
+        consecutive_limit_up_days=3,
+    )
+    member = _member(_limit_up_member_row(computed_consecutive_days=1), source)
+    assert member.consecutive_limit_up_days == 3
 
 
 def test_dependency_policy_defers_without_exact_pool_and_marks_partial_inputs() -> None:

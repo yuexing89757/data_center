@@ -251,7 +251,11 @@ order by m.symbol
                     continue
                 source = source_by_symbol.get(str(row["symbol"]))
                 if source is None:
+                    # The deterministic pool flags a limit-up that the source
+                    # boundary does not observe; reject it instead of publishing
+                    # a member without source facts (sealed times/funds/streak).
                     reasons.append(f"missing_source_observation:{row['symbol']}")
+                    continue
                 if row["order_book_ingestion_id"] is None:
                     reasons.append(f"missing_order_book:{row['symbol']}")
                 elif any(
@@ -568,7 +572,10 @@ def _member(row: RowMapping, source: LimitUpSourceRecord | None) -> TodayLimitUp
             if source and source.consecutive_limit_up_days
             else (
                 int(row["computed_consecutive_days"])
-                if row["computed_consecutive_days"] is not None
+                # A pool member necessarily closed at the limit, so a zero
+                # count means the indicator history lacks limit statuses
+                # (unknown/missing); preserve None instead of a false zero.
+                if row["computed_consecutive_days"]
                 else None
             )
         ),

@@ -87,7 +87,10 @@ from market_data_center.domain.call_auction_market_series import (
     universe_hash,
 )
 from market_data_center.domain.operations import ExecutionStatus, TriggerSource, WorkflowCode
-from market_data_center.domain.today_limit_up import TodayLimitUpSnapshotStatus
+from market_data_center.domain.today_limit_up import (
+    LimitUpSourceRecord,
+    TodayLimitUpSnapshotStatus,
+)
 from market_data_center.dragon_tiger_analytics import TradingSeatProfile
 from market_data_center.hot_money_catalog_service import HotMoneyCatalog
 from market_data_center.migrations import MIGRATION_DIR, apply_migrations
@@ -2184,6 +2187,163 @@ def test_today_limit_up_fill_reads_ready_pool_with_append_only_worker_role(
     assert summary.trade_date == TRADE_DATE
     assert summary.candidate_count == 0
     assert summary.member_count == 0
+
+
+def test_today_limit_up_fill_rejects_pool_members_missing_source_observation(
+    migrated_database_url: str,
+    database_engine: Engine,
+) -> None:
+    symbols = ["SSE:600000", "SSE:600001"]
+    core_persistence = PostgreSQLPersistence(database_engine)
+    market_run = _running_run(DatasetCode.DAILY_BAR)
+    core_persistence.create_ingestion_run(market_run)
+    indicator_run = _running_run(DatasetCode.STOCK_DAILY_INDICATOR, ProviderCode.TUSHARE)
+    core_persistence.create_ingestion_run(indicator_run)
+    with database_engine.begin() as connection:
+        connection.execute(
+            text("""
+insert into core.trading_calendar (
+    market, trade_date, is_trading_day, source_code, ingestion_id
+) values ('CN_A_SHARE', :trade_date, true, 'baostock', :ingestion_id)
+"""),
+            {"trade_date": TRADE_DATE, "ingestion_id": market_run.ingestion_id},
+        )
+        connection.execute(
+            text("""
+insert into core.security (
+    symbol, code, exchange, current_name, security_type, status,
+    ipo_date, source_code, ingestion_id
+) values (
+    :symbol, :code, 'SSE', :name, 'stock', 'listed',
+    date '2000-01-01', 'baostock', :ingestion_id
+)
+"""),
+            [
+                {
+                    "symbol": symbol,
+                    "code": symbol.split(":", maxsplit=1)[1],
+                    "name": f"Test {symbol}",
+                    "ingestion_id": market_run.ingestion_id,
+                }
+                for symbol in symbols
+            ],
+        )
+        connection.execute(
+            text("""
+insert into core.security_name_history (
+    symbol, name, effective_from, source_code, ingestion_id
+) values (
+    :symbol, :name, date '2000-01-01', 'baostock', :ingestion_id
+)
+"""),
+            [
+                {
+                    "symbol": symbol,
+                    "name": f"Test {symbol}",
+                    "ingestion_id": market_run.ingestion_id,
+                }
+                for symbol in symbols
+            ],
+        )
+        connection.execute(
+            text("""
+insert into core.daily_bar (
+    symbol, trade_date, market, open, high, low, close, previous_close,
+    volume, amount, trade_status, is_st, source_code, ingestion_id
+) values (
+    :symbol, :trade_date, 'CN_A_SHARE', 11, 11, 11, 11, 10,
+    1, 1, 'trading', false, 'baostock', :ingestion_id
+)
+"""),
+            [
+                {
+                    "symbol": symbol,
+                    "trade_date": TRADE_DATE,
+                    "ingestion_id": market_run.ingestion_id,
+                }
+                for symbol in symbols
+            ],
+        )
+        connection.execute(
+            text("""
+insert into core.stock_daily_indicator (
+    symbol, trade_date, market, close, free_float_shares,
+    free_float_turnover_rate_pct, price_limit_status, source_code, ingestion_id
+) values (
+    :symbol, :trade_date, 'CN_A_SHARE', 11, 100,
+    1, 'unknown', 'tushare', :ingestion_id
+)
+"""),
+            [
+                {
+                    "symbol": symbol,
+                    "trade_date": TRADE_DATE,
+                    "ingestion_id": indicator_run.ingestion_id,
+                }
+                for symbol in symbols
+            ],
+        )
+        _insert_ready_limit_up_pool(
+            connection,
+            TRADE_DATE + timedelta(days=1),
+            symbols,
+            with_price_limits=True,
+        )
+
+    worker_engine = create_engine(
+        _sqlalchemy_url(migrated_database_url),
+        connect_args={"options": "-c role=market_data_worker"},
+    )
+    try:
+        persistence = PostgreSQLTodayLimitUpPersistence(worker_engine)
+        running = _running_run(DatasetCode.TODAY_LIMIT_UP_SOURCE, ProviderCode.AKSHARE)
+        persistence.create_ingestion_run(running)
+        source_records = (
+            LimitUpSourceRecord(
+                trade_date=TRADE_DATE,
+                symbol="SSE:600000",
+                source_name=None,
+                first_limit_up_at=datetime(2026, 7, 28, 9, 30, tzinfo=UTC),
+                last_limit_up_at=datetime(2026, 7, 28, 14, 59, tzinfo=UTC),
+                open_count=0,
+                source_reported_sealed_funds_cny=None,
+                consecutive_limit_up_days=1,
+            ),
+        )
+        summary = persistence.commit_snapshot(
+            trade_date=TRADE_DATE,
+            requested_status=TodayLimitUpSnapshotStatus.READY,
+            run=_completed_run(running, row_count=1),
+            manifest=_manifest(
+                running.ingestion_id,
+                "today_limit_up_source",
+                row_count=1,
+                provider="akshare",
+            ),
+            source_records=source_records,
+            ingestion_quality=(),
+        )
+    finally:
+        worker_engine.dispose()
+
+    assert summary.status == "partial"
+    assert summary.candidate_count == 2
+    assert summary.member_count == 1
+    assert summary.rejected_count == 1
+    with database_engine.connect() as connection:
+        members = (
+            connection.execute(text("select symbol from today_limit_up.member order by symbol"))
+            .scalars()
+            .all()
+        )
+        findings = connection.execute(
+            text("""
+select rule_code, symbol from today_limit_up.calculation_quality
+where rule_code='missing_source_observation'
+""")
+        ).all()
+    assert members == ["SSE:600000"]
+    assert findings == [("missing_source_observation", "SSE:600001")]
 
 
 def test_daily_limit_up_list_rpc_exposes_only_bounded_domain_projection(
@@ -6812,6 +6972,7 @@ def _insert_ready_limit_up_pool(
     symbols: list[str],
     *,
     version: int = 1,
+    with_price_limits: bool = False,
 ) -> UUID:
     calculation_id = uuid4()
     snapshot_id = uuid4()
@@ -6875,6 +7036,39 @@ def _insert_ready_limit_up_pool(
                 values (:snapshot_id, :symbol, 'up')
             """),
             [{"snapshot_id": snapshot_id, "symbol": symbol} for symbol in symbols],
+        )
+    if with_price_limits:
+        connection.execute(
+            text("""
+                insert into derived.daily_price_limit (
+                    calculation_id, symbol, trade_date, previous_close,
+                    upper_limit, lower_limit, limit_ratio, price_tick,
+                    is_st, rule_version, algorithm_version
+                ) values (
+                    :calculation_id, :symbol, :trade_date, 10,
+                    11, 9, 0.1, 0.01, false,
+                    'CN_MAINBOARD_2026_07_06', '1.0.0'
+                )
+            """),
+            [
+                {"calculation_id": calculation_id, "symbol": symbol, "trade_date": basis_trade_date}
+                for symbol in symbols
+            ],
+        )
+        connection.execute(
+            text("""
+                insert into derived.price_limit_event (
+                    calculation_id, symbol, trade_date, direction,
+                    close, limit_price, rule_version, algorithm_version
+                ) values (
+                    :calculation_id, :symbol, :trade_date, 'up',
+                    11, 11, 'CN_MAINBOARD_2026_07_06', '1.0.0'
+                )
+            """),
+            [
+                {"calculation_id": calculation_id, "symbol": symbol, "trade_date": basis_trade_date}
+                for symbol in symbols
+            ],
         )
     return snapshot_id
 
