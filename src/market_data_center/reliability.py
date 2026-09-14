@@ -456,12 +456,9 @@ class RawReplayService:
             )
             rejected_count = raw_count if validation.findings else filtered_count
             accepted_count = 0 if validation.findings else raw_count - filtered_count
-            completed = self._completed(
-                run,
-                raw_count,
-                accepted_count,
-                rejected_count,
-            )
+            completed = self._completed(run, raw_count, accepted_count, rejected_count)
+            if completed is not None and not validation.findings:
+                completed = replace(completed, status=IngestionStatus.SUCCEEDED)
             quality = (
                 self._dragon_tiger_source_quality(completed, normalized.dragon_tiger_findings)
                 + self._dragon_tiger_trigger_start_quality(completed, dragon_tiger_records)
