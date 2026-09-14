@@ -298,9 +298,13 @@ def test_dragon_tiger_profile_requires_daily_market_and_dragon_tiger() -> None:
     requested: list[tuple[object, date]] = []
 
     class Operations:
+        def has_succeeded_or_partial_on_date(self, workflow_code: object, trade_date: date) -> bool:
+            requested.append((workflow_code, trade_date))
+            return True
+
         def has_succeeded_on_date(self, workflow_code: object, trade_date: date) -> bool:
             requested.append((workflow_code, trade_date))
-            return workflow_code is scheduler_module.WorkflowCode.DAILY_MARKET
+            return False
 
     with pytest.raises(ProviderError, match="DT_PROFILE_PREREQUISITE_FAILED"):
         _require_dragon_tiger_profile_prerequisites(  # type: ignore[arg-type]
@@ -310,6 +314,28 @@ def test_dragon_tiger_profile_requires_daily_market_and_dragon_tiger() -> None:
     assert requested == [
         (scheduler_module.WorkflowCode.DAILY_MARKET, date(2026, 9, 11)),
         (scheduler_module.WorkflowCode.DRAGON_TIGER_DAILY, date(2026, 9, 11)),
+    ]
+
+
+def test_dragon_tiger_profile_accepts_partial_daily_market() -> None:
+    requested: list[tuple[str, object, date]] = []
+
+    class Operations:
+        def has_succeeded_or_partial_on_date(self, workflow_code: object, trade_date: date) -> bool:
+            requested.append(("usable", workflow_code, trade_date))
+            return True
+
+        def has_succeeded_on_date(self, workflow_code: object, trade_date: date) -> bool:
+            requested.append(("succeeded", workflow_code, trade_date))
+            return True
+
+    _require_dragon_tiger_profile_prerequisites(  # type: ignore[arg-type]
+        Operations(), date(2026, 9, 11)
+    )
+
+    assert requested == [
+        ("usable", scheduler_module.WorkflowCode.DAILY_MARKET, date(2026, 9, 11)),
+        ("succeeded", scheduler_module.WorkflowCode.DRAGON_TIGER_DAILY, date(2026, 9, 11)),
     ]
 
 

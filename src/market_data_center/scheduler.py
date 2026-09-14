@@ -739,9 +739,14 @@ def run_dragon_tiger_seat_profile_job() -> None:
 def _require_dragon_tiger_profile_prerequisites(
     operations: PostgreSQLOperationsPersistence, trade_date: date
 ) -> None:
-    for prerequisite in (WorkflowCode.DAILY_MARKET, WorkflowCode.DRAGON_TIGER_DAILY):
-        if not operations.has_succeeded_on_date(prerequisite, trade_date):
-            raise ProviderError("DT_PROFILE_PREREQUISITE_FAILED")
+    daily_market_ready = operations.has_succeeded_or_partial_on_date(
+        WorkflowCode.DAILY_MARKET, trade_date
+    )
+    dragon_tiger_ready = operations.has_succeeded_on_date(
+        WorkflowCode.DRAGON_TIGER_DAILY, trade_date
+    )
+    if not daily_market_ready or not dragon_tiger_ready:
+        raise ProviderError("DT_PROFILE_PREREQUISITE_FAILED")
 
 
 def run_regulation_daily_calculation_job() -> None:

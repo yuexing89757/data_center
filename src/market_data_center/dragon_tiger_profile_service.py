@@ -1,5 +1,6 @@
 """Daily point-in-time materialization of stable DragonTiger seat profiles."""
 
+from collections import defaultdict
 from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
 from datetime import date
@@ -101,6 +102,12 @@ class DragonTigerProfileService:
             raise ValueError("profile inputs do not match as_of_date")
         participations = tuple(item.participation for item in inputs.observations)
         outcomes, skipped = _build_outcomes(inputs.observations, as_of_date)
+        participations_by_seat: dict[UUID, list[SeatParticipation]] = defaultdict(list)
+        outcomes_by_seat: dict[UUID, list[SeatOutcome]] = defaultdict(list)
+        for participation in participations:
+            participations_by_seat[participation.seat_id].append(participation)
+        for outcome in outcomes:
+            outcomes_by_seat[outcome.seat_id].append(outcome)
         seat_ids = tuple(
             sorted(
                 {item.seat_id for item in participations if is_effective_buy(item)},
@@ -110,8 +117,8 @@ class DragonTigerProfileService:
         profiles = tuple(
             build_trading_seat_profile(
                 seat_id=seat_id,
-                participations=participations,
-                outcomes=outcomes,
+                participations=tuple(participations_by_seat[seat_id]),
+                outcomes=tuple(outcomes_by_seat[seat_id]),
                 as_of_date=as_of_date,
                 algorithm_version=PROFILE_ALGORITHM_VERSION,
                 metric_definition=POSITIVE_RETURN_WIN_DEFINITION,
