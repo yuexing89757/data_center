@@ -322,19 +322,19 @@ def test_adapter_keeps_precise_summary_over_source_rounded_duplicate() -> None:
     rounded = responses["top_list"][0]
     rounded.update(
         {
-            "l_buy": "323383200",
-            "l_sell": "199943000",
-            "l_amount": "523326200",
-            "net_amount": "123440200",
+            "l_buy": "63582900",
+            "l_sell": "42036500",
+            "l_amount": "105619400",
+            "net_amount": "21546400",
         }
     )
     precise = dict(rounded)
     precise.update(
         {
-            "l_buy": "323383102.12",
-            "l_sell": "199943005.39",
-            "l_amount": "523326107.51",
-            "net_amount": "123440096.73",
+            "l_buy": "63582969.54",
+            "l_sell": "42036370.34",
+            "l_amount": "105619339.88",
+            "net_amount": "21546599.20",
         }
     )
     responses["top_list"].append(precise)
@@ -346,8 +346,8 @@ def test_adapter_keeps_precise_summary_over_source_rounded_duplicate() -> None:
     )
 
     assert len(result.events) == 1
-    assert result.events[0].lhb_buy_amount == Decimal("323383102.12")
-    assert result.events[0].lhb_sell_amount == Decimal("199943005.39")
+    assert result.events[0].lhb_buy_amount == Decimal("63582969.54")
+    assert result.events[0].lhb_sell_amount == Decimal("42036370.34")
     assert any(item.rule_code == "DT_SOURCE_ROUNDED_DUPLICATE_FILTERED" for item in result.findings)
 
 

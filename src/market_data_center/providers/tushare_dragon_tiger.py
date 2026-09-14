@@ -366,10 +366,10 @@ def _prefer_precise_summary(first: SourceRow, second: SourceRow) -> SourceRow | 
         return None
     rounded, precise = (first, second) if first_rounded else (second, first)
     tolerances = {
-        "l_buy": Decimal(100),
-        "l_sell": Decimal(100),
-        "l_amount": Decimal(200),
-        "net_amount": Decimal(200),
+        "l_buy": Decimal(500),
+        "l_sell": Decimal(500),
+        "l_amount": Decimal(1000),
+        "net_amount": Decimal(1000),
     }
     if any(
         abs((_decimal(rounded, field) or Decimal(0)) - (_decimal(precise, field) or Decimal(0)))
