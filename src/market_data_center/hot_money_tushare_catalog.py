@@ -33,6 +33,7 @@ HM_DETAIL_FIELDS = (
 )
 SOURCE_PAGE_SIZE = 2_000
 MAX_SOURCE_PAGES_PER_MONTH = 50
+MAX_SOURCE_ATTEMPTS = 3
 AMOUNT_PRECISION = Decimal("1E+2")
 
 
@@ -77,7 +78,7 @@ class TushareHotMoneyCatalogSource:
         self._client = client
 
     def fetch_roster(self) -> tuple[TushareHotMoneyRosterEntry, ...]:
-        rows = self._client.query("hm_list", params={}, fields=HM_LIST_FIELDS)
+        rows = self._query("hm_list", params={}, fields=HM_LIST_FIELDS)
         return tuple(_roster_entry(row) for row in rows)
 
     def fetch_details(self, start_date: date, end_date: date) -> tuple[TushareHotMoneyDetail, ...]:
@@ -86,7 +87,7 @@ class TushareHotMoneyCatalogSource:
         details: list[TushareHotMoneyDetail] = []
         for window_start, window_end in _month_windows(start_date, end_date):
             for page in range(MAX_SOURCE_PAGES_PER_MONTH):
-                rows = self._client.query(
+                rows = self._query(
                     "hm_detail",
                     params={
                         "start_date": window_start.strftime("%Y%m%d"),
@@ -104,6 +105,21 @@ class TushareHotMoneyCatalogSource:
         if any(item.trade_date < start_date or item.trade_date > end_date for item in details):
             raise ProviderError("Tushare hm_detail returned an out-of-range date")
         return tuple(details)
+
+    def _query(
+        self,
+        api_name: str,
+        *,
+        params: Mapping[str, str],
+        fields: Sequence[str],
+    ) -> Sequence[Mapping[str, object]]:
+        for attempt in range(MAX_SOURCE_ATTEMPTS):
+            try:
+                return self._client.query(api_name, params=params, fields=fields)
+            except ProviderError:
+                if attempt == MAX_SOURCE_ATTEMPTS - 1:
+                    raise
+        raise AssertionError("unreachable")
 
 
 def build_reviewed_hot_money_catalog(

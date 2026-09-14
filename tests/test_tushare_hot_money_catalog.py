@@ -9,6 +9,7 @@ from market_data_center.hot_money_tushare_catalog import (
     TushareHotMoneyRosterEntry,
     build_reviewed_hot_money_catalog,
 )
+from market_data_center.providers.contracts import ProviderError
 
 
 class FakeClient:
@@ -102,6 +103,29 @@ def test_tushare_details_paginate_at_documented_source_cap() -> None:
 
     assert len(details) == 2000
     assert [params["offset"] for params in client.detail_params] == ["0", "2000"]
+
+
+def test_tushare_source_retries_one_transient_provider_failure() -> None:
+    class TransientClient(FakeClient):
+        def __init__(self) -> None:
+            super().__init__()
+            self.attempts = 0
+
+        def query(self, api_name, *, params, fields):  # type: ignore[no-untyped-def]
+            if api_name == "hm_detail":
+                self.attempts += 1
+                if self.attempts == 1:
+                    raise ProviderError("temporary failure")
+            return super().query(api_name, params=params, fields=fields)
+
+    client = TransientClient()
+
+    details = TushareHotMoneyCatalogSource(client).fetch_details(
+        date(2026, 9, 11), date(2026, 9, 11)
+    )
+
+    assert len(details) == 1
+    assert client.attempts == 2
 
 
 def test_catalog_approves_only_unique_transaction_fact_matches() -> None:
