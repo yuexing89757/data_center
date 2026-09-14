@@ -451,13 +451,30 @@ class RawReplayService:
                 ),
             )
             raw_count = source.manifest.row_count if source.manifest is not None else len(records)
-            filtered_count = sum(
+            source_filtered_rows = sum(
                 finding.filtered_count for finding in normalized.dragon_tiger_findings
             )
-            rejected_count = raw_count if validation.findings else filtered_count
-            accepted_count = 0 if validation.findings else raw_count - filtered_count
+            blocking_findings = tuple(
+                finding
+                for finding in validation.findings
+                if finding.rule_code != "dragon_tiger.unknown_security"
+            )
+            rejected_source_ids = {
+                str(finding.natural_key["source_record_id"])
+                for finding in validation.findings
+                if finding.rule_code == "dragon_tiger.unknown_security"
+            }
+            domain_filtered_rows = sum(
+                1 + len(record.seat_trades)
+                for record in dragon_tiger_records
+                if record.source_record_id in rejected_source_ids
+            )
+            filtered_count = source_filtered_rows + domain_filtered_rows
+            can_publish = bool(validation.accepted) and not blocking_findings
+            rejected_count = filtered_count if can_publish else raw_count
+            accepted_count = raw_count - filtered_count if can_publish else 0
             completed = self._completed(run, raw_count, accepted_count, rejected_count)
-            if completed is not None and not validation.findings:
+            if completed is not None and can_publish:
                 completed = replace(completed, status=IngestionStatus.SUCCEEDED)
             quality = (
                 self._dragon_tiger_source_quality(completed, normalized.dragon_tiger_findings)
@@ -465,7 +482,7 @@ class RawReplayService:
                 + self._dragon_tiger_quality(completed, validation.findings)
             )
             if completed is not None:
-                if validation.findings:
+                if not can_publish:
                     self._persistence.commit_rejected_batch(completed, None, quality)
                 else:
                     self._persistence.commit_dragon_tiger_batch(

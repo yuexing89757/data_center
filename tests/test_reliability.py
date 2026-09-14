@@ -534,6 +534,56 @@ def test_dragon_tiger_raw_replay_succeeds_when_known_source_rows_are_filtered(
     assert findings[0].rule_code == "DT_SOURCE_DUPLICATE_FILTERED"
 
 
+def test_dragon_tiger_raw_replay_skips_unknown_security_and_commits_known_events(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = LocalRawStore(tmp_path)
+    original = _dragon_tiger_source(store, request_date="2026-07-29")
+    initial_persistence = StubReliabilityPersistence(original)
+    initial_service = RawReplayService(raw_store=store, persistence=initial_persistence)
+    normalized = initial_service._normalize(original)
+    known = normalized.records[0]
+    unknown_event_id = "unknown-event"
+    unknown = replace(
+        known,
+        source_record_id=unknown_event_id,
+        symbol="SZSE:000001",
+        seat_trades=tuple(
+            replace(
+                trade,
+                source_record_id=f"unknown-{index}",
+                source_event_id=unknown_event_id,
+                symbol="SZSE:000001",
+            )
+            for index, trade in enumerate(known.seat_trades)
+        ),
+    )
+    source = replace(original, manifest=replace(original.manifest, row_count=6))
+    persistence = StubReliabilityPersistence(source)
+    persistence.dragon_tiger_known_symbols = {"SSE:600000"}
+    service = RawReplayService(
+        raw_store=store,
+        persistence=persistence,
+        clock=lambda: NOW,
+        uuid_factory=lambda: REPLAY_RUN_ID,
+    )
+    monkeypatch.setattr(
+        service,
+        "_normalize",
+        lambda _source: replace(normalized, records=(known, unknown)),
+    )
+
+    replay = service.replay(SOURCE_RUN_ID)
+
+    assert replay.status == "succeeded"
+    completed, _, records, findings = persistence.dragon_tiger_commits[0]
+    assert completed.status is IngestionStatus.SUCCEEDED
+    assert completed.accepted_rows == 3
+    assert completed.rejected_rows == 3
+    assert [record.symbol for record in records] == ["SSE:600000"]
+    assert any(item.rule_code == "dragon_tiger.unknown_security" for item in findings)
+
+
 def test_dragon_tiger_replay_rejects_raw_date_mismatching_request(tmp_path: Path) -> None:
     store = LocalRawStore(tmp_path)
     source = _dragon_tiger_source(store, request_date="2026-07-28")
