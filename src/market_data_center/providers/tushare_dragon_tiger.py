@@ -361,6 +361,7 @@ def _prefer_precise_summary(first: SourceRow, second: SourceRow) -> SourceRow | 
     amendment_fields = {
         "name",
         "float_values",
+        "turnover_rate",
         "l_sell",
         "l_amount",
         "net_amount",

@@ -386,6 +386,7 @@ def test_adapter_keeps_more_complete_historical_summary_amendment() -> None:
         {
             "name": "历史简称",
             "float_values": None,
+            "turnover_rate": "34.3",
             "l_sell": "93967.25",
             "l_amount": "4008106.78",
             "net_amount": "3820172.28",
@@ -398,6 +399,7 @@ def test_adapter_keeps_more_complete_historical_summary_amendment() -> None:
         {
             "name": "当前简称",
             "float_values": "971082400",
+            "turnover_rate": "34.29",
             "l_sell": "141331.75",
             "l_amount": "4055471.28",
             "net_amount": "3772807.78",
