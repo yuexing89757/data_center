@@ -203,10 +203,18 @@ def _normalize(
                 for detail_key, rows in detail_groups.items()
                 if detail_key[:2] == key[:2]
             ]
+            matching_aliases = [
+                candidate
+                for candidate in candidates
+                if _reason_alias_signature(candidate[0][2], trade_date)
+                == _reason_alias_signature(reason_name, trade_date)
+            ]
+            if len(matching_aliases) == 1:
+                candidates = matching_aliases
             symbol_summary_keys = {
                 summary_key for summary_key in distinct_summary_keys if summary_key[:2] == key[:2]
             }
-            if len(candidates) != 1 or len(symbol_summary_keys) != 1:
+            if len(candidates) != 1 or (len(symbol_summary_keys) != 1 and not matching_aliases):
                 raise ProviderError("Tushare DragonTiger detail cannot join a summary event")
             detail_key, source_details = candidates[0]
             findings.append(
@@ -350,6 +358,32 @@ def _is_truncated_seat_alias(first: str, second: str) -> bool:
 
 def _prefer_precise_summary(first: SourceRow, second: SourceRow) -> SourceRow | None:
     amount_fields = {"l_buy", "l_sell", "l_amount", "net_amount"}
+    amendment_fields = {
+        "name",
+        "float_values",
+        "l_sell",
+        "l_amount",
+        "net_amount",
+        "net_rate",
+        "amount_rate",
+    }
+    first_stable = {field: value for field, value in first.items() if field not in amendment_fields}
+    second_stable = {
+        field: value for field, value in second.items() if field not in amendment_fields
+    }
+    if _canonical_json(first_stable) == _canonical_json(second_stable):
+
+        def amendment_rank(row: SourceRow) -> tuple[int, Decimal]:
+            return (
+                sum(row.get(field) is not None for field in amendment_fields),
+                _decimal(row, "l_amount") or Decimal(-1),
+            )
+
+        first_rank = amendment_rank(first)
+        second_rank = amendment_rank(second)
+        if first_rank != second_rank:
+            return first if first_rank > second_rank else second
+
     ignored = amount_fields | {"name"}
     first_other = {field: value for field, value in first.items() if field not in ignored}
     second_other = {field: value for field, value in second.items() if field not in ignored}
@@ -444,13 +478,20 @@ def _reason_type(reason: str) -> DragonTigerReasonType:
         return DragonTigerReasonType.TURNOVER
     if "振幅" in reason:
         return DragonTigerReasonType.AMPLITUDE
-    if "ST" in reason.upper():
+    if "ST" in reason.upper() and not reason.upper().startswith("非ST"):
         return DragonTigerReasonType.ST
     if "连续涨停" in reason:
         return DragonTigerReasonType.CONTINUOUS_LIMIT
     if "偏离值" in reason:
         return DragonTigerReasonType.PRICE_DEVIATION
     return DragonTigerReasonType.OTHER
+
+
+def _reason_alias_signature(
+    reason: str, trade_date: date
+) -> tuple[DragonTigerReasonType, int, int | None]:
+    trigger = _trigger_window(reason, trade_date)
+    return _reason_type(reason), trigger.session_count, trigger.occurrence_count
 
 
 def _reason_code(

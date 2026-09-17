@@ -214,6 +214,34 @@ def test_adapter_joins_a_unique_source_reason_alias_for_one_symbol() -> None:
     assert any(item.rule_code == "DT_TUSHARE_REASON_ALIAS_JOINED" for item in result.findings)
 
 
+def test_adapter_joins_multiple_reason_aliases_by_window_and_type() -> None:
+    responses = _responses()
+    responses["top_list"][0]["reason"] = "有价格涨跌幅限制的日换手率达到20%的前三只证券"
+    for row in responses["top_inst"]:
+        row["reason"] = "换手率达20%的证券"
+
+    summary = dict(responses["top_list"][0])
+    summary["reason"] = "非ST、*ST和S证券连续三个交易日内收盘价格涨幅偏离值累计达到20%的证券"
+    responses["top_list"].append(summary)
+    for row in tuple(responses["top_inst"]):
+        detail = dict(row)
+        detail["reason"] = "连续三个交易日内\uff0c涨幅偏离值累计达20%的证券"
+        responses["top_inst"].append(detail)
+
+    result = (
+        TushareDragonTigerAdapter(FakeClient(responses))
+        .fetch_dragon_tiger(date(2026, 8, 20))
+        .normalization
+    )
+
+    assert len(result.events) == 2
+    assert {event.reason.reason_type.value for event in result.events} == {
+        "PRICE_DEVIATION",
+        "TURNOVER",
+    }
+    assert sum(item.rule_code == "DT_TUSHARE_REASON_ALIAS_JOINED" for item in result.findings) == 2
+
+
 def test_adapter_filters_truncated_duplicate_seat_with_identical_amount_facts() -> None:
     responses = _responses()
     original = responses["top_inst"][1]
@@ -348,6 +376,45 @@ def test_adapter_keeps_precise_summary_over_source_rounded_duplicate() -> None:
     assert len(result.events) == 1
     assert result.events[0].lhb_buy_amount == Decimal("63582969.54")
     assert result.events[0].lhb_sell_amount == Decimal("42036370.34")
+    assert any(item.rule_code == "DT_SOURCE_ROUNDED_DUPLICATE_FILTERED" for item in result.findings)
+
+
+def test_adapter_keeps_more_complete_historical_summary_amendment() -> None:
+    responses = _responses()
+    earlier = responses["top_list"][0]
+    earlier.update(
+        {
+            "name": "历史简称",
+            "float_values": None,
+            "l_sell": "93967.25",
+            "l_amount": "4008106.78",
+            "net_amount": "3820172.28",
+            "net_rate": "97.60",
+            "amount_rate": "102.40",
+        }
+    )
+    amended = dict(earlier)
+    amended.update(
+        {
+            "name": "当前简称",
+            "float_values": "971082400",
+            "l_sell": "141331.75",
+            "l_amount": "4055471.28",
+            "net_amount": "3772807.78",
+            "net_rate": "96.39",
+            "amount_rate": "103.61",
+        }
+    )
+    responses["top_list"].append(amended)
+
+    result = (
+        TushareDragonTigerAdapter(FakeClient(responses))
+        .fetch_dragon_tiger(date(2026, 8, 20))
+        .normalization
+    )
+
+    assert len(result.events) == 1
+    assert result.events[0].lhb_sell_amount == Decimal("141331.75")
     assert any(item.rule_code == "DT_SOURCE_ROUNDED_DUPLICATE_FILTERED" for item in result.findings)
 
 
