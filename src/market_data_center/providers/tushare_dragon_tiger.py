@@ -73,6 +73,7 @@ class TushareDragonTigerAdapter:
                 str(row.get("ts_code", ""))
                 for row in summaries
                 if not str(row.get("ts_code", "")).upper().endswith(".BJ")
+                and not _is_non_stock_row(row)
             }
             detail_symbols = {str(row.get("ts_code", "")) for row in details}
             missing_symbols = sorted(summary_symbols - detail_symbols)
@@ -143,8 +144,13 @@ def _normalize(
     filtered_counts: dict[tuple[tuple[date, str, str], str, str], int] = {}
     for row in details:
         key = (_source_date(row), _symbol(row), _required_text(row, "reason"))
-        if key[1].startswith("BSE:"):
-            filter_key = (key, "top_inst", "DT_BSE_SECURITY_FILTERED")
+        if key[1].startswith("BSE:") or _is_non_stock_row(row):
+            rule_code = (
+                "DT_BSE_SECURITY_FILTERED"
+                if key[1].startswith("BSE:")
+                else "DT_NON_STOCK_SECURITY_FILTERED"
+            )
+            filter_key = (key, "top_inst", rule_code)
             filtered_counts[filter_key] = filtered_counts.get(filter_key, 0) + 1
             continue
         buy_amount = _decimal(row, "buy")
@@ -166,8 +172,13 @@ def _normalize(
         if trade_date != requested_date:
             raise ProviderError("Tushare DragonTiger response date mismatch")
         key = (trade_date, _symbol(summary), _required_text(summary, "reason"))
-        if key[1].startswith("BSE:"):
-            filter_key = (key, "top_list", "DT_BSE_SECURITY_FILTERED")
+        if key[1].startswith("BSE:") or _is_non_stock_row(summary):
+            rule_code = (
+                "DT_BSE_SECURITY_FILTERED"
+                if key[1].startswith("BSE:")
+                else "DT_NON_STOCK_SECURITY_FILTERED"
+            )
+            filter_key = (key, "top_list", rule_code)
             filtered_counts[filter_key] = filtered_counts.get(filter_key, 0) + 1
             continue
         previous = summary_rows.get(key)
@@ -206,9 +217,16 @@ def _normalize(
             matching_aliases = [
                 candidate
                 for candidate in candidates
-                if _reason_alias_signature(candidate[0][2], trade_date)
-                == _reason_alias_signature(reason_name, trade_date)
+                if _normalized_reason_alias(candidate[0][2])
+                == _normalized_reason_alias(reason_name)
             ]
+            if not matching_aliases:
+                matching_aliases = [
+                    candidate
+                    for candidate in candidates
+                    if _reason_alias_signature(candidate[0][2], trade_date)
+                    == _reason_alias_signature(reason_name, trade_date)
+                ]
             if len(matching_aliases) == 1:
                 candidates = matching_aliases
             symbol_summary_keys = {
@@ -358,10 +376,18 @@ def _is_truncated_seat_alias(first: str, second: str) -> bool:
 
 def _prefer_precise_summary(first: SourceRow, second: SourceRow) -> SourceRow | None:
     amount_fields = {"l_buy", "l_sell", "l_amount", "net_amount"}
+
+    def is_rounded(row: SourceRow) -> bool:
+        values = [_decimal(row, field) for field in amount_fields]
+        return all(value is not None and value % Decimal(100) == 0 for value in values)
+
+    first_rounded = is_rounded(first)
+    second_rounded = is_rounded(second)
     amendment_fields = {
         "name",
         "float_values",
         "turnover_rate",
+        "l_buy",
         "l_sell",
         "l_amount",
         "net_amount",
@@ -380,10 +406,19 @@ def _prefer_precise_summary(first: SourceRow, second: SourceRow) -> SourceRow | 
                 _decimal(row, "l_amount") or Decimal(-1),
             )
 
-        first_rank = amendment_rank(first)
-        second_rank = amendment_rank(second)
-        if first_rank != second_rank:
-            return first if first_rank > second_rank else second
+        if first_rounded == second_rounded:
+            first_rank = amendment_rank(first)
+            second_rank = amendment_rank(second)
+            if first_rank != second_rank:
+                return first if first_rank > second_rank else second
+            differing_fields = {
+                field for field in amendment_fields if first.get(field) != second.get(field)
+            }
+            if differing_fields <= {"name", "float_values", "turnover_rate"}:
+                merged = dict(second)
+                for field in differing_fields & {"float_values", "turnover_rate"}:
+                    merged[field] = None
+                return merged
 
     ignored = amount_fields | {"name"}
     first_other = {field: value for field, value in first.items() if field not in ignored}
@@ -391,12 +426,6 @@ def _prefer_precise_summary(first: SourceRow, second: SourceRow) -> SourceRow | 
     if _canonical_json(first_other) != _canonical_json(second_other):
         return None
 
-    def is_rounded(row: SourceRow) -> bool:
-        values = [_decimal(row, field) for field in amount_fields]
-        return all(value is not None and value % Decimal(100) == 0 for value in values)
-
-    first_rounded = is_rounded(first)
-    second_rounded = is_rounded(second)
     if first_rounded == second_rounded:
         return None
     rounded, precise = (first, second) if first_rounded else (second, first)
@@ -493,6 +522,15 @@ def _reason_alias_signature(
 ) -> tuple[DragonTigerReasonType, int, int | None]:
     trigger = _trigger_window(reason, trade_date)
     return _reason_type(reason), trigger.session_count, trigger.occurrence_count
+
+
+def _normalized_reason_alias(reason: str) -> str:
+    normalized = re.sub(r"[\s\uff0c,\u3002\uff1b;\uff1a:\uff08\uff09()\u3001]", "", reason)
+    return normalized.replace("退市整理的证券", "退市整理期")
+
+
+def _is_non_stock_row(row: SourceRow) -> bool:
+    return "可转债" in str(row.get("reason", ""))
 
 
 def _reason_code(

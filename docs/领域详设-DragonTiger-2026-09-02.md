@@ -141,6 +141,8 @@ Normalizer 输出可空的来源质量发现，字段包括稳定 rule code、se
 
 `top_list` 提供事件汇总，`top_inst` 提供席位明细。Adapter 以日期、股票、触发窗口和原因构造确定性
 来源事件标识；席位无可靠代码时按来源披露行保留。两个接口必须同批成功，不与 EastMoney 拼接。
+`top_list` 混入的可转债行保留在 Raw，并以 `DT_NON_STOCK_SECURITY_FILTERED` 记录过滤事实，
+不得伪装成沪深股票事件。历史重复汇总只在核心市场事实一致时合并；来源修订值无法判定时保持空值。
 Tushare DragonTiger 仍不自动切换或仲裁来源冲突。
 
 ### 3.3 BSE Security
