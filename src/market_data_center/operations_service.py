@@ -131,8 +131,8 @@ def safe_error_summary(error: BaseException) -> str:
 def _result_statistics(result: object) -> tuple[int, int, int, ExecutionStatus]:
     if isinstance(result, DataCleanupSummary):
         return (
-            result.verified_rows + result.history_deleted_rows,
-            result.deleted_rows + result.history_deleted_rows,
+            result.verified_rows + result.history_deleted_rows + result.quality_result_deleted_rows,
+            result.deleted_rows + result.history_deleted_rows + result.quality_result_deleted_rows,
             0,
             ExecutionStatus.SUCCEEDED,
         )

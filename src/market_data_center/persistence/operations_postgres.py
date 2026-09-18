@@ -72,6 +72,22 @@ insert into operations.workflow_run (
             )
         return value is True
 
+    def has_completed_on_date(self, workflow_code: WorkflowCode, trade_date: date) -> bool:
+        """Return True if the workflow has a succeeded or partial run on trade_date."""
+        with self._engine.connect() as connection:
+            value = connection.scalar(
+                text("""
+                    select exists (
+                        select 1 from operations.workflow_run
+                        where workflow_code=:workflow_code
+                          and status in ('succeeded', 'partial')
+                          and (scheduled_for at time zone 'Asia/Shanghai')::date=:trade_date
+                    )
+                """),
+                {"workflow_code": workflow_code.value, "trade_date": trade_date},
+            )
+        return value is True
+
     def start_job(self, workflow_run_id: UUID, job_code: str, sequence_no: int) -> JobExecution:
         now = datetime.now(UTC)
         with self._engine.begin() as connection:

@@ -739,9 +739,14 @@ def run_dragon_tiger_seat_profile_job() -> None:
 def _require_dragon_tiger_profile_prerequisites(
     operations: PostgreSQLOperationsPersistence, trade_date: date
 ) -> None:
-    for prerequisite in (WorkflowCode.DAILY_MARKET, WorkflowCode.DRAGON_TIGER_DAILY):
-        if not operations.has_succeeded_on_date(prerequisite, trade_date):
-            raise ProviderError("DT_PROFILE_PREREQUISITE_FAILED")
+    # daily_market accepts succeeded or partial: partial means some symbols have gaps
+    # but enough data was collected for seat-profile derivation.
+    if not operations.has_completed_on_date(WorkflowCode.DAILY_MARKET, trade_date):
+        raise ProviderError("DT_PROFILE_PREREQUISITE_FAILED")
+    # dragon_tiger_daily must fully succeed: a partial run means billboard data is
+    # incomplete and seat-profile calculation would produce incorrect results.
+    if not operations.has_succeeded_on_date(WorkflowCode.DRAGON_TIGER_DAILY, trade_date):
+        raise ProviderError("DT_PROFILE_PREREQUISITE_FAILED")
 
 
 def run_regulation_daily_calculation_job() -> None:

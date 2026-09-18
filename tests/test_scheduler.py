@@ -295,22 +295,69 @@ def test_dragon_tiger_requires_same_date_successful_bse_security_workflow() -> N
 
 
 def test_dragon_tiger_profile_requires_daily_market_and_dragon_tiger() -> None:
-    requested: list[tuple[object, date]] = []
+    """dragon_tiger_daily must succeed; failing it raises even when daily_market completed."""
+    completed: list[tuple[object, date]] = []
+    succeeded: list[tuple[object, date]] = []
 
     class Operations:
+        def has_completed_on_date(self, workflow_code: object, trade_date: date) -> bool:
+            completed.append((workflow_code, trade_date))
+            return True  # daily_market completed (succeeded or partial)
+
         def has_succeeded_on_date(self, workflow_code: object, trade_date: date) -> bool:
-            requested.append((workflow_code, trade_date))
-            return workflow_code is scheduler_module.WorkflowCode.DAILY_MARKET
+            succeeded.append((workflow_code, trade_date))
+            return False  # dragon_tiger_daily not yet succeeded
 
     with pytest.raises(ProviderError, match="DT_PROFILE_PREREQUISITE_FAILED"):
         _require_dragon_tiger_profile_prerequisites(  # type: ignore[arg-type]
             Operations(), date(2026, 9, 11)
         )
 
-    assert requested == [
-        (scheduler_module.WorkflowCode.DAILY_MARKET, date(2026, 9, 11)),
-        (scheduler_module.WorkflowCode.DRAGON_TIGER_DAILY, date(2026, 9, 11)),
-    ]
+    assert completed == [(scheduler_module.WorkflowCode.DAILY_MARKET, date(2026, 9, 11))]
+    assert succeeded == [(scheduler_module.WorkflowCode.DRAGON_TIGER_DAILY, date(2026, 9, 11))]
+
+
+def test_dragon_tiger_profile_accepts_partial_daily_market() -> None:
+    """daily_market with partial status satisfies the prerequisite check."""
+    completed: list[tuple[object, date]] = []
+    succeeded: list[tuple[object, date]] = []
+
+    class Operations:
+        def has_completed_on_date(self, workflow_code: object, trade_date: date) -> bool:
+            completed.append((workflow_code, trade_date))
+            return True  # daily_market partial counts as completed
+
+        def has_succeeded_on_date(self, workflow_code: object, trade_date: date) -> bool:
+            succeeded.append((workflow_code, trade_date))
+            return True  # dragon_tiger_daily succeeded
+
+    # Should not raise
+    _require_dragon_tiger_profile_prerequisites(  # type: ignore[arg-type]
+        Operations(), date(2026, 9, 16)
+    )
+
+    assert completed == [(scheduler_module.WorkflowCode.DAILY_MARKET, date(2026, 9, 16))]
+    assert succeeded == [(scheduler_module.WorkflowCode.DRAGON_TIGER_DAILY, date(2026, 9, 16))]
+
+
+def test_dragon_tiger_profile_fails_when_daily_market_absent() -> None:
+    """Missing daily_market (not succeeded, not partial) raises immediately."""
+    completed: list[tuple[object, date]] = []
+
+    class Operations:
+        def has_completed_on_date(self, workflow_code: object, trade_date: date) -> bool:
+            completed.append((workflow_code, trade_date))
+            return False  # daily_market absent entirely
+
+        def has_succeeded_on_date(self, workflow_code: object, trade_date: date) -> bool:
+            return True  # never reached
+
+    with pytest.raises(ProviderError, match="DT_PROFILE_PREREQUISITE_FAILED"):
+        _require_dragon_tiger_profile_prerequisites(  # type: ignore[arg-type]
+            Operations(), date(2026, 9, 16)
+        )
+
+    assert completed == [(scheduler_module.WorkflowCode.DAILY_MARKET, date(2026, 9, 16))]
 
 
 def test_legacy_time_environment_cannot_change_registered_jobs(monkeypatch, tmp_path: Path) -> None:
