@@ -30,6 +30,7 @@ EXPECTED_ENDPOINTS = {
     "query_dragon_tiger_events_by_symbol",
     "query_dragon_tiger_trades_by_seat",
     "query_dragon_tiger_event_metrics",
+    "query_hot_money_actions_by_date",
 }
 
 
@@ -369,11 +370,36 @@ def test_dragon_tiger_replaces_trading_billboard_contracts() -> None:
     serialized = dumps([postgrest, agent, fastapi], ensure_ascii=False).lower()
     assert "period_type" not in serialized
     assert "query_trading_billboard_by_date" not in serialized
-    assert "/api/v1/trading-billboard" not in serialized
+    assert "/api/v1/trading-billboard/by-date" not in serialized
+    assert "/api/v1/trading-billboard/by-symbol" not in serialized
     assert "tradingbillboarditem" not in serialized
     assert "billboard.entry" not in serialized
     assert "billboard.seat" not in serialized
     assert "payload_json" not in serialized
+
+
+def test_hot_money_actions_contracts_are_exact_date_and_decimal_safe() -> None:
+    postgrest = _load("postgrest-openapi-v1.json")
+    agent = _load("agent-tools-v1.json")
+    fastapi = _load("fastapi-openapi-v1.json")
+
+    endpoint = "query_hot_money_actions_by_date"
+    assert f"/rpc/{endpoint}" in postgrest["paths"]
+    body = postgrest["components"]["requestBodies"]["HotMoneyActionsByDate"]
+    body_schema = body["content"]["application/json"]["schema"]
+    assert body_schema["required"] == ["p_trade_date"]
+    assert body_schema["additionalProperties"] is False
+
+    tool = next(item for item in agent["tools"] if item["endpoint"] == endpoint)
+    assert tool["read_only"] is True
+    assert tool["input_schema"]["required"] == ["p_trade_date"]
+
+    operation = fastapi["paths"]["/api/v1/trading-billboard/hot-money-actions"]["get"]
+    assert {item["name"] for item in operation["parameters"]} == {"trade_date"}
+    assert operation["security"] == [{"APIKeyHeader": []}]
+    item_schema = fastapi["components"]["schemas"]["HotMoneyActionItem"]
+    for field in ("buy_amount", "sell_amount", "net_amount"):
+        assert item_schema["properties"][field]["anyOf"][0]["type"] == "string"
 
 
 def test_dragon_tiger_repair_migration_versions_windows_and_seat_identity() -> None:

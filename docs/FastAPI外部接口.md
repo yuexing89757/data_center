@@ -34,6 +34,12 @@ DragonTiger 提供四个数据库只读路由：按精确日期查询事件、�
 和安全质量码。日期区间最长 366 个自然日，`limit` 为 1..500，`offset` 为 0..10000。所有数值为
 Decimal 字符串；接口不回退日期、不访问数据源、不触发采集或 Raw 重放，也不返回主观评分或策略标签。
 
+`GET /api/v1/trading-billboard/hot-money-actions?trade_date=YYYY-MM-DD` 查询固定审核名录中
+温州帮、欢乐海岸、鑫多多、歌神、小棉袄、炒股养家和方新侠在精确交易日的龙虎榜席位行为。
+结果按游资、股票、稳定席位返回买入额、卖出额和可计算净买额；同一席位、股票和金额因多个上榜
+原因重复披露时只返回一次。买卖任一侧未披露时净买额为 `null`。当日已有龙虎榜但名录无动作时
+返回空列表；当日龙虎榜事实整体缺失时返回 404。
+
 Keep the application on `127.0.0.1`. Public authentication, HTTPS/domain, reverse proxy, firewall,
 rate limits, request-log retention, and API-key rotation are separate deployment decisions. See
 `Standalone-PostgreSQL-FastAPI-Linux.md` for Linux gates.

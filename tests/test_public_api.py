@@ -156,6 +156,7 @@ class FakeQueryService:
         ] = []
         self.dragon_tiger_seat_calls: list[tuple[str, date, date, int, int]] = []
         self.dragon_tiger_metrics_calls: list[str] = []
+        self.hot_money_action_calls: list[date] = []
         self.latest_stock_daily_indicator_calls: list[tuple[str, ...]] = []
         self.latest_stock_daily_indicator_error: Exception | None = None
         self.latest_stock_quote_calls: list[tuple[tuple[str, ...], int]] = []
@@ -331,6 +332,26 @@ class FakeQueryService:
             sell_disclosure_present=True,
             amount_period_verified=True,
             data_quality_codes=[],
+        )
+
+    def hot_money_actions(self, trade_date: date) -> api_models.HotMoneyActionResponse:
+        self.hot_money_action_calls.append(trade_date)
+        return api_models.HotMoneyActionResponse.model_validate(
+            {
+                "trade_date": trade_date.isoformat(),
+                "returned_count": 1,
+                "items": [
+                    {
+                        "hot_money_name": "温州帮",
+                        "code": "600000",
+                        "stock_name": "浦发银行",
+                        "seat_name": "测试营业部",
+                        "buy_amount": "120.00",
+                        "sell_amount": "20.00",
+                        "net_amount": "100.00",
+                    }
+                ],
+            }
         )
 
     def latest_stock_daily_indicators(
@@ -1220,6 +1241,34 @@ def test_dragon_tiger_routes_require_api_key() -> None:
     assert response.status_code == 401
 
 
+def test_hot_money_actions_route_returns_exact_date_actions() -> None:
+    service = FakeQueryService()
+
+    response = _client(service).get(
+        "/api/v1/trading-billboard/hot-money-actions",
+        params={"trade_date": "2026-09-17"},
+        headers=_headers(),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "trade_date": "2026-09-17",
+        "returned_count": 1,
+        "items": [
+            {
+                "hot_money_name": "温州帮",
+                "code": "600000",
+                "stock_name": "浦发银行",
+                "seat_name": "测试营业部",
+                "buy_amount": "120.00",
+                "sell_amount": "20.00",
+                "net_amount": "100.00",
+            }
+        ],
+    }
+    assert service.hot_money_action_calls == [date(2026, 9, 17)]
+
+
 def test_dragon_tiger_code_query_resolves_public_security_before_rpc(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1256,6 +1305,51 @@ def test_dragon_tiger_code_query_resolves_public_security_before_rpc(
     assert result.total_count == 1
     assert "query_dragon_tiger_events_by_symbol" in calls[0][0]
     assert calls[0][1]["symbol"] == "SSE:600000"
+    assert calls[0][2] == 5_000
+
+
+def test_hot_money_actions_query_uses_bounded_rpc_and_preserves_missing_amounts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = PostgreSQLPublicQueryService(object())  # type: ignore[arg-type]
+    calls: list[tuple[str, dict[str, object], int | None]] = []
+
+    def execute(
+        statement: object,
+        parameters: dict[str, object],
+        *,
+        statement_timeout_ms: int | None = None,
+    ) -> list[dict[str, object]]:
+        calls.append((str(statement), parameters, statement_timeout_ms))
+        return [
+            {
+                "payload": {
+                    "trade_date": "2026-09-17",
+                    "returned_count": 1,
+                    "items": [
+                        {
+                            "hot_money_name": "欢乐海岸",
+                            "code": "601086",
+                            "stock_name": "国芳集团",
+                            "seat_name": "中信证券股份有限公司深圳分公司",
+                            "buy_amount": "16476100",
+                            "sell_amount": None,
+                            "net_amount": None,
+                        }
+                    ],
+                }
+            }
+        ]
+
+    monkeypatch.setattr(service, "_execute", execute)
+
+    result = service.hot_money_actions(date(2026, 9, 17))
+
+    assert result.items[0].buy_amount == Decimal("16476100")
+    assert result.items[0].sell_amount is None
+    assert result.items[0].net_amount is None
+    assert "query_hot_money_actions_by_date" in calls[0][0]
+    assert calls[0][1] == {"trade_date": date(2026, 9, 17)}
     assert calls[0][2] == 5_000
 
 

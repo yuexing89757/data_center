@@ -25,6 +25,7 @@ from market_data_center.public_api.models import (
     DragonTigerCapitalMetricsItem,
     DragonTigerEventPageResponse,
     DragonTigerSeatTradePageResponse,
+    HotMoneyActionResponse,
     LatestStockDailyIndicatorResponse,
     LimitUpPoolResponse,
     SecurityItem,
@@ -73,6 +74,10 @@ select api_v1.query_dragon_tiger_trades_by_seat(
 
 QUERY_DRAGON_TIGER_EVENT_METRICS = text("""
 select api_v1.query_dragon_tiger_event_metrics(p_event_id => :event_id) as payload
+""")
+
+QUERY_HOT_MONEY_ACTIONS = text("""
+select api_v1.query_hot_money_actions_by_date(p_trade_date => :trade_date) as payload
 """)
 
 QUERY_LATEST_STOCK_DAILY_INDICATORS = text("""
@@ -222,6 +227,8 @@ class PublicQueryService(Protocol):
     ) -> DragonTigerSeatTradePageResponse: ...
 
     def dragon_tiger_event_metrics(self, event_id: str) -> DragonTigerCapitalMetricsItem: ...
+
+    def hot_money_actions(self, trade_date: date) -> HotMoneyActionResponse: ...
 
     def latest_stock_daily_indicators(
         self, codes: tuple[str, ...]
@@ -377,6 +384,14 @@ class PostgreSQLPublicQueryService:
         if payload is None:
             raise PublicQueryNotFound("DragonTiger event was not found")
         return DragonTigerCapitalMetricsItem.model_validate(payload)
+
+    def hot_money_actions(self, trade_date: date) -> HotMoneyActionResponse:
+        rows = self._execute(
+            QUERY_HOT_MONEY_ACTIONS,
+            {"trade_date": trade_date},
+            statement_timeout_ms=5_000,
+        )
+        return HotMoneyActionResponse.model_validate(rows[0]["payload"])
 
     def latest_stock_daily_indicators(
         self, codes: tuple[str, ...]

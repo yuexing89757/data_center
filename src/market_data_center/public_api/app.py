@@ -54,6 +54,7 @@ from market_data_center.public_api.models import (
     ErrorDetail,
     ErrorResponse,
     HealthResponse,
+    HotMoneyActionResponse,
     LatestStockDailyIndicatorQuery,
     LatestStockDailyIndicatorResponse,
     LatestStockQuoteQuery,
@@ -359,6 +360,29 @@ def create_app(
         event_id: Annotated[UUID, Path(description="龙虎榜事件 UUID。")],
     ) -> DragonTigerCapitalMetricsItem:
         return service.dragon_tiger_event_metrics(str(event_id))
+
+    @app.get(
+        "/api/v1/trading-billboard/hot-money-actions",
+        response_model=HotMoneyActionResponse,
+        responses={
+            401: {"model": ErrorResponse},
+            404: {"model": ErrorResponse},
+            422: {"model": ErrorResponse},
+            503: {"model": ErrorResponse},
+        },
+        tags=["市场数据"],
+        summary="按交易日查询指定游资龙虎榜买卖行为",
+        description=(
+            "按精确交易日查询温州帮、欢乐海岸、鑫多多、歌神、小棉袄、"
+            "炒股养家和方新侠经审核席位的客观买卖披露，不回退其他日期。"
+        ),
+    )
+    def hot_money_actions(
+        _: ApiKeyDependency,
+        service: QueryServiceDependency,
+        trade_date: Annotated[date, Query(description="需要精确查询的交易日。")],
+    ) -> HotMoneyActionResponse:
+        return service.hot_money_actions(trade_date)
 
     @app.post(
         "/api/v1/stock-daily-indicators/latest/query",

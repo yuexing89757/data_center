@@ -377,6 +377,28 @@
           }
         }
       }
+    },
+    "/rpc/query_hot_money_actions_by_date": {
+      "post": {
+        "operationId": "queryHotMoneyActionsByDate",
+        "summary": "Read exact-date disclosed actions for the fixed reviewed hot-money catalog",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/HotMoneyActionsByDate"
+        },
+        "responses": {
+          "200": {
+            "description": "Exact-date reviewed hot-money seat actions"
+          },
+          "404": {
+            "description": "No DragonTiger facts exist for the exact date"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1117,6 +1139,25 @@
                 "p_event_id": {
                   "type": "string",
                   "format": "uuid"
+                }
+              }
+            }
+          }
+        }
+      },
+      "HotMoneyActionsByDate": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "p_trade_date"
+              ],
+              "properties": {
+                "p_trade_date": {
+                  "$ref": "#/components/schemas/Date"
                 }
               }
             }

@@ -7978,6 +7978,49 @@ def test_dragon_tiger_persistence_and_replacement_rpcs(database_engine: Engine) 
             """)
         ).all()
         assert set(aliases) == {"某机构席位", "某机构席位(更名)"}
+        actor_id = uuid4()
+        connection.execute(
+            text("""
+insert into billboard.hot_money_actor (
+ actor_id,actor_code,canonical_name,aliases,is_active
+) values (:actor_id,'TEST_WENZHOU','温州帮','{}',true)
+"""),
+            {"actor_id": actor_id},
+        )
+        connection.execute(
+            text("""
+insert into billboard.hot_money_seat_mapping (
+ actor_id,seat_id,valid_from,valid_to,source_alias_name,evidence_note,
+ review_status,reviewed_at,catalog_version
+) values (
+ :actor_id,:seat_id,:day,null,'某机构席位','集成测试证据',
+ 'APPROVED',now(),'test-v1'
+)
+"""),
+            {"actor_id": actor_id, "seat_id": seat_id, "day": TRADE_DATE},
+        )
+        actions = cast(
+            Mapping[str, object],
+            connection.scalar(
+                text("select api_v1.query_hot_money_actions_by_date(:day)"),
+                {"day": TRADE_DATE},
+            ),
+        )
+        assert actions == {
+            "trade_date": TRADE_DATE.isoformat(),
+            "returned_count": 1,
+            "items": [
+                {
+                    "hot_money_name": "温州帮",
+                    "code": "600000",
+                    "stock_name": "浦发银行",
+                    "seat_name": "某机构席位",
+                    "buy_amount": "120",
+                    "sell_amount": "20",
+                    "net_amount": "100",
+                }
+            ],
+        }
         metrics = cast(
             Mapping[str, object],
             connection.scalar(

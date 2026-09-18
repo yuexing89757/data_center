@@ -4280,6 +4280,114 @@
         "title": "HealthResponse",
         "type": "object"
       },
+      "HotMoneyActionItem": {
+        "additionalProperties": false,
+        "properties": {
+          "buy_amount": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "买入金额，单位为人民币元。",
+            "title": "Buy Amount"
+          },
+          "code": {
+            "description": "不含交易所前缀的六位股票代码。",
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "hot_money_name": {
+            "description": "经审核目录中的游资标准名称。",
+            "title": "Hot Money Name",
+            "type": "string"
+          },
+          "net_amount": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "净买入金额，单位为人民币元。",
+            "title": "Net Amount"
+          },
+          "seat_name": {
+            "description": "数据源提供的营业部席位名称。",
+            "title": "Seat Name",
+            "type": "string"
+          },
+          "sell_amount": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "卖出金额，单位为人民币元。",
+            "title": "Sell Amount"
+          },
+          "stock_name": {
+            "description": "股票当前名称。",
+            "title": "Stock Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "hot_money_name",
+          "code",
+          "stock_name",
+          "seat_name",
+          "buy_amount",
+          "sell_amount",
+          "net_amount"
+        ],
+        "title": "HotMoneyActionItem",
+        "type": "object"
+      },
+      "HotMoneyActionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "description": "返回的数据记录列表。",
+            "items": {
+              "$ref": "#/components/schemas/HotMoneyActionItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "returned_count": {
+            "description": "本次实际返回的记录数。",
+            "minimum": 0.0,
+            "title": "Returned Count",
+            "type": "integer"
+          },
+          "trade_date": {
+            "description": "交易日。",
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "trade_date",
+          "returned_count",
+          "items"
+        ],
+        "title": "HotMoneyActionResponse",
+        "type": "object"
+      },
       "LatestStockDailyIndicatorItem": {
         "additionalProperties": false,
         "properties": {
@@ -7343,6 +7451,87 @@
           }
         ],
         "summary": "查询最近二十个交易日涨幅榜",
+        "tags": [
+          "市场数据"
+        ]
+      }
+    },
+    "/api/v1/trading-billboard/hot-money-actions": {
+      "get": {
+        "description": "按精确交易日查询温州帮、欢乐海岸、鑫多多、歌神、小棉袄、炒股养家和方新侠经审核席位的客观买卖披露，不回退其他日期。",
+        "operationId": "hot_money_actions_api_v1_trading_billboard_hot_money_actions_get",
+        "parameters": [
+          {
+            "description": "交易日。",
+            "in": "query",
+            "name": "trade_date",
+            "required": true,
+            "schema": {
+              "description": "需要精确查询的交易日。",
+              "format": "date",
+              "title": "Trade Date",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HotMoneyActionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "按交易日查询指定游资龙虎榜买卖行为",
         "tags": [
           "市场数据"
         ]

@@ -191,6 +191,22 @@ class DragonTigerCapitalMetricsItem(ApiModel):
     data_quality_codes: list[str]
 
 
+class HotMoneyActionItem(ApiModel):
+    hot_money_name: str
+    code: str = Field(pattern=r"^[0-9]{6}$")
+    stock_name: str
+    seat_name: str
+    buy_amount: Decimal | None
+    sell_amount: Decimal | None
+    net_amount: Decimal | None
+
+
+class HotMoneyActionResponse(ApiModel):
+    trade_date: date
+    returned_count: int = Field(ge=0)
+    items: list[HotMoneyActionItem]
+
+
 class ClassificationMembersResponse(ApiModel):
     snapshot_date: date
     member_count: int = Field(ge=0)
