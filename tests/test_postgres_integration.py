@@ -973,7 +973,14 @@ def test_call_auction_market_series_schema_is_partitioned_and_internal(
                 text("""
                     select tablename from pg_tables
                     where schemaname='realtime' and rowsecurity
-                      and tablename like 'call_auction_market_series%'
+                      and (
+                        tablename in (
+                          'call_auction_market_series_session',
+                          'call_auction_market_series_round',
+                          'call_auction_market_series_snapshot'
+                        )
+                        or tablename ~ '^call_auction_market_series_snapshot_[0-9]{6}$'
+                      )
                 """)
             ).scalars()
         )
