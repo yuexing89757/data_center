@@ -21,8 +21,10 @@ from market_data_center.domain.ingestion import (
     ProviderCode,
 )
 from market_data_center.snapshot_collector import (
+    LIMIT_DOWN_POOL_CODE,
     LIMIT_UP_POOL_CODE,
     EodQuoteSnapshotUnavailable,
+    _eod_pool_symbols,
     _eod_quality_results,
     _finish_run,
     _limit_up_symbols,
@@ -66,15 +68,17 @@ class RecordingConnection:
 
     def execute(self, statement, parameters) -> RecordingResult:
         self.engine.calls.append(RecordedCall(str(statement), dict(parameters)))
-        if len(self.engine.calls) == 1:
-            return RecordingResult(scalar=self.engine.snapshot_id)
-        return RecordingResult(rows=tuple((symbol,) for symbol in self.engine.symbols))
+        if "select s.snapshot_id" in str(statement):
+            return RecordingResult(scalar=self.engine.snapshot_ids.get(parameters["code"]))
+        return RecordingResult(
+            rows=tuple((symbol,) for symbol in self.engine.pool_symbols[parameters["snapshot_id"]])
+        )
 
 
 class RecordingEngine:
     def __init__(self, *, snapshot_id: str, symbols: tuple[str, ...]) -> None:
-        self.snapshot_id = snapshot_id
-        self.symbols = symbols
+        self.snapshot_ids: dict[str, str] = {LIMIT_UP_POOL_CODE: snapshot_id}
+        self.pool_symbols: dict[str, tuple[str, ...]] = {snapshot_id: symbols}
         self.calls: list[RecordedCall] = []
 
     def connect(self) -> RecordingConnection:
@@ -150,6 +154,35 @@ def test_call_auction_symbols_use_exact_date_limit_up_pool_only() -> None:
     assert "basis_trade_date = :d" in engine.calls[0].statement
     assert "status = 'ready'" in engine.calls[0].statement
     assert engine.calls[1].parameters == {"snapshot_id": "pool-up"}
+
+
+def test_eod_symbols_union_exact_date_pools_without_duplicates() -> None:
+    trade_date = date(2026, 8, 11)
+    engine = RecordingEngine(snapshot_id="pool-up", symbols=("SSE:600000", "SZSE:000001"))
+    engine.snapshot_ids[LIMIT_DOWN_POOL_CODE] = "pool-down"
+    engine.pool_symbols["pool-down"] = ("SZSE:000001", "SSE:600001")
+
+    symbols, up_symbols = _eod_pool_symbols(cast(Engine, engine), trade_date)
+
+    assert symbols == ["SSE:600000", "SSE:600001", "SZSE:000001"]
+    assert up_symbols == ["SSE:600000", "SZSE:000001"]
+    assert engine.calls[2].parameters == {"code": LIMIT_DOWN_POOL_CODE, "d": trade_date}
+    assert "basis_trade_date = :d" in engine.calls[2].statement
+
+
+def test_eod_symbols_reject_missing_exact_date_down_pool() -> None:
+    engine = RecordingEngine(snapshot_id="pool-up", symbols=("SSE:600000",))
+
+    with pytest.raises(EodQuoteSnapshotUnavailable, match="limit-down"):
+        _eod_pool_symbols(cast(Engine, engine), date(2026, 8, 11))
+
+
+def test_down_quote_does_not_get_up_side_seal_amount() -> None:
+    quote = _quote()
+
+    eod = _to_eod_records((quote,), date(2026, 8, 10), {})[0]
+
+    assert eod.seal_amount is None
 
 
 def test_snapshot_ingestion_run_finishes_partial_with_counts() -> None:

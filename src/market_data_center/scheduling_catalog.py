@@ -111,7 +111,7 @@ WORKFLOW_DEFINITIONS = (
     WorkflowDefinition(
         "eod_quote_snapshot",
         "收盘五档快照",
-        "当日日 K、每日指标和涨停池完成后采集收盘五档快照, 计算封单金额。",
+        "当日日 K、每日指标和涨跌停池完成后采集收盘五档快照, 计算涨停封单金额。",
         ("collect_eod_quotes",),
     ),
     WorkflowDefinition(
@@ -275,14 +275,14 @@ def job_definitions(settings: SchedulerSettings) -> tuple[JobDefinition, ...]:
         JobDefinition(
             EOD_QUOTE_SNAPSHOT_JOB_ID,
             "收盘五档快照",
-            "当日涨停池 ready 后采集其成员的收盘五档行情, 计算涨停封单金额。",
+            "当日涨跌停池 ready 后采集两池去重成员的收盘五档行情, 计算涨停封单金额。",
             "eod_quote_snapshot",
             "cron",
             "周一至周五 21:10",
             timezone,
             settings.eod_quote_snapshot_enabled,
             timeout,
-            "当日 ready 涨停池缺失时失败; 不使用旧池或当前报价补历史数据",
+            "当日 ready 涨跌停池缺失时失败; 不使用旧池或当前报价补历史数据",
             day_of_week="mon-fri",
             hour=21,
             minute=10,
