@@ -1,14 +1,32 @@
 from datetime import date, datetime
 from decimal import Decimal
+from pathlib import Path
+from typing import cast
+from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 import pandas as pd
 import pytest
 
-from market_data_center.domain.today_limit_down import TodayLimitDownMember
+from market_data_center.domain.today_limit_down import (
+    TodayLimitDownDependencies,
+    TodayLimitDownMember,
+    UpstreamState,
+)
+from market_data_center.persistence.today_limit_down_postgres import TodayLimitDownFillSummary
 from market_data_center.persistence.today_limit_down_postgres import _member as member_from_row
 from market_data_center.providers.akshare_limit_down import AkshareCurrentDayLimitDownProvider
 from market_data_center.providers.contracts import ProviderError
+from market_data_center.raw_store import LocalRawStore
+from market_data_center.scheduler import build_scheduler, run_today_limit_down_snapshot_job
+from market_data_center.scheduling_catalog import TODAY_LIMIT_DOWN_SNAPSHOT_JOB_ID, job_definition
+from market_data_center.settings import SchedulerSettings
+from market_data_center.today_limit_down_service import (
+    ManagedLimitDownProvider,
+    TodayLimitDownFillService,
+    TodayLimitDownPersistence,
+    decide_fill,
+)
 
 
 class Client:
@@ -111,3 +129,104 @@ def test_persistence_member_freezes_ask_side_without_source() -> None:
 
     assert member.closing_ask1_sealing_amount_cny == Decimal("180")
     assert member.source_reported_sealed_funds_cny is None
+
+
+def test_dependency_policy_does_not_call_source_without_exact_down_pool() -> None:
+    decision = decide_fill(
+        TodayLimitDownDependencies(
+            date(2026, 9, 18),
+            True,
+            UpstreamState.SUCCEEDED,
+            UpstreamState.SUCCEEDED,
+            False,
+        )
+    )
+
+    assert decision.status.value == "deferred"
+    assert not decision.may_collect_source
+
+
+def test_dependency_policy_marks_partial_upstream() -> None:
+    decision = decide_fill(
+        TodayLimitDownDependencies(
+            date(2026, 9, 18),
+            True,
+            UpstreamState.PARTIAL,
+            UpstreamState.SUCCEEDED,
+            True,
+        )
+    )
+
+    assert decision.status.value == "partial"
+    assert decision.may_collect_source
+
+
+def test_worker_catalog_schedules_down_snapshot_at_2210_disabled_by_default() -> None:
+    disabled = job_definition(TODAY_LIMIT_DOWN_SNAPSHOT_JOB_ID, SchedulerSettings(_env_file=None))
+    enabled = job_definition(
+        TODAY_LIMIT_DOWN_SNAPSHOT_JOB_ID,
+        SchedulerSettings(today_limit_down_snapshot_enabled=True, _env_file=None),
+    )
+
+    assert (disabled.hour, disabled.minute, disabled.enabled) == (22, 10, False)
+    assert enabled.enabled
+    assert enabled.workflow_code == "today_limit_down_snapshot"
+
+
+def test_enabled_down_snapshot_registers_worker_function(tmp_path: Path) -> None:
+    scheduler = build_scheduler(
+        SchedulerSettings(
+            scheduler_store_path=tmp_path / "jobs.sqlite",
+            today_limit_down_snapshot_enabled=True,
+            _env_file=None,
+        )
+    )
+
+    job = scheduler.get_job(TODAY_LIMIT_DOWN_SNAPSHOT_JOB_ID)
+    assert job is not None
+    assert job.func is run_today_limit_down_snapshot_job
+
+
+def test_source_failure_is_recorded_as_failed_snapshot(tmp_path: Path) -> None:
+    trade_date = date(2026, 9, 18)
+
+    class Persistence:
+        run = None
+        reason = None
+
+        def dependencies(self, _trade_date: date) -> TodayLimitDownDependencies:
+            return TodayLimitDownDependencies(
+                trade_date, True, UpstreamState.SUCCEEDED, UpstreamState.SUCCEEDED, True
+            )
+
+        def create_ingestion_run(self, run: object) -> None:
+            self.run = run
+
+        def commit_failed(
+            self, _trade_date: date, run: object, reason: str
+        ) -> TodayLimitDownFillSummary:
+            self.run = run
+            self.reason = reason
+            return TodayLimitDownFillSummary("failed", trade_date, 1, 0, 0, 0, uuid4())
+
+    class FailingProvider:
+        def __enter__(self) -> "FailingProvider":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def fetch_limit_down_pool(self, _trade_date: date) -> object:
+            raise RuntimeError("source unavailable")
+
+    persistence = Persistence()
+    service = TodayLimitDownFillService(
+        persistence=cast("TodayLimitDownPersistence", persistence),
+        raw_store=LocalRawStore(tmp_path),
+        provider_factory=lambda: cast("ManagedLimitDownProvider", FailingProvider()),
+    )
+
+    result = service.fill(trade_date)
+
+    assert result.status == "failed"
+    assert persistence.reason == "source_request_failed_RuntimeError"

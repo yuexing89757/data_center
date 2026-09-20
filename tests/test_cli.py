@@ -767,3 +767,12 @@ def test_daily_run_uses_latest_trading_day_on_weekend(
     assert calls[-1].dataset == "daily-bars-bulk"
     assert calls[-1].start_date == "2026-07-24"
     assert calls[-1].end_date == "2026-07-24"
+
+
+def test_limit_down_snapshot_cli_requires_exact_trade_date() -> None:
+    with pytest.raises(SystemExit):
+        _parser().parse_args(["today-limit-down-snapshot"])
+
+    args = _parser().parse_args(["today-limit-down-snapshot", "--trade-date", "2026-09-18"])
+    assert args.dataset == "today-limit-down-snapshot"
+    assert args.trade_date == "2026-09-18"

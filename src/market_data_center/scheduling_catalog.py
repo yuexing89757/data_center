@@ -14,6 +14,7 @@ EOD_QUOTE_SNAPSHOT_JOB_ID = "eod-quote-snapshot-daily"
 CALL_AUCTION_MARKET_SERIES_JOB_ID = "call-auction-market-series"
 CALL_AUCTION_MARKET_SERIES_ARCHIVE_JOB_ID = "call-auction-market-series-archive-daily"
 TODAY_LIMIT_UP_SNAPSHOT_JOB_ID = "today-limit-up-snapshot-daily"
+TODAY_LIMIT_DOWN_SNAPSHOT_JOB_ID = "today-limit-down-snapshot-daily"
 PYTDX_POOL_REFRESH_JOB_ID = "pytdx-pool-refresh"
 CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID = "close-price-new-highs-120d-daily"
 BOARD_INDEX_DAILY_BAR_JOB_ID = "board-index-883423-daily-bar"
@@ -143,6 +144,12 @@ WORKFLOW_DEFINITIONS = (
         "Same-day immutable limit-up snapshot",
         "Build a versioned snapshot after exact-date upstream dependency checks.",
         ("fill_today_limit_up_snapshot",),
+    ),
+    WorkflowDefinition(
+        "today_limit_down_snapshot",
+        "同日跌停不可变快照",
+        "核对精确日期依赖后冻结来源、规范事实及收盘卖盘。",
+        ("fill_today_limit_down_snapshot",),
     ),
     WorkflowDefinition(
         "pytdx_pool_refresh",
@@ -316,6 +323,21 @@ def job_definitions(settings: SchedulerSettings) -> tuple[JobDefinition, ...]:
             day_of_week="mon-fri",
             hour=22,
             minute=0,
+        ),
+        JobDefinition(
+            TODAY_LIMIT_DOWN_SNAPSHOT_JOB_ID,
+            "同日跌停快照填充",
+            "在同日日 K、流通股本和 ready 跌停池检查后冻结版本化快照。",
+            "today_limit_down_snapshot",
+            "cron",
+            "周一至周五 22:10",
+            timezone,
+            settings.today_limit_down_snapshot_enabled,
+            timeout,
+            "依赖不足记 deferred、来源失败记 failed, 不发布虚假 ready",
+            day_of_week="mon-fri",
+            hour=22,
+            minute=10,
         ),
         JobDefinition(
             CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID,

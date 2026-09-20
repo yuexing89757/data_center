@@ -30,6 +30,7 @@ from market_data_center.dragon_tiger_service import (
     DragonTigerCollectionSummary,
 )
 from market_data_center.persistence.operations_postgres import PostgreSQLOperationsPersistence
+from market_data_center.persistence.today_limit_down_postgres import TodayLimitDownFillSummary
 from market_data_center.persistence.today_limit_up_postgres import TodayLimitUpFillSummary
 from market_data_center.providers.pytdx_pool import PytdxPoolRefreshResult
 from market_data_center.regulation_benchmark_service import (
@@ -237,6 +238,14 @@ def _result_statistics(result: object) -> tuple[int, int, int, ExecutionStatus]:
             ExecutionStatus.PARTIAL if result.rejected_count else ExecutionStatus.SUCCEEDED,
         )
     if isinstance(result, TodayLimitUpFillSummary):
+        status = {
+            "ready": ExecutionStatus.SUCCEEDED,
+            "partial": ExecutionStatus.PARTIAL,
+            "deferred": ExecutionStatus.PARTIAL,
+            "failed": ExecutionStatus.FAILED,
+        }[result.status]
+        return result.candidate_count, result.member_count, result.rejected_count, status
+    if isinstance(result, TodayLimitDownFillSummary):
         status = {
             "ready": ExecutionStatus.SUCCEEDED,
             "partial": ExecutionStatus.PARTIAL,

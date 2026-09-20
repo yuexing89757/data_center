@@ -33,6 +33,7 @@ class WorkflowCode(StrEnum):
     CALL_AUCTION_SNAPSHOT = "call_auction_snapshot"
     PYTDX_POOL_REFRESH = "pytdx_pool_refresh"
     TODAY_LIMIT_UP_SNAPSHOT = "today_limit_up_snapshot"
+    TODAY_LIMIT_DOWN_SNAPSHOT = "today_limit_down_snapshot"
     CLOSE_PRICE_NEW_HIGHS_120D = "close_price_new_highs_120d"
     BOARD_INDEX_DAILY_BAR = "board_index_daily_bar"
     SHAREHOLDER_COUNT_DAILY = "shareholder_count_daily"

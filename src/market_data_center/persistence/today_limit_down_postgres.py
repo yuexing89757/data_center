@@ -139,13 +139,21 @@ insert into today_limit_down.snapshot (
             return TodayLimitDownFillSummary("deferred", trade_date, version, 0, 0, 0, snapshot_id)
 
     def commit_failed(
-        self, trade_date: date, run: IngestionRun, reason: str
+        self,
+        trade_date: date,
+        run: IngestionRun,
+        reason: str,
+        manifest: RawManifest | None = None,
+        quality: Sequence[QualityResult] = (),
     ) -> TodayLimitDownFillSummary:
         input_hash = _hash(
             {"trade_date": trade_date.isoformat(), "source_failure": reason, "status": "failed"}
         )
         with self._engine.begin() as connection:
-            _update_ingestion_run(connection, run)
+            if manifest is None:
+                _update_ingestion_run(connection, run)
+            else:
+                self._insert_ingestion_artifacts(connection, run, manifest, (), quality, set())
             existing = _existing(connection, trade_date, input_hash)
             if existing is not None:
                 return _summary(existing, True)
