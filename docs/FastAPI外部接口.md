@@ -25,6 +25,14 @@ daily indicators (500 requested six-digit codes). Business routes require
 process-local and `/readyz` verifies a bounded database query. Prices and amounts remain decimal
 strings. Errors never return SQL, internal schema names, database addresses, or credentials.
 
+All FastAPI response timestamp fields, including nested items, are rendered in
+`Asia/Shanghai` as `YYYY-MM-DD HH:mm:ss` strings (for example,
+`2026-09-20 09:15:20`). Fractional seconds and timezone suffixes are not emitted.
+Missing timestamps remain `null`; date-only fields remain `YYYY-MM-DD`. This is an
+external presentation rule only: PostgreSQL `timestamptz`, source Raw values, and
+internal timezone-aware `datetime` values are unchanged. OpenAPI describes these
+response fields as patterned strings rather than RFC 3339 `date-time` values.
+
 DragonTiger 提供四个数据库只读路由：按精确日期查询事件、按六位股票代码查询有界历史、按稳定
 席位 UUID 查询行为，以及按事件 UUID 查询即时计算的客观资金指标。路径分别为
 `/api/v1/dragon-tiger/events/by-date`、`/api/v1/dragon-tiger/events/by-symbol/{code}`、

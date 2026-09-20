@@ -1580,6 +1580,44 @@ def test_daily_limit_up_list_returns_items() -> None:
     assert service.daily_limit_up_calls == [(date(2026, 8, 10), 1, 10, 200)]
 
 
+def test_api_timestamps_use_shanghai_wall_clock_strings() -> None:
+    client = _client(FakeQueryService())
+
+    pool = client.get(
+        "/api/v1/limit-up-pool",
+        params={"trade_date": "2026-08-01"},
+        headers=_headers(),
+    ).json()
+    daily = client.get(
+        "/api/v1/daily-limit-up-list",
+        params={"trade_date": "2026-08-11"},
+        headers=_headers(),
+    ).json()
+    quotes = client.post(
+        "/api/v1/realtime-quotes/latest/query",
+        json={"codes": ["601003", "600123"]},
+        headers=_headers(),
+    ).json()
+
+    assert pool["generated_at"] == "2026-08-01 08:00:00"
+    assert daily["generated_at"] == "2026-08-11 22:00:00"
+    assert daily["items"][0]["first_limit_up_at"] == "2026-08-11 17:35:00"
+    assert daily["items"][0]["last_limit_up_at"] == "2026-08-11 22:30:00"
+    assert quotes["items"][0]["observed_at"] == "2026-08-21 16:15:00"
+    assert quotes["items"][0]["source_timestamp"] == "2026-08-21 16:14:41"
+
+
+def test_api_timestamp_serialization_keeps_missing_values_and_drops_subseconds() -> None:
+    response = FakeQueryService().daily_limit_up_list(date(2026, 8, 11), None, 0, 200)
+    response.generated_at = datetime(2026, 8, 11, 14, 0, 0, 123456, tzinfo=UTC)
+    response.items[0].first_limit_up_at = None
+
+    payload = response.model_dump(mode="json")
+
+    assert payload["generated_at"] == "2026-08-11 22:00:00"
+    assert payload["items"][0]["first_limit_up_at"] is None
+
+
 def test_daily_limit_up_list_version_and_pagination_are_bounded() -> None:
     service = FakeQueryService()
     client = _client(service)
@@ -1632,7 +1670,7 @@ def test_call_auction_market_snapshots_deduplicate_codes_and_keep_decimals() -> 
             {
                 "symbol": "SSE:600000",
                 "code": "600000",
-                "observed_at": "2026-08-13T01:26:00Z",
+                "observed_at": "2026-08-13 09:26:00",
                 "last_price": "10.1200",
                 "previous_close": "10.0000",
                 "high_price": "10.1500",
@@ -1707,8 +1745,8 @@ def test_call_auction_market_series_snapshots_return_rounds_in_one_session() -> 
         "rounds": [
             {
                 "sample_seq": 0,
-                "scheduled_at": "2026-08-14T01:15:00Z",
-                "collected_at": "2026-08-14T01:15:02Z",
+                "scheduled_at": "2026-08-14 09:15:00",
+                "collected_at": "2026-08-14 09:15:02",
                 "round_status": "partial",
                 "selected_ingestion_id": "22222222-2222-2222-2222-222222222222",
                 "requested_count": 2,
@@ -1719,7 +1757,7 @@ def test_call_auction_market_series_snapshots_return_rounds_in_one_session() -> 
                         "symbol": "SSE:600000",
                         "code": "600000",
                         "batch_code": "091500",
-                        "observed_at": "2026-08-14T01:15:01Z",
+                        "observed_at": "2026-08-14 09:15:01",
                         "last_price": "10.1200",
                         "previous_close": "10.0000",
                         "high_price": "10.1500",
@@ -1944,7 +1982,7 @@ def test_board_index_bias_returns_latest_decimal_contract_without_inputs() -> No
         "algorithm_version": "board_index_bias_v1",
         "data_origin": "database",
         "persistence_status": "persisted",
-        "fetched_at": "2026-08-15T03:26:46Z",
+        "fetched_at": "2026-08-15 11:26:46",
     }
     assert service.board_index_bias_calls == 1
     operation = client.get("/openapi.json").json()["paths"]["/api/v1/board-indexes/883423/bias"][

@@ -21,6 +21,7 @@
             "examples": [
               "2026-08-14 09:15:05"
             ],
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
             "title": "Observed At",
             "type": "string"
           },
@@ -73,6 +74,7 @@
             "examples": [
               "2026-08-14 11:26:46"
             ],
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
             "title": "Fetched At",
             "type": "string"
           },
@@ -360,6 +362,7 @@
             "examples": [
               "2026-08-18 14:27:46"
             ],
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
             "title": "Observed At",
             "type": "string"
           },
@@ -600,7 +603,7 @@
           },
           "fetched_at": {
             "description": "数据获取时间，按上海时区格式化。",
-            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
             "title": "Fetched At",
             "type": "string"
           },
@@ -900,7 +903,7 @@
         "properties": {
           "collected_at": {
             "description": "实际完成采集的时间。",
-            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
             "title": "Collected At",
             "type": "string"
           },
@@ -953,7 +956,7 @@
           },
           "scheduled_at": {
             "description": "计划采集时间。",
-            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
             "title": "Scheduled At",
             "type": "string"
           },
@@ -1327,7 +1330,7 @@
           },
           "observed_at": {
             "description": "行情观察时间，按上海时区格式化。",
-            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
             "title": "Observed At",
             "type": "string"
           },
@@ -1817,7 +1820,7 @@
           },
           "observed_at": {
             "description": "行情观察时间，按上海时区格式化。",
-            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
             "title": "Observed At",
             "type": "string"
           },
@@ -2080,13 +2083,13 @@
           },
           "window_end": {
             "description": "形态观察窗口结束时间。",
-            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
             "title": "Window End",
             "type": "string"
           },
           "window_start": {
             "description": "形态观察窗口开始时间。",
-            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
             "title": "Window Start",
             "type": "string"
           }
@@ -2707,7 +2710,7 @@
           "first_limit_up_at": {
             "anyOf": [
               {
-                "format": "date-time",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
                 "type": "string"
               },
               {
@@ -2751,7 +2754,7 @@
           "last_limit_up_at": {
             "anyOf": [
               {
-                "format": "date-time",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
                 "type": "string"
               },
               {
@@ -2949,7 +2952,7 @@
           },
           "generated_at": {
             "description": "结果生成时间。",
-            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
             "title": "Generated At",
             "type": "string"
           },
@@ -4820,7 +4823,7 @@
           },
           "observed_at": {
             "description": "行情观察时间，按上海时区格式化。",
-            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
             "title": "Observed At",
             "type": "string"
           },
@@ -4863,7 +4866,7 @@
           },
           "source_timestamp": {
             "description": "腾讯来源标注的行情时间。",
-            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
             "title": "Source Timestamp",
             "type": "string"
           },
@@ -5061,7 +5064,7 @@
           },
           "generated_at": {
             "description": "结果生成时间。",
-            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
             "title": "Generated At",
             "type": "string"
           },

@@ -488,7 +488,10 @@ def test_board_index_bias_contract_is_fixed_bounded_and_no_input() -> None:
     assert response_schema["properties"]["close"]["type"] == "string"
     assert response_schema["properties"]["data_origin"]["const"] == "database"
     assert response_schema["properties"]["persistence_status"]["const"] == "persisted"
-    assert response_schema["properties"]["fetched_at"]["format"] == "date-time"
+    fetched_at = response_schema["properties"]["fetched_at"]
+    assert fetched_at["type"] == "string"
+    assert fetched_at["pattern"] == r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$"
+    assert "format" not in fetched_at
     assert {"404", "503"}.issubset(operation["responses"])
     assert "429" not in operation["responses"]
     assert "502" not in operation["responses"]

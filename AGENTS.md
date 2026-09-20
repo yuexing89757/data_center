@@ -29,6 +29,11 @@
 - External reads: ADR-0011 accepts a separate FastAPI process protected by API key. It may
   call only bounded `api_v1` RPCs, must not access internal schemas directly, and must not
   write data or trigger ingestion. Keep `contracts/fastapi-openapi-v1.json` synchronized.
+- FastAPI response timestamps must use `Asia/Shanghai` wall-clock strings in
+  `YYYY-MM-DD HH:mm:ss` format, without fractional seconds or a timezone suffix. Use the
+  shared `ApiTimestamp` response-model type for every new datetime field; keep missing
+  values as `null` and date-only fields as `YYYY-MM-DD`. Do not change stored timestamps,
+  domain datetimes, or PostgREST semantics to satisfy this presentation rule.
 - Raw data: immutable Parquet/JSONL objects in the configured Worker filesystem, with
   manifests and ingestion lineage in PostgreSQL. Never edit Raw objects in place or commit
   Raw market data.
