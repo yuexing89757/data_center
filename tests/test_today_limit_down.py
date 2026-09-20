@@ -13,7 +13,10 @@ from market_data_center.domain.today_limit_down import (
     TodayLimitDownMember,
     UpstreamState,
 )
-from market_data_center.persistence.today_limit_down_postgres import TodayLimitDownFillSummary
+from market_data_center.persistence.today_limit_down_postgres import (
+    TodayLimitDownFillSummary,
+    _missing_core,
+)
 from market_data_center.persistence.today_limit_down_postgres import _member as member_from_row
 from market_data_center.providers.akshare_limit_down import AkshareCurrentDayLimitDownProvider
 from market_data_center.providers.contracts import ProviderError
@@ -129,6 +132,22 @@ def test_persistence_member_freezes_ask_side_without_source() -> None:
 
     assert member.closing_ask1_sealing_amount_cny == Decimal("180")
     assert member.source_reported_sealed_funds_cny is None
+
+
+def test_candidate_with_non_limit_close_is_rejected_before_member_build() -> None:
+    row = {
+        "historical_name": "平安银行",
+        "name_ingestion_id": uuid4(),
+        "close": Decimal("9.01"),
+        "previous_close": Decimal("10"),
+        "daily_bar_ingestion_id": uuid4(),
+        "limit_price": Decimal("9"),
+        "pool_calculation_id": uuid4(),
+        "free_float_shares": 100,
+        "indicator_ingestion_id": uuid4(),
+    }
+
+    assert _missing_core(row) == "close_not_at_lower_limit"
 
 
 def test_dependency_policy_does_not_call_source_without_exact_down_pool() -> None:

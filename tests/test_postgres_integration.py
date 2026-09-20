@@ -2115,10 +2115,13 @@ select api_v1.query_call_auction_indicative_details(
 def test_today_limit_down_schema_is_private_and_append_only(database_engine: Engine) -> None:
     with database_engine.connect() as connection:
         for table in ("source_observation", "snapshot", "member", "calculation_quality"):
-            assert connection.scalar(
-                text("select to_regclass(:table_name)"),
-                {"table_name": f"today_limit_down.{table}"},
-            ) is not None
+            assert (
+                connection.scalar(
+                    text("select to_regclass(:table_name)"),
+                    {"table_name": f"today_limit_down.{table}"},
+                )
+                is not None
+            )
         assert connection.scalar(
             text("""
 select count(*) = 4 from pg_class c join pg_namespace n on n.oid=c.relnamespace
@@ -2366,6 +2369,63 @@ where rule_code='missing_source_observation'
         ).all()
     assert members == ["SSE:600000"]
     assert findings == [("missing_source_observation", "SSE:600001")]
+
+
+def test_daily_limit_down_rpc_exposes_deferred_snapshot_without_internal_grants(
+    database_engine: Engine,
+) -> None:
+    snapshot_id = uuid4()
+    with database_engine.begin() as connection:
+        connection.execute(
+            text("""
+insert into today_limit_down.snapshot (
+ snapshot_id,trade_date,version,status,member_count,candidate_count,rejected_count,
+ content_hash,input_hash,rule_version,algorithm_version,generated_at
+) values (:id,:date,1,'deferred',0,0,0,:content,:input,:rule,:algorithm,now())
+"""),
+            {
+                "id": snapshot_id,
+                "date": TRADE_DATE,
+                "content": "0" * 64,
+                "input": "1" * 64,
+                "rule": "cn_a_mainboard_limit_down_v1",
+                "algorithm": "today_limit_down_snapshot_v1",
+            },
+        )
+        connection.execute(
+            text("""
+insert into today_limit_down.calculation_quality
+ (snapshot_id,rule_code,severity,symbol,message)
+values (:id,'missing_daily_market','error','','daily_market dependency is not ready')
+"""),
+            {"id": snapshot_id},
+        )
+        assert connection.scalar(
+            text("""
+select has_function_privilege(
+ 'market_data_api',
+ 'api_v1.query_daily_limit_down_list(date,integer,integer,integer)',
+ 'execute'
+)
+""")
+        )
+        assert not connection.scalar(
+            text(
+                "select has_table_privilege('market_data_api','today_limit_down.snapshot','select')"
+            )
+        )
+        payload = connection.scalar(
+            text("""
+select api_v1.query_daily_limit_down_list(
+ p_trade_date => :date, p_version => null, p_offset => 0, p_limit => 200)
+"""),
+            {"date": TRADE_DATE},
+        )
+    assert payload["snapshot_id"] == str(snapshot_id)
+    assert payload["status"] == "deferred"
+    assert payload["member_count"] == 0
+    assert payload["quality"]["by_rule"] == {"missing_daily_market": 1}
+    assert payload["items"] == []
 
 
 def test_daily_limit_up_list_rpc_exposes_only_bounded_domain_projection(

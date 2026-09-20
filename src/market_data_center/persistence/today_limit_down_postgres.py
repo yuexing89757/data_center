@@ -488,6 +488,8 @@ def _missing_core(row: RowMapping) -> str | None:
     ):
         if row[key] is None:
             return key
+    if Decimal(row["close"]) != Decimal(row["limit_price"]):
+        return "close_not_at_lower_limit"
     return None
 
 
