@@ -38,6 +38,7 @@ class SchedulerSettings(BaseSettings):
     data_cleanup_enabled: bool = True
     # Remains opt-in until the new migration and provider preflight are explicitly deployed.
     today_limit_up_snapshot_enabled: bool = False
+    today_limit_down_snapshot_enabled: bool = False
     close_price_new_highs_120d_enabled: bool = True
     board_index_daily_bar_enabled: bool = True
     shareholder_count_daily_enabled: bool = False
@@ -97,6 +98,15 @@ class TodayLimitUpProviderSettings(BaseSettings):
 
     today_limit_up_timeout_seconds: float = Field(default=10.0, gt=0, le=30)
     today_limit_up_max_attempts: int = Field(default=2, ge=1, le=3)
+
+
+class TodayLimitDownProviderSettings(BaseSettings):
+    """Bounded public-node access for the current-day AKShare/EastMoney down pool."""
+
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    today_limit_down_timeout_seconds: float = Field(default=10.0, gt=0, le=30)
+    today_limit_down_max_attempts: int = Field(default=2, ge=1, le=3)
 
 
 class ApiSettings(BaseSettings):

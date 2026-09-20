@@ -2507,6 +2507,555 @@
         "title": "DailyBarResponse",
         "type": "object"
       },
+      "DailyLimitDownListItem": {
+        "additionalProperties": false,
+        "properties": {
+          "change_percent": {
+            "description": "涨跌幅，单位为百分比。",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Change Percent",
+            "type": "string"
+          },
+          "close": {
+            "description": "收盘价。",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Close",
+            "type": "string"
+          },
+          "closing_ask1_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "收盘卖一价。",
+            "title": "Closing Ask1 Price"
+          },
+          "closing_ask1_sealing_amount_cny": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "按收盘卖一价和卖一量计算的跌停封单额，单位为人民币元。",
+            "title": "Closing Ask1 Sealing Amount Cny"
+          },
+          "closing_ask1_volume_shares": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "收盘卖一量，单位为股。",
+            "title": "Closing Ask1 Volume Shares"
+          },
+          "closing_ask2_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "收盘卖二价。",
+            "title": "Closing Ask2 Price"
+          },
+          "closing_ask2_volume_shares": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "收盘卖二量，单位为股。",
+            "title": "Closing Ask2 Volume Shares"
+          },
+          "closing_ask3_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "收盘卖三价。",
+            "title": "Closing Ask3 Price"
+          },
+          "closing_ask3_volume_shares": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "收盘卖三量，单位为股。",
+            "title": "Closing Ask3 Volume Shares"
+          },
+          "closing_ask4_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "收盘卖四价。",
+            "title": "Closing Ask4 Price"
+          },
+          "closing_ask4_volume_shares": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "收盘卖四量，单位为股。",
+            "title": "Closing Ask4 Volume Shares"
+          },
+          "closing_ask5_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "收盘卖五价。",
+            "title": "Closing Ask5 Price"
+          },
+          "closing_ask5_volume_shares": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "收盘卖五量，单位为股。",
+            "title": "Closing Ask5 Volume Shares"
+          },
+          "code": {
+            "description": "不含交易所前缀的六位股票代码。",
+            "title": "Code",
+            "type": "string"
+          },
+          "consecutive_limit_down_days": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "连续跌停交易日数量。",
+            "title": "Consecutive Limit Down Days"
+          },
+          "daily_bar_ingestion_id": {
+            "description": "日线数据采集批次标识。",
+            "format": "uuid",
+            "title": "Daily Bar Ingestion Id",
+            "type": "string"
+          },
+          "duration_semantics": {
+            "description": "封板持续时间字段的统计口径。",
+            "title": "Duration Semantics",
+            "type": "string"
+          },
+          "first_limit_down_at": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "当日首次跌停封板时间；来源未提供时为空。",
+            "title": "First Limit Down At"
+          },
+          "free_float_market_cap_cny": {
+            "description": "流通市值，单位为人民币元。",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Free Float Market Cap Cny",
+            "type": "string"
+          },
+          "free_float_shares": {
+            "description": "自由流通股本，单位为股。",
+            "exclusiveMinimum": 0.0,
+            "title": "Free Float Shares",
+            "type": "integer"
+          },
+          "indicator_ingestion_id": {
+            "description": "指标来源采集批次标识。",
+            "format": "uuid",
+            "title": "Indicator Ingestion Id",
+            "type": "string"
+          },
+          "last_limit_down_at": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "当日最后一次跌停封板时间。",
+            "title": "Last Limit Down At"
+          },
+          "limit_down_duration_seconds": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "当日跌停累计封板时长；无事件流时为空。",
+            "title": "Limit Down Duration Seconds"
+          },
+          "limit_price": {
+            "description": "按价格限制规则计算的涨停价或跌停价。",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Limit Price",
+            "type": "string"
+          },
+          "name": {
+            "description": "证券或板块名称。",
+            "title": "Name",
+            "type": "string"
+          },
+          "name_ingestion_id": {
+            "description": "证券名称来源采集批次标识。",
+            "format": "uuid",
+            "title": "Name Ingestion Id",
+            "type": "string"
+          },
+          "open_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "涨停打开次数。",
+            "title": "Open Count"
+          },
+          "order_book_ingestion_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "盘口数据采集批次标识。",
+            "title": "Order Book Ingestion Id"
+          },
+          "pool_calculation_id": {
+            "description": "股票池计算批次标识。",
+            "format": "uuid",
+            "title": "Pool Calculation Id",
+            "type": "string"
+          },
+          "previous_close": {
+            "description": "上一交易日收盘价。",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Previous Close",
+            "type": "string"
+          },
+          "source_observation_ingestion_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源观察记录的采集批次标识。",
+            "title": "Source Observation Ingestion Id"
+          },
+          "source_observation_raw_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源观察记录的原始数据标识。",
+            "title": "Source Observation Raw Id"
+          },
+          "source_reported_sealed_funds_cny": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "数据源报告的封单资金，单位为人民币元。",
+            "title": "Source Reported Sealed Funds Cny"
+          },
+          "symbol": {
+            "description": "带交易所前缀的标准证券代码。",
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "code",
+          "name",
+          "previous_close",
+          "close",
+          "limit_price",
+          "change_percent",
+          "free_float_shares",
+          "free_float_market_cap_cny",
+          "duration_semantics",
+          "source_reported_sealed_funds_cny",
+          "closing_ask1_price",
+          "closing_ask2_price",
+          "closing_ask3_price",
+          "closing_ask4_price",
+          "closing_ask5_price",
+          "closing_ask1_sealing_amount_cny",
+          "daily_bar_ingestion_id",
+          "indicator_ingestion_id",
+          "name_ingestion_id",
+          "pool_calculation_id",
+          "source_observation_ingestion_id",
+          "source_observation_raw_id",
+          "order_book_ingestion_id"
+        ],
+        "title": "DailyLimitDownListItem",
+        "type": "object"
+      },
+      "DailyLimitDownListResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "algorithm_version": {
+            "description": "计算算法版本。",
+            "title": "Algorithm Version",
+            "type": "string"
+          },
+          "calculation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "计算批次标识。",
+            "title": "Calculation Id"
+          },
+          "candidate_count": {
+            "description": "候选股票数量。",
+            "minimum": 0.0,
+            "title": "Candidate Count",
+            "type": "integer"
+          },
+          "generated_at": {
+            "description": "结果生成时间。",
+            "example": "2026-09-18 22:10:00",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "has_more": {
+            "description": "是否还有未返回的记录。",
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "input_hash": {
+            "description": "用于追溯计算输入的哈希值。",
+            "title": "Input Hash",
+            "type": "string"
+          },
+          "items": {
+            "description": "返回的数据记录列表。",
+            "items": {
+              "$ref": "#/components/schemas/DailyLimitDownListItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "member_count": {
+            "description": "快照中的成员总数。",
+            "minimum": 0.0,
+            "title": "Member Count",
+            "type": "integer"
+          },
+          "offset": {
+            "description": "从结果集起点跳过的记录数。",
+            "minimum": 0.0,
+            "title": "Offset",
+            "type": "integer"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/DailyLimitDownQualitySummary",
+            "description": "数据质量摘要。"
+          },
+          "rejected_count": {
+            "description": "未通过校验的候选记录数。",
+            "minimum": 0.0,
+            "title": "Rejected Count",
+            "type": "integer"
+          },
+          "returned_count": {
+            "description": "本次实际返回的记录数。",
+            "minimum": 0.0,
+            "title": "Returned Count",
+            "type": "integer"
+          },
+          "rule_version": {
+            "description": "业务规则版本。",
+            "title": "Rule Version",
+            "type": "string"
+          },
+          "snapshot_id": {
+            "description": "不可变快照标识。",
+            "format": "uuid",
+            "title": "Snapshot Id",
+            "type": "string"
+          },
+          "source_ingestion_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源数据采集批次标识。",
+            "title": "Source Ingestion Id"
+          },
+          "status": {
+            "description": "状态。",
+            "enum": [
+              "ready",
+              "partial",
+              "deferred",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "trade_date": {
+            "description": "交易日。",
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "version": {
+            "description": "不可变结果版本。",
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "snapshot_id",
+          "calculation_id",
+          "trade_date",
+          "version",
+          "status",
+          "rule_version",
+          "algorithm_version",
+          "input_hash",
+          "source_ingestion_id",
+          "generated_at",
+          "candidate_count",
+          "member_count",
+          "rejected_count",
+          "offset",
+          "returned_count",
+          "has_more",
+          "quality",
+          "items"
+        ],
+        "title": "DailyLimitDownListResponse",
+        "type": "object"
+      },
+      "DailyLimitDownQualitySummary": {
+        "additionalProperties": false,
+        "properties": {
+          "by_rule": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "按规则分组的质量问题数量。",
+            "title": "By Rule",
+            "type": "object"
+          },
+          "total_findings": {
+            "description": "数据质量问题总数。",
+            "minimum": 0.0,
+            "title": "Total Findings",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total_findings",
+          "by_rule"
+        ],
+        "title": "DailyLimitDownQualitySummary",
+        "type": "object"
+      },
       "DailyLimitUpListItem": {
         "additionalProperties": false,
         "properties": {
@@ -2703,7 +3252,7 @@
             "type": "string"
           },
           "duration_semantics": {
-            "description": "涨停持续时间字段的统计口径。",
+            "description": "封板持续时间字段的统计口径。",
             "title": "Duration Semantics",
             "type": "string"
           },
@@ -6413,6 +6962,130 @@
           }
         ],
         "summary": "查询证券日线行情",
+        "tags": [
+          "市场数据"
+        ]
+      }
+    },
+    "/api/v1/daily-limit-down-list": {
+      "get": {
+        "description": "返回指定交易日最新或指定版本的沪深主板跌停快照，包含规范价格、来源末次封板、收盘卖一至卖五和卖一计算封单额、质量摘要及追溯信息。首次封板时间和累计时长在来源不可得时保持空值；不回退日期或填造缺失数据。",
+        "operationId": "daily_limit_down_list_api_v1_daily_limit_down_list_get",
+        "parameters": [
+          {
+            "description": "交易日。",
+            "in": "query",
+            "name": "trade_date",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "Trade Date",
+              "type": "string"
+            }
+          },
+          {
+            "description": "不可变结果版本。",
+            "in": "query",
+            "name": "version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version"
+            }
+          },
+          {
+            "description": "从结果集起点跳过的记录数。",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 50000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "最多返回的记录数。",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DailyLimitDownListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "查询指定交易日的不可变跌停列表快照",
         "tags": [
           "市场数据"
         ]

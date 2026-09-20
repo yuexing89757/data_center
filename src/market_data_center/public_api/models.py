@@ -328,6 +328,69 @@ class DailyLimitUpListResponse(ApiModel):
     items: list[DailyLimitUpListItem]
 
 
+class DailyLimitDownListItem(ApiModel):
+    symbol: str
+    code: str
+    name: str
+    previous_close: Decimal
+    close: Decimal
+    limit_price: Decimal
+    change_percent: Decimal
+    free_float_shares: int = Field(gt=0)
+    free_float_market_cap_cny: Decimal
+    first_limit_down_at: ApiTimestamp | None = None
+    last_limit_down_at: ApiTimestamp | None = None
+    open_count: int | None = Field(default=None, ge=0)
+    consecutive_limit_down_days: int | None = Field(default=None, ge=1)
+    limit_down_duration_seconds: int | None = Field(default=None, ge=0)
+    duration_semantics: str
+    source_reported_sealed_funds_cny: Decimal | None
+    closing_ask1_price: Decimal | None
+    closing_ask1_volume_shares: int | None = Field(default=None, ge=0)
+    closing_ask2_price: Decimal | None
+    closing_ask2_volume_shares: int | None = Field(default=None, ge=0)
+    closing_ask3_price: Decimal | None
+    closing_ask3_volume_shares: int | None = Field(default=None, ge=0)
+    closing_ask4_price: Decimal | None
+    closing_ask4_volume_shares: int | None = Field(default=None, ge=0)
+    closing_ask5_price: Decimal | None
+    closing_ask5_volume_shares: int | None = Field(default=None, ge=0)
+    closing_ask1_sealing_amount_cny: Decimal | None
+    daily_bar_ingestion_id: UUID
+    indicator_ingestion_id: UUID
+    name_ingestion_id: UUID
+    pool_calculation_id: UUID
+    source_observation_ingestion_id: UUID | None
+    source_observation_raw_id: UUID | None
+    order_book_ingestion_id: UUID | None
+
+
+class DailyLimitDownQualitySummary(ApiModel):
+    total_findings: int = Field(ge=0)
+    by_rule: dict[str, int]
+
+
+class DailyLimitDownListResponse(ApiModel):
+    snapshot_id: UUID
+    calculation_id: UUID | None
+    trade_date: date
+    version: int = Field(ge=1)
+    status: Literal["ready", "partial", "deferred", "failed"]
+    rule_version: str
+    algorithm_version: str
+    input_hash: str
+    source_ingestion_id: UUID | None
+    generated_at: ApiTimestamp = Field(json_schema_extra={"example": "2026-09-18 22:10:00"})
+    candidate_count: int = Field(ge=0)
+    member_count: int = Field(ge=0)
+    rejected_count: int = Field(ge=0)
+    offset: int = Field(ge=0)
+    returned_count: int = Field(ge=0)
+    has_more: bool
+    quality: DailyLimitDownQualitySummary
+    items: list[DailyLimitDownListItem]
+
+
 SixDigitCode = Annotated[str, Field(pattern=r"^[0-9]{6}$")]
 BatchCode = Annotated[str, Field(pattern=r"^[0-9]{6}$")]
 

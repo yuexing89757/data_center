@@ -26,11 +26,13 @@ FIELD_DESCRIPTIONS_ZH = {
     "change_percent": "涨跌幅，单位为百分比。",
     "close": "收盘价。",
     "closing_bid1_sealing_amount_cny": "按收盘买一价和买一量计算的封单额，单位为人民币元。",
+    "closing_ask1_sealing_amount_cny": "按收盘卖一价和卖一量计算的跌停封单额，单位为人民币元。",
     "code": "不含交易所前缀的六位股票代码。",
     "codes": "不含交易所前缀的六位股票代码集合，最多五百个。",
     "collected_at": "实际完成采集的时间。",
     "comparison_session_count": "用于比较的历史交易日数量。",
     "consecutive_limit_up_days": "连续涨停交易日数量。",
+    "consecutive_limit_down_days": "连续跌停交易日数量。",
     "count": "返回记录总数。",
     "cumulative_amount": "截至快照时点的累计金额，单位为人民币元。",
     "cumulative_amount_cny": "截至快照时点的累计成交金额，单位为人民币元。",
@@ -45,7 +47,7 @@ FIELD_DESCRIPTIONS_ZH = {
     "displayed_volume_shares": "来源页面展示的竞价匹配量，单位为股。",
     "down": "一字跌停股票列表。",
     "down_count": "一字跌停股票数量。",
-    "duration_semantics": "涨停持续时间字段的统计口径。",
+    "duration_semantics": "封板持续时间字段的统计口径。",
     "effective_trade_date": "结果实际对应的交易日。",
     "eligible_count": "满足计算条件的股票数量。",
     "eligible_history_count": "具备完整历史数据的股票数量。",
@@ -59,6 +61,7 @@ FIELD_DESCRIPTIONS_ZH = {
     "fetched_at": "数据获取时间，按上海时区格式化。",
     "first_batch_code": "抢筹线计算使用的起始批次，固定为092453。",
     "first_limit_up_at": "当日首次涨停时间。",
+    "first_limit_down_at": "当日首次跌停封板时间；来源未提供时为空。",
     "free_float_market_cap_cny": "流通市值，单位为人民币元。",
     "free_float_shares": "自由流通股本，单位为股。",
     "free_float_turnover_rate_pct": "自由流通换手率，单位为百分比。",
@@ -84,10 +87,12 @@ FIELD_DESCRIPTIONS_ZH = {
     "is_st": "当日是否为风险警示证券。",
     "items": "返回的数据记录列表。",
     "last_limit_up_at": "当日最后一次涨停时间。",
+    "last_limit_down_at": "当日最后一次跌停封板时间。",
     "last_price": "快照时点价格；竞价阶段按既定口径取值。",
     "level": "盘口档位序号。",
     "limit_price": "按价格限制规则计算的涨停价或跌停价。",
     "limit_up_duration_seconds": "当日涨停持续时间，单位为秒。",
+    "limit_down_duration_seconds": "当日跌停累计封板时长；无事件流时为空。",
     "live_provider_derived": "结果是否包含实时来源数据的计算值。",
     "low": "最低价。",
     "low_price": "截至快照时点的最低价。",
@@ -310,6 +315,8 @@ for side_en, side_zh in (("bid", "买"), ("ask", "卖")):
 for level, level_zh in enumerate(("一", "二", "三", "四", "五"), start=1):
     FIELD_DESCRIPTIONS_ZH[f"closing_bid{level}_price"] = f"收盘买{level_zh}价。"
     FIELD_DESCRIPTIONS_ZH[f"closing_bid{level}_volume_shares"] = f"收盘买{level_zh}量，单位为股。"
+    FIELD_DESCRIPTIONS_ZH[f"closing_ask{level}_price"] = f"收盘卖{level_zh}价。"
+    FIELD_DESCRIPTIONS_ZH[f"closing_ask{level}_volume_shares"] = f"收盘卖{level_zh}量，单位为股。"
 
 
 def localize_openapi(schema: dict[str, Any]) -> dict[str, Any]:
