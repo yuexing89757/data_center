@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 
 from market_data_center.domain.today_limit_down import TodayLimitDownMember
+from market_data_center.persistence.today_limit_down_postgres import _member as member_from_row
 from market_data_center.providers.akshare_limit_down import AkshareCurrentDayLimitDownProvider
 from market_data_center.providers.contracts import ProviderError
 
@@ -83,3 +84,30 @@ def test_member_requires_exact_down_limit_and_ask1_amount() -> None:
         _member(closing_ask1_sealing_amount_cny=Decimal("181"))
     with pytest.raises(ValueError, match="free-float market cap"):
         _member(free_float_market_cap_cny=Decimal("901"))
+
+
+def test_persistence_member_freezes_ask_side_without_source() -> None:
+    row = {
+        "symbol": "SZSE:000001",
+        "code": "000001",
+        "historical_name": "平安银行",
+        "previous_close": Decimal("10"),
+        "close": Decimal("9"),
+        "limit_price": Decimal("9"),
+        "free_float_shares": 100,
+        "ask1_price": Decimal("9"),
+        "ask1_volume": 20,
+        "ask2_price": None,
+        "ask2_volume": None,
+        "ask3_price": None,
+        "ask3_volume": None,
+        "ask4_price": None,
+        "ask4_volume": None,
+        "ask5_price": None,
+        "ask5_volume": None,
+    }
+
+    member = member_from_row(row, None)
+
+    assert member.closing_ask1_sealing_amount_cny == Decimal("180")
+    assert member.source_reported_sealed_funds_cny is None

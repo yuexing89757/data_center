@@ -2112,6 +2112,28 @@ select api_v1.query_call_auction_indicative_details(
     assert payload["quality"]["accepted_auction_row_count"] == 1
 
 
+def test_today_limit_down_schema_is_private_and_append_only(database_engine: Engine) -> None:
+    with database_engine.connect() as connection:
+        for table in ("source_observation", "snapshot", "member", "calculation_quality"):
+            assert connection.scalar(
+                text("select to_regclass(:table_name)"),
+                {"table_name": f"today_limit_down.{table}"},
+            ) is not None
+        assert connection.scalar(
+            text("""
+select count(*) = 4 from pg_class c join pg_namespace n on n.oid=c.relnamespace
+where n.nspname='today_limit_down' and c.relname in
+ ('source_observation','snapshot','member','calculation_quality') and c.relrowsecurity
+""")
+        )
+        assert not connection.scalar(
+            text("""
+select has_schema_privilege('public','today_limit_down','usage')
+ or has_table_privilege('public','today_limit_down.snapshot','select')
+""")
+        )
+
+
 def test_today_limit_up_schema_is_internal_and_append_only(
     database_engine: Engine,
 ) -> None:
