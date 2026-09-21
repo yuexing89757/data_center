@@ -32,8 +32,10 @@
 - FastAPI response timestamps must use `Asia/Shanghai` wall-clock strings in
   `YYYY-MM-DD HH:mm:ss` format, without fractional seconds or a timezone suffix. Use the
   shared `ApiTimestamp` response-model type for every new datetime field; keep missing
-  values as `null` and date-only fields as `YYYY-MM-DD`. Do not change stored timestamps,
-  domain datetimes, or PostgREST semantics to satisfy this presentation rule.
+  values as `null` and date-only fields as `YYYY-MM-DD`. Give timestamp fields a real,
+  calendar-valid OpenAPI example; the shape-only regex can generate impossible dates in
+  `/docs`. Do not change stored timestamps, domain datetimes, or PostgREST semantics to
+  satisfy this presentation rule.
 - Raw data: immutable Parquet/JSONL objects in the configured Worker filesystem, with
   manifests and ingestion lineage in PostgreSQL. Never edit Raw objects in place or commit
   Raw market data.

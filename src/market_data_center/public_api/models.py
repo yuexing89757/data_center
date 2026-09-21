@@ -26,7 +26,11 @@ ApiTimestamp = Annotated[
     datetime,
     PlainSerializer(_serialize_api_timestamp, return_type=str, when_used="json"),
     WithJsonSchema(
-        {"type": "string", "pattern": r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$"},
+        {
+            "type": "string",
+            "pattern": r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$",
+            "example": "2026-09-18 09:35:00",
+        },
         mode="serialization",
     ),
 ]
@@ -272,8 +276,12 @@ class DailyLimitUpListItem(ApiModel):
     change_percent: Decimal
     free_float_shares: int = Field(gt=0)
     free_float_market_cap_cny: Decimal
-    first_limit_up_at: ApiTimestamp | None
-    last_limit_up_at: ApiTimestamp | None
+    first_limit_up_at: ApiTimestamp | None = Field(
+        json_schema_extra={"example": "2026-09-18 09:35:00"}
+    )
+    last_limit_up_at: ApiTimestamp | None = Field(
+        json_schema_extra={"example": "2026-09-18 14:57:00"}
+    )
     open_count: int | None = Field(default=None, ge=0)
     limit_up_duration_seconds: int | None = Field(default=None, ge=0)
     duration_semantics: str
