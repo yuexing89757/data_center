@@ -2,7 +2,8 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
-from market_data_center.dragon_tiger_analytics import SeatParticipation
+import market_data_center.dragon_tiger_profile_service as profile_service_module
+from market_data_center.dragon_tiger_analytics import SeatParticipation, build_trading_seat_profile
 from market_data_center.dragon_tiger_profile_service import (
     DragonTigerProfileInputs,
     DragonTigerProfileService,
@@ -94,3 +95,36 @@ def test_materialize_preserves_missing_close_as_skipped_outcome() -> None:
     summary = DragonTigerProfileService(Persistence(inputs)).materialize(date(2026, 9, 9))
 
     assert summary.skipped_outcome_count == 1
+
+
+def test_materialize_passes_only_each_seats_inputs_to_profile_calculator(monkeypatch) -> None:
+    second_seat_id = UUID("00000000-0000-0000-0000-000000000102")
+    inputs = DragonTigerProfileInputs(
+        as_of_date=date(2026, 9, 9),
+        input_watermark_date=date(2026, 9, 9),
+        trading_dates=(date(2026, 9, 8), date(2026, 9, 9)),
+        observations=tuple(
+            SeatProfileObservation(
+                participation=SeatParticipation(
+                    f"event-{index}", seat_id, date(2026, 9, 8), Decimal("100"), None
+                ),
+                event_close=Decimal("10"),
+                future_closes=(FutureSessionClose(1, date(2026, 9, 9), Decimal("11")),),
+            )
+            for index, seat_id in enumerate((SEAT_ID, second_seat_id), start=1)
+        ),
+    )
+
+    def assert_partitioned_inputs(**kwargs):
+        seat_id = kwargs["seat_id"]
+        assert {item.seat_id for item in kwargs["participations"]} == {seat_id}
+        assert {item.seat_id for item in kwargs["outcomes"]} == {seat_id}
+        return build_trading_seat_profile(**kwargs)
+
+    monkeypatch.setattr(
+        profile_service_module, "build_trading_seat_profile", assert_partitioned_inputs
+    )
+
+    summary = DragonTigerProfileService(Persistence(inputs)).materialize(date(2026, 9, 9))
+
+    assert summary.profile_count == 2

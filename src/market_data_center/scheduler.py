@@ -92,6 +92,7 @@ from market_data_center.scheduling_catalog import (
     STALE_RUN_RECOVERY_JOB_ID,
     STOCK_DAILY_INDICATOR_JOB_ID,
     STOCK_POOL_JOB_ID,
+    TODAY_LIMIT_DOWN_SNAPSHOT_JOB_ID,
     TODAY_LIMIT_UP_SNAPSHOT_JOB_ID,
     JobDefinition,
     job_definition,
@@ -628,6 +629,39 @@ def run_today_limit_up_snapshot_job() -> None:
         engine.dispose()
 
 
+def run_today_limit_down_snapshot_job() -> None:
+    """Fill the exact-date immutable limit-down snapshot after dependency checks."""
+    from market_data_center.today_limit_down_service import fill_today_limit_down_snapshot
+
+    settings = WorkerSettings()  # type: ignore[call-arg]
+    scheduling = SchedulerSettings()
+    engine = create_engine(
+        sqlalchemy_url(settings.database_url.get_secret_value()), pool_pre_ping=True
+    )
+    try:
+        fire_time = _scheduled_job_fire_time(TODAY_LIMIT_DOWN_SNAPSHOT_JOB_ID, scheduling)
+        execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
+            WorkflowCode.TODAY_LIMIT_DOWN_SNAPSHOT,
+            fire_time,
+            TriggerSource.SCHEDULED,
+        )
+        try:
+            trade_date = fire_time.astimezone(ZoneInfo(SCHEDULER_TIMEZONE)).date()
+            execution.step(
+                "fill_today_limit_down_snapshot",
+                1,
+                lambda: fill_today_limit_down_snapshot(
+                    engine, LocalRawStore(settings.raw_data_root), trade_date
+                ),
+            )
+        except BaseException as error:
+            execution.fail(error)
+            raise
+        execution.succeed()
+    finally:
+        engine.dispose()
+
+
 def run_security_bse_job() -> None:
     """Synchronize the all-status BSE security catalog before DragonTiger collection."""
     settings = WorkerSettings()  # type: ignore[call-arg]
@@ -739,6 +773,7 @@ def run_dragon_tiger_seat_profile_job() -> None:
 def _require_dragon_tiger_profile_prerequisites(
     operations: PostgreSQLOperationsPersistence, trade_date: date
 ) -> None:
+<<<<<<< HEAD
     # daily_market accepts succeeded or partial: partial means some symbols have gaps
     # but enough data was collected for seat-profile derivation.
     if not operations.has_completed_on_date(WorkflowCode.DAILY_MARKET, trade_date):
@@ -746,6 +781,15 @@ def _require_dragon_tiger_profile_prerequisites(
     # dragon_tiger_daily must fully succeed: a partial run means billboard data is
     # incomplete and seat-profile calculation would produce incorrect results.
     if not operations.has_succeeded_on_date(WorkflowCode.DRAGON_TIGER_DAILY, trade_date):
+=======
+    daily_market_ready = operations.has_succeeded_or_partial_on_date(
+        WorkflowCode.DAILY_MARKET, trade_date
+    )
+    dragon_tiger_ready = operations.has_succeeded_on_date(
+        WorkflowCode.DRAGON_TIGER_DAILY, trade_date
+    )
+    if not daily_market_ready or not dragon_tiger_ready:
+>>>>>>> branch 'master' of https://github.com/yuexing89757/data_center.git
         raise ProviderError("DT_PROFILE_PREREQUISITE_FAILED")
 
 
@@ -941,6 +985,7 @@ def build_scheduler(settings: SchedulerSettings | None = None) -> BlockingSchedu
         CALL_AUCTION_MARKET_SERIES_JOB_ID: run_call_auction_market_series_job,
         CALL_AUCTION_MARKET_SERIES_ARCHIVE_JOB_ID: (run_call_auction_market_series_archive_job),
         TODAY_LIMIT_UP_SNAPSHOT_JOB_ID: run_today_limit_up_snapshot_job,
+        TODAY_LIMIT_DOWN_SNAPSHOT_JOB_ID: run_today_limit_down_snapshot_job,
         CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID: run_close_price_new_highs_120d_job,
         BOARD_INDEX_DAILY_BAR_JOB_ID: run_board_index_daily_bar_job,
         SECURITY_BSE_JOB_ID: run_security_bse_job,

@@ -1,3 +1,4 @@
+import socket
 from collections.abc import Sequence
 from datetime import date
 
@@ -96,6 +97,24 @@ def test_security_mapping_consumes_baostock_fields() -> None:
     assert record.exchange is Exchange.SSE
     assert record.status is SecurityStatus.LISTED
     assert not hasattr(record, "ipoDate")
+
+
+def test_baostock_login_socket_has_bounded_timeout_without_leaking_default() -> None:
+    class SocketClient(FakeClient):
+        observed_timeout: float | None = None
+
+        def login(self) -> FakeResponse:
+            with socket.socket() as connection:
+                self.observed_timeout = connection.gettimeout()
+            return FakeResponse()
+
+    client = SocketClient()
+    original_timeout = socket.getdefaulttimeout()
+    with BaoStockProvider(client):
+        pass
+
+    assert client.observed_timeout == 10.0
+    assert socket.getdefaulttimeout() == original_timeout
 
 
 @pytest.mark.parametrize(

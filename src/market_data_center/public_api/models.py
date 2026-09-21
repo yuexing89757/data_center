@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
+from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, WithJsonSchema, field_validator
 
 from market_data_center.domain import (
     Exchange,
@@ -14,6 +14,22 @@ from market_data_center.domain import (
     TradeStatus,
 )
 from market_data_center.domain.auction_indicative import SHANGHAI
+
+
+def _serialize_api_timestamp(value: datetime) -> str:
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("API timestamp must be timezone-aware")
+    return value.astimezone(SHANGHAI).strftime("%Y-%m-%d %H:%M:%S")
+
+
+ApiTimestamp = Annotated[
+    datetime,
+    PlainSerializer(_serialize_api_timestamp, return_type=str, when_used="json"),
+    WithJsonSchema(
+        {"type": "string", "pattern": r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$"},
+        mode="serialization",
+    ),
+]
 
 
 class ApiModel(BaseModel):
@@ -191,6 +207,22 @@ class DragonTigerCapitalMetricsItem(ApiModel):
     data_quality_codes: list[str]
 
 
+class HotMoneyActionItem(ApiModel):
+    hot_money_name: str
+    code: str = Field(pattern=r"^[0-9]{6}$")
+    stock_name: str
+    seat_name: str
+    buy_amount: Decimal | None
+    sell_amount: Decimal | None
+    net_amount: Decimal | None
+
+
+class HotMoneyActionResponse(ApiModel):
+    trade_date: date
+    returned_count: int = Field(ge=0)
+    items: list[HotMoneyActionItem]
+
+
 class ClassificationMembersResponse(ApiModel):
     snapshot_date: date
     member_count: int = Field(ge=0)
@@ -220,7 +252,7 @@ class LimitUpPoolResponse(ApiModel):
     rule_version: str
     algorithm_version: str
     input_hash: str
-    generated_at: datetime
+    generated_at: ApiTimestamp
     total_candidate_count: int = Field(ge=0)
     valid_count: int = Field(ge=0)
     returned_count: int = Field(ge=0)
@@ -240,8 +272,8 @@ class DailyLimitUpListItem(ApiModel):
     change_percent: Decimal
     free_float_shares: int = Field(gt=0)
     free_float_market_cap_cny: Decimal
-    first_limit_up_at: datetime | None
-    last_limit_up_at: datetime | None
+    first_limit_up_at: ApiTimestamp | None
+    last_limit_up_at: ApiTimestamp | None
     open_count: int | None = Field(default=None, ge=0)
     limit_up_duration_seconds: int | None = Field(default=None, ge=0)
     duration_semantics: str
@@ -285,7 +317,7 @@ class DailyLimitUpListResponse(ApiModel):
     algorithm_version: str
     input_hash: str
     source_ingestion_id: UUID | None
-    generated_at: datetime
+    generated_at: ApiTimestamp
     candidate_count: int = Field(ge=0)
     member_count: int = Field(ge=0)
     rejected_count: int = Field(ge=0)
@@ -294,6 +326,69 @@ class DailyLimitUpListResponse(ApiModel):
     has_more: bool
     quality: DailyLimitUpQualitySummary
     items: list[DailyLimitUpListItem]
+
+
+class DailyLimitDownListItem(ApiModel):
+    symbol: str
+    code: str
+    name: str
+    previous_close: Decimal
+    close: Decimal
+    limit_price: Decimal
+    change_percent: Decimal
+    free_float_shares: int = Field(gt=0)
+    free_float_market_cap_cny: Decimal
+    first_limit_down_at: ApiTimestamp | None = None
+    last_limit_down_at: ApiTimestamp | None = None
+    open_count: int | None = Field(default=None, ge=0)
+    consecutive_limit_down_days: int | None = Field(default=None, ge=1)
+    limit_down_duration_seconds: int | None = Field(default=None, ge=0)
+    duration_semantics: str
+    source_reported_sealed_funds_cny: Decimal | None
+    closing_ask1_price: Decimal | None
+    closing_ask1_volume_shares: int | None = Field(default=None, ge=0)
+    closing_ask2_price: Decimal | None
+    closing_ask2_volume_shares: int | None = Field(default=None, ge=0)
+    closing_ask3_price: Decimal | None
+    closing_ask3_volume_shares: int | None = Field(default=None, ge=0)
+    closing_ask4_price: Decimal | None
+    closing_ask4_volume_shares: int | None = Field(default=None, ge=0)
+    closing_ask5_price: Decimal | None
+    closing_ask5_volume_shares: int | None = Field(default=None, ge=0)
+    closing_ask1_sealing_amount_cny: Decimal | None
+    daily_bar_ingestion_id: UUID
+    indicator_ingestion_id: UUID
+    name_ingestion_id: UUID
+    pool_calculation_id: UUID
+    source_observation_ingestion_id: UUID | None
+    source_observation_raw_id: UUID | None
+    order_book_ingestion_id: UUID | None
+
+
+class DailyLimitDownQualitySummary(ApiModel):
+    total_findings: int = Field(ge=0)
+    by_rule: dict[str, int]
+
+
+class DailyLimitDownListResponse(ApiModel):
+    snapshot_id: UUID
+    calculation_id: UUID | None
+    trade_date: date
+    version: int = Field(ge=1)
+    status: Literal["ready", "partial", "deferred", "failed"]
+    rule_version: str
+    algorithm_version: str
+    input_hash: str
+    source_ingestion_id: UUID | None
+    generated_at: ApiTimestamp = Field(json_schema_extra={"example": "2026-09-18 22:10:00"})
+    candidate_count: int = Field(ge=0)
+    member_count: int = Field(ge=0)
+    rejected_count: int = Field(ge=0)
+    offset: int = Field(ge=0)
+    returned_count: int = Field(ge=0)
+    has_more: bool
+    quality: DailyLimitDownQualitySummary
+    items: list[DailyLimitDownListItem]
 
 
 SixDigitCode = Annotated[str, Field(pattern=r"^[0-9]{6}$")]
@@ -339,8 +434,8 @@ class LatestStockQuoteItem(ApiModel):
     symbol: str
     code: SixDigitCode
     name: str
-    observed_at: datetime
-    source_timestamp: datetime
+    observed_at: ApiTimestamp
+    source_timestamp: ApiTimestamp
     quote_status: Literal["trading", "suspended", "closed", "unknown"]
     last_price: Decimal | None
     previous_close: Decimal | None
@@ -403,7 +498,7 @@ class LatestStockDailyIndicatorResponse(ApiModel):
 class _CallAuctionMarketSnapshotBaseItem(ApiModel):
     symbol: str
     code: SixDigitCode
-    observed_at: datetime
+    observed_at: ApiTimestamp
     last_price: Decimal | None
     previous_close: Decimal | None
     high_price: Decimal | None
@@ -477,8 +572,8 @@ class CallAuctionMarketSeriesSnapshotItem(_CallAuctionMarketSnapshotBaseItem):
 
 class CallAuctionMarketSeriesRound(ApiModel):
     sample_seq: int = Field(ge=0, le=31)
-    scheduled_at: datetime
-    collected_at: datetime
+    scheduled_at: ApiTimestamp
+    collected_at: ApiTimestamp
     round_status: Literal["succeeded", "partial", "failed"]
     selected_ingestion_id: UUID | None
     requested_count: int = Field(ge=1, le=500)
@@ -577,7 +672,7 @@ class BoardIndexBiasResponse(ApiModel):
     algorithm_version: Literal["board_index_bias_v1"]
     data_origin: Literal["database"]
     persistence_status: Literal["persisted"]
-    fetched_at: datetime
+    fetched_at: ApiTimestamp
 
 
 class AuctionOnePriceLimitItem(ApiModel):
@@ -585,7 +680,7 @@ class AuctionOnePriceLimitItem(ApiModel):
     code: SixDigitCode
     name: str
     direction: Literal["up", "down"]
-    observed_at: datetime = Field(
+    observed_at: ApiTimestamp = Field(
         description="上海时区行情观察时间。格式为 YYYY-MM-DD HH:mm:ss",
         examples=["2026-08-18 14:27:46"],
     )
@@ -595,10 +690,6 @@ class AuctionOnePriceLimitItem(ApiModel):
     cumulative_volume: int | None = Field(default=None, ge=0)
     cumulative_amount: Decimal | None
     seal_amount: Decimal | None = Field(default=None, ge=0)
-
-    @field_serializer("observed_at", when_used="json")
-    def serialize_observed_at(self, value: datetime) -> str:
-        return value.astimezone(SHANGHAI).strftime("%Y-%m-%d %H:%M:%S")
 
 
 class AuctionOnePriceLimitResponse(ApiModel):
@@ -633,8 +724,8 @@ class CallAuctionOnePricePatternResponse(ApiModel):
     trade_date: date
     session_id: UUID
     session_status: Literal["succeeded", "partial"]
-    window_start: datetime
-    window_end: datetime
+    window_start: ApiTimestamp
+    window_end: ApiTimestamp
     round_count: Literal[29]
     candidate_count: int = Field(ge=0)
     items: list[CallAuctionOnePricePatternItem]
@@ -671,7 +762,7 @@ class CallAuctionGrabLineResponse(ApiModel):
 
 
 class AuctionIndicativeDetailItem(ApiModel):
-    observed_at: datetime = Field(
+    observed_at: ApiTimestamp = Field(
         description="Asia/Shanghai wall-clock time formatted as YYYY-MM-DD HH:mm:ss",
         examples=["2026-08-14 09:15:05"],
     )
@@ -679,10 +770,6 @@ class AuctionIndicativeDetailItem(ApiModel):
     indicative_price: Decimal
     displayed_volume_shares: int = Field(ge=0)
     source_display_classification: Literal["internal", "external", "unknown"]
-
-    @field_serializer("observed_at", when_used="json")
-    def serialize_observed_at(self, value: datetime) -> str:
-        return value.astimezone(SHANGHAI).strftime("%Y-%m-%d %H:%M:%S")
 
 
 class AuctionIndicativeQuality(ApiModel):
@@ -697,7 +784,7 @@ class AuctionIndicativeQuality(ApiModel):
 class AuctionIndicativeDetailResponse(ApiModel):
     symbol: str
     trade_date: date
-    fetched_at: datetime = Field(
+    fetched_at: ApiTimestamp = Field(
         description="Asia/Shanghai wall-clock time formatted as YYYY-MM-DD HH:mm:ss",
         examples=["2026-08-14 11:26:46"],
     )
@@ -727,7 +814,3 @@ class AuctionIndicativeDetailResponse(ApiModel):
         cls, items: list[AuctionIndicativeDetailItem]
     ) -> list[AuctionIndicativeDetailItem]:
         return sorted(items, key=lambda item: (item.observed_at, item.source_sequence))
-
-    @field_serializer("fetched_at", when_used="json")
-    def serialize_fetched_at(self, value: datetime) -> str:
-        return value.astimezone(SHANGHAI).strftime("%Y-%m-%d %H:%M:%S")

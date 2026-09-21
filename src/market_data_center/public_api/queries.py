@@ -21,10 +21,12 @@ from market_data_center.public_api.models import (
     ClassificationMembersResponse,
     ClosePriceNewHighs120dResponse,
     DailyBarResponse,
+    DailyLimitDownListResponse,
     DailyLimitUpListResponse,
     DragonTigerCapitalMetricsItem,
     DragonTigerEventPageResponse,
     DragonTigerSeatTradePageResponse,
+    HotMoneyActionResponse,
     LatestStockDailyIndicatorResponse,
     LimitUpPoolResponse,
     SecurityItem,
@@ -75,6 +77,10 @@ QUERY_DRAGON_TIGER_EVENT_METRICS = text("""
 select api_v1.query_dragon_tiger_event_metrics(p_event_id => :event_id) as payload
 """)
 
+QUERY_HOT_MONEY_ACTIONS = text("""
+select api_v1.query_hot_money_actions_by_date(p_trade_date => :trade_date) as payload
+""")
+
 QUERY_LATEST_STOCK_DAILY_INDICATORS = text("""
 select api_v1.query_latest_stock_daily_indicators(
     p_codes => :codes
@@ -102,6 +108,15 @@ select api_v1.query_limit_up_pool(
 
 QUERY_DAILY_LIMIT_UP_LIST = text("""
 select api_v1.query_daily_limit_up_list(
+    p_trade_date => :trade_date,
+    p_version => :version,
+    p_offset => :offset,
+    p_limit => :limit
+) as payload
+""")
+
+QUERY_DAILY_LIMIT_DOWN_LIST = text("""
+select api_v1.query_daily_limit_down_list(
     p_trade_date => :trade_date,
     p_version => :version,
     p_offset => :offset,
@@ -223,6 +238,8 @@ class PublicQueryService(Protocol):
 
     def dragon_tiger_event_metrics(self, event_id: str) -> DragonTigerCapitalMetricsItem: ...
 
+    def hot_money_actions(self, trade_date: date) -> HotMoneyActionResponse: ...
+
     def latest_stock_daily_indicators(
         self, codes: tuple[str, ...]
     ) -> LatestStockDailyIndicatorResponse: ...
@@ -243,6 +260,10 @@ class PublicQueryService(Protocol):
     def daily_limit_up_list(
         self, trade_date: date, version: int | None, offset: int, limit: int
     ) -> DailyLimitUpListResponse: ...
+
+    def daily_limit_down_list(
+        self, trade_date: date, version: int | None, offset: int, limit: int
+    ) -> DailyLimitDownListResponse: ...
 
     def call_auction_market_snapshots(
         self, trade_date: date, codes: tuple[str, ...]
@@ -378,6 +399,14 @@ class PostgreSQLPublicQueryService:
             raise PublicQueryNotFound("DragonTiger event was not found")
         return DragonTigerCapitalMetricsItem.model_validate(payload)
 
+    def hot_money_actions(self, trade_date: date) -> HotMoneyActionResponse:
+        rows = self._execute(
+            QUERY_HOT_MONEY_ACTIONS,
+            {"trade_date": trade_date},
+            statement_timeout_ms=5_000,
+        )
+        return HotMoneyActionResponse.model_validate(rows[0]["payload"])
+
     def latest_stock_daily_indicators(
         self, codes: tuple[str, ...]
     ) -> LatestStockDailyIndicatorResponse:
@@ -432,6 +461,17 @@ class PostgreSQLPublicQueryService:
         if not rows:
             raise PublicQueryNotFound("daily limit-up list was not found")
         return DailyLimitUpListResponse.model_validate(rows[0]["payload"])
+
+    def daily_limit_down_list(
+        self, trade_date: date, version: int | None, offset: int, limit: int
+    ) -> DailyLimitDownListResponse:
+        rows = self._execute(
+            QUERY_DAILY_LIMIT_DOWN_LIST,
+            {"trade_date": trade_date, "version": version, "offset": offset, "limit": limit},
+        )
+        if not rows:
+            raise PublicQueryNotFound("daily limit-down list was not found")
+        return DailyLimitDownListResponse.model_validate(rows[0]["payload"])
 
     def call_auction_market_snapshots(
         self, trade_date: date, codes: tuple[str, ...]

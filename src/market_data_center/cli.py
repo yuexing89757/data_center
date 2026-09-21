@@ -373,6 +373,29 @@ def main() -> None:
         print(dumps(asdict(limit_up_summary), default=str, sort_keys=True))
         return
 
+    if args.dataset == "today-limit-down-snapshot":
+        from market_data_center.today_limit_down_service import fill_today_limit_down_snapshot
+
+        execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
+            WorkflowCode.TODAY_LIMIT_DOWN_SNAPSHOT,
+            datetime.now(UTC).replace(second=0, microsecond=0),
+            TriggerSource.MANUAL,
+        )
+        try:
+            limit_down_summary = execution.step(
+                "fill_today_limit_down_snapshot",
+                1,
+                lambda: fill_today_limit_down_snapshot(
+                    engine, raw_store, date.fromisoformat(args.trade_date)
+                ),
+            )
+        except BaseException as error:
+            execution.fail(error)
+            raise
+        execution.succeed()
+        print(dumps(asdict(limit_down_summary), default=str, sort_keys=True))
+        return
+
     if args.dataset == "close-price-new-highs-120d-build":
         trade_date = date.fromisoformat(args.trade_date)
         execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
@@ -1778,6 +1801,12 @@ def _parser() -> ArgumentParser:
         help="idempotently fill one exact-date immutable same-day limit-up snapshot",
     )
     today_limit_up.add_argument("--trade-date", required=True, help="exact YYYY-MM-DD")
+
+    today_limit_down = subparsers.add_parser(
+        "today-limit-down-snapshot",
+        help="idempotently fill one exact-date immutable same-day limit-down snapshot",
+    )
+    today_limit_down.add_argument("--trade-date", required=True, help="exact YYYY-MM-DD")
 
     stock_pool_check = subparsers.add_parser(
         "stock-pool-check",

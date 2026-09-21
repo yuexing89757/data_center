@@ -973,7 +973,14 @@ def test_call_auction_market_series_schema_is_partitioned_and_internal(
                 text("""
                     select tablename from pg_tables
                     where schemaname='realtime' and rowsecurity
-                      and tablename like 'call_auction_market_series%'
+                      and (
+                        tablename in (
+                          'call_auction_market_series_session',
+                          'call_auction_market_series_round',
+                          'call_auction_market_series_snapshot'
+                        )
+                        or tablename ~ '^call_auction_market_series_snapshot_[0-9]{6}$'
+                      )
                 """)
             ).scalars()
         )
@@ -2112,6 +2119,31 @@ select api_v1.query_call_auction_indicative_details(
     assert payload["quality"]["accepted_auction_row_count"] == 1
 
 
+def test_today_limit_down_schema_is_private_and_append_only(database_engine: Engine) -> None:
+    with database_engine.connect() as connection:
+        for table in ("source_observation", "snapshot", "member", "calculation_quality"):
+            assert (
+                connection.scalar(
+                    text("select to_regclass(:table_name)"),
+                    {"table_name": f"today_limit_down.{table}"},
+                )
+                is not None
+            )
+        assert connection.scalar(
+            text("""
+select count(*) = 4 from pg_class c join pg_namespace n on n.oid=c.relnamespace
+where n.nspname='today_limit_down' and c.relname in
+ ('source_observation','snapshot','member','calculation_quality') and c.relrowsecurity
+""")
+        )
+        assert not connection.scalar(
+            text("""
+select has_schema_privilege('public','today_limit_down','usage')
+ or has_table_privilege('public','today_limit_down.snapshot','select')
+""")
+        )
+
+
 def test_today_limit_up_schema_is_internal_and_append_only(
     database_engine: Engine,
 ) -> None:
@@ -2344,6 +2376,63 @@ where rule_code='missing_source_observation'
         ).all()
     assert members == ["SSE:600000"]
     assert findings == [("missing_source_observation", "SSE:600001")]
+
+
+def test_daily_limit_down_rpc_exposes_deferred_snapshot_without_internal_grants(
+    database_engine: Engine,
+) -> None:
+    snapshot_id = uuid4()
+    with database_engine.begin() as connection:
+        connection.execute(
+            text("""
+insert into today_limit_down.snapshot (
+ snapshot_id,trade_date,version,status,member_count,candidate_count,rejected_count,
+ content_hash,input_hash,rule_version,algorithm_version,generated_at
+) values (:id,:date,1,'deferred',0,0,0,:content,:input,:rule,:algorithm,now())
+"""),
+            {
+                "id": snapshot_id,
+                "date": TRADE_DATE,
+                "content": "0" * 64,
+                "input": "1" * 64,
+                "rule": "cn_a_mainboard_limit_down_v1",
+                "algorithm": "today_limit_down_snapshot_v1",
+            },
+        )
+        connection.execute(
+            text("""
+insert into today_limit_down.calculation_quality
+ (snapshot_id,rule_code,severity,symbol,message)
+values (:id,'missing_daily_market','error','','daily_market dependency is not ready')
+"""),
+            {"id": snapshot_id},
+        )
+        assert connection.scalar(
+            text("""
+select has_function_privilege(
+ 'market_data_api',
+ 'api_v1.query_daily_limit_down_list(date,integer,integer,integer)',
+ 'execute'
+)
+""")
+        )
+        assert not connection.scalar(
+            text(
+                "select has_table_privilege('market_data_api','today_limit_down.snapshot','select')"
+            )
+        )
+        payload = connection.scalar(
+            text("""
+select api_v1.query_daily_limit_down_list(
+ p_trade_date => :date, p_version => null, p_offset => 0, p_limit => 200)
+"""),
+            {"date": TRADE_DATE},
+        )
+    assert payload["snapshot_id"] == str(snapshot_id)
+    assert payload["status"] == "deferred"
+    assert payload["member_count"] == 0
+    assert payload["quality"]["by_rule"] == {"missing_daily_market": 1}
+    assert payload["items"] == []
 
 
 def test_daily_limit_up_list_rpc_exposes_only_bounded_domain_projection(
@@ -7978,6 +8067,49 @@ def test_dragon_tiger_persistence_and_replacement_rpcs(database_engine: Engine) 
             """)
         ).all()
         assert set(aliases) == {"某机构席位", "某机构席位(更名)"}
+        actor_id = uuid4()
+        connection.execute(
+            text("""
+insert into billboard.hot_money_actor (
+ actor_id,actor_code,canonical_name,aliases,is_active
+) values (:actor_id,'TEST_WENZHOU','温州帮','{}',true)
+"""),
+            {"actor_id": actor_id},
+        )
+        connection.execute(
+            text("""
+insert into billboard.hot_money_seat_mapping (
+ actor_id,seat_id,valid_from,valid_to,source_alias_name,evidence_note,
+ review_status,reviewed_at,catalog_version
+) values (
+ :actor_id,:seat_id,:day,null,'某机构席位','集成测试证据',
+ 'APPROVED',now(),'test-v1'
+)
+"""),
+            {"actor_id": actor_id, "seat_id": seat_id, "day": TRADE_DATE},
+        )
+        actions = cast(
+            Mapping[str, object],
+            connection.scalar(
+                text("select api_v1.query_hot_money_actions_by_date(:day)"),
+                {"day": TRADE_DATE},
+            ),
+        )
+        assert actions == {
+            "trade_date": TRADE_DATE.isoformat(),
+            "returned_count": 1,
+            "items": [
+                {
+                    "hot_money_name": "温州帮",
+                    "code": "600000",
+                    "stock_name": "浦发银行",
+                    "seat_name": "某机构席位",
+                    "buy_amount": "120",
+                    "sell_amount": "20",
+                    "net_amount": "100",
+                }
+            ],
+        }
         metrics = cast(
             Mapping[str, object],
             connection.scalar(

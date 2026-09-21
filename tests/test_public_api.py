@@ -29,6 +29,9 @@ from market_data_center.public_api.models import (
     ClassificationMembersResponse,
     DailyBarItem,
     DailyBarResponse,
+    DailyLimitDownListItem,
+    DailyLimitDownListResponse,
+    DailyLimitDownQualitySummary,
     DailyLimitUpListItem,
     DailyLimitUpListResponse,
     DailyLimitUpQualitySummary,
@@ -156,11 +159,13 @@ class FakeQueryService:
         ] = []
         self.dragon_tiger_seat_calls: list[tuple[str, date, date, int, int]] = []
         self.dragon_tiger_metrics_calls: list[str] = []
+        self.hot_money_action_calls: list[date] = []
         self.latest_stock_daily_indicator_calls: list[tuple[str, ...]] = []
         self.latest_stock_daily_indicator_error: Exception | None = None
         self.latest_stock_quote_calls: list[tuple[tuple[str, ...], int]] = []
         self.limit_up_calls: list[tuple[date, int | None, int]] = []
         self.daily_limit_up_calls: list[tuple[date, int | None, int, int]] = []
+        self.daily_limit_down_calls: list[tuple[date, int | None, int, int]] = []
         self.call_auction_market_snapshot_calls: list[tuple[date, tuple[str, ...]]] = []
         self.call_auction_market_series_snapshot_calls: list[
             tuple[date, tuple[str, ...], str | None]
@@ -331,6 +336,26 @@ class FakeQueryService:
             sell_disclosure_present=True,
             amount_period_verified=True,
             data_quality_codes=[],
+        )
+
+    def hot_money_actions(self, trade_date: date) -> api_models.HotMoneyActionResponse:
+        self.hot_money_action_calls.append(trade_date)
+        return api_models.HotMoneyActionResponse.model_validate(
+            {
+                "trade_date": trade_date.isoformat(),
+                "returned_count": 1,
+                "items": [
+                    {
+                        "hot_money_name": "温州帮",
+                        "code": "600000",
+                        "stock_name": "浦发银行",
+                        "seat_name": "测试营业部",
+                        "buy_amount": "120.00",
+                        "sell_amount": "20.00",
+                        "net_amount": "100.00",
+                    }
+                ],
+            }
         )
 
     def latest_stock_daily_indicators(
@@ -529,6 +554,70 @@ class FakeQueryService:
                     amount_cny=Decimal("580000000"),
                     free_float_turnover_rate_pct=Decimal("2.5"),
                     consecutive_limit_up_days=3,
+                )
+            ],
+        )
+
+    def daily_limit_down_list(
+        self, trade_date: date, version: int | None, offset: int, limit: int
+    ) -> DailyLimitDownListResponse:
+        self.daily_limit_down_calls.append((trade_date, version, offset, limit))
+        return DailyLimitDownListResponse(
+            snapshot_id="33333333-3333-3333-3333-333333333333",
+            calculation_id="44444444-4444-4444-4444-444444444444",
+            trade_date=trade_date,
+            version=version or 1,
+            status="partial",
+            rule_version="cn_a_mainboard_limit_down_v1",
+            algorithm_version="today_limit_down_snapshot_v1",
+            input_hash="1" * 64,
+            source_ingestion_id="55555555-5555-5555-5555-555555555555",
+            generated_at=datetime(2026, 9, 18, 14, 10, tzinfo=UTC),
+            candidate_count=1,
+            member_count=1,
+            rejected_count=0,
+            offset=offset,
+            returned_count=1,
+            has_more=False,
+            quality=DailyLimitDownQualitySummary(
+                total_findings=1, by_rule={"missing_order_book": 1}
+            ),
+            items=[
+                DailyLimitDownListItem(
+                    symbol="SZSE:000001",
+                    code="000001",
+                    name="平安银行",
+                    previous_close=Decimal("10"),
+                    close=Decimal("9"),
+                    limit_price=Decimal("9"),
+                    change_percent=Decimal("-10"),
+                    free_float_shares=100,
+                    free_float_market_cap_cny=Decimal("900"),
+                    first_limit_down_at=None,
+                    last_limit_down_at=datetime(2026, 9, 18, 7, 0, tzinfo=UTC),
+                    open_count=1,
+                    consecutive_limit_down_days=2,
+                    limit_down_duration_seconds=None,
+                    duration_semantics="unavailable_without_event_stream",
+                    source_reported_sealed_funds_cny=Decimal("1200000"),
+                    closing_ask1_price=Decimal("9"),
+                    closing_ask1_volume_shares=20,
+                    closing_ask2_price=None,
+                    closing_ask2_volume_shares=None,
+                    closing_ask3_price=None,
+                    closing_ask3_volume_shares=None,
+                    closing_ask4_price=None,
+                    closing_ask4_volume_shares=None,
+                    closing_ask5_price=None,
+                    closing_ask5_volume_shares=None,
+                    closing_ask1_sealing_amount_cny=Decimal("180"),
+                    daily_bar_ingestion_id="66666666-6666-6666-6666-666666666666",
+                    indicator_ingestion_id="77777777-7777-7777-7777-777777777777",
+                    name_ingestion_id="88888888-8888-8888-8888-888888888888",
+                    pool_calculation_id="99999999-9999-9999-9999-999999999999",
+                    source_observation_ingestion_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+                    source_observation_raw_id="bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+                    order_book_ingestion_id="cccccccc-cccc-cccc-cccc-cccccccccccc",
                 )
             ],
         )
@@ -1220,6 +1309,34 @@ def test_dragon_tiger_routes_require_api_key() -> None:
     assert response.status_code == 401
 
 
+def test_hot_money_actions_route_returns_exact_date_actions() -> None:
+    service = FakeQueryService()
+
+    response = _client(service).get(
+        "/api/v1/trading-billboard/hot-money-actions",
+        params={"trade_date": "2026-09-17"},
+        headers=_headers(),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "trade_date": "2026-09-17",
+        "returned_count": 1,
+        "items": [
+            {
+                "hot_money_name": "温州帮",
+                "code": "600000",
+                "stock_name": "浦发银行",
+                "seat_name": "测试营业部",
+                "buy_amount": "120.00",
+                "sell_amount": "20.00",
+                "net_amount": "100.00",
+            }
+        ],
+    }
+    assert service.hot_money_action_calls == [date(2026, 9, 17)]
+
+
 def test_dragon_tiger_code_query_resolves_public_security_before_rpc(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1256,6 +1373,51 @@ def test_dragon_tiger_code_query_resolves_public_security_before_rpc(
     assert result.total_count == 1
     assert "query_dragon_tiger_events_by_symbol" in calls[0][0]
     assert calls[0][1]["symbol"] == "SSE:600000"
+    assert calls[0][2] == 5_000
+
+
+def test_hot_money_actions_query_uses_bounded_rpc_and_preserves_missing_amounts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = PostgreSQLPublicQueryService(object())  # type: ignore[arg-type]
+    calls: list[tuple[str, dict[str, object], int | None]] = []
+
+    def execute(
+        statement: object,
+        parameters: dict[str, object],
+        *,
+        statement_timeout_ms: int | None = None,
+    ) -> list[dict[str, object]]:
+        calls.append((str(statement), parameters, statement_timeout_ms))
+        return [
+            {
+                "payload": {
+                    "trade_date": "2026-09-17",
+                    "returned_count": 1,
+                    "items": [
+                        {
+                            "hot_money_name": "欢乐海岸",
+                            "code": "601086",
+                            "stock_name": "国芳集团",
+                            "seat_name": "中信证券股份有限公司深圳分公司",
+                            "buy_amount": "16476100",
+                            "sell_amount": None,
+                            "net_amount": None,
+                        }
+                    ],
+                }
+            }
+        ]
+
+    monkeypatch.setattr(service, "_execute", execute)
+
+    result = service.hot_money_actions(date(2026, 9, 17))
+
+    assert result.items[0].buy_amount == Decimal("16476100")
+    assert result.items[0].sell_amount is None
+    assert result.items[0].net_amount is None
+    assert "query_hot_money_actions_by_date" in calls[0][0]
+    assert calls[0][1] == {"trade_date": date(2026, 9, 17)}
     assert calls[0][2] == 5_000
 
 
@@ -1486,6 +1648,87 @@ def test_daily_limit_up_list_returns_items() -> None:
     assert service.daily_limit_up_calls == [(date(2026, 8, 10), 1, 10, 200)]
 
 
+def test_daily_limit_down_list_returns_canonical_and_source_fields() -> None:
+    service = FakeQueryService()
+
+    response = _client(service).get(
+        "/api/v1/daily-limit-down-list",
+        params={"trade_date": "2026-09-18", "version": 1, "offset": 0, "limit": 200},
+        headers=_headers(),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["generated_at"] == "2026-09-18 22:10:00"
+    assert body["status"] == "partial"
+    assert body["quality"]["by_rule"] == {"missing_order_book": 1}
+    item = body["items"][0]
+    assert item["code"] == "000001"
+    assert item["close"] == "9"
+    assert item["change_percent"] == "-10"
+    assert item["first_limit_down_at"] is None
+    assert item["last_limit_down_at"] == "2026-09-18 15:00:00"
+    assert item["closing_ask1_sealing_amount_cny"] == "180"
+    assert item["source_reported_sealed_funds_cny"] == "1200000"
+    assert service.daily_limit_down_calls == [(date(2026, 9, 18), 1, 0, 200)]
+
+
+def test_daily_limit_down_list_requires_date_and_bounded_page() -> None:
+    service = FakeQueryService()
+    client = _client(service)
+    assert client.get("/api/v1/daily-limit-down-list", headers=_headers()).status_code == 422
+    for params in (
+        {"trade_date": "2026-09-18", "version": 0},
+        {"trade_date": "2026-09-18", "offset": 50001},
+        {"trade_date": "2026-09-18", "limit": 501},
+    ):
+        assert (
+            client.get(
+                "/api/v1/daily-limit-down-list", params=params, headers=_headers()
+            ).status_code
+            == 422
+        )
+    assert service.daily_limit_down_calls == []
+
+
+def test_api_timestamps_use_shanghai_wall_clock_strings() -> None:
+    client = _client(FakeQueryService())
+
+    pool = client.get(
+        "/api/v1/limit-up-pool",
+        params={"trade_date": "2026-08-01"},
+        headers=_headers(),
+    ).json()
+    daily = client.get(
+        "/api/v1/daily-limit-up-list",
+        params={"trade_date": "2026-08-11"},
+        headers=_headers(),
+    ).json()
+    quotes = client.post(
+        "/api/v1/realtime-quotes/latest/query",
+        json={"codes": ["601003", "600123"]},
+        headers=_headers(),
+    ).json()
+
+    assert pool["generated_at"] == "2026-08-01 08:00:00"
+    assert daily["generated_at"] == "2026-08-11 22:00:00"
+    assert daily["items"][0]["first_limit_up_at"] == "2026-08-11 17:35:00"
+    assert daily["items"][0]["last_limit_up_at"] == "2026-08-11 22:30:00"
+    assert quotes["items"][0]["observed_at"] == "2026-08-21 16:15:00"
+    assert quotes["items"][0]["source_timestamp"] == "2026-08-21 16:14:41"
+
+
+def test_api_timestamp_serialization_keeps_missing_values_and_drops_subseconds() -> None:
+    response = FakeQueryService().daily_limit_up_list(date(2026, 8, 11), None, 0, 200)
+    response.generated_at = datetime(2026, 8, 11, 14, 0, 0, 123456, tzinfo=UTC)
+    response.items[0].first_limit_up_at = None
+
+    payload = response.model_dump(mode="json")
+
+    assert payload["generated_at"] == "2026-08-11 22:00:00"
+    assert payload["items"][0]["first_limit_up_at"] is None
+
+
 def test_daily_limit_up_list_version_and_pagination_are_bounded() -> None:
     service = FakeQueryService()
     client = _client(service)
@@ -1538,7 +1781,7 @@ def test_call_auction_market_snapshots_deduplicate_codes_and_keep_decimals() -> 
             {
                 "symbol": "SSE:600000",
                 "code": "600000",
-                "observed_at": "2026-08-13T01:26:00Z",
+                "observed_at": "2026-08-13 09:26:00",
                 "last_price": "10.1200",
                 "previous_close": "10.0000",
                 "high_price": "10.1500",
@@ -1613,8 +1856,8 @@ def test_call_auction_market_series_snapshots_return_rounds_in_one_session() -> 
         "rounds": [
             {
                 "sample_seq": 0,
-                "scheduled_at": "2026-08-14T01:15:00Z",
-                "collected_at": "2026-08-14T01:15:02Z",
+                "scheduled_at": "2026-08-14 09:15:00",
+                "collected_at": "2026-08-14 09:15:02",
                 "round_status": "partial",
                 "selected_ingestion_id": "22222222-2222-2222-2222-222222222222",
                 "requested_count": 2,
@@ -1625,7 +1868,7 @@ def test_call_auction_market_series_snapshots_return_rounds_in_one_session() -> 
                         "symbol": "SSE:600000",
                         "code": "600000",
                         "batch_code": "091500",
-                        "observed_at": "2026-08-14T01:15:01Z",
+                        "observed_at": "2026-08-14 09:15:01",
                         "last_price": "10.1200",
                         "previous_close": "10.0000",
                         "high_price": "10.1500",
@@ -1850,7 +2093,7 @@ def test_board_index_bias_returns_latest_decimal_contract_without_inputs() -> No
         "algorithm_version": "board_index_bias_v1",
         "data_origin": "database",
         "persistence_status": "persisted",
-        "fetched_at": "2026-08-15T03:26:46Z",
+        "fetched_at": "2026-08-15 11:26:46",
     }
     assert service.board_index_bias_calls == 1
     operation = client.get("/openapi.json").json()["paths"]["/api/v1/board-indexes/883423/bias"][

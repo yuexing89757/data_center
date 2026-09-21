@@ -170,7 +170,9 @@ versioned T+1/T+3/T+5 objective seat profiles without producing a subjective sco
 Authenticated reads are `GET /api/v1/dragon-tiger/events/by-date`,
 `GET /api/v1/dragon-tiger/events/by-symbol/{code}`,
 `GET /api/v1/dragon-tiger/seats/{seat_id}/trades`, and
-`GET /api/v1/dragon-tiger/events/{event_id}/metrics`. Queries are bounded and never fall back to
+`GET /api/v1/dragon-tiger/events/{event_id}/metrics`. The fixed reviewed roster can be queried by
+exact date through `GET /api/v1/trading-billboard/hot-money-actions?trade_date=YYYY-MM-DD`.
+Queries are bounded and never fall back to
 another date. Metrics are deterministic objective amounts/counts/concentrations; no subjective
 score or strategy label is published. Event responses separate trigger-window semantics from the
 amount period, expose one-sided disclosure and safe quality codes, and no longer contain

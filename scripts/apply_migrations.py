@@ -24,6 +24,7 @@ TARGET_SCHEMAS = (
     "regulation",
     "stock_pool",
     "today_limit_up",
+    "today_limit_down",
 )
 EXPECTED_TABLES = {
     ("audit", "quality_result"),
@@ -132,6 +133,10 @@ EXPECTED_TABLES = {
     ("today_limit_up", "snapshot"),
     ("today_limit_up", "member"),
     ("today_limit_up", "calculation_quality"),
+    ("today_limit_down", "source_observation"),
+    ("today_limit_down", "snapshot"),
+    ("today_limit_down", "member"),
+    ("today_limit_down", "calculation_quality"),
 }
 EXPECTED_VIEWS = {
     ("api_v1", "adjusted_daily_bars"),

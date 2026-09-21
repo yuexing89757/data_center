@@ -24,6 +24,7 @@ from market_data_center.domain.records import (
 )
 from market_data_center.domain.shareholder_count import ShareholderCountRecord
 from market_data_center.domain.stock_daily_indicator import StockDailyIndicatorSnapshotRecord
+from market_data_center.domain.today_limit_down import LimitDownSourceRecord
 from market_data_center.domain.today_limit_up import LimitUpSourceRecord
 
 type ProviderRecord = (
@@ -40,6 +41,7 @@ type ProviderRecord = (
     | FiveLevelQuoteSnapshotRecord
     | ConvertibleBondRecord
     | LimitUpSourceRecord
+    | LimitDownSourceRecord
     | DragonTigerEventDraft
 )
 type RawRow = Mapping[str, str]
@@ -144,6 +146,14 @@ class CurrentDayLimitUpPoolProvider(Protocol):
     source_code: str
 
     def fetch_limit_up_pool(self, trade_date: date) -> "ProviderBatch[LimitUpSourceRecord]": ...
+
+
+class CurrentDayLimitDownPoolProvider(Protocol):
+    """Current-day down-source enrichment; canonical membership is computed separately."""
+
+    source_code: str
+
+    def fetch_limit_down_pool(self, trade_date: date) -> "ProviderBatch[LimitDownSourceRecord]": ...
 
 
 @dataclass(frozen=True, slots=True)

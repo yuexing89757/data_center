@@ -300,13 +300,24 @@ def test_dragon_tiger_profile_requires_daily_market_and_dragon_tiger() -> None:
     succeeded: list[tuple[object, date]] = []
 
     class Operations:
+<<<<<<< HEAD
         def has_completed_on_date(self, workflow_code: object, trade_date: date) -> bool:
             completed.append((workflow_code, trade_date))
             return True  # daily_market completed (succeeded or partial)
+=======
+        def has_succeeded_or_partial_on_date(self, workflow_code: object, trade_date: date) -> bool:
+            requested.append((workflow_code, trade_date))
+            return True
+>>>>>>> branch 'master' of https://github.com/yuexing89757/data_center.git
 
         def has_succeeded_on_date(self, workflow_code: object, trade_date: date) -> bool:
+<<<<<<< HEAD
             succeeded.append((workflow_code, trade_date))
             return False  # dragon_tiger_daily not yet succeeded
+=======
+            requested.append((workflow_code, trade_date))
+            return False
+>>>>>>> branch 'master' of https://github.com/yuexing89757/data_center.git
 
     with pytest.raises(ProviderError, match="DT_PROFILE_PREREQUISITE_FAILED"):
         _require_dragon_tiger_profile_prerequisites(  # type: ignore[arg-type]
@@ -358,6 +369,28 @@ def test_dragon_tiger_profile_fails_when_daily_market_absent() -> None:
         )
 
     assert completed == [(scheduler_module.WorkflowCode.DAILY_MARKET, date(2026, 9, 16))]
+
+
+def test_dragon_tiger_profile_accepts_partial_daily_market() -> None:
+    requested: list[tuple[str, object, date]] = []
+
+    class Operations:
+        def has_succeeded_or_partial_on_date(self, workflow_code: object, trade_date: date) -> bool:
+            requested.append(("usable", workflow_code, trade_date))
+            return True
+
+        def has_succeeded_on_date(self, workflow_code: object, trade_date: date) -> bool:
+            requested.append(("succeeded", workflow_code, trade_date))
+            return True
+
+    _require_dragon_tiger_profile_prerequisites(  # type: ignore[arg-type]
+        Operations(), date(2026, 9, 11)
+    )
+
+    assert requested == [
+        ("usable", scheduler_module.WorkflowCode.DAILY_MARKET, date(2026, 9, 11)),
+        ("succeeded", scheduler_module.WorkflowCode.DRAGON_TIGER_DAILY, date(2026, 9, 11)),
+    ]
 
 
 def test_legacy_time_environment_cannot_change_registered_jobs(monkeypatch, tmp_path: Path) -> None:

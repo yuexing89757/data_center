@@ -3,6 +3,7 @@
 from collections.abc import Callable, Mapping, Sequence
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
+from socket import getdefaulttimeout, setdefaulttimeout
 from types import TracebackType
 from typing import Protocol, Self, cast
 
@@ -41,6 +42,8 @@ DAILY_BAR_FIELDS = (
     "tradestatus",
     "isST",
 )
+
+BAOSTOCK_SOCKET_TIMEOUT_SECONDS = 10.0
 
 
 class BaoStockResult(Protocol):
@@ -91,7 +94,13 @@ class BaoStockProvider:
         return cls(cast(BaoStockClient, baostock))
 
     def __enter__(self) -> Self:
-        response = _provider_call("login", self._client.login)
+        previous_timeout = getdefaulttimeout()
+        try:
+            # BaoStock creates its socket during login; the socket retains this timeout.
+            setdefaulttimeout(BAOSTOCK_SOCKET_TIMEOUT_SECONDS)
+            response = _provider_call("login", self._client.login)
+        finally:
+            setdefaulttimeout(previous_timeout)
         _ensure_success(response, "login")
         return self
 

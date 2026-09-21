@@ -43,6 +43,8 @@ Provider 的原始响应先写入不可变 Raw 对象，再执行 Record DTO 标
 
 默认日历窗口为最近 14 个自然日。周末或节假日运行时取窗口内最近的实际交易日。兼容参数 `--bar-lookback-days` 仅保留命令行兼容性，不再触发历史修复。
 
+Security/Trading Calendar 自动路由先尝试 BaoStock，再尝试 AKShare。BaoStock 连接和读取使用 10 秒 socket 超时；超时按 Provider 失败处理并回退，不无限占用晚间单线程执行器。
+
 ## 手工运行
 
 数据库连接和本地 Raw 根目录由环境变量注入：

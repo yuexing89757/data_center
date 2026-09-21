@@ -709,6 +709,25 @@
           }
         }
       }
+    },
+    {
+      "name": "market_hot_money_actions_by_date",
+      "description": "Read exact-date disclosed stock actions for the fixed reviewed hot-money actor catalog.",
+      "endpoint": "query_hot_money_actions_by_date",
+      "read_only": true,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "p_trade_date"
+        ],
+        "properties": {
+          "p_trade_date": {
+            "type": "string",
+            "format": "date"
+          }
+        }
+      }
     }
   ]
 }

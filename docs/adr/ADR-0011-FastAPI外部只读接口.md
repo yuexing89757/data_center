@@ -39,6 +39,14 @@ Issue #58 将 `GET /api/v1/daily-bars/{symbol}` 的外部参数收敛为面向�
 3. 停牌、缺失或尚未采集的交易日不补造记录，因此返回数可以少于 `limit`；接口不回退到请求日之后的数据。
 4. 新 RPC `api_v1.query_recent_daily_bars` 仅授权 `market_data_api`。既有 PostgREST `query_daily_bars(symbol,start,end,limit)` 保持不变，避免破坏其客户端。
 
+## 2026-09-20 Accepted clarification：外部响应时间格式
+
+外部 FastAPI 的所有响应时间戳（含嵌套字段）统一先转为 `Asia/Shanghai`，再输出
+`YYYY-MM-DD HH:mm:ss` 字符串，不输出毫秒或时区后缀。可空时间保留 `null`，纯日期
+仍为 `YYYY-MM-DD`。该规则仅作用于外部响应序列化，不改变数据库 `timestamptz`、
+领域时间值、Raw 或 PostgREST。新增响应模型必须复用统一时间类型；OpenAPI 使用
+字符串格式规则准确描述响应，不标注不符实际值的 RFC 3339 `date-time`。
+
 ## 结果
 
 - 外部消费者获得稳定、可认证的 HTTP/OpenAPI 边界，同时数据库查询语义仍只有一份。

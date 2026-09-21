@@ -214,6 +214,34 @@ def test_adapter_joins_a_unique_source_reason_alias_for_one_symbol() -> None:
     assert any(item.rule_code == "DT_TUSHARE_REASON_ALIAS_JOINED" for item in result.findings)
 
 
+def test_adapter_joins_multiple_reason_aliases_by_window_and_type() -> None:
+    responses = _responses()
+    responses["top_list"][0]["reason"] = "有价格涨跌幅限制的日换手率达到20%的前三只证券"
+    for row in responses["top_inst"]:
+        row["reason"] = "换手率达20%的证券"
+
+    summary = dict(responses["top_list"][0])
+    summary["reason"] = "非ST、*ST和S证券连续三个交易日内收盘价格涨幅偏离值累计达到20%的证券"
+    responses["top_list"].append(summary)
+    for row in tuple(responses["top_inst"]):
+        detail = dict(row)
+        detail["reason"] = "连续三个交易日内\uff0c涨幅偏离值累计达20%的证券"
+        responses["top_inst"].append(detail)
+
+    result = (
+        TushareDragonTigerAdapter(FakeClient(responses))
+        .fetch_dragon_tiger(date(2026, 8, 20))
+        .normalization
+    )
+
+    assert len(result.events) == 2
+    assert {event.reason.reason_type.value for event in result.events} == {
+        "PRICE_DEVIATION",
+        "TURNOVER",
+    }
+    assert sum(item.rule_code == "DT_TUSHARE_REASON_ALIAS_JOINED" for item in result.findings) == 2
+
+
 def test_adapter_filters_truncated_duplicate_seat_with_identical_amount_facts() -> None:
     responses = _responses()
     original = responses["top_inst"][1]
@@ -349,6 +377,176 @@ def test_adapter_keeps_precise_summary_over_source_rounded_duplicate() -> None:
     assert result.events[0].lhb_buy_amount == Decimal("63582969.54")
     assert result.events[0].lhb_sell_amount == Decimal("42036370.34")
     assert any(item.rule_code == "DT_SOURCE_ROUNDED_DUPLICATE_FILTERED" for item in result.findings)
+
+
+def test_adapter_keeps_more_complete_historical_summary_amendment() -> None:
+    responses = _responses()
+    earlier = responses["top_list"][0]
+    earlier.update(
+        {
+            "name": "历史简称",
+            "float_values": None,
+            "turnover_rate": "34.3",
+            "l_sell": "93967.25",
+            "l_amount": "4008106.78",
+            "net_amount": "3820172.28",
+            "net_rate": "97.60",
+            "amount_rate": "102.40",
+        }
+    )
+    amended = dict(earlier)
+    amended.update(
+        {
+            "name": "当前简称",
+            "float_values": "971082400",
+            "turnover_rate": "34.29",
+            "l_sell": "141331.75",
+            "l_amount": "4055471.28",
+            "net_amount": "3772807.78",
+            "net_rate": "96.39",
+            "amount_rate": "103.61",
+        }
+    )
+    responses["top_list"].append(amended)
+
+    result = (
+        TushareDragonTigerAdapter(FakeClient(responses))
+        .fetch_dragon_tiger(date(2026, 8, 20))
+        .normalization
+    )
+
+    assert len(result.events) == 1
+    assert result.events[0].lhb_sell_amount == Decimal("141331.75")
+    assert any(item.rule_code == "DT_SOURCE_ROUNDED_DUPLICATE_FILTERED" for item in result.findings)
+
+
+def test_adapter_keeps_ambiguous_historical_turnover_rate_missing() -> None:
+    responses = _responses()
+    earlier = responses["top_list"][0]
+    earlier.update({"name": "历史简称", "turnover_rate": "14.44"})
+    amended = dict(earlier)
+    amended.update({"name": "当前简称", "turnover_rate": "12.88"})
+    responses["top_list"].append(amended)
+
+    result = (
+        TushareDragonTigerAdapter(FakeClient(responses))
+        .fetch_dragon_tiger(date(2026, 8, 20))
+        .normalization
+    )
+
+    assert result.events[0].turnover_rate is None
+    assert any(item.rule_code == "DT_SOURCE_ROUNDED_DUPLICATE_FILTERED" for item in result.findings)
+
+
+def test_adapter_accepts_historical_summary_amendment_that_changes_buy_amount() -> None:
+    responses = _responses()
+    earlier = responses["top_list"][0]
+    earlier.update(
+        {
+            "name": "历史简称",
+            "l_buy": "1236293748.79",
+            "l_sell": "1236293748.79",
+            "l_amount": "2472587497.58",
+            "net_amount": "0",
+            "net_rate": "0",
+            "amount_rate": "200",
+        }
+    )
+    amended = dict(earlier)
+    amended.update(
+        {
+            "name": "当前简称",
+            "l_buy": "2445993770.72",
+            "l_sell": "2434970721.04",
+            "l_amount": "4880964491.76",
+            "net_amount": "11023049.68",
+            "net_rate": "0.89",
+            "amount_rate": "394.81",
+        }
+    )
+    responses["top_list"].append(amended)
+
+    event = (
+        TushareDragonTigerAdapter(FakeClient(responses))
+        .fetch_dragon_tiger(date(2026, 8, 20))
+        .normalization.events[0]
+    )
+
+    assert event.lhb_buy_amount == Decimal("2445993770.72")
+    assert event.lhb_sell_amount == Decimal("2434970721.04")
+
+
+def test_adapter_prefers_punctuation_normalized_reason_over_broad_other_alias() -> None:
+    responses = _responses()
+    summary_reason = "当日无价格涨跌幅限制的A股\uff0c出现异常波动停牌的"
+    exact_detail_reason = "当日无价格涨跌幅限制的A股,出现异常波动停牌的"
+    responses["top_list"][0]["reason"] = summary_reason
+    for row in responses["top_inst"]:
+        row["reason"] = exact_detail_reason
+    broad = dict(responses["top_inst"][0])
+    broad["reason"] = "无价格涨跌幅限制的证券"
+    broad["exalter"] = "另一个席位"
+    responses["top_inst"].append(broad)
+
+    result = (
+        TushareDragonTigerAdapter(FakeClient(responses))
+        .fetch_dragon_tiger(date(2026, 8, 20))
+        .normalization
+    )
+
+    assert len(result.events) == 1
+    assert len(result.events[0].seat_trades) == 2
+
+
+def test_adapter_joins_verified_delisting_reason_alias() -> None:
+    responses = _responses()
+    responses["top_list"][0]["reason"] = "退市整理的证券"
+    for row in responses["top_inst"]:
+        row["reason"] = "退市整理期"
+    unrelated = dict(responses["top_inst"][0])
+    unrelated["reason"] = "无价格涨跌幅限制的证券"
+    unrelated["exalter"] = "另一个席位"
+    responses["top_inst"].append(unrelated)
+
+    result = (
+        TushareDragonTigerAdapter(FakeClient(responses))
+        .fetch_dragon_tiger(date(2026, 8, 20))
+        .normalization
+    )
+
+    assert len(result.events) == 1
+    assert len(result.events[0].seat_trades) == 2
+
+
+def test_adapter_filters_convertible_bond_summary_without_seat_rows() -> None:
+    responses = _responses()
+    bond = dict(responses["top_list"][0])
+    bond.update(
+        {
+            "ts_code": "113656.SH",
+            "name": "可转债",
+            "reason": "向不特定对象发行的可转债上市首日交易公开信息",
+        }
+    )
+    responses["top_list"].append(bond)
+
+    class MissingBondDetailClient(FakeClient):
+        def query(
+            self, api_name: str, *, params: Mapping[str, str], fields: Sequence[str]
+        ) -> Sequence[Mapping[str, object]]:
+            self.calls.append((api_name, params, fields))
+            if api_name == "top_inst" and params.get("ts_code") == "113656.SH":
+                return []
+            return self.responses[api_name]
+
+    result = (
+        TushareDragonTigerAdapter(MissingBondDetailClient(responses))
+        .fetch_dragon_tiger(date(2026, 8, 20))
+        .normalization
+    )
+
+    assert [event.symbol for event in result.events] == ["SSE:600000"]
+    assert any(item.rule_code == "DT_NON_STOCK_SECURITY_FILTERED" for item in result.findings)
 
 
 def test_adapter_rejects_duplicate_summary_with_conflicting_market_fact() -> None:

@@ -25,6 +25,14 @@ daily indicators (500 requested six-digit codes). Business routes require
 process-local and `/readyz` verifies a bounded database query. Prices and amounts remain decimal
 strings. Errors never return SQL, internal schema names, database addresses, or credentials.
 
+All FastAPI response timestamp fields, including nested items, are rendered in
+`Asia/Shanghai` as `YYYY-MM-DD HH:mm:ss` strings (for example,
+`2026-09-20 09:15:20`). Fractional seconds and timezone suffixes are not emitted.
+Missing timestamps remain `null`; date-only fields remain `YYYY-MM-DD`. This is an
+external presentation rule only: PostgreSQL `timestamptz`, source Raw values, and
+internal timezone-aware `datetime` values are unchanged. OpenAPI describes these
+response fields as patterned strings rather than RFC 3339 `date-time` values.
+
 DragonTiger 提供四个数据库只读路由：按精确日期查询事件、按六位股票代码查询有界历史、按稳定
 席位 UUID 查询行为，以及按事件 UUID 查询即时计算的客观资金指标。路径分别为
 `/api/v1/dragon-tiger/events/by-date`、`/api/v1/dragon-tiger/events/by-symbol/{code}`、
@@ -33,6 +41,12 @@ DragonTiger 提供四个数据库只读路由：按精确日期查询事件、�
 `trigger_window_basis`/`trigger_window_sessions` 过滤；响应分别提供触发窗口、金额周期、买卖披露状态
 和安全质量码。日期区间最长 366 个自然日，`limit` 为 1..500，`offset` 为 0..10000。所有数值为
 Decimal 字符串；接口不回退日期、不访问数据源、不触发采集或 Raw 重放，也不返回主观评分或策略标签。
+
+`GET /api/v1/trading-billboard/hot-money-actions?trade_date=YYYY-MM-DD` 查询固定审核名录中
+温州帮、欢乐海岸、鑫多多、歌神、小棉袄、炒股养家和方新侠在精确交易日的龙虎榜席位行为。
+结果按游资、股票、稳定席位返回买入额、卖出额和可计算净买额；同一席位、股票和金额因多个上榜
+原因重复披露时只返回一次。买卖任一侧未披露时净买额为 `null`。当日已有龙虎榜但名录无动作时
+返回空列表；当日龙虎榜事实整体缺失时返回 404。
 
 Keep the application on `127.0.0.1`. Public authentication, HTTPS/domain, reverse proxy, firewall,
 rate limits, request-log retention, and API-key rotation are separate deployment decisions. See
@@ -76,6 +90,17 @@ closing bid levels and computed bid-1 sealing amount, plus provider-neutral line
 Missing enrichment remains `null`; a non-ready snapshot is never presented as complete. Members
 are ordered by `symbol`; `offset` is bounded to 50,000 and `limit` to 500. This route intentionally
 replaces its former rich-list response under ADR-0030. `/api/v1/limit-up-pool` is unchanged.
+
+`GET /api/v1/daily-limit-down-list?trade_date=YYYY-MM-DD&version=&offset=0&limit=200`
+returns the immutable `today_limit_down` snapshot for that exact date. An omitted version selects
+the highest version of that date only; there is no older-date fallback. Response metadata, status,
+quality, lineage and pagination follow the limit-up list contract. Canonical members require the
+unadjusted close to equal the governed lower limit. EastMoney supplies optional last seal time,
+open count, consecutive limit-down days and source-reported sealed funds; it does not supply first
+seal time or cumulative duration, so those fields remain `null`. Closing ask levels 1–5 are frozen
+from the 21:10 quote collection. Computed ask-1 sealing amount exists only when ask-1 price equals
+the lower limit and its volume is present. Source-reported and computed funds are separate. A
+failed or partial snapshot remains visibly non-ready. The Worker job is opt-in and fixed at 22:10.
 
 `POST /api/v1/call-auction-market-snapshots/query` accepts one exact `trade_date` and 1–500
 six-digit `codes`. Duplicate codes are removed. It returns the latest successful ingestion for that

@@ -12,6 +12,7 @@ PUBLISHED_FUNCTIONS = (
     "api_v1.query_daily_bars(text,date,date,integer)",
     "api_v1.query_classification_members_as_of(text,text,text,date,integer)",
     "api_v1.query_limit_up_pool(date,integer,integer)",
+    "api_v1.query_daily_limit_down_list(date,integer,integer,integer)",
     "api_v1.query_call_auction_market_snapshots(date,text[])",
     "api_v1.query_call_auction_market_series_snapshots(date,text[],text)",
     "api_v1.query_latest_stock_daily_indicators(text[])",
