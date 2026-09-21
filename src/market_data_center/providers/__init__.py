@@ -31,6 +31,7 @@ from market_data_center.providers.router import (
     RoutedResult,
     RoutingAttempt,
 )
+from market_data_center.providers.sse_regulation import SSEOfficialRegulationEventProvider
 from market_data_center.providers.tushare import TushareBseSecurityProvider, TushareProvider
 
 __all__ = [
@@ -47,12 +48,13 @@ __all__ = [
     "ProviderBatch",
     "ProviderError",
     "ProviderRequestUnavailable",
-    "RegulationEventProvider",
     "ProviderRouter",
     "ProviderRoutingError",
     "PytdxProvider",
+    "RegulationEventProvider",
     "RoutedResult",
     "RoutingAttempt",
+    "SSEOfficialRegulationEventProvider",
     "TushareBseSecurityProvider",
     "TushareProvider",
     "available_board_index_provider_codes",
