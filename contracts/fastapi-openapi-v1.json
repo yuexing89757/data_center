@@ -2707,6 +2707,7 @@
           "first_limit_down_at": {
             "anyOf": [
               {
+                "example": "2026-09-18 09:35:00",
                 "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
                 "type": "string"
               },
@@ -2738,6 +2739,7 @@
           "last_limit_down_at": {
             "anyOf": [
               {
+                "example": "2026-09-18 09:35:00",
                 "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
                 "type": "string"
               },
