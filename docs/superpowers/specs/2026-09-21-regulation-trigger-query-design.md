@@ -6,7 +6,9 @@
 
 **领域：** Regulation
 
-**治理前置：** 实施前必须建立并关联 GitHub Issue，并以 clarification 形式更新已接受的
+**关联 Issue：** [#83](https://github.com/yuexing89757/data_center/issues/83)
+
+**治理前置：** 以 clarification 形式更新已接受的
 `ADR-0048-沪深主板与创业板监管异动规则测算`。
 
 ## 1. 目标

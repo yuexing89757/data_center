@@ -24,6 +24,21 @@ VIEW_COUNT = cast(Any, SMOKE_CHECKS["_view_count"])
 PUBLISHED_FUNCTIONS = cast(tuple[str, ...], FASTAPI_CHECKS["PUBLISHED_FUNCTIONS"])
 
 
+def test_regulation_design_documents_lock_query_and_schedule_semantics() -> None:
+    adr = (PROJECT_ROOT / "docs/adr/ADR-0048-沪深主板与创业板监管异动规则测算.md").read_text(
+        encoding="utf-8"
+    )
+    design = (PROJECT_ROOT / "docs/领域详设-Regulation-2026-09-02.md").read_text(encoding="utf-8")
+    for required in (
+        "周一至周五22:00",
+        "api_v1.query_regulation_triggers",
+        "api_v1.query_regulation_recent_event_next_triggers",
+        "最近30个交易日",
+        "regulation_event_reconciliation",
+    ):
+        assert required in adr or required in design
+
+
 def test_regulation_migration_is_private_typed_and_has_26_official_rules() -> None:
     migration = (
         (MIGRATION_DIR / "20260902000100_create_regulation.sql").read_text(encoding="utf-8").lower()
