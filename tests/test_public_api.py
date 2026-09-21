@@ -1729,6 +1729,22 @@ def test_api_timestamp_serialization_keeps_missing_values_and_drops_subseconds()
     assert payload["items"][0]["first_limit_up_at"] is None
 
 
+def test_limit_up_openapi_timestamp_examples_are_valid_calendar_times() -> None:
+    schemas = _client(FakeQueryService()).get("/openapi.json").json()["components"]["schemas"]
+    fields = (
+        schemas["LimitUpPoolResponse"]["properties"]["generated_at"],
+        schemas["DailyLimitUpListResponse"]["properties"]["generated_at"],
+        schemas["DailyLimitUpListItem"]["properties"]["first_limit_up_at"],
+        schemas["DailyLimitUpListItem"]["properties"]["last_limit_up_at"],
+    )
+
+    for field in fields:
+        example = field["example"]
+        assert (
+            datetime.strptime(example, "%Y-%m-%d %H:%M:%S").strftime("%Y-%m-%d %H:%M:%S") == example
+        )
+
+
 def test_daily_limit_up_list_version_and_pagination_are_bounded() -> None:
     service = FakeQueryService()
     client = _client(service)

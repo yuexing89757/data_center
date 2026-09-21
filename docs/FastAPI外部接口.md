@@ -32,6 +32,8 @@ Missing timestamps remain `null`; date-only fields remain `YYYY-MM-DD`. This is 
 external presentation rule only: PostgreSQL `timestamptz`, source Raw values, and
 internal timezone-aware `datetime` values are unchanged. OpenAPI describes these
 response fields as patterned strings rather than RFC 3339 `date-time` values.
+Timestamp schemas also provide explicit calendar-valid examples so `/docs` does not
+invent invalid month, day, or clock values from the shape-only pattern.
 
 DragonTiger 提供四个数据库只读路由：按精确日期查询事件、按六位股票代码查询有界历史、按稳定
 席位 UUID 查询行为，以及按事件 UUID 查询即时计算的客观资金指标。路径分别为

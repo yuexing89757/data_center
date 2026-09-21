@@ -18,6 +18,7 @@
           },
           "observed_at": {
             "description": "行情观察时间，按上海时区格式化。",
+            "example": "2026-09-18 09:35:00",
             "examples": [
               "2026-08-14 09:15:05"
             ],
@@ -71,6 +72,7 @@
           },
           "fetched_at": {
             "description": "数据获取时间，按上海时区格式化。",
+            "example": "2026-09-18 09:35:00",
             "examples": [
               "2026-08-14 11:26:46"
             ],
@@ -359,6 +361,7 @@
           },
           "observed_at": {
             "description": "上海时区行情观察时间。格式为 YYYY-MM-DD HH:mm:ss",
+            "example": "2026-09-18 09:35:00",
             "examples": [
               "2026-08-18 14:27:46"
             ],
@@ -603,6 +606,7 @@
           },
           "fetched_at": {
             "description": "数据获取时间，按上海时区格式化。",
+            "example": "2026-09-18 09:35:00",
             "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
             "title": "Fetched At",
             "type": "string"
@@ -903,6 +907,7 @@
         "properties": {
           "collected_at": {
             "description": "实际完成采集的时间。",
+            "example": "2026-09-18 09:35:00",
             "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
             "title": "Collected At",
             "type": "string"
@@ -956,6 +961,7 @@
           },
           "scheduled_at": {
             "description": "计划采集时间。",
+            "example": "2026-09-18 09:35:00",
             "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
             "title": "Scheduled At",
             "type": "string"
@@ -1330,6 +1336,7 @@
           },
           "observed_at": {
             "description": "行情观察时间，按上海时区格式化。",
+            "example": "2026-09-18 09:35:00",
             "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
             "title": "Observed At",
             "type": "string"
@@ -1820,6 +1827,7 @@
           },
           "observed_at": {
             "description": "行情观察时间，按上海时区格式化。",
+            "example": "2026-09-18 09:35:00",
             "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
             "title": "Observed At",
             "type": "string"
@@ -2083,12 +2091,14 @@
           },
           "window_end": {
             "description": "形态观察窗口结束时间。",
+            "example": "2026-09-18 09:35:00",
             "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
             "title": "Window End",
             "type": "string"
           },
           "window_start": {
             "description": "形态观察窗口开始时间。",
+            "example": "2026-09-18 09:35:00",
             "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
             "title": "Window Start",
             "type": "string"
@@ -2697,6 +2707,7 @@
           "first_limit_down_at": {
             "anyOf": [
               {
+                "example": "2026-09-18 09:35:00",
                 "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
                 "type": "string"
               },
@@ -2728,6 +2739,7 @@
           "last_limit_down_at": {
             "anyOf": [
               {
+                "example": "2026-09-18 09:35:00",
                 "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
                 "type": "string"
               },
@@ -3259,6 +3271,7 @@
           "first_limit_up_at": {
             "anyOf": [
               {
+                "example": "2026-09-18 09:35:00",
                 "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
                 "type": "string"
               },
@@ -3267,6 +3280,7 @@
               }
             ],
             "description": "当日首次涨停时间。",
+            "example": "2026-09-18 09:35:00",
             "title": "First Limit Up At"
           },
           "free_float_market_cap_cny": {
@@ -3303,6 +3317,7 @@
           "last_limit_up_at": {
             "anyOf": [
               {
+                "example": "2026-09-18 09:35:00",
                 "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
                 "type": "string"
               },
@@ -3311,6 +3326,7 @@
               }
             ],
             "description": "当日最后一次涨停时间。",
+            "example": "2026-09-18 14:57:00",
             "title": "Last Limit Up At"
           },
           "limit_price": {
@@ -3501,6 +3517,7 @@
           },
           "generated_at": {
             "description": "结果生成时间。",
+            "example": "2026-09-18 09:35:00",
             "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
             "title": "Generated At",
             "type": "string"
@@ -5372,6 +5389,7 @@
           },
           "observed_at": {
             "description": "行情观察时间，按上海时区格式化。",
+            "example": "2026-09-18 09:35:00",
             "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
             "title": "Observed At",
             "type": "string"
@@ -5415,6 +5433,7 @@
           },
           "source_timestamp": {
             "description": "腾讯来源标注的行情时间。",
+            "example": "2026-09-18 09:35:00",
             "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
             "title": "Source Timestamp",
             "type": "string"
@@ -5613,6 +5632,7 @@
           },
           "generated_at": {
             "description": "结果生成时间。",
+            "example": "2026-09-18 09:35:00",
             "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
             "title": "Generated At",
             "type": "string"
