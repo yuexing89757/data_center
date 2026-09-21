@@ -58,6 +58,7 @@ from market_data_center.domain.records import (
     SecurityRecord,
     ShareCapitalRecord,
 )
+from market_data_center.domain.regulation import RegulationEventRecord
 from market_data_center.domain.shareholder_count import ShareholderCountRecord
 from market_data_center.domain.stock_daily_indicator import StockDailyIndicatorSnapshotRecord
 from market_data_center.shareholder_count_batch import PreparedShareholderCountBatch
@@ -1902,6 +1903,23 @@ where board_id = :board_id and trade_date = :trade_date
         )
 
         PostgreSQLDragonTigerPersistence(self._engine).commit_replay(run, quality_results, records)
+
+    def commit_regulation_event_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest | None,
+        records: Sequence[RegulationEventRecord],
+        quality_results: Sequence[QualityResult],
+    ) -> None:
+        if manifest is not None:
+            raise ValueError("regulation-event replay must reuse the original Raw manifest")
+        from market_data_center.persistence.regulation_event_postgres import (
+            PostgreSQLRegulationEventPersistence,
+        )
+
+        PostgreSQLRegulationEventPersistence(self._engine).publish_replay(
+            run, quality_results, records
+        )
 
     @staticmethod
     def _run_update_parameters(run: IngestionRun) -> dict[str, object]:

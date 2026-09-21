@@ -61,6 +61,7 @@ from market_data_center.domain.records import (
     SecurityRecord,
     TradingDayRecord,
 )
+from market_data_center.domain.regulation import RegulationEventRecord
 from market_data_center.domain.shareholder_count import (
     ShareholderCountRecord,
     validate_shareholder_counts,
@@ -78,6 +79,8 @@ from market_data_center.providers.eastmoney_dragon_tiger_normalizer import (
     normalize_eastmoney_dragon_tiger_raw,
 )
 from market_data_center.providers.pytdx import normalize_pytdx_raw
+from market_data_center.providers.sse_regulation import normalize_sse_regulation_raw
+from market_data_center.providers.szse_regulation import normalize_szse_regulation_raw
 from market_data_center.providers.tushare import normalize_tushare_raw
 from market_data_center.providers.tushare_dragon_tiger import (
     normalize_tushare_dragon_tiger_raw,
@@ -271,6 +274,14 @@ class ReliabilityPersistence(Protocol):
         quality_results: Sequence[QualityResult],
     ) -> None: ...
 
+    def commit_regulation_event_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest | None,
+        records: Sequence[RegulationEventRecord],
+        quality_results: Sequence[QualityResult],
+    ) -> None: ...
+
     def stale_ingestion_run_ids(self, stale_before: datetime) -> Sequence[UUID]: ...
 
     def recover_stale_ingestion_runs(
@@ -289,11 +300,26 @@ _NORMALIZERS: Mapping[ProviderCode, Normalizer] = {
     ProviderCode.BAOSTOCK: normalize_baostock_raw,
     ProviderCode.PYTDX: normalize_pytdx_raw,
     ProviderCode.TUSHARE: normalize_tushare_raw,
+    ProviderCode.SSE_OFFICIAL: normalize_sse_regulation_raw,
+    ProviderCode.SZSE_OFFICIAL: normalize_szse_regulation_raw,
 }
 
 
 def _unsupported_eastmoney_replay(dataset: DatasetCode) -> tuple[ProviderRecord, ...]:
     raise ProviderError(f"Eastmoney Raw replay is unsupported for {dataset.value}")
+
+
+def _request_datetime(request_params: Mapping[str, object], key: str) -> datetime:
+    value = request_params.get(key)
+    if not isinstance(value, str):
+        raise ProviderError(f"regulation-event replay request {key} is missing")
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as error:
+        raise ProviderError(f"regulation-event replay request {key} is invalid") from error
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ProviderError(f"regulation-event replay request {key} is invalid")
+    return parsed.astimezone(UTC)
 
 
 def _normalize_eastmoney_dragon_tiger_replay(
@@ -421,6 +447,72 @@ class RawReplayService:
         dry_run: bool,
     ) -> ReplaySummary:
         records = normalized.records
+        if source.dataset_code is DatasetCode.REGULATION_EVENT:
+            if any(not isinstance(record, RegulationEventRecord) for record in records):
+                raise ProviderError("regulation-event replay contains an unexpected record")
+            event_records = cast(tuple[RegulationEventRecord, ...], records)
+            observed_from = _request_datetime(source.request_params, "observed_from")
+            observed_to = _request_datetime(source.request_params, "observed_to")
+            if observed_to <= observed_from:
+                raise ProviderError("regulation-event replay observation interval is invalid")
+            if any(
+                record.source_code != source.provider_code.value
+                or not observed_from <= record.observed_at.astimezone(UTC) < observed_to
+                for record in event_records
+            ):
+                raise ProviderError("regulation-event replay lineage is invalid")
+            known = (
+                set().union(
+                    *(
+                        self._persistence.known_stock_symbols_for_date(
+                            {
+                                record.symbol
+                                for record in event_records
+                                if record.period_end_date == day
+                            },
+                            day,
+                        )
+                        for day in sorted({record.period_end_date for record in event_records})
+                    )
+                )
+                if event_records
+                else set()
+            )
+            unknown = sorted({record.symbol for record in event_records} - known)
+            raw_count = source.manifest.row_count if source.manifest is not None else len(records)
+            rejected_count = raw_count if unknown else raw_count - len(event_records)
+            accepted_count = 0 if unknown else len(event_records)
+            completed = self._completed(run, raw_count, accepted_count, rejected_count)
+            if completed is not None and not unknown:
+                completed = replace(completed, status=IngestionStatus.SUCCEEDED)
+            quality = (
+                tuple(
+                    QualityResult(
+                        quality_result_id=self._uuid_factory(),
+                        ingestion_id=completed.ingestion_id,
+                        dataset_code=DatasetCode.REGULATION_EVENT,
+                        rule_code="REG_EVENT_UNKNOWN_SECURITY",
+                        severity=QualitySeverity.ERROR,
+                        status=QualityStatus.FAILED,
+                        message="Official regulation event references an unknown stock security",
+                        natural_key={"symbol": symbol},
+                    )
+                    for symbol in unknown
+                )
+                if completed is not None
+                else ()
+            )
+            if completed is not None:
+                if unknown:
+                    self._persistence.commit_rejected_batch(completed, None, quality)
+                else:
+                    self._persistence.commit_regulation_event_batch(
+                        completed, None, event_records, quality
+                    )
+            return self._summary(
+                source, completed, dry_run, raw_count, accepted_count, rejected_count
+            )
+
         if source.dataset_code in {DatasetCode.TRADING_BILLBOARD, DatasetCode.DRAGON_TIGER}:
             drafts = cast(tuple[DragonTigerEventDraft, ...], records)
             dragon_tiger_records = tuple(

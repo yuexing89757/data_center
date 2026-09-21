@@ -70,9 +70,7 @@ Add to `tests/test_production_checks.py`:
 
 ```python
 def test_regulation_design_documents_lock_query_and_schedule_semantics() -> None:
-    adr = Path("docs/adr/ADR-0048-沪深主板与创业板监管异动规则测算.md").read_text(
-        encoding="utf-8"
-    )
+    adr = Path("docs/adr/ADR-0048-沪深主板与创业板监管异动规则测算.md").read_text(encoding="utf-8")
     design = Path("docs/领域详设-Regulation-2026-09-02.md").read_text(encoding="utf-8")
     for required in (
         "周一至周五22:00",
@@ -479,8 +477,6 @@ class RegulationEventCollectionSummary:
     fetched_rows: int
     accepted_events: int
     unchanged_events: int
-
-
 ```
 
 Implement `RegulationEventCollectionService.collect(observed_from: datetime,
@@ -542,8 +538,14 @@ def test_regulation_jobs_are_opt_in_at_2200_and_0830(tmp_path: Path) -> None:
     assert settings.regulation_daily_enabled is False
     assert settings.regulation_event_reconciliation_enabled is False
     jobs = {item.job_id: item for item in job_definitions(settings)}
-    assert (jobs["regulation-daily-calculation"].hour, jobs["regulation-daily-calculation"].minute) == (22, 0)
-    assert (jobs["regulation-event-reconciliation"].hour, jobs["regulation-event-reconciliation"].minute) == (8, 30)
+    assert (
+        jobs["regulation-daily-calculation"].hour,
+        jobs["regulation-daily-calculation"].minute,
+    ) == (22, 0)
+    assert (
+        jobs["regulation-event-reconciliation"].hour,
+        jobs["regulation-event-reconciliation"].minute,
+    ) == (8, 30)
 ```
 
 Assert the daily workflow step order is SSE, SZSE, benchmark, validate, calculate, publish; non-trading dates create successful zero-work steps; reconciliation does not collect ordinary stock bars; missing `daily_market` terminal state fails before publication.
@@ -724,8 +726,12 @@ git commit -m "feat: expose regulation trigger query RPCs"
 Add representative payloads and assert:
 
 ```python
-assert RegulationTriggerResponse.model_validate(payload).items[0].triggered_rules[0].threshold == Decimal("20")
-assert RegulationRecentNextTriggerResponse.model_validate(payload).items[0].next_triggers[0].trigger_change_pct == Decimal("6.48")
+assert RegulationTriggerResponse.model_validate(payload).items[0].triggered_rules[
+    0
+].threshold == Decimal("20")
+assert RegulationRecentNextTriggerResponse.model_validate(payload).items[0].next_triggers[
+    0
+].trigger_change_pct == Decimal("6.48")
 ```
 
 Assert `completed_at`, `event_watermark`, and `latest_event_published_at` use `ApiTimestamp`; dates use `date`; numeric fields are `Decimal | None`; six-digit codes retain leading zeros; response models reject invalid reachability/scenario combinations.

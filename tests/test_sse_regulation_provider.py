@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from market_data_center.domain.ingestion import DatasetCode
 from market_data_center.domain.regulation import (
     RegulationDirection,
     RegulationRuleLevel,
@@ -15,6 +16,7 @@ from market_data_center.providers.contracts import ProviderError
 from market_data_center.providers.sse_regulation import (
     SSEOfficialRegulationEventProvider,
     SSEResponse,
+    normalize_sse_regulation_raw,
 )
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
@@ -73,6 +75,19 @@ def test_sse_provider_normalizes_explicit_official_reason() -> None:
     assert event.event_level is RegulationRuleLevel.ABNORMAL
     assert event.direction is RegulationDirection.UP
     assert event.explicit_rule_codes == ("SSE_MAIN_ABNORMAL_3D_DEV_UP",)
+
+
+def test_sse_raw_replay_reproduces_the_live_event() -> None:
+    batch = _provider({1: _page([_row()])}).fetch_events(FROM, TO)
+
+    replayed = normalize_sse_regulation_raw(
+        DatasetCode.REGULATION_EVENT,
+        batch.schema_version,
+        batch.raw_rows,
+        batch.request_params,
+    )
+
+    assert replayed == batch.records
 
 
 @pytest.mark.parametrize(

@@ -6,7 +6,7 @@ import hashlib
 import html
 import json
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from urllib.error import HTTPError, URLError
@@ -14,6 +14,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
+from market_data_center.domain.ingestion import DatasetCode
 from market_data_center.domain.records import Exchange
 from market_data_center.domain.regulation import (
     RegulationDirection,
@@ -83,6 +84,7 @@ class SZSEOfficialRegulationEventProvider:
             request_params={
                 "observed_from": observed_from.isoformat(),
                 "observed_to": observed_to.isoformat(),
+                "observed_at": observed_at.isoformat(),
                 "trade_date_start": start_date.isoformat(),
                 "trade_date_end": end_date.isoformat(),
             },
@@ -144,6 +146,45 @@ class SZSEOfficialRegulationEventProvider:
             raise ProviderError("SZSE official request failed") from error
         validate_official_url(response.url, SZSE_ALLOWED_HOSTS)
         return response
+
+
+def normalize_szse_regulation_raw(
+    dataset: DatasetCode,
+    schema: str,
+    rows: Sequence[Mapping[str, str]],
+    request_params: Mapping[str, object],
+) -> tuple[RegulationEventRecord, ...]:
+    """Rebuild SZSE regulation facts from immutable Raw evidence."""
+    if dataset is not DatasetCode.REGULATION_EVENT or schema != "szse.regulation_event.v1":
+        raise ProviderError("unsupported SZSE regulation Raw replay contract")
+    start_date, end_date, observed_at = _replay_context(request_params)
+    evidence: list[tuple[Mapping[str, object], Mapping[str, object]]] = []
+    for row in rows:
+        if row.get("source") != "szse_official":
+            raise ProviderError("SZSE regulation Raw source is invalid")
+        try:
+            listing = json.loads(row["listing"])
+            detail = json.loads(row["detail"])
+        except (KeyError, json.JSONDecodeError) as error:
+            raise ProviderError("SZSE regulation Raw payload is invalid") from error
+        if not isinstance(listing, Mapping) or not isinstance(detail, Mapping):
+            raise ProviderError("SZSE regulation Raw payload is invalid")
+        evidence.append((listing, detail))
+    return _normalize_evidence(
+        tuple(evidence), start_date=start_date, end_date=end_date, observed_at=observed_at
+    )
+
+
+def _replay_context(request_params: Mapping[str, object]) -> tuple[date, date, datetime]:
+    try:
+        start_date = date.fromisoformat(str(request_params["trade_date_start"]))
+        end_date = date.fromisoformat(str(request_params["trade_date_end"]))
+        observed_at = datetime.fromisoformat(str(request_params["observed_at"]))
+    except (KeyError, ValueError) as error:
+        raise ProviderError("SZSE regulation Raw request metadata is invalid") from error
+    if observed_at.tzinfo is None or observed_at.utcoffset() is None or start_date > end_date:
+        raise ProviderError("SZSE regulation Raw request metadata is invalid")
+    return start_date, end_date, observed_at.astimezone(_SHANGHAI)
 
 
 def _fetch(url: str, params: dict[str, str]) -> SZSEResponse:

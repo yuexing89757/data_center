@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from market_data_center.domain.ingestion import DatasetCode
 from market_data_center.domain.regulation import (
     RegulationDirection,
     RegulationRuleLevel,
@@ -15,6 +16,7 @@ from market_data_center.providers.contracts import ProviderError
 from market_data_center.providers.szse_regulation import (
     SZSEOfficialRegulationEventProvider,
     SZSEResponse,
+    normalize_szse_regulation_raw,
 )
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
@@ -107,6 +109,23 @@ def test_szse_provider_distinguishes_mainboard_and_gem_rules() -> None:
         ("SZSE:000001", RegulationSegment.SZSE_MAIN, ("SZSE_MAIN_ABNORMAL_3D_DEV_UP",)),
         ("SZSE:300001", RegulationSegment.GEM, ("GEM_ABNORMAL_3D_DEV_UP",)),
     ]
+
+
+def test_szse_raw_replay_reproduces_the_live_event() -> None:
+    reason = "异常期间价格涨幅偏离值累计达到21.09%"
+    batch = _provider(
+        {1: _listing([_listing_row("000001", reason)])},
+        {"000001": _detail("000001", reason)},
+    ).fetch_events(FROM, TO)
+
+    replayed = normalize_szse_regulation_raw(
+        DatasetCode.REGULATION_EVENT,
+        batch.schema_version,
+        batch.raw_rows,
+        batch.request_params,
+    )
+
+    assert replayed == batch.records
 
 
 @pytest.mark.parametrize(

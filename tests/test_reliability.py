@@ -28,6 +28,7 @@ from market_data_center.domain import (
     QualitySeverity,
     RawFileFormat,
     RawManifest,
+    RegulationEventRecord,
     SecurityRecord,
     ShareholderCountRecord,
 )
@@ -111,6 +112,14 @@ class StubReliabilityPersistence:
                 IngestionRun,
                 RawManifest | None,
                 Sequence[DragonTigerEventRecord],
+                Sequence[QualityResult],
+            ]
+        ] = []
+        self.regulation_event_commits: list[
+            tuple[
+                IngestionRun,
+                RawManifest | None,
+                Sequence[RegulationEventRecord],
                 Sequence[QualityResult],
             ]
         ] = []
@@ -269,6 +278,15 @@ class StubReliabilityPersistence:
         quality_results: Sequence[QualityResult],
     ) -> None:
         self.dragon_tiger_commits.append((run, manifest, records, quality_results))
+
+    def commit_regulation_event_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest | None,
+        records: Sequence[RegulationEventRecord],
+        quality_results: Sequence[QualityResult],
+    ) -> None:
+        self.regulation_event_commits.append((run, manifest, records, quality_results))
 
     def stale_ingestion_run_ids(self, stale_before: datetime) -> Sequence[UUID]:
         return self.stale_ids
@@ -968,6 +986,58 @@ def test_cross_source_comparison_reports_differences_without_writes(tmp_path: Pa
     assert changed_fields["close"] == {"akshare": "10.60", "baostock": "10.50"}
     assert persistence.created == []
     assert persistence.daily_commits == []
+
+
+def test_raw_replay_republishes_verified_sse_regulation_events(tmp_path: Path) -> None:
+    store = LocalRawStore(tmp_path)
+    source = _source(
+        store,
+        provider=ProviderCode.SSE_OFFICIAL,
+        dataset=DatasetCode.REGULATION_EVENT,
+        schema_version="sse.regulation_event.v1",
+        rows=[
+            {
+                "source": "sse_official",
+                "payload": dumps(
+                    {
+                        "secCode": "600000",
+                        "secAbbr": "浦发银行",
+                        "refType": "1",
+                        "tradeDate": "20260729",
+                        "abnormalStart": "20260727",
+                        "abnormalEnd": "20260729",
+                        "secValue": "20.12",
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+            }
+        ],
+        request_params={
+            "observed_from": "2026-07-28T16:00:00+00:00",
+            "observed_to": "2026-07-29T16:00:00+00:00",
+            "observed_at": "2026-07-29T14:00:00+08:00",
+            "trade_date_start": "2026-07-29",
+            "trade_date_end": "2026-07-29",
+        },
+    )
+    persistence = StubReliabilityPersistence(source)
+
+    summary = RawReplayService(
+        raw_store=store,
+        persistence=persistence,
+        clock=lambda: NOW,
+        uuid_factory=lambda: REPLAY_RUN_ID,
+    ).replay(SOURCE_RUN_ID)
+
+    assert summary.status == "succeeded"
+    assert summary.accepted_rows == 1
+    [(run, manifest, records, quality)] = persistence.regulation_event_commits
+    assert run.replayed_from_raw_id == RAW_ID
+    assert manifest is None
+    assert [record.symbol for record in records] == ["SSE:600000"]
+    assert quality == ()
 
 
 def _dragon_tiger_source(

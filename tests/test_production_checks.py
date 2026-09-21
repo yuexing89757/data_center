@@ -69,6 +69,27 @@ def test_regulation_migration_is_private_typed_and_has_26_official_rules() -> No
     assert "jsonb" not in migration
 
 
+def test_regulation_event_ingestion_migration_extends_controlled_catalogs() -> None:
+    migration = (
+        (MIGRATION_DIR / "20260921000100_add_regulation_event_ingestion.sql")
+        .read_text(encoding="utf-8")
+        .lower()
+    )
+
+    for provider in ("sse_official", "szse_official"):
+        assert f"'{provider}'" in migration
+    assert migration.count("'regulation_event'") >= 2
+    assert "'regulation_event_reconciliation'" in migration
+    assert "drop constraint regulation_event_direction_check" in migration
+    assert "direction is null or direction in ('up', 'down')" in migration
+    assert "on regulation.event (period_end_date desc, symbol)" in migration
+    assert not re.search(
+        r"(?im)^grant\s+.*\bon\s+regulation\.event\s+to\s+"
+        r"(public|anon|authenticated|market_data_api)",
+        migration,
+    )
+
+
 def test_dragon_tiger_replacement_migration_is_bounded_private_and_read_only() -> None:
     migration = (
         (MIGRATION_DIR / "20260902000300_replace_trading_billboard_with_dragon_tiger.sql")

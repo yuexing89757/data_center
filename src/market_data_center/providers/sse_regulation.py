@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from urllib.error import HTTPError, URLError
@@ -13,6 +13,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
+from market_data_center.domain.ingestion import DatasetCode
 from market_data_center.domain.records import Exchange
 from market_data_center.domain.regulation import (
     RegulationDirection,
@@ -140,6 +141,7 @@ class SSEOfficialRegulationEventProvider:
             request_params={
                 "observed_from": observed_from.isoformat(),
                 "observed_to": observed_to.isoformat(),
+                "observed_at": observed_at.isoformat(),
                 "trade_date_start": start_date.isoformat(),
                 "trade_date_end": end_date.isoformat(),
             },
@@ -181,6 +183,44 @@ class SSEOfficialRegulationEventProvider:
                     raise ProviderError("SSE official document count exceeds bound")
             page_no += 1
         return tuple(unique.values())
+
+
+def normalize_sse_regulation_raw(
+    dataset: DatasetCode,
+    schema: str,
+    rows: Sequence[Mapping[str, str]],
+    request_params: Mapping[str, object],
+) -> tuple[RegulationEventRecord, ...]:
+    """Rebuild SSE regulation facts from immutable Raw evidence."""
+    if dataset is not DatasetCode.REGULATION_EVENT or schema != "sse.regulation_event.v1":
+        raise ProviderError("unsupported SSE regulation Raw replay contract")
+    start_date, end_date, observed_at = _replay_context(request_params)
+    decoded: list[Mapping[str, object]] = []
+    for row in rows:
+        if row.get("source") != "sse_official":
+            raise ProviderError("SSE regulation Raw source is invalid")
+        try:
+            payload = json.loads(row["payload"])
+        except (KeyError, json.JSONDecodeError) as error:
+            raise ProviderError("SSE regulation Raw payload is invalid") from error
+        if not isinstance(payload, Mapping):
+            raise ProviderError("SSE regulation Raw payload is invalid")
+        decoded.append(payload)
+    return _normalize_rows(
+        tuple(decoded), start_date=start_date, end_date=end_date, observed_at=observed_at
+    )
+
+
+def _replay_context(request_params: Mapping[str, object]) -> tuple[date, date, datetime]:
+    try:
+        start_date = date.fromisoformat(str(request_params["trade_date_start"]))
+        end_date = date.fromisoformat(str(request_params["trade_date_end"]))
+        observed_at = datetime.fromisoformat(str(request_params["observed_at"]))
+    except (KeyError, ValueError) as error:
+        raise ProviderError("SSE regulation Raw request metadata is invalid") from error
+    if observed_at.tzinfo is None or observed_at.utcoffset() is None or start_date > end_date:
+        raise ProviderError("SSE regulation Raw request metadata is invalid")
+    return start_date, end_date, observed_at
 
 
 def _fetch(url: str, params: dict[str, str]) -> SSEResponse:
