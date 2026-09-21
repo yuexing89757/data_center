@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import subprocess
+import sys
 from datetime import UTC, datetime
 from io import BytesIO
 from typing import get_type_hints
@@ -74,6 +76,27 @@ def test_pdf_extraction_rejects_more_than_fifty_pages() -> None:
 
     with pytest.raises(ProviderError, match="official PDF exceeds page limit"):
         extract_official_text("application/pdf", output.getvalue())
+
+
+def test_url_validation_does_not_require_optional_document_parsers() -> None:
+    script = """
+import builtins
+original_import = builtins.__import__
+def blocked_import(name, *args, **kwargs):
+    if name in {"bs4", "pypdf"}:
+        raise ModuleNotFoundError(name)
+    return original_import(name, *args, **kwargs)
+builtins.__import__ = blocked_import
+from market_data_center.providers.official_regulation_common import validate_official_url
+validate_official_url("https://www.szse.cn/report", frozenset({"www.szse.cn"}))
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stderr
 
 
 def test_regulation_provider_contract_uses_aware_interval_and_event_batch() -> None:

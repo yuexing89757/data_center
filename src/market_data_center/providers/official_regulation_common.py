@@ -7,9 +7,6 @@ import unicodedata
 from io import BytesIO
 from urllib.parse import urlsplit
 
-from bs4 import BeautifulSoup
-from pypdf import PdfReader
-
 from market_data_center.providers.contracts import ProviderError
 
 MAX_DOCUMENT_BYTES = 5 * 1024 * 1024
@@ -45,6 +42,8 @@ def extract_official_text(content_type: str, body: bytes) -> str:
         raise ProviderError("document exceeds bounded size")
     media_type = content_type.partition(";")[0].strip().lower()
     if media_type in {"text/html", "application/xhtml+xml"}:
+        from bs4 import BeautifulSoup
+
         soup = BeautifulSoup(body, "html.parser")
         for element in soup(("script", "style", "noscript")):
             element.decompose()
@@ -65,6 +64,8 @@ def extract_official_text(content_type: str, body: bytes) -> str:
 
 def _extract_pdf_text(body: bytes) -> str:
     try:
+        from pypdf import PdfReader
+
         reader = PdfReader(BytesIO(body))
         if reader.is_encrypted:
             raise ProviderError("encrypted official PDF is not supported")
