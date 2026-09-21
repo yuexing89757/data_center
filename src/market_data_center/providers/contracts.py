@@ -22,6 +22,7 @@ from market_data_center.domain.records import (
     SecurityRecord,
     TradingDayRecord,
 )
+from market_data_center.domain.regulation import RegulationEventRecord
 from market_data_center.domain.shareholder_count import ShareholderCountRecord
 from market_data_center.domain.stock_daily_indicator import StockDailyIndicatorSnapshotRecord
 from market_data_center.domain.today_limit_down import LimitDownSourceRecord
@@ -43,6 +44,7 @@ type ProviderRecord = (
     | LimitUpSourceRecord
     | LimitDownSourceRecord
     | DragonTigerEventDraft
+    | RegulationEventRecord
 )
 type RawRow = Mapping[str, str]
 
@@ -61,6 +63,16 @@ class DragonTigerProvider(Protocol):
     source_code: str
 
     def fetch_dragon_tiger(self, trade_date: date) -> "DragonTigerProviderBatch": ...
+
+
+class RegulationEventProvider(Protocol):
+    """One exchange's official regulation events observed in an exact interval."""
+
+    source_code: str
+
+    def fetch_events(
+        self, observed_from: datetime, observed_to: datetime
+    ) -> "ProviderBatch[RegulationEventRecord]": ...
 
 
 class MarketDataProvider(Protocol):

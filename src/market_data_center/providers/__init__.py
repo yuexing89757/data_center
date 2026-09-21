@@ -12,6 +12,7 @@ from market_data_center.providers.contracts import (
     ProviderBatch,
     ProviderError,
     ProviderRequestUnavailable,
+    RegulationEventProvider,
 )
 from market_data_center.providers.eastmoney_dragon_tiger import (
     EastmoneyDragonTigerAdapter,
@@ -46,6 +47,7 @@ __all__ = [
     "ProviderBatch",
     "ProviderError",
     "ProviderRequestUnavailable",
+    "RegulationEventProvider",
     "ProviderRouter",
     "ProviderRoutingError",
     "PytdxProvider",
