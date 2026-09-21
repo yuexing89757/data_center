@@ -1,4 +1,4 @@
-"""Collect end-of-day and call-auction five-level quote snapshots for limit-up pool members."""
+"""Collect end-of-day five-level quotes for exact-date price-limit pool members."""
 
 from collections.abc import Callable, Sequence
 from dataclasses import replace
@@ -33,6 +33,7 @@ from market_data_center.raw_store import LocalRawStore
 from market_data_center.settings import PytdxHqSettings, WorkerSettings
 
 LIMIT_UP_POOL_CODE = "CN_A_PREVIOUS_DAY_MAINBOARD_LIMIT_UP"
+LIMIT_DOWN_POOL_CODE = "CN_A_PREVIOUS_DAY_MAINBOARD_LIMIT_DOWN"
 SHANGHAI_TIME_ZONE = ZoneInfo("Asia/Shanghai")
 
 
@@ -42,6 +43,10 @@ class EodQuoteSnapshotUnavailable(RuntimeError):
 
 def _limit_up_symbols(engine: Engine, trade_date: date) -> list[str]:
     """Return symbols from the latest ready limit-up pool for the given basis date."""
+    return _pool_symbols(engine, trade_date, LIMIT_UP_POOL_CODE)
+
+
+def _pool_symbols(engine: Engine, trade_date: date, pool_code: str) -> list[str]:
     with engine.connect() as conn:
         snapshot_id = conn.execute(
             text(
@@ -55,11 +60,12 @@ def _limit_up_symbols(engine: Engine, trade_date: date) -> list[str]:
                 limit 1
                 """
             ),
-            {"code": LIMIT_UP_POOL_CODE, "d": trade_date},
+            {"code": pool_code, "d": trade_date},
         ).scalar_one_or_none()
         if snapshot_id is None:
+            direction = "limit-up" if pool_code == LIMIT_UP_POOL_CODE else "limit-down"
             raise EodQuoteSnapshotUnavailable(
-                f"ready limit-up pool is unavailable for {trade_date}"
+                f"ready {direction} pool is unavailable for {trade_date}"
             )
         rows = conn.execute(
             text(
@@ -73,6 +79,13 @@ def _limit_up_symbols(engine: Engine, trade_date: date) -> list[str]:
             {"snapshot_id": snapshot_id},
         ).all()
     return [r[0] for r in rows]
+
+
+def _eod_pool_symbols(engine: Engine, trade_date: date) -> tuple[list[str], list[str]]:
+    """Return deduplicated collection symbols and up-side sealing candidates."""
+    up_symbols = _limit_up_symbols(engine, trade_date)
+    down_symbols = _pool_symbols(engine, trade_date, LIMIT_DOWN_POOL_CODE)
+    return sorted(set(up_symbols) | set(down_symbols)), sorted(up_symbols)
 
 
 def _to_eod_records(
@@ -191,18 +204,18 @@ def collect_eod_quotes(
     raw_store: LocalRawStore | None = None,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> int:
-    """Collect end-of-day five-level quotes for the day's limit-up pool."""
+    """Collect end-of-day five-level quotes for both price-limit pools."""
     now = clock()
     if now.astimezone(SHANGHAI_TIME_ZONE).date() != trade_date:
         raise EodQuoteSnapshotUnavailable(
             "end-of-day quotes are live facts and cannot backfill a different trade date"
         )
-    symbols = _limit_up_symbols(engine, trade_date)
+    symbols, up_symbols = _eod_pool_symbols(engine, trade_date)
     if not symbols:
-        print(f"no limit-up pool members for {trade_date}")
+        print(f"no price-limit pool members for {trade_date}")
         return 0
-    print(f"collecting eod quotes for {len(symbols)} limit-up symbols")
-    upper_limits = _upper_limits(engine, trade_date, symbols)
+    print(f"collecting eod quotes for {len(symbols)} price-limit symbols")
+    upper_limits = _upper_limits(engine, trade_date, up_symbols)
     run, persistence = _start_run(engine, DatasetCode.EOD_QUOTE_SNAPSHOT, trade_date)
     try:
         with PytdxHqProvider(PytdxHqSettings()) as provider:

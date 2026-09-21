@@ -21,6 +21,7 @@ from market_data_center.public_api.models import (
     ClassificationMembersResponse,
     ClosePriceNewHighs120dResponse,
     DailyBarResponse,
+    DailyLimitDownListResponse,
     DailyLimitUpListResponse,
     DragonTigerCapitalMetricsItem,
     DragonTigerEventPageResponse,
@@ -107,6 +108,15 @@ select api_v1.query_limit_up_pool(
 
 QUERY_DAILY_LIMIT_UP_LIST = text("""
 select api_v1.query_daily_limit_up_list(
+    p_trade_date => :trade_date,
+    p_version => :version,
+    p_offset => :offset,
+    p_limit => :limit
+) as payload
+""")
+
+QUERY_DAILY_LIMIT_DOWN_LIST = text("""
+select api_v1.query_daily_limit_down_list(
     p_trade_date => :trade_date,
     p_version => :version,
     p_offset => :offset,
@@ -250,6 +260,10 @@ class PublicQueryService(Protocol):
     def daily_limit_up_list(
         self, trade_date: date, version: int | None, offset: int, limit: int
     ) -> DailyLimitUpListResponse: ...
+
+    def daily_limit_down_list(
+        self, trade_date: date, version: int | None, offset: int, limit: int
+    ) -> DailyLimitDownListResponse: ...
 
     def call_auction_market_snapshots(
         self, trade_date: date, codes: tuple[str, ...]
@@ -447,6 +461,17 @@ class PostgreSQLPublicQueryService:
         if not rows:
             raise PublicQueryNotFound("daily limit-up list was not found")
         return DailyLimitUpListResponse.model_validate(rows[0]["payload"])
+
+    def daily_limit_down_list(
+        self, trade_date: date, version: int | None, offset: int, limit: int
+    ) -> DailyLimitDownListResponse:
+        rows = self._execute(
+            QUERY_DAILY_LIMIT_DOWN_LIST,
+            {"trade_date": trade_date, "version": version, "offset": offset, "limit": limit},
+        )
+        if not rows:
+            raise PublicQueryNotFound("daily limit-down list was not found")
+        return DailyLimitDownListResponse.model_validate(rows[0]["payload"])
 
     def call_auction_market_snapshots(
         self, trade_date: date, codes: tuple[str, ...]

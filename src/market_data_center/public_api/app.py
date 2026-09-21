@@ -47,6 +47,7 @@ from market_data_center.public_api.models import (
     ClassificationMembersResponse,
     ClosePriceNewHighs120dResponse,
     DailyBarResponse,
+    DailyLimitDownListResponse,
     DailyLimitUpListResponse,
     DragonTigerCapitalMetricsItem,
     DragonTigerEventPageResponse,
@@ -509,6 +510,32 @@ def create_app(
         limit: Annotated[int, Query(ge=1, le=500)] = 200,
     ) -> DailyLimitUpListResponse:
         return service.daily_limit_up_list(trade_date, version, offset, limit)
+
+    @app.get(
+        "/api/v1/daily-limit-down-list",
+        response_model=DailyLimitDownListResponse,
+        responses={
+            401: {"model": ErrorResponse},
+            404: {"model": ErrorResponse},
+            503: {"model": ErrorResponse},
+        },
+        tags=["市场数据"],
+        summary="查询指定交易日的不可变跌停列表快照",
+        description=(
+            "返回指定交易日最新或指定版本的沪深主板跌停快照，包含规范价格、来源末次封板、"
+            "收盘卖一至卖五和卖一计算封单额、质量摘要及追溯信息。首次封板时间和累计时长"
+            "在来源不可得时保持空值；不回退日期或填造缺失数据。"
+        ),
+    )
+    def daily_limit_down_list(
+        _: ApiKeyDependency,
+        service: QueryServiceDependency,
+        trade_date: Annotated[date, Query()],
+        version: Annotated[int | None, Query(ge=1)] = None,
+        offset: Annotated[int, Query(ge=0, le=50000)] = 0,
+        limit: Annotated[int, Query(ge=1, le=500)] = 200,
+    ) -> DailyLimitDownListResponse:
+        return service.daily_limit_down_list(trade_date, version, offset, limit)
 
     @app.post(
         "/api/v1/call-auction-market-snapshots/query",

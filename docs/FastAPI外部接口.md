@@ -93,6 +93,17 @@ Missing enrichment remains `null`; a non-ready snapshot is never presented as co
 are ordered by `symbol`; `offset` is bounded to 50,000 and `limit` to 500. This route intentionally
 replaces its former rich-list response under ADR-0030. `/api/v1/limit-up-pool` is unchanged.
 
+`GET /api/v1/daily-limit-down-list?trade_date=YYYY-MM-DD&version=&offset=0&limit=200`
+returns the immutable `today_limit_down` snapshot for that exact date. An omitted version selects
+the highest version of that date only; there is no older-date fallback. Response metadata, status,
+quality, lineage and pagination follow the limit-up list contract. Canonical members require the
+unadjusted close to equal the governed lower limit. EastMoney supplies optional last seal time,
+open count, consecutive limit-down days and source-reported sealed funds; it does not supply first
+seal time or cumulative duration, so those fields remain `null`. Closing ask levels 1–5 are frozen
+from the 21:10 quote collection. Computed ask-1 sealing amount exists only when ask-1 price equals
+the lower limit and its volume is present. Source-reported and computed funds are separate. A
+failed or partial snapshot remains visibly non-ready. The Worker job is opt-in and fixed at 22:10.
+
 `POST /api/v1/call-auction-market-snapshots/query` accepts one exact `trade_date` and 1–500
 six-digit `codes`. Duplicate codes are removed. It returns the latest successful ingestion for that
 date; only when no successful ingestion has facts does it select the latest partial ingestion. It

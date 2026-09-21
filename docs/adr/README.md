@@ -68,6 +68,7 @@ ADR 记录已经接受的架构决策。其优先级低于项目宪法，高于�
 - `ADR-0025-Standalone-PostgreSQL-FastAPI.md`：独立 FastAPI 直接读取 PostgreSQL；首版复用现有数据库，不引入额外平台服务依赖，并保留未来 standalone 切换门禁。
 - `ADR-0029-同日涨停不可变快照与22点填充任务.md`：定义同日涨停来源观察、版本化快照、封板口径和 22:00 依赖门禁。
 - `ADR-0030-DailyLimitUpList切换TodayLimitUp契约.md`：将既有 daily-limit-up-list 明确切换为版本化同日涨停领域读契约。
+- `ADR-0056-每日跌停不可变快照与只读契约.md`：定义同日跌停快照、收盘卖盘富化与有界只读列表。
 - `ADR-0005-Provider自动路由与故障切换.md`：按数据集能力自动选择 Provider，仅对来源错误执行确定性回退和进程内熔断。
 - `ADR-0006-Raw重放与运行恢复.md`：重放创建新 IngestionRun 并引用原 RawManifest，同时定义僵尸运行恢复与只读多源差异报告。
 - `ADR-0031-近20交易日涨幅Top10只读契约.md`：定义未复权收盘价 20 交易日（19 区间）确定性排名与遗漏语义。
