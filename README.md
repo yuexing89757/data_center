@@ -12,6 +12,10 @@ packaged HTTP API is not enabled by the Worker release; no OS-level collection s
 release gates, read-only smoke checks, and rollback boundaries. Packaging does not prove that
 production backup restore or credential rotation has passed.
 
+The current same-host production services use loopback PostgreSQL with separate credentials and
+systemd 255 restart-backoff drop-ins (10–120 seconds). Preserve the protected environment and
+drop-ins on later releases; the [runbook](docs/最小生产发布运行手册.md) records verification and rollback.
+
 ## Windows deployment
 
 Install `uv`, then prepare the environment with the root deployment script. On the first run it creates `.env`; fill `DATABASE_URL` and `RAW_DATA_ROOT`, then run the same command again. The Worker builds its PYTDX pool when it starts:

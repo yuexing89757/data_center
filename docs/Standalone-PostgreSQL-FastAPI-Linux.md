@@ -3,6 +3,13 @@
 This runbook packages but does not authorize deployment or public exposure. Worker and API remain
 separate services, users, environment files, credentials, and failure domains.
 
+On 2026-09-22, the production API and Worker were explicitly authorized to use the verified
+same-host PostgreSQL through `127.0.0.1:5432`, retaining their separate database identities.
+Production systemd 255 drop-ins now increase failure-restart delays from 10 seconds over five
+steps to a 120-second ceiling. This is a configuration-only change, not a database cutover or
+an API release. Preserve these drop-ins and protected environment files during later releases;
+see the [configuration maintenance record](最小生产发布运行手册.md#同机数据库直连与重启退避2026-09-22).
+
 ## Preconditions
 
 1. Apply repository migrations to the existing production PostgreSQL through the protected workflow.
