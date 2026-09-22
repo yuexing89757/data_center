@@ -1,3 +1,4 @@
+import gzip
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
@@ -298,7 +299,10 @@ class StubReliabilityPersistence:
         return self.stale_ids
 
 
-def test_raw_replay_reuses_verified_raw_lineage_without_new_manifest(tmp_path: Path) -> None:
+@pytest.mark.parametrize("compressed", [False, True])
+def test_raw_replay_reuses_verified_raw_lineage_without_new_manifest(
+    tmp_path: Path, compressed: bool
+) -> None:
     store = LocalRawStore(tmp_path)
     source = _source(
         store,
@@ -317,6 +321,11 @@ def test_raw_replay_reuses_verified_raw_lineage_without_new_manifest(tmp_path: P
         ],
         request_params={},
     )
+    if compressed:
+        assert source.manifest is not None
+        plain = tmp_path / source.manifest.object_path
+        plain.with_name(plain.name + ".gz").write_bytes(gzip.compress(plain.read_bytes(), mtime=0))
+        plain.unlink()
     persistence = StubReliabilityPersistence(source)
     service = RawReplayService(
         raw_store=store,

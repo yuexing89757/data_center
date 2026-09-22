@@ -48,14 +48,22 @@
 ```python
 from datetime import UTC, datetime, timedelta
 
+
 def test_plan_protects_runtime_owner_and_two_rollbacks(tmp_path):
     now = datetime(2026, 9, 22, tzinfo=UTC)
-    releases = tuple(cleanup.Release(tmp_path / f"r{i}", f"{i:040x}",
-                     now - timedelta(days=i),
-                     (tmp_path / "r4" / ".venv",) if i == 0 else (), True)
-                     for i in range(5))
-    result = cleanup.plan_releases(releases, current=(tmp_path / "r0",),
-                    active_paths=(), require_gzip_reader=True)
+    releases = tuple(
+        cleanup.Release(
+            tmp_path / f"r{i}",
+            f"{i:040x}",
+            now - timedelta(days=i),
+            (tmp_path / "r4" / ".venv",) if i == 0 else (),
+            True,
+        )
+        for i in range(5)
+    )
+    result = cleanup.plan_releases(
+        releases, current=(tmp_path / "r0",), active_paths=(), require_gzip_reader=True
+    )
     assert set(result.protected) == {tmp_path / f"r{i}" for i in (0, 1, 2, 4)}
     assert result.candidates == (tmp_path / "r3",)
 ```
@@ -110,4 +118,5 @@ Run: `uv run pytest tests/test_cleanup_releases.py tests/test_build_release.py -
 - Spec§6发布物保护由Task1完整覆盖，路径/权限/删除前再核对由Task2覆盖。
 - 不强依赖主计划数据库表；主计划可先交付。若尚未实现gzipreader，构建清单必须false，不能虚报能力。
 - 此脚本不会首次部署就删除历史未知目录；若要回收旧存量，必须另行只读确认其身份、依赖和可恢复性，再获当次明确授权。
-- 执行方式与主计划统一由用户选择；本文件只是计划，不是已上线能力。
+- 执行方式与主计划一致：当前目录的codex/分支内逐项实施，不创建worktree、不使用子代理。
+  本配套计划尚未实施，不是已上线能力。

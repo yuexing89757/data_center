@@ -64,7 +64,7 @@
 - 增加 `LocalRawStore.read_payload(object_path: str, *, max_bytes: int) -> bytes`，只做受限读取；有Manifest的调用者仍执行其SHA/字节/行数校验。
 - 写入入口签名不变，逻辑路径存在明文或gzip任一表示都抛 `FileExistsError`。
 
-- [ ] **1. 写失败测试。** 在 `tests/test_raw_store.py` 增加以下完整用例，直接复用现有常量INGESTION_ID：
+- [x] **1. 写失败测试。** 在 `tests/test_raw_store.py` 增加以下完整用例，直接复用现有常量INGESTION_ID：
 
 ```python
 def test_gzip_raw_reads_by_original_manifest_and_cannot_be_rewritten(tmp_path):
@@ -72,13 +72,25 @@ def test_gzip_raw_reads_by_original_manifest_and_cannot_be_rewritten(tmp_path):
     from uuid import uuid4
 
     store = LocalRawStore(tmp_path)
-    kwargs = dict(provider="baostock", dataset="security",
-                  partition_date=date(2026, 7, 28), ingestion_id=INGESTION_ID,
-                  rows=[{"code": "sh.600000"}], schema_version="baostock.security.v1")
+    kwargs = dict(
+        provider="baostock",
+        dataset="security",
+        partition_date=date(2026, 7, 28),
+        ingestion_id=INGESTION_ID,
+        rows=[{"code": "sh.600000"}],
+        schema_version="baostock.security.v1",
+    )
     stored = store.write_jsonl(**kwargs)
-    manifest = RawManifest(uuid4(), INGESTION_ID, stored.object_path,
-                           RawFileFormat.JSONL, stored.content_sha256,
-                           stored.byte_size, stored.row_count, stored.schema_version)
+    manifest = RawManifest(
+        uuid4(),
+        INGESTION_ID,
+        stored.object_path,
+        RawFileFormat.JSONL,
+        stored.content_sha256,
+        stored.byte_size,
+        stored.row_count,
+        stored.schema_version,
+    )
     plain = tmp_path / stored.object_path
     compressed = plain.with_name(plain.name + ".gz")
     compressed.write_bytes(gzip.compress(plain.read_bytes(), mtime=0))
@@ -89,8 +101,8 @@ def test_gzip_raw_reads_by_original_manifest_and_cannot_be_rewritten(tmp_path):
     assert not plain.exists()
 ```
 
-- [ ] **2. 运行RED。** `uv run pytest tests/test_raw_store.py -q`；新用例须因“不支持gzip/允许重写”失败，不是环境导入失败。
-- [ ] **3. 实现受限读取。** 路径解析检查空路径、绝对路径、盘符/反斜杠、`..`、所有父级软链接；解析后必须严格在Raw根内且是普通文件。原路径只在FileNotFound时fallback，PermissionError/损坏不fallback。gzip用流读取 `max_bytes + 1`，超限失败；捕获gzip截断/CRC错误为RawIntegrityError，不回显路径。核心分支：
+- [x] **2. 运行RED。** `uv run pytest tests/test_raw_store.py -q`；新用例须因“不支持gzip/允许重写”失败，不是环境导入失败。
+- [x] **3. 实现受限读取。** 路径解析检查空路径、绝对路径、盘符/反斜杠、`..`、所有父级软链接；解析后必须严格在Raw根内且是普通文件。原路径只在FileNotFound时fallback，PermissionError/损坏不fallback。gzip用流读取 `max_bytes + 1`，超限失败；捕获gzip截断/CRC错误为RawIntegrityError，不回显路径。核心分支：
 
 ```python
 try:
@@ -108,7 +120,7 @@ if len(payload) > max_bytes:
 - [ ] **4. 补兼容测试并GREEN。** 测空对象、gzip截断/CRC、超长展开、原文损坏同时存在正确gzip、路径逃逸/符号链接、原文打开前被压缩删除、压缩后重复写。孤儿恢复扫描把 `.jsonl.gz` 规范为 `.jsonl` 逻辑路径，双表示去重，通过 `read_payload(..., max_bytes=50*1024*1024)`核验；未登记压缩对象不自动授权清理。已有RawReplayService/比较/手工修复都已用read_jsonl，不改其业务限制。
 
 Run: `uv run pytest tests/test_raw_store.py tests/test_dragon_tiger_recovery.py tests/test_reliability.py -q`。Expected: PASS，无网络请求。`scripts/bulk_collect_daily_bars.py`的read_bytes读取TDX `.day`，不属于Raw，不改。
-- [ ] **5. 提交。** `git add src/market_data_center/raw_store.py src/market_data_center/dragon_tiger_recovery.py tests/test_raw_store.py tests/test_dragon_tiger_recovery.py tests/test_reliability.py`；`git commit -m "feat: read compressed Raw without changing logical identity"`。
+- [x] **5. 提交。** `git add src/market_data_center/raw_store.py src/market_data_center/dragon_tiger_recovery.py tests/test_raw_store.py tests/test_dragon_tiger_recovery.py tests/test_reliability.py`；`git commit -m "feat: read compressed Raw without changing logical identity"`。本次同时提交读取兼容说明和实施进度，真实软链接验收仍按第4步保留未完成项。
 
 ## Task 2: 三个内部元数据表、类型与最小权限
 
@@ -122,11 +134,13 @@ from datetime import datetime
 from uuid import UUID
 from market_data_center.domain.ingestion import RawManifest
 
+
 @dataclass(frozen=True, slots=True)
 class CompressedRawObject:
     object_path: str
     compressed_sha256: str
     compressed_bytes: int
+
 
 @dataclass(frozen=True, slots=True)
 class RawCompressionCandidate:
@@ -134,6 +148,7 @@ class RawCompressionCandidate:
     created_at: datetime
     finished_at: datetime
     representation: CompressedRawObject | None
+
 
 @dataclass(frozen=True, slots=True)
 class CleanupStepResult:
@@ -161,14 +176,20 @@ class CleanupStepResult:
 ```python
 def test_storage_cleanup_tables_are_private(database_engine):
     with database_engine.connect() as connection:
-        for table in ("ingestion.raw_compression", "audit.quality_archive",
-                      "operations.data_cleanup_report"):
-            assert connection.execute(text("select to_regclass(:name)"),
-                                      {"name": table}).scalar_one() == table
+        for table in (
+            "ingestion.raw_compression",
+            "audit.quality_archive",
+            "operations.data_cleanup_report",
+        ):
+            assert (
+                connection.execute(text("select to_regclass(:name)"), {"name": table}).scalar_one()
+                == table
+            )
             for role in ("anon", "authenticated", "market_data_api"):
                 assert not connection.execute(
                     text("select has_table_privilege(:role, :name, 'select')"),
-                    {"role": role, "name": table}).scalar_one()
+                    {"role": role, "name": table},
+                ).scalar_one()
 ```
 
 - [ ] **2. 运行RED。** `uv run pytest tests/test_postgres_integration.py -k storage_cleanup -q`。必须使用明确隔离的 `TEST_DATABASE_URL`；缺失则记录blocked integration，不得读取生产DATABASE_URL作为替代。
@@ -226,7 +247,10 @@ compressed = store.prepare_compression(manifest, operation_id=uuid4(), checkpoin
 assert (tmp_path / manifest.object_path).exists()
 assert compressed.object_path == manifest.object_path + ".gz"
 assert store.read_jsonl(manifest) == ({"code": "sh.600000"},)
-assert store.remove_verified_plaintext(manifest, compressed, checkpoint=lambda: None) == manifest.byte_size
+assert (
+    store.remove_verified_plaintext(manifest, compressed, checkpoint=lambda: None)
+    == manifest.byte_size
+)
 assert store.read_jsonl(manifest) == ({"code": "sh.600000"},)
 assert store.remove_verified_plaintext(manifest, compressed, checkpoint=lambda: None) == 0
 ```
@@ -238,14 +262,15 @@ assert store.remove_verified_plaintext(manifest, compressed, checkpoint=lambda: 
 Service顺序固定：
 
 ```python
-repository.record_temp(workflow_run_id, operation_id, temp_relative_path,
-                       {"raw_id": str(candidate.manifest.raw_id)})
+repository.record_temp(
+    workflow_run_id, operation_id, temp_relative_path, {"raw_id": str(candidate.manifest.raw_id)}
+)
 compressed = raw_store.prepare_compression(
-    candidate.manifest, operation_id=operation_id, checkpoint=checkpoint)
+    candidate.manifest, operation_id=operation_id, checkpoint=checkpoint
+)
 repository.register_compression(candidate, compressed, cutoff=cutoff)
 checkpoint()
-removed = raw_store.remove_verified_plaintext(
-    candidate.manifest, compressed, checkpoint=checkpoint)
+removed = raw_store.remove_verified_plaintext(candidate.manifest, compressed, checkpoint=checkpoint)
 repository.confirm_plaintext_removed(candidate.manifest.raw_id, datetime.now(UTC))
 ```
 
@@ -269,17 +294,37 @@ Run: `uv run pytest tests/test_raw_store.py tests/test_storage_cleanup_service.p
 def test_series_quality_preserves_findings_and_errors():
     from uuid import uuid4
     from market_data_center.domain.ingestion import (
-        DatasetCode, QualityResult, QualitySeverity, QualityStatus)
+        DatasetCode,
+        QualityResult,
+        QualitySeverity,
+        QualityStatus,
+    )
     from market_data_center.call_auction_market_series_service import aggregate_series_quality
 
     ingestion_id = uuid4()
-    rows = [QualityResult(uuid4(), ingestion_id, DatasetCode.CALL_AUCTION_MARKET_SERIES,
-             "realtime_quote.lot_precision", QualitySeverity.INFO, QualityStatus.FAILED,
-             "non-integral lots", {"symbol": code, "observed_at": "2026-09-22T09:15:00+08:00"})
-            for code in ("SSE:600000", "SZSE:000001")]
-    error = QualityResult(uuid4(), ingestion_id, DatasetCode.CALL_AUCTION_MARKET_SERIES,
-                          "call_auction_market_series.missing_symbol", QualitySeverity.ERROR,
-                          QualityStatus.FAILED, "missing", {"symbol": "SSE:600001"})
+    rows = [
+        QualityResult(
+            uuid4(),
+            ingestion_id,
+            DatasetCode.CALL_AUCTION_MARKET_SERIES,
+            "realtime_quote.lot_precision",
+            QualitySeverity.INFO,
+            QualityStatus.FAILED,
+            "non-integral lots",
+            {"symbol": code, "observed_at": "2026-09-22T09:15:00+08:00"},
+        )
+        for code in ("SSE:600000", "SZSE:000001")
+    ]
+    error = QualityResult(
+        uuid4(),
+        ingestion_id,
+        DatasetCode.CALL_AUCTION_MARKET_SERIES,
+        "call_auction_market_series.missing_symbol",
+        QualitySeverity.ERROR,
+        QualityStatus.FAILED,
+        "missing",
+        {"symbol": "SSE:600001"},
+    )
     result = aggregate_series_quality((*rows, error))
     summary = next(row for row in result if row.severity is QualitySeverity.INFO)
     assert summary.details["aggregation_version"] == "auction_series_quality.v1"
@@ -294,9 +339,11 @@ def test_series_quality_preserves_findings_and_errors():
 
 ```python
 group_key = (row.ingestion_id, row.rule_code, row.severity, row.status, row.message)
-details = {"aggregation_version": "auction_series_quality.v1",
-           "finding_count": len(group),
-           "affected_keys": [dict(item.natural_key) for item in group]}
+details = {
+    "aggregation_version": "auction_series_quality.v1",
+    "finding_count": len(group),
+    "affected_keys": [dict(item.natural_key) for item in group],
+}
 ```
 
 用新quality_result_id生成汇总，natural_key=None，severity/status/message/ingestion不变。GROUP多个message时生成多条汇总。既有汇总再次传入原样保留。质量存储行数与findings数分别表达，不能修改行情accepted/rejected数量。
@@ -319,13 +366,18 @@ details = {"aggregation_version": "auction_series_quality.v1",
 - [ ] **1. 写失败测试。** 用一条包含全部字段的合成记录验证字节/语义往返，不使用生产payload：
 
 ```python
-row = {"quality_result_id": "00000000-0000-0000-0000-000000000001",
-       "ingestion_id": "00000000-0000-0000-0000-000000000002",
-       "dataset_code": "call_auction_market_series",
-       "rule_code": "realtime_quote.lot_precision", "severity": "info", "status": "failed",
-       "natural_key": {"symbol": "SSE:600000", "observed_at": "2026-08-01T01:15:00+00:00"},
-       "message": "non-integral lots", "details": {"original": "preserve"},
-       "created_at": "2026-08-01T01:15:01+00:00"}
+row = {
+    "quality_result_id": "00000000-0000-0000-0000-000000000001",
+    "ingestion_id": "00000000-0000-0000-0000-000000000002",
+    "dataset_code": "call_auction_market_series",
+    "rule_code": "realtime_quote.lot_precision",
+    "severity": "info",
+    "status": "failed",
+    "natural_key": {"symbol": "SSE:600000", "observed_at": "2026-08-01T01:15:00+00:00"},
+    "message": "non-integral lots",
+    "details": {"original": "preserve"},
+    "created_at": "2026-08-01T01:15:01+00:00",
+}
 ```
 
 构造group的row_count=1、首末时刻等于row时刻，传 `rows=(row,)`；断言 `read_quality_archive(root, archive) == (row,)`。修改gzip字节须抛RawIntegrityError；测试DB提交失败原audit行不变。
@@ -363,6 +415,7 @@ returning quality_result_id;
 ```python
 def test_data_cleanup_defaults_to_preview():
     from market_data_center.cli import _parser
+
     args = _parser().parse_args(["data-cleanup"])
     assert not args.execute and not args.confirm
 ```
@@ -394,9 +447,14 @@ CLI执行必须execute与confirm同时true（只有其一报参数错误）；�
 **Interfaces:** 增加 `run_storage_cleanup(settings: WorkerSettings, *, execution: WorkflowExecution, now: datetime) -> Mapping[str, object]`（在storage_cleanup_service.py）；由scheduled与manual入口共用，preview绝不调用。代码目录step_codes与实际执行一致：
 
 ```python
-("inspect_storage_before", "cleanup_call_auction_market_series_snapshots",
- "compress_registered_raw", "archive_auction_quality", "cleanup_owned_temps",
- "inspect_storage_after")
+(
+    "inspect_storage_before",
+    "cleanup_call_auction_market_series_snapshots",
+    "compress_registered_raw",
+    "archive_auction_quality",
+    "cleanup_owned_temps",
+    "inspect_storage_after",
+)
 ```
 
 - [ ] **1. 写失败测试。** 替换原operations目录只含单步骤的断言为上述tuple；scheduler在Shanghai04:00运行时，断言任何DELETE/压缩方法均未调用并记录维护窗口错过；03:00按固定顺序调用，02:30归档任务保持原注册。
@@ -456,4 +514,17 @@ integration仅隔离TEST_DATABASE_URL；不可用就明确阻塞，不将skip当
 | §8RLS/回退/物理空间 | Task2、Task8；不主动VACUUM |
 | §9验收 | 各任务RED/GREEN、Task8完整门禁 |
 
-以上复用现有模块和标准库，不新建通用清理平台。执行方式待用户选择：子代理逐项实施并复核，或当前任务内按executing-plans分批实施。
+以上复用现有模块和标准库，不新建通用清理平台。用户已选择当前任务内按executing-plans逐项实施，
+在当前目录使用 `codex/storage-lifecycle-cleanup` 分支，不创建worktree，不使用子代理。
+
+## 实施记录（2026-09-22）
+
+- Task1代码和兼容测试已完成；RED确认17项因缺失行为失败，随后定向验证53项通过、3项跳过。
+- Task1第4步仍待Linux真实软链接验证：Windows当前权限不能创建测试软链接，未绕过权限。
+- 本地全量：`uv run --no-sync pytest -q -p no:cacheprovider` 为939通过、100跳过；
+  其中96项未配置隔离TEST_DATABASE_URL、1项缺少pg_dump、3项软链接权限受限。跳过不算验收通过。
+- `uv run --no-sync ruff format --check .`、`uv run --no-sync ruff check .`、
+  `uv run --no-sync mypy src` 均通过；计划中Python代码块同步由formatter格式化，无设计变更。
+- 后续数据库验收按用户选择使用Docker Desktop本机一次性PostgreSQL。当前Docker引擎管道不存在，
+  Task2迁移和权限测试等待引擎启动；不使用生产库或历史远程测试库替代。
+- 当前未执行压缩、数据删除、推送、生产迁移或部署；其他实施任务尚未开始。
