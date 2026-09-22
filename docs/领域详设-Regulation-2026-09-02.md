@@ -136,6 +136,11 @@ cn-a-share-regulation-2026-07-06.v1
 
 ### 4.3 基准指数
 
+2026-09-22 采集修复：Worker 先检查截至目标日的30个实际交易日，只对缺失/无效前收盘价的
+白名单指数补采缺口所在的有界区间，随后重新查询数据库覆盖；完整指数不发起网络请求。
+个别来源失败或历史缺口保留在 `missing_symbols` 和 Operations partial 中，其他板块继续计算，
+由 Calculator 标记受影响板块不完整。日历不足、数据库或程序错误仍使任务失败；不修改公式版本。
+
 | segment | benchmark_symbol | benchmark_name |
 | --- | --- | --- |
 | SSE_MAIN | `SSE:000002` | 上证A股指数 |

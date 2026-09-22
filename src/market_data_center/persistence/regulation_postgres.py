@@ -29,6 +29,7 @@ from market_data_center.domain.regulation import (
     validate_regulation_rules,
 )
 from market_data_center.domain.stock_pool import DailyPriceLimit, price_limit_rule
+from market_data_center.regulation_benchmark_service import REGULATION_BENCHMARK_SYMBOLS
 from market_data_center.regulation_calculator import (
     REGULATION_ALGORITHM_VERSION,
     REGULATION_SCENARIO_CONFIG_VERSION,
@@ -46,6 +47,39 @@ class PostgreSQLRegulationPersistence:
         with self._engine.connect() as connection:
             rules = _load_active_rules(connection, trade_date)
         return validate_regulation_rules(rules, trade_date)
+
+    def benchmark_gaps(self, trade_date: date) -> dict[str, tuple[date, ...]]:
+        """Use the same 30-session window as calculation; do not infer calendar days."""
+        with self._engine.connect() as connection:
+            dates = tuple(
+                connection.execute(
+                    text("""
+select trade_date from core.trading_calendar
+where market = 'CN_A_SHARE' and is_trading_day and trade_date <= :trade_date
+order by trade_date desc limit 30
+"""),
+                    {"trade_date": trade_date},
+                ).scalars()
+            )
+            if len(dates) != 30 or dates[0] != trade_date:
+                raise ValueError("30-session regulation trading calendar is unavailable")
+            rows = connection.execute(
+                text("""
+select symbol, trade_date from core.daily_bar
+where symbol in :symbols and trade_date between :start_date and :trade_date
+  and close > 0 and previous_close > 0
+""").bindparams(bindparam("symbols", expanding=True)),
+                {
+                    "symbols": REGULATION_BENCHMARK_SYMBOLS,
+                    "start_date": dates[-1],
+                    "trade_date": trade_date,
+                },
+            )
+            present = {(row[0], row[1]) for row in rows}
+        return {
+            symbol: tuple(day for day in reversed(dates) if (symbol, day) not in present)
+            for symbol in REGULATION_BENCHMARK_SYMBOLS
+        }
 
     def load_calculation_source(self, trade_date: date) -> RegulationCalculationInput:
         with self._engine.connect() as raw_connection:

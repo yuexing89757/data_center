@@ -149,7 +149,9 @@ def _result_statistics(result: object) -> tuple[int, int, int, ExecutionStatus]:
             result.expected_count,
             result.accepted_count,
             result.expected_count - result.accepted_count,
-            ExecutionStatus.SUCCEEDED,
+            ExecutionStatus.PARTIAL
+            if result.accepted_count < result.expected_count
+            else ExecutionStatus.SUCCEEDED,
         )
     if isinstance(result, RegulationCalculationSummary):
         status = {

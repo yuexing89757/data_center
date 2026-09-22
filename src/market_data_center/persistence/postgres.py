@@ -1,10 +1,12 @@
 """Transactional, idempotent PostgreSQL writes for phase-one facts."""
 
-from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import replace
 from datetime import date, datetime
 from json import dumps
+from logging import getLogger
+from threading import Event, Thread
 from typing import cast
 from uuid import UUID, uuid4
 
@@ -63,6 +65,8 @@ from market_data_center.domain.shareholder_count import ShareholderCountRecord
 from market_data_center.domain.stock_daily_indicator import StockDailyIndicatorSnapshotRecord
 from market_data_center.shareholder_count_batch import PreparedShareholderCountBatch
 from market_data_center.shareholder_count_service import ShareholderCountBackfillTarget
+
+TASK_LOCK_HEARTBEAT_SECONDS = 30
 
 INSERT_INGESTION_RUN = text("""
 insert into ingestion.ingestion_run (
@@ -774,21 +778,63 @@ class PostgreSQLPersistence:
         self._engine = engine
 
     @contextmanager
-    def task_lock(self, task_key: str) -> Iterator[None]:
-        with self._engine.connect() as connection:
+    def task_lock(
+        self, task_key: str, *, on_lock_lost: Callable[[], None] | None = None
+    ) -> Iterator[None]:
+        with self._engine.connect() as raw_connection:
+            connection = raw_connection.execution_options(isolation_level="AUTOCOMMIT")
             acquired = connection.execute(
                 text("select pg_try_advisory_lock(hashtextextended(:task_key, 0))"),
                 {"task_key": task_key},
             ).scalar_one()
             if not acquired:
                 raise RuntimeError(f"ingestion task is already running: {task_key}")
+            stop = Event()
+            lost = Event()
+            monitor: Thread | None = None
+
+            def heartbeat() -> None:
+                while not stop.wait(TASK_LOCK_HEARTBEAT_SECONDS):
+                    try:
+                        connection.execute(text("select 1"))
+                    except Exception as error:
+                        lost.set()
+                        connection.invalidate()
+                        getLogger(__name__).error(
+                            "Task lock heartbeat failed (%s)", type(error).__name__
+                        )
+                        if on_lock_lost is not None:
+                            on_lock_lost()
+                        return
+
+            if on_lock_lost is not None:
+                monitor = Thread(target=heartbeat, name="worker-lock-heartbeat", daemon=True)
+                monitor.start()
+            body_failed = False
             try:
                 yield
+                if lost.is_set():
+                    raise RuntimeError("scheduler lock connection lost")
+            except BaseException:
+                body_failed = True
+                raise
             finally:
-                connection.execute(
-                    text("select pg_advisory_unlock(hashtextextended(:task_key, 0))"),
-                    {"task_key": task_key},
-                )
+                stop.set()
+                if monitor is not None:
+                    monitor.join()
+                if not lost.is_set():
+                    try:
+                        connection.execute(
+                            text("select pg_advisory_unlock(hashtextextended(:task_key, 0))"),
+                            {"task_key": task_key},
+                        )
+                    except Exception as error:
+                        connection.invalidate()
+                        if not body_failed:
+                            raise RuntimeError("task lock release failed") from error
+                        getLogger(__name__).warning(
+                            "Task lock cleanup failed (%s)", type(error).__name__
+                        )
 
     def create_ingestion_run(self, run: IngestionRun) -> None:
         parameters = {

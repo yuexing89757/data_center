@@ -773,6 +773,48 @@ def test_raw_replay_keeps_bse_shareholder_count_in_raw_but_not_core(tmp_path: Pa
     assert batch.quality_results[0].rule_code == "shareholder_count.unsupported_exchange"
 
 
+def test_shareholder_replay_quarantines_date_conflict_with_original_raw_lineage(
+    tmp_path: Path,
+) -> None:
+    store = LocalRawStore(tmp_path)
+    source = _source(
+        store,
+        provider=ProviderCode.TUSHARE,
+        dataset=DatasetCode.SHAREHOLDER_COUNT,
+        schema_version="tushare.shareholder_count.v1",
+        rows=[
+            {
+                "ts_code": "600000.SH",
+                "ann_date": "20260904",
+                "end_date": "20260907",
+                "holder_num": "47405",
+            },
+            {
+                "ts_code": "600000.SH",
+                "ann_date": "20260820",
+                "end_date": "20260630",
+                "holder_num": "12001",
+            },
+        ],
+        request_params={"source_symbol": None, "start_date": "20260801", "end_date": "20260921"},
+    )
+    persistence = StubReliabilityPersistence(source)
+    summary = RawReplayService(
+        raw_store=store,
+        persistence=persistence,
+        clock=lambda: NOW,
+        uuid_factory=lambda: REPLAY_RUN_ID,
+    ).replay(SOURCE_RUN_ID)
+    assert summary.accepted_rows == 1
+    assert summary.rejected_rows == 1
+    batch = persistence.shareholder_count_commits[0][0]
+    assert batch.run.status is IngestionStatus.PARTIAL
+    assert batch.manifest is None
+    assert batch.run.replayed_from_raw_id == source.manifest.raw_id
+    assert batch.records[0].record.shareholder_count == 12001
+    assert batch.quality_results[0].severity.value == "error"
+
+
 def test_raw_replay_normalizes_and_commits_classification_catalog(
     tmp_path: Path,
 ) -> None:

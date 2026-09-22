@@ -2,7 +2,7 @@
 
 - 状态：已接受，待实现
 - 日期：2026-08-24
-- ADR：ADR-0047
+- ADR：ADR-0047、ADR-0057
 - Issue：#66
 
 ## 1. 边界与依赖
@@ -50,7 +50,7 @@ str(shareholder_count)
 
 - symbol 必须存在于 `core.security`；
 - `announcement_date >= statistics_date - 2 days`；公告日早 1 至 2 个自然日允许，早 3 个自然日
-  及以上硬失败；
+  及以上拒绝该行并登记 ERROR；
 - `shareholder_count > 0`；
 - 首期 `source_code = 'tushare'`；
 - 修订键必须重新计算一致；
@@ -70,7 +70,7 @@ Tushare `stk_holdernumber` 映射如下：
 非空 `holder_num` 只能由十进制整数字符串直接构造 Python `int`，不得经过 `float`。字段存在
 但值为 NULL、空字符串或纯空白时，Adapter 保留原始行但不生成标准记录；Pipeline 按
 `shareholder_count.missing_source_value` 登记聚合质量拒绝和拒绝行数。字段本身缺失以及非空的
-零、负数、非整数字符串仍硬失败。Raw schema 固定为 `tushare.shareholder_count.v1`。每个实际
+非整数字符串仍硬失败；零和负数按整数标准化后由领域层隔离，不能进入 Core。Raw schema 固定为 `tushare.shareholder_count.v1`。每个实际
 来源请求各保存一份 JSONL Raw、SHA-256、请求参数和 manifest；Token 不属于请求参数。
 
 单次响应上限为 3000 行。状态机为：
@@ -114,7 +114,10 @@ change_ratio = change_count / previous_shareholder_count
 Raw manifest；所有切片准备完成并完成整批自然键校验后，在一个数据库事务中发布。切片失败时，
 已经准备的运行统一失败、登记 Raw/质量结果但不写 Core。
 
-来源空值行不属于切片失败：合法记录、Raw manifest、质量拒绝和 IngestionRun 在同一事务提交。
+来源空值行及可定位的非法标准记录不属于请求级切片失败：合法记录、Raw manifest、质量拒绝和 IngestionRun 在同一事务提交。
+非法标准记录使用 `shareholder_count.invalid_record`，级别 ERROR/FAILED，包含证券、统计日、
+公告日和修订键。重复自然键的全部行拒绝，不选择其中一条。结构解析、网络、数据库错误以及
+跨切片自然键冲突仍使整个同步失败。采集与 Raw 重放使用相同的逐行隔离校验。
 同时存在合法记录和空值时请求状态为 `partial`；全部来源行均为空时请求状态为 `failed`，但历史
 回填按证券隔离，继续处理下一目标。汇总和 Operations 同步累计 fetched、accepted、rejected。
 

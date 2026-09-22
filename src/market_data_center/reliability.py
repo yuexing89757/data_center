@@ -64,7 +64,7 @@ from market_data_center.domain.records import (
 from market_data_center.domain.regulation import RegulationEventRecord
 from market_data_center.domain.shareholder_count import (
     ShareholderCountRecord,
-    validate_shareholder_counts,
+    partition_shareholder_counts,
 )
 from market_data_center.domain.stock_daily_indicator import (
     StockDailyIndicatorSnapshotRecord,
@@ -89,6 +89,7 @@ from market_data_center.raw_store import LocalRawStore, RawIntegrityError
 from market_data_center.shareholder_count_batch import (
     PreparedShareholderCountBatch,
     shareholder_count_missing_source_quality_result,
+    shareholder_count_rejection_quality_results,
     shareholder_count_unsupported_exchange_quality_result,
 )
 
@@ -735,17 +736,22 @@ class RawReplayService:
             unsupported_exchange_rows = len(shareholder_records) - len(
                 supported_shareholder_records
             )
-            validated_shareholder_records = validate_shareholder_counts(
+            shareholder_validation = partition_shareholder_counts(
                 supported_shareholder_records,
                 known_symbols=self._persistence.known_symbols(
                     {record.symbol for record in supported_shareholder_records}
                 ),
             )
+            validated_shareholder_records = shareholder_validation.accepted
             fetched_shareholder_rows = (
                 source.manifest.row_count if source.manifest is not None else len(records)
             )
             missing_source_rows = fetched_shareholder_rows - len(shareholder_records)
-            rejected_shareholder_rows = missing_source_rows + unsupported_exchange_rows
+            rejected_shareholder_rows = (
+                missing_source_rows
+                + unsupported_exchange_rows
+                + len(shareholder_validation.rejected)
+            )
             completed = self._completed(
                 run,
                 fetched_shareholder_rows,
@@ -772,6 +778,11 @@ class RawReplayService:
                         else None,
                     )
                     if result is not None
+                )
+                shareholder_quality += shareholder_count_rejection_quality_results(
+                    shareholder_validation.rejected,
+                    ingestion_id=completed.ingestion_id,
+                    uuid_factory=self._uuid_factory,
                 )
                 self._persistence.commit_shareholder_count_batches(
                     (

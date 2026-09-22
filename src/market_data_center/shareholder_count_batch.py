@@ -1,5 +1,6 @@
 """Typed hand-offs for shareholder-count request preparation and publication."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -82,4 +83,30 @@ def shareholder_count_unsupported_exchange_quality_result(
         status=QualityStatus.PASSED,
         message="BSE shareholder-count rows were retained in Raw and omitted from Core",
         details={"exchange": "BSE", "rejected_rows": rejected_rows},
+    )
+
+
+def shareholder_count_rejection_quality_results(
+    rejected: tuple[tuple[ShareholderCountRecord, str], ...],
+    *,
+    ingestion_id: UUID,
+    uuid_factory: Callable[[], UUID],
+) -> tuple[QualityResult, ...]:
+    return tuple(
+        QualityResult(
+            quality_result_id=uuid_factory(),
+            ingestion_id=ingestion_id,
+            dataset_code=DatasetCode.SHAREHOLDER_COUNT,
+            rule_code="shareholder_count.invalid_record",
+            severity=QualitySeverity.ERROR,
+            status=QualityStatus.FAILED,
+            message=reason,
+            natural_key={
+                "symbol": record.symbol,
+                "statistics_date": record.statistics_date.isoformat(),
+                "announcement_date": record.announcement_date.isoformat(),
+                "revision_key": record.revision_key,
+            },
+        )
+        for record, reason in rejected
     )

@@ -3,6 +3,7 @@
 from collections.abc import Callable, Mapping, Sequence
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
+from logging import getLogger
 from socket import getdefaulttimeout, setdefaulttimeout
 from types import TracebackType
 from typing import Protocol, Self, cast
@@ -110,9 +111,12 @@ class BaoStockProvider:
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        response = _provider_call("logout", self._client.logout)
-        if exc_type is None:
+        try:
+            response = _provider_call("logout", self._client.logout)
             _ensure_success(response, "logout")
+        except Exception as error:
+            # Preserve acquired facts/body errors; never log upstream secret-bearing text.
+            getLogger(__name__).warning("BaoStock logout cleanup failed (%s)", type(error).__name__)
 
     def source_symbol(self, symbol: str) -> str:
         try:

@@ -56,7 +56,7 @@ from market_data_center.domain.records import (
 )
 from market_data_center.domain.shareholder_count import (
     ShareholderCountRecord,
-    validate_shareholder_counts,
+    partition_shareholder_counts,
 )
 from market_data_center.domain.stock_daily_indicator import (
     StockDailyIndicatorSnapshotRecord,
@@ -77,6 +77,7 @@ from market_data_center.raw_store import LocalRawStore, StoredRawObject
 from market_data_center.shareholder_count_batch import (
     PreparedShareholderCountBatch,
     shareholder_count_missing_source_quality_result,
+    shareholder_count_rejection_quality_results,
     shareholder_count_unsupported_exchange_quality_result,
 )
 
@@ -451,14 +452,17 @@ class IngestionPipeline:
                     record for record in normalized if not record.symbol.startswith("BSE:")
                 )
                 unsupported_exchange_rows = len(normalized) - len(records)
-                validated = validate_shareholder_counts(
+                validation = partition_shareholder_counts(
                     records,
                     known_symbols=self._persistence.known_symbols(
                         {record.symbol for record in records}
                     ),
                 )
+                validated = validation.accepted
                 missing_source_rows = fetched_rows - len(normalized)
-                rejected_rows = missing_source_rows + unsupported_exchange_rows
+                rejected_rows = (
+                    missing_source_rows + unsupported_exchange_rows + len(validation.rejected)
+                )
                 quality_results = tuple(
                     result
                     for result in (
@@ -478,6 +482,11 @@ class IngestionPipeline:
                         else None,
                     )
                     if result is not None
+                )
+                quality_results += shareholder_count_rejection_quality_results(
+                    validation.rejected,
+                    ingestion_id=run.ingestion_id,
+                    uuid_factory=self._uuid_factory,
                 )
                 completed = self._completed_run(run, fetched_rows, len(validated), rejected_rows)
                 return PreparedShareholderCountBatch(

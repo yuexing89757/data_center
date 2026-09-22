@@ -443,7 +443,7 @@ def test_shareholder_count_keeps_missing_counts_in_raw_but_omits_records(
     assert replayed == batch.records
 
 
-@pytest.mark.parametrize("holder_num", ["1.5", "0"])
+@pytest.mark.parametrize("holder_num", ["1.5", "--1", "1e3"])
 def test_shareholder_count_rejects_invalid_integer_counts(holder_num: object) -> None:
     class InvalidCountClient(FakeClient):
         def query(
@@ -466,6 +466,35 @@ def test_shareholder_count_rejects_invalid_integer_counts(holder_num: object) ->
 
     with pytest.raises(ProviderError, match=r"holder_num|positive"):
         _ = batch.records
+
+
+@pytest.mark.parametrize("value", ["0", "-1"])
+def test_shareholder_nonpositive_counts_reach_row_quarantine_not_batch_abort(value: str) -> None:
+    from market_data_center.domain.shareholder_count import partition_shareholder_counts
+
+    rows = [
+        {
+            "ts_code": "600000.SH",
+            "ann_date": "20260820",
+            "end_date": "20260630",
+            "holder_num": "12001",
+        },
+        {
+            "ts_code": "600000.SH",
+            "ann_date": "20260821",
+            "end_date": "20260731",
+            "holder_num": value,
+        },
+    ]
+    records = normalize_tushare_raw(
+        DatasetCode.SHAREHOLDER_COUNT, "tushare.shareholder_count.v1", rows, {}
+    )
+    result = partition_shareholder_counts(records, known_symbols={"SSE:600000"})
+    assert len(result.accepted) == 1
+    assert result.accepted[0].shareholder_count == 12001
+    assert len(result.rejected) == 1
+    assert "positive" in result.rejected[0][1]
+    assert rows[1]["holder_num"] == value
 
 
 def test_shareholder_count_rejects_missing_count_field() -> None:

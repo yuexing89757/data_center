@@ -391,6 +391,15 @@ def _remote_raw_row(row: object) -> RawRow:
 def _map_daily_bar(row: Mapping[str, str], symbol: str) -> DailyBarRecord:
     previous_close = row.get("previous_close", "").strip()
     price = _decimal if row.get("price_scale") == "1" else _price
+    # pytdx.helper.get_volume(0) yields 2**-127, not zero. Match only this
+    # exact remote artifact; Raw stays immutable and other fractions still fail.
+    volume, amount = row["volume"], row["amount"]
+    if row.get("price_scale") == "1":
+        sentinel = Decimal("5.877471754111438e-39")
+        if _decimal(volume, "volume") == sentinel:
+            volume = "0"
+        if _decimal(amount, "amount") == sentinel:
+            amount = "0"
     return DailyBarRecord(
         symbol=symbol,
         trade_date=_parse_date(row["date"]),
@@ -400,8 +409,8 @@ def _map_daily_bar(row: Mapping[str, str], symbol: str) -> DailyBarRecord:
         low=price(row["low"], "low"),
         close=price(row["close"], "close"),
         previous_close=price(previous_close, "previous_close") if previous_close else None,
-        volume=_integer(row["volume"], "volume"),
-        amount=_decimal(row["amount"], "amount"),
+        volume=_integer(volume, "volume"),
+        amount=_decimal(amount, "amount"),
         trade_status=TradeStatus.UNKNOWN,
         is_st=None,
         source_code="pytdx",

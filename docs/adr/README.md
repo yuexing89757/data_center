@@ -1,5 +1,7 @@
 # Architecture Decision Records
 
+- `ADR-0057-股东人数非法行隔离.md`：不放宽硬校验，非法标准记录保留 Raw 和 ERROR 审计，合法记录以 partial 发布。
+
 ADR 记录已经接受的架构决策。其优先级低于项目宪法，高于一般领域说明和历史文档。
 
 ## 状态

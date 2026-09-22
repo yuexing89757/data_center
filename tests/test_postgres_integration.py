@@ -8662,6 +8662,86 @@ insert into core.stock_daily_indicator (
         )
 
 
+def test_regulation_benchmark_gaps_use_thirty_sessions_and_require_previous_close(
+    database_engine: Engine,
+) -> None:
+    ingestion_id = uuid4()
+    days = tuple(
+        date(2026, 8, 1) + timedelta(days=n)
+        for n in range(52)
+        if (date(2026, 8, 1) + timedelta(days=n)).weekday() < 5
+    )
+    with database_engine.begin() as connection:
+        connection.execute(
+            text("""
+insert into ingestion.ingestion_run
+(ingestion_id,provider_code,dataset_code,status,requested_at,started_at,finished_at)
+values (:id,'baostock','daily_bar','succeeded',now(),now(),now())
+"""),
+            {"id": ingestion_id},
+        )
+        connection.execute(
+            text("""
+insert into core.trading_calendar
+(market,trade_date,is_trading_day,source_code,ingestion_id)
+values ('CN_A_SHARE',:day,true,'baostock',:id)
+"""),
+            [{"day": day, "id": ingestion_id} for day in days],
+        )
+        connection.execute(
+            text("""
+insert into core.security
+(symbol,code,exchange,current_name,security_type,status,source_code,ingestion_id)
+values ('SSE:000002','000002','SSE','Benchmark','index','listed','baostock',:id)
+"""),
+            {"id": ingestion_id},
+        )
+        connection.execute(
+            text("""
+insert into core.daily_bar
+(symbol,trade_date,market,open,high,low,close,previous_close,volume,amount,trade_status,source_code,ingestion_id)
+values ('SSE:000002',:day,'CN_A_SHARE',100,100,100,100,:previous,1,100,'trading','baostock',:id)
+"""),
+            [
+                {"day": days[-1], "previous": 100, "id": ingestion_id},
+                {"day": days[-2], "previous": None, "id": ingestion_id},
+            ],
+        )
+    gaps = PostgreSQLRegulationPersistence(database_engine).benchmark_gaps(days[-1])
+    assert gaps["SSE:000002"] == days[-30:-1]
+    assert gaps["SZSE:399107"] == days[-30:]
+    assert gaps["SZSE:399102"] == days[-30:]
+    with pytest.raises(ValueError, match="calendar"):
+        PostgreSQLRegulationPersistence(database_engine).benchmark_gaps(days[5])
+
+
+def test_database_task_lock_holds_without_idle_transaction(database_engine: Engine) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    with (
+        persistence.task_lock("integration:autocommit-lock"),
+        database_engine.connect() as observer,
+    ):
+        states = (
+            observer.execute(
+                text("""
+select a.state from pg_stat_activity a
+where a.datname=current_database() and exists (
+select 1 from pg_locks l where l.pid=a.pid and l.locktype='advisory' and l.granted)
+""")
+            )
+            .scalars()
+            .all()
+        )
+        assert states == ["idle"]
+        with (
+            pytest.raises(RuntimeError, match="already running"),
+            persistence.task_lock("integration:autocommit-lock"),
+        ):
+            pytest.fail("second connection must not acquire the held lock")
+    with persistence.task_lock("integration:autocommit-lock"):
+        pass
+
+
 def _envelopes[
     RecordT: SecurityRecord
     | CalculatedTradingDay

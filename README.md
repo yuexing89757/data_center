@@ -34,6 +34,12 @@ See [INSTALL-WINDOWS.md](INSTALL-WINDOWS.md) for the Chinese installation and ve
 
 ## Development
 
+Ingestion reliability: invalid normalized shareholder-count rows are retained in Raw and
+ERROR audit records, while valid rows publish with a partial outcome (ADR-0057). Regulation
+benchmark collection verifies and fills its 30-trading-session input window. The Worker's
+singleton database lock uses autocommit and a 30-second heartbeat; loss stops scheduling.
+See [recovery notes](docs/Raw重放与运行恢复.md) before any authorized production replay.
+
 Build one exact-date same-day limit-up snapshot manually (never falls back to an older date):
 
 ```bash

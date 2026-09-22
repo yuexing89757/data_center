@@ -1,5 +1,6 @@
 """Provider-neutral shareholder-count point-in-time facts."""
 
+from collections import Counter
 from dataclasses import dataclass
 from datetime import date
 from hashlib import sha256
@@ -59,3 +60,28 @@ def validate_shareholder_counts(
             raise ValueError("duplicate shareholder-count revision")
         seen.add(natural_key)
     return records
+
+
+@dataclass(frozen=True, slots=True)
+class ShareholderCountValidation:
+    accepted: tuple[ShareholderCountRecord, ...]
+    rejected: tuple[tuple[ShareholderCountRecord, str], ...]
+
+
+def partition_shareholder_counts(
+    records: tuple[ShareholderCountRecord, ...], *, known_symbols: set[str]
+) -> ShareholderCountValidation:
+    """Reject invalid facts without weakening the strict record invariants."""
+    keys = Counter((r.symbol, r.statistics_date, r.revision_key) for r in records)
+    accepted: list[ShareholderCountRecord] = []
+    rejected: list[tuple[ShareholderCountRecord, str]] = []
+    for record in records:
+        try:
+            if keys[(record.symbol, record.statistics_date, record.revision_key)] > 1:
+                raise ValueError("duplicate shareholder-count revision")
+            validate_shareholder_counts((record,), known_symbols=known_symbols)
+        except ValueError as error:
+            rejected.append((record, str(error)))
+        else:
+            accepted.append(record)
+    return ShareholderCountValidation(tuple(accepted), tuple(rejected))

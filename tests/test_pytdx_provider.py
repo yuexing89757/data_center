@@ -374,6 +374,31 @@ def test_legacy_local_raw_remains_replayable() -> None:
     assert replayed[0].previous_close == Decimal("9.80")
 
 
+def test_remote_zero_decoder_sentinel_is_normalized_without_changing_raw(tmp_path: Path) -> None:
+    sentinel = "5.877471754111438e-39"
+    row = {**_bar("2026-09-21"), "vol": sentinel, "amount": sentinel}
+    with _provider(tmp_path, FakeClient({0: [row]})) as provider:
+        batch = provider.fetch_daily_bars("sh.601059", date(2026, 9, 21), date(2026, 9, 21))
+    assert batch.raw_rows[0]["volume"] == sentinel
+    assert batch.raw_rows[0]["amount"] == sentinel
+    assert batch.records[0].volume == 0
+    assert batch.records[0].amount == Decimal(0)
+    assert batch.records[0].trade_status is TradeStatus.UNKNOWN
+    replayed = normalize_pytdx_raw(
+        DatasetCode.DAILY_BAR, batch.schema_version, batch.raw_rows, batch.request_params
+    )
+    assert replayed == tuple(batch.records)
+
+
+@pytest.mark.parametrize("value", ["0.5", "1e-38", "-1e-39"])
+def test_other_fractional_volumes_are_not_silently_rounded(tmp_path: Path, value: str) -> None:
+    row = {**_bar("2026-09-21"), "vol": value}
+    with _provider(tmp_path, FakeClient({0: [row]})) as provider:
+        batch = provider.fetch_daily_bars("sh.601059", date(2026, 9, 21), date(2026, 9, 21))
+    with pytest.raises(ProviderError, match="integer volume"):
+        _ = batch.records
+
+
 def _write_day_file(vipdoc: Path, exchange: str, code: str, bars: list[tuple]) -> Path:
     """Write a minimal .day file; each bar is (yyyymmdd, o, h, l, c, amount, vol)."""
     day_dir = vipdoc / exchange / "lday"
