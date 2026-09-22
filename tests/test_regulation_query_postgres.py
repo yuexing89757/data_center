@@ -557,3 +557,70 @@ def test_regulation_rpcs_are_read_only_and_private_tables_stay_private(regulatio
             c.execute(text("select * from regulation.event"))
         assert error.value.orig.sqlstate == "42501"
         savepoint.rollback()
+
+
+def test_regulation_triggers_new_batch_with_stale_statistics_stays_bounded(regulation_database):
+    # Reproduce a new 4k-stock batch absent from the last ANALYZE statistics.
+    # Without a materialized triggered set, the planner rescans all rules per stock.
+    with regulation_database.begin() as c:
+        c.execute(
+            text("""
+            insert into core.security
+                (symbol, code, exchange, current_name, security_type, status,
+                 ipo_date, source_code, ingestion_id)
+            select 'SSE:'||generated_code, generated_code::text, 'SSE',
+                   'Test only', 'stock', 'listed',
+                   '2000-01-01', source_code, ingestion_id
+            from core.security cross join generate_series(600010,603999) generated_code
+            where symbol='SSE:600000'
+        """)
+        )
+        c.execute(
+            text("""
+            insert into regulation.status
+            select (jsonb_populate_record(null::regulation.status, to_jsonb(s) ||
+                    jsonb_build_object('symbol', 'SSE:'||code))).*
+            from regulation.status s cross join generate_series(600010,603999) code
+            where symbol='SSE:600004'
+        """)
+        )
+        c.execute(
+            text("""
+            insert into regulation.rule_result
+            select (jsonb_populate_record(null::regulation.rule_result, to_jsonb(rr) ||
+                    jsonb_build_object('symbol', s.symbol, 'rule_id', r.rule_id))).*
+            from regulation.rule_result rr cross join regulation.status s
+            cross join regulation.rule r
+            where rr.symbol='SSE:600004'
+              and rr.rule_id=(select rule_id from regulation.rule
+                             where rule_code='SSE_MAIN_ABNORMAL_3D_DEV_UP')
+              and s.symbol>='SSE:600010' and r.segment='SSE_MAIN'
+        """)
+        )
+        c.execute(text("analyze regulation.status"))
+        c.execute(text("analyze regulation.rule_result"))
+        c.execute(
+            text("""
+            insert into regulation.calculation_run
+            select (jsonb_populate_record(null::regulation.calculation_run, to_jsonb(r) ||
+                    jsonb_build_object('calculation_id', cast(:new as uuid),
+                                       'input_hash', repeat('8',64),
+                                       'completed_at','2026-09-18 23:10:00+08'))).*
+            from regulation.calculation_run r where calculation_id=:old
+        """),
+            {"new": str(UUID(int=8)), "old": RUN},
+        )
+        for table in ("status", "rule_result"):
+            c.execute(
+                text(f"""
+                insert into regulation.{table}
+                select (jsonb_populate_record(null::regulation.{table}, to_jsonb(t) ||
+                        jsonb_build_object('calculation_id', cast(:new as uuid)))).*
+                from regulation.{table} t where calculation_id=:old
+            """),
+                {"new": str(UUID(int=8)), "old": RUN},
+            )
+        c.execute(text("set local statement_timeout='2s'"))
+        result = _query(c, limit=3)
+        assert result["calculation_id"] == str(UUID(int=8))
+        assert [item["symbol"] for item in result["items"]] == ["SSE:600000", "SSE:600001"]

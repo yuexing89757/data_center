@@ -35,6 +35,13 @@ only. This does not waive migration permissions, isolated integration tests or r
 health checks. No data is deleted by this migration; application rollback keeps the
 additive schema and restores the previously verified release.
 
+Production smoke exposed stale planner statistics for a freshly published 4,602-stock
+batch: PostgreSQL estimated one status/rule row and repeatedly scanned the rule batch,
+causing the five-second timeout. Follow-up migration `20260922000200` materializes only
+that calculation's complete triggered rules once and reuses them. It changes neither
+the read contract nor timeouts/grants. An isolated 4k-stock regression reproduces the
+old timeout and verifies the bounded query without relying on manual production ANALYZE.
+
 1. Apply repository migrations to the existing production PostgreSQL through the protected workflow.
    Do not copy or cut over data. Migration
    `20260809000100_create_fastapi_reader_role.sql` creates the NOLOGIN `market_data_api` role;
