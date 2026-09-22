@@ -91,6 +91,13 @@ market-data-center compare-daily-bars \
 
 ## 5. 常见阻断
 
+- 官方事件入库不可使用 `SELECT ... FOR UPDATE`：生产 Worker 对不可变公告只有 SELECT/INSERT
+  权限。使用受测的事务 advisory lock 和唯一约束，不临时增授 UPDATE。失败批次已保存 Raw 时，
+  先按精确 ingestion ID 执行 `raw-replay --dry-run`，获得本次生产授权后再重放。
+- `regulation-calculator.v2` 修复公告重置日期解析及 T/T+1 分离。完成所需官方公告补采后，
+  只对获批交易日执行 `regulation-calculate`，确认新批次的算法版本、公告输入清单与覆盖数。
+  老批次不覆盖；API 可查询新发布结果，不需要改变内部表权限或写接口。
+
 2026-09-22 修复后的注意事项：
 
 - 股东人数重放与采集均隔离非法标准行，登记 `shareholder_count.invalid_record` ERROR；

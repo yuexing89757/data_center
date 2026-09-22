@@ -5,6 +5,7 @@ import json
 from collections import defaultdict
 from datetime import date, datetime, time
 from decimal import Decimal
+from typing import cast
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
@@ -629,24 +630,10 @@ def _assemble_source(
                 applicability_reason=reason,
                 daily_returns=tuple(daily_returns),
                 events=symbol_events,
-                abnormal_reset_date=max(
-                    (
-                        event.effective_reset_date
-                        for event in symbol_events
-                        if event.event_level is RegulationRuleLevel.ABNORMAL
-                        and event.effective_reset_date is not None
-                    ),
-                    default=None,
-                ),
-                serious_reset_date=max(
-                    (
-                        event.effective_reset_date
-                        for event in symbol_events
-                        if event.event_level is RegulationRuleLevel.SERIOUS_ABNORMAL
-                        and event.effective_reset_date is not None
-                    ),
-                    default=None,
-                ),
+                # v2 resolves event boundaries with publication/observation lineage in the
+                # calculator. Pre-collapsing them here loses the T versus T+1 distinction.
+                abnormal_reset_date=None,
+                serious_reset_date=None,
                 next_day_reference_price=next_reference,
                 next_day_price_limit=price_limit,
             )
@@ -670,6 +657,15 @@ def _assemble_source(
         market_watermark=_watermark((*bars, *indicators)),
         capital_watermark=_watermark(capital_rows),
         event_watermark=event_watermark,
+        reset_trading_dates=tuple(
+            sorted(
+                {
+                    cast(date, row["calendar_reset_date"])
+                    for row in event_rows
+                    if row.get("calendar_reset_date") is not None
+                }
+            )
+        ),
     )
 
 
@@ -781,7 +777,11 @@ _SELECT_EVENTS = text("""
 select symbol, exchange, segment, event_type, event_level, direction,
        period_start_date, period_end_date, published_at, effective_reset_date,
        source_event_id, source_title, source_url, source_content_hash,
-       source_code, explicit_rule_codes, observed_at
+       source_code, explicit_rule_codes, observed_at,
+       (select min(calendar.trade_date) from core.trading_calendar calendar
+        where calendar.market = 'CN_A_SHARE' and calendar.is_trading_day
+          and calendar.trade_date > (event.published_at at time zone 'Asia/Shanghai')::date
+       ) as calendar_reset_date
 from regulation.event
 where symbol in :symbols and period_end_date <= :trade_date
 order by symbol, observed_at, source_code, source_event_id

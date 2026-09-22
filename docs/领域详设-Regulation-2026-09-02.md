@@ -382,6 +382,13 @@ r_stock[d] = close[d] / official_reference_previous_close[d] - 1
 
 ### 7.3 最大窗口累计偏离
 
+从 `regulation-calculator.v2` 起，计算输入附带官方公告日期的下一交易日日历结果
+`reset_trading_dates`，与原始公告一同进入输入哈希。该结果只服务计算，不改写
+`regulation.event.effective_reset_date`。显式起算/复牌日优先；否则按上海时区的公告日期解析
+次一交易日。T 日计算与 T+1 反解分别选择不晚于各自目标日期的最新边界，普通异常与严重异常
+各自独立。公告日期早于30日行情窗口时仍查询其真实下一交易日，不能用行情窗口首日代替。
+缺行情仍标为不完整，不猜测复牌日。v1 路径及哈希保持可重现。
+
 对以 T 日结束、长度1至 N、未跨越对应官方重置边界的每个合法窗口 `[a,T]`：
 
 ```text
@@ -491,6 +498,9 @@ Regulation Calculator 只消费已解析的 `DailyPriceLimit` 输入，不复制
 - 无限制日属于首版不适用，不输出数值预警。
 
 ### 8.4 次数和换手率规则
+
+v2 的次数路径按 T+1 滚动后的交易日窗口及严重异常重置边界重新计数；T 日次数仍保存在
+当日逐规则结果中。不能因 T 日只差一次，就忽略次日过期或重置的正式事件。
 
 当前事件次数只差一次，且T+1价格路径可满足对应方向异常价格规则时，严重次数规则可标记
 `REACHABLE_NEXT_SESSION`，但必须设置 `requires_official_event_confirmation=true`。

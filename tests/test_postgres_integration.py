@@ -520,6 +520,7 @@ def test_regulation_event_cli_backfill_preserves_real_time_and_raw_replay(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
+    request: pytest.FixtureRequest,
 ) -> None:
     import json
     import sys
@@ -538,6 +539,21 @@ def test_regulation_event_cli_backfill_preserves_real_time_and_raw_replay(
     facts = PostgreSQLPersistence(database_engine)
     _commit_security_prerequisite(facts)
     _commit_calendar_prerequisite(facts)
+    with database_engine.begin() as c:
+        c.execute(
+            text("""
+            insert into core.trading_calendar
+                (market, trade_date, is_trading_day, previous_trading_day,
+                 next_trading_day, source_code, ingestion_id)
+            select market, date '2026-07-29', true, trade_date, null, source_code, ingestion_id
+            from core.trading_calendar where trade_date = date '2026-07-28'
+        """)
+        )
+    database_engine = create_engine(
+        database_engine.url, connect_args={"options": "-c role=market_data_worker"}
+    )
+    request.addfinalizer(database_engine.dispose)
+    facts = PostgreSQLPersistence(database_engine)
     row = {
         "secCode": "600000",
         "secAbbr": "测试",
@@ -595,6 +611,15 @@ def test_regulation_event_cli_backfill_preserves_real_time_and_raw_replay(
     assert replay.replay(ingestion_id).accepted_rows == 1
     with database_engine.connect() as c:
         assert c.execute(text("select count(*) from regulation.event")).scalar_one() == 1
+        from market_data_center.persistence.regulation_postgres import _SELECT_EVENTS
+
+        row = (
+            c.execute(_SELECT_EVENTS, {"symbols": [SYMBOL], "trade_date": TRADE_DATE})
+            .mappings()
+            .one()
+        )
+        assert row["calendar_reset_date"] == date(2026, 7, 29)
+        assert row["effective_reset_date"] is None
 
 
 @pytest.fixture

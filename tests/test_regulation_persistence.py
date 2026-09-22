@@ -168,7 +168,30 @@ def test_load_calculation_source_assembles_exact_calendar_returns_and_price_limi
         _mapping_result(security_rows),
         _mapping_result(tuple(bars)),
         _mapping_result(indicators),
-        _mapping_result(()),
+        _mapping_result(
+            (
+                {
+                    "symbol": "SSE:600000",
+                    "exchange": "SSE",
+                    "segment": "SSE_MAIN",
+                    "event_type": "ABNORMAL_VOLATILITY",
+                    "event_level": "ABNORMAL",
+                    "direction": "UP",
+                    "period_start_date": date(2026, 8, 28),
+                    "period_end_date": date(2026, 8, 28),
+                    "published_at": NOW,
+                    "effective_reset_date": NEXT_DATE,
+                    "source_event_id": "test-reset",
+                    "source_title": "official",
+                    "source_url": "https://www.sse.com.cn/test",
+                    "source_content_hash": "a" * 64,
+                    "source_code": "sse_official",
+                    "explicit_rule_codes": ["SSE_MAIN_ABNORMAL_3D_DEV_UP"],
+                    "observed_at": NOW,
+                    "calendar_reset_date": NEXT_DATE,
+                },
+            )
+        ),
         _mapping_result(()),
     )
     persistence = PostgreSQLRegulationPersistence(engine)
@@ -177,6 +200,9 @@ def test_load_calculation_source_assembles_exact_calendar_returns_and_price_limi
 
     assert source.trade_date == TRADE_DATE
     assert source.next_trade_date == NEXT_DATE
+    assert source.reset_trading_dates == (NEXT_DATE,)
+    assert source.candidates[0].events[0].effective_reset_date == NEXT_DATE
+    assert source.candidates[0].abnormal_reset_date is None
     assert source.trading_dates == tuple(row["trade_date"] for row in calendar_rows)
     assert len(source.candidates) == 1
     candidate = source.candidates[0]

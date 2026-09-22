@@ -3,6 +3,7 @@
 from dataclasses import dataclass, replace
 from datetime import date
 from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
+from zoneinfo import ZoneInfo
 
 from market_data_center.domain.regulation import (
     AnnouncedRegulationState,
@@ -29,7 +30,7 @@ from market_data_center.domain.regulation import (
 
 _ONE = Decimal(1)
 _HUNDRED = Decimal(100)
-REGULATION_ALGORITHM_VERSION = "regulation-calculator.v1"
+REGULATION_ALGORITHM_VERSION = "regulation-calculator.v2"
 REGULATION_SCENARIO_CONFIG_VERSION = "regulation-scenarios.v1"
 _SCENARIOS = {
     RegulationScenarioCode.INDEX_DOWN_2: Decimal("-0.02"),
@@ -43,6 +44,42 @@ _DISCLAIMER = "本结果仅为公开规则条件测算,不构成价格预测;实
 class _EvaluatedRule:
     result: RegulationRuleResult
     calculated_triggered: bool
+
+
+def _candidate_at(
+    source: RegulationCalculationInput, candidate: RegulationCandidate, as_of: date
+) -> RegulationCandidate:
+    """Resolve reset boundaries in calculation inputs, never in immutable source facts."""
+    if source.algorithm_version == "regulation-calculator.v1":
+        return candidate
+    calendar = sorted({*source.trading_dates, source.next_trade_date, *source.reset_trading_dates})
+    resets: dict[RegulationRuleLevel, list[date]] = {
+        RegulationRuleLevel.ABNORMAL: [],
+        RegulationRuleLevel.SERIOUS_ABNORMAL: [],
+    }
+    for event in candidate.events:
+        if event.observed_at > source.event_watermark or event.period_end_date > source.trade_date:
+            continue
+        published_date = event.published_at.astimezone(ZoneInfo("Asia/Shanghai")).date()
+        if published_date > as_of:
+            continue
+        reset_date = event.effective_reset_date
+        if reset_date is None:
+            reset_date = next((day for day in calendar if day > published_date), None)
+        if reset_date is not None and reset_date <= as_of:
+            resets[event.event_level].append(reset_date)
+    # Keep explicit input boundaries, but never apply tomorrow's reset to today's window.
+    for level, boundary in (
+        (RegulationRuleLevel.ABNORMAL, candidate.abnormal_reset_date),
+        (RegulationRuleLevel.SERIOUS_ABNORMAL, candidate.serious_reset_date),
+    ):
+        if boundary is not None and boundary <= as_of:
+            resets[level].append(boundary)
+    return replace(
+        candidate,
+        abnormal_reset_date=max(resets[RegulationRuleLevel.ABNORMAL], default=None),
+        serious_reset_date=max(resets[RegulationRuleLevel.SERIOUS_ABNORMAL], default=None),
+    )
 
 
 def _selected_reset_date(candidate: RegulationCandidate, rule: RegulationRule) -> date | None:
@@ -258,8 +295,12 @@ def _events_in_count_window(
     candidate: RegulationCandidate,
     *,
     window_days: int = 10,
+    as_of: date | None = None,
 ) -> tuple[RegulationEventRecord, ...]:
-    dates = tuple(day for day in source.trading_dates if day <= source.trade_date)
+    end_date = as_of or source.trade_date
+    dates = tuple(
+        sorted({day for day in (*source.trading_dates, source.next_trade_date) if day <= end_date})
+    )
     valid_dates = set(dates[-window_days:])
     reset_date = candidate.serious_reset_date
     by_key: dict[tuple[str, str], RegulationEventRecord] = {}
@@ -653,6 +694,22 @@ def _candidate_warnings(
     evaluated: tuple[_EvaluatedRule, ...],
 ) -> tuple[RegulationWarningResult, ...]:
     warnings: list[RegulationWarningResult] = []
+    next_candidate = _candidate_at(source, candidate, source.next_trade_date)
+    next_session_paused = source.algorithm_version != "regulation-calculator.v1" and (
+        any(
+            boundary is not None and boundary > source.next_trade_date
+            for boundary in (candidate.abnormal_reset_date, candidate.serious_reset_date)
+        )
+        or any(
+            event.observed_at <= source.event_watermark
+            and event.period_end_date <= source.trade_date
+            and event.published_at.astimezone(ZoneInfo("Asia/Shanghai")).date()
+            <= source.next_trade_date
+            and event.effective_reset_date is not None
+            and event.effective_reset_date > source.next_trade_date
+            for event in candidate.events
+        )
+    )
     deviation_rules = {
         rule.direction: (rule, item.result)
         for rule, item in zip(rules, evaluated, strict=True)
@@ -662,24 +719,45 @@ def _candidate_warnings(
     }
     for rule, item in zip(rules, evaluated, strict=True):
         result = item.result
+        projected_count = result.event_count
+        if (
+            rule.kind is RegulationRuleKind.EVENT_COUNT
+            and source.algorithm_version != "regulation-calculator.v1"
+        ):
+            assert rule.count_window_days is not None
+            projected_count = sum(
+                event.direction is rule.direction
+                for event in _events_in_count_window(
+                    source,
+                    next_candidate,
+                    window_days=rule.count_window_days,
+                    as_of=source.next_trade_date,
+                )
+            )
         if result.data_completeness is not RegulationDataCompleteness.COMPLETE:
+            continue
+        if (
+            next_session_paused
+            and not item.calculated_triggered
+            and rule.kind is not RegulationRuleKind.TURNOVER_COMPOSITE
+        ):
             continue
         if item.calculated_triggered:
             warnings.append(_current_warning(source, candidate, rule, result))
         elif rule.kind is RegulationRuleKind.CUMULATIVE_DEVIATION:
-            warnings.extend(_solve_deviation_scenarios(source, candidate, rule, result))
+            warnings.extend(_solve_deviation_scenarios(source, next_candidate, rule, result))
         elif rule.kind is RegulationRuleKind.TURNOVER_COMPOSITE:
             warnings.append(_not_price_calculable_warning(source, candidate, rule, result))
         elif (
             rule.kind is RegulationRuleKind.EVENT_COUNT
             and result.event_count is not None
             and result.required_count is not None
-            and result.event_count == result.required_count - 1
+            and projected_count == result.required_count - 1
             and rule.direction in deviation_rules
         ):
             abnormal_rule, abnormal_result = deviation_rules[rule.direction]
             for warning in _solve_deviation_scenarios(
-                source, candidate, abnormal_rule, abnormal_result
+                source, next_candidate, abnormal_rule, abnormal_result
             ):
                 warnings.append(
                     replace(
@@ -744,7 +822,8 @@ def calculate_regulation(
     complete = incomplete = not_applicable = 0
     findings: list[str] = []
 
-    for candidate in source.candidates:
+    for original_candidate in source.candidates:
+        candidate = _candidate_at(source, original_candidate, source.trade_date)
         rules = tuple(rule for rule in source.active_rules if rule.segment is candidate.segment)
         evaluated: list[_EvaluatedRule] = []
         for rule in rules:
@@ -795,7 +874,9 @@ def calculate_regulation(
         status = _status(source, candidate, tuple(evaluated))
         statuses.append(status)
         if candidate.applicability is RegulationApplicability.APPLICABLE:
-            warnings.extend(_candidate_warnings(source, candidate, rules, tuple(evaluated)))
+            warnings.extend(
+                _candidate_warnings(source, original_candidate, rules, tuple(evaluated))
+            )
         if status.data_completeness is RegulationDataCompleteness.COMPLETE:
             complete += 1
         elif status.data_completeness is RegulationDataCompleteness.INCOMPLETE:

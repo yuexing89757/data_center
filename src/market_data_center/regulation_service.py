@@ -62,6 +62,8 @@ def regulation_input_hash(source: RegulationCalculationInput) -> str:
     """Hash a logical input snapshot independently of source row ordering."""
 
     payload = cast(dict[str, object], _canonical(source))
+    if source.algorithm_version == "regulation-calculator.v1":
+        payload.pop("reset_trading_dates")
     rules = cast(list[dict[str, object]], payload["active_rules"])
     rules.sort(key=lambda item: str(item["rule_code"]))
     candidates = cast(list[dict[str, object]], payload["candidates"])

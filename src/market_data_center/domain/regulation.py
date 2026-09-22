@@ -420,6 +420,7 @@ class RegulationCalculationInput:
     market_watermark: str
     capital_watermark: str
     event_watermark: datetime
+    reset_trading_dates: tuple[date, ...] = ()
 
     def __post_init__(self) -> None:
         if self.next_trade_date <= self.trade_date:
