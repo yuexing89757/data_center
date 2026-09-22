@@ -507,6 +507,88 @@ def test_regulation_event_persistence_is_immutable_idempotent_and_private(
             ).scalar_one()
 
 
+def test_regulation_event_cli_backfill_preserves_real_time_and_raw_replay(
+    database_engine: Engine,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import json
+    import sys
+    from types import SimpleNamespace
+
+    from pydantic import SecretStr
+
+    import market_data_center.cli as cli
+    from market_data_center.providers.sse_regulation import (
+        SSEOfficialRegulationEventProvider,
+        SSEResponse,
+    )
+    from market_data_center.raw_store import LocalRawStore
+    from market_data_center.reliability import RawReplayService
+
+    facts = PostgreSQLPersistence(database_engine)
+    _commit_security_prerequisite(facts)
+    _commit_calendar_prerequisite(facts)
+    row = {
+        "secCode": "600000",
+        "secAbbr": "测试",
+        "refType": "1",
+        "tradeDate": "20260728",
+        "abnormalStart": "20260724",
+        "abnormalEnd": "20260728",
+    }
+
+    def fetch(url, params):
+        assert params["tradeDateStart"] == params["tradeDateEnd"] == "2026-07-28"
+        return SSEResponse(
+            url,
+            "application/json",
+            json.dumps({"pageHelp": {"pageCount": 1, "data": [row]}}).encode(),
+        )
+
+    monkeypatch.setattr(
+        cli,
+        "WorkerSettings",
+        lambda: SimpleNamespace(
+            database_url=SecretStr("postgresql://unused/test"), raw_data_root=tmp_path
+        ),
+    )
+    monkeypatch.setattr(cli, "create_engine", lambda *a, **kw: database_engine)
+    monkeypatch.setattr(
+        cli,
+        "SSEOfficialRegulationEventProvider",
+        lambda: SSEOfficialRegulationEventProvider(fetch=fetch),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "market-data-center",
+            "regulation-events",
+            "--trade-date",
+            "2026-07-28",
+            "--source",
+            "sse_official",
+            "--confirm-official-source-terms-reviewed",
+        ],
+    )
+
+    cli.main()
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["accepted_events"] == 1
+    with database_engine.connect() as c:
+        event = c.execute(text("select * from regulation.event")).mappings().one()
+        assert event["period_end_date"] == date(2026, 7, 28)
+        assert event["observed_at"].date() > date(2026, 7, 28)
+        ingestion_id = event["ingestion_id"]
+    replay = RawReplayService(raw_store=LocalRawStore(tmp_path), persistence=facts)
+    assert replay.replay(ingestion_id, dry_run=True).status == "valid"
+    assert replay.replay(ingestion_id).accepted_rows == 1
+    with database_engine.connect() as c:
+        assert c.execute(text("select count(*) from regulation.event")).scalar_one() == 1
+
+
 @pytest.fixture
 def empty_database_url() -> Iterator[str]:
     admin_url = environ.get("TEST_DATABASE_URL")

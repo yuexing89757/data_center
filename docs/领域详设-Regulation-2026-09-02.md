@@ -529,6 +529,13 @@ RegulationEventProvider.fetch_events(observed_from, observed_to)
 
 ### 9.3 Raw与重放
 
+2026-09-22 修复：手动 `regulation-events` 按精确交易日和单个官方来源执行。
+查询时间上界为开区间，上海时间次日零点不计入；历史查询日期与真实观察审计时间分开保存，
+Raw 重放仍验证实际观察区间，禁止为历史补采倒填 `observed_at`。
+SSE 严重异动 Z3～Z8 对应既有 `*_10D_COUNT_UP/DOWN`、`*_10D_DEV_UP/DOWN`、
+`*_30D_DEV_UP/DOWN` 规则编码；不改变规则公式、阈值或算法版本。
+该受控补采不代表正式事件步骤已接入定时任务。
+
 Raw schema：
 
 ```text

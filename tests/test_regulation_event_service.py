@@ -58,7 +58,7 @@ def _event(**overrides: object) -> RegulationEventRecord:
         "source_content_hash": "a" * 64,
         "source_code": "sse_official",
         "explicit_rule_codes": ("SSE_MAIN_ABNORMAL_3D_DEV_UP",),
-        "observed_at": datetime(2026, 9, 18, 14, 0, tzinfo=UTC),
+        "observed_at": NOW,
     }
     values.update(overrides)
     return RegulationEventRecord(**values)  # type: ignore[arg-type]
@@ -118,6 +118,7 @@ class FakePersistence:
         self.existing_hash = existing_hash
         self.updated_events: list[RegulationEventRecord] = []
         self.failed_run: IngestionRun | None = None
+        self.published_run: IngestionRun | None = None
         self.quality: tuple[QualityResult, ...] = ()
 
     def begin_ingestion(self, run: IngestionRun) -> None:
@@ -136,6 +137,7 @@ class FakePersistence:
         records: tuple[RegulationEventRecord, ...],
     ) -> RegulationEventCollectionSummary:
         self.calls.append("publish")
+        self.published_run = run
         if self.existing_hash is not None:
             if any(record.source_content_hash != self.existing_hash for record in records):
                 raise RegulationEventContentConflict
@@ -251,3 +253,27 @@ def test_collection_requires_strict_utc_interval() -> None:
         service.collect(FROM.replace(tzinfo=None), TO)
     with pytest.raises(ValueError, match="precede"):
         service.collect(TO, FROM)
+
+
+def test_historical_collection_keeps_real_observation_time_and_replay_bounds() -> None:
+    event = _event(observed_at=NOW)
+    service, persistence, _ = _service((event,))
+
+    summary = service.collect(FROM, TO)
+
+    assert summary.accepted_events == 1
+    assert persistence.updated_events == [event]
+    run = persistence.published_run
+    assert run is not None
+    assert run.request_params["trade_date_start"] == "2026-09-18"
+    assert run.request_params["trade_date_end"] == "2026-09-19"
+    lower = datetime.fromisoformat(str(run.request_params["observed_from"]))
+    upper = datetime.fromisoformat(str(run.request_params["observed_to"]))
+    assert lower <= NOW < upper
+
+
+def test_collection_rejects_observation_in_the_future() -> None:
+    service, persistence, _ = _service((_event(observed_at=NOW.replace(day=20)),))
+    with pytest.raises(RegulationEventCollectionError, match="REG_EVENT_LINEAGE_MISMATCH"):
+        service.collect(FROM, TO)
+    assert persistence.updated_events == []

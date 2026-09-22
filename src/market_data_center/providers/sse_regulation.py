@@ -7,7 +7,8 @@ import json
 import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
+from time import sleep
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -74,37 +75,37 @@ _REASONS = {
         "10日内4次出现同正向异常波动",
         RegulationRuleLevel.SERIOUS_ABNORMAL,
         RegulationDirection.UP,
-        ("SSE_MAIN_SERIOUS_10D_4_UP",),
+        ("SSE_MAIN_SERIOUS_10D_COUNT_UP",),
     ),
     "Z4": _Reason(
         "10日内4次出现同负向异常波动",
         RegulationRuleLevel.SERIOUS_ABNORMAL,
         RegulationDirection.DOWN,
-        ("SSE_MAIN_SERIOUS_10D_4_DOWN",),
+        ("SSE_MAIN_SERIOUS_10D_COUNT_DOWN",),
     ),
     "Z5": _Reason(
         "10日涨幅偏离累计达100%",
         RegulationRuleLevel.SERIOUS_ABNORMAL,
         RegulationDirection.UP,
-        ("SSE_MAIN_SERIOUS_10D_DEV_100_UP",),
+        ("SSE_MAIN_SERIOUS_10D_DEV_UP",),
     ),
     "Z6": _Reason(
         "10日跌幅偏离累计达50%",
         RegulationRuleLevel.SERIOUS_ABNORMAL,
         RegulationDirection.DOWN,
-        ("SSE_MAIN_SERIOUS_10D_DEV_50_DOWN",),
+        ("SSE_MAIN_SERIOUS_10D_DEV_DOWN",),
     ),
     "Z7": _Reason(
         "30日涨幅偏离累计达200%",
         RegulationRuleLevel.SERIOUS_ABNORMAL,
         RegulationDirection.UP,
-        ("SSE_MAIN_SERIOUS_30D_DEV_200_UP",),
+        ("SSE_MAIN_SERIOUS_30D_DEV_UP",),
     ),
     "Z8": _Reason(
         "30日跌幅偏离累计达70%",
         RegulationRuleLevel.SERIOUS_ABNORMAL,
         RegulationDirection.DOWN,
-        ("SSE_MAIN_SERIOUS_30D_DEV_70_DOWN",),
+        ("SSE_MAIN_SERIOUS_30D_DEV_DOWN",),
     ),
 }
 
@@ -132,7 +133,7 @@ class SSEOfficialRegulationEventProvider:
             raise ProviderError("provider clock must return a timezone-aware datetime")
 
         start_date = observed_from.astimezone(_SHANGHAI).date()
-        end_date = observed_to.astimezone(_SHANGHAI).date()
+        end_date = (observed_to - timedelta(microseconds=1)).astimezone(_SHANGHAI).date()
         rows = self._fetch_rows(start_date, end_date)
         raw_rows = tuple(_raw_row(row) for row in rows)
 
@@ -234,6 +235,7 @@ def _fetch(url: str, params: dict[str, str]) -> SSEResponse:
         },
     )
     timeout = CONNECT_TIMEOUT_SECONDS + READ_TIMEOUT_SECONDS
+    sleep(1)  # Bound a sequential official-source backfill to at most one request/second.
     with urlopen(request, timeout=timeout) as response:
         return SSEResponse(
             url=response.geturl(),
@@ -381,5 +383,5 @@ def _validate_bounds(observed_from: datetime, observed_to: datetime) -> None:
     bounds = (observed_from, observed_to)
     if any(value.tzinfo is None or value.utcoffset() is None for value in bounds):
         raise ValueError("observation bounds must be timezone-aware")
-    if observed_to < observed_from:
-        raise ValueError("observation end must not precede start")
+    if observed_to <= observed_from:
+        raise ValueError("observation start must precede end")
