@@ -5,7 +5,15 @@ from decimal import Decimal
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, WithJsonSchema, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PlainSerializer,
+    WithJsonSchema,
+    field_validator,
+    model_validator,
+)
 
 from market_data_center.domain import (
     Exchange,
@@ -38,6 +46,147 @@ ApiTimestamp = Annotated[
 
 class ApiModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+class RegulationCoverage(ApiModel):
+    expected_count: int = Field(ge=0)
+    complete_count: int = Field(ge=0)
+    incomplete_count: int = Field(ge=0)
+    not_applicable_count: int = Field(ge=0)
+
+
+class RegulationTriggeredRuleItem(ApiModel):
+    rule_code: str
+    level: Literal["ABNORMAL", "SERIOUS_ABNORMAL"] = Field(description="普通异常或严重异常级别")
+    direction: Literal["UP", "DOWN", "NONE"] = Field(description="监管规则的上涨、下跌或无方向条件")
+    kind: Literal["CUMULATIVE_DEVIATION", "TURNOVER_COMPOSITE", "EVENT_COUNT"]
+    window_start_date: date | None
+    window_end_date: date | None
+    observed_window_days: int | None
+    current_value: Decimal | None
+    threshold: Decimal | None
+    secondary_current_value: Decimal | None
+    secondary_threshold: Decimal | None
+    event_count: int | None
+    required_count: int | None
+    selected_reset_date: date | None
+
+
+class RegulationTriggerStockItem(ApiModel):
+    code: str = Field(pattern=r"^[0-9]{6}$")
+    symbol: str = Field(pattern=r"^(SSE|SZSE):[0-9]{6}$")
+    name: str | None
+    exchange: Literal["SSE", "SZSE"]
+    segment: Literal["SSE_MAIN", "SZSE_MAIN", "GEM"]
+    calculated_state: Literal["ABNORMAL_TRIGGERED", "SERIOUS_TRIGGERED"]
+    announced_state: Literal["NONE", "ABNORMAL", "SERIOUS_ABNORMAL"]
+    triggered_rules: list[RegulationTriggeredRuleItem]
+
+
+class RegulationQueryMetadata(ApiModel):
+    trade_date: date
+    calculation_id: UUID
+    calculation_status: Literal["SUCCEEDED", "PARTIAL"]
+    completed_at: ApiTimestamp
+    event_watermark: ApiTimestamp
+    algorithm_version: str
+    rule_set_version: str
+    coverage: RegulationCoverage
+    returned_count: int = Field(ge=0, le=500)
+    has_more: bool
+    next_cursor: str | None
+
+
+class RegulationTriggerResponse(RegulationQueryMetadata):
+    items: list[RegulationTriggerStockItem]
+
+
+class RegulationNextTriggerItem(ApiModel):
+    level: Literal["ABNORMAL", "SERIOUS_ABNORMAL"] = Field(description="普通异常或严重异常级别")
+    direction: Literal["UP", "DOWN", "NONE"] = Field(description="监管规则的上涨、下跌或无方向条件")
+    rule_code: str
+    benchmark_symbol: str | None
+    scenario_code: Literal["CURRENT", "NONE", "INDEX_DOWN_2", "INDEX_FLAT", "INDEX_UP_2"]
+    scenario_index_pct: Decimal | None
+    next_day_reference_price: Decimal | None
+    raw_trigger_price: Decimal | None
+    trigger_price: Decimal | None
+    trigger_change_pct: Decimal | None
+    lower_limit_price: Decimal | None
+    upper_limit_price: Decimal | None
+    reachability: Literal[
+        "CURRENTLY_TRIGGERED",
+        "NOT_PRICE_CALCULABLE",
+        "REACHABLE_NEXT_SESSION",
+        "NOT_REACHABLE_NEXT_SESSION",
+    ]
+    window_start_date: date | None
+    window_end_date: date | None
+    requires_official_event_confirmation: bool
+
+    @model_validator(mode="after")
+    def validate_scenario(self) -> "RegulationNextTriggerItem":
+        if self.scenario_code in {"CURRENT", "NONE"}:
+            expected = (
+                "CURRENTLY_TRIGGERED" if self.scenario_code == "CURRENT" else "NOT_PRICE_CALCULABLE"
+            )
+            if self.reachability != expected or any(
+                value is not None
+                for value in (
+                    self.scenario_index_pct,
+                    self.trigger_price,
+                    self.trigger_change_pct,
+                    self.raw_trigger_price,
+                )
+            ):
+                raise ValueError("non-price scenario must not imply a next-session price")
+        else:
+            expected_pct = {"INDEX_DOWN_2": -2, "INDEX_FLAT": 0, "INDEX_UP_2": 2}
+            if (
+                self.scenario_index_pct != expected_pct[self.scenario_code]
+                or self.reachability
+                not in {
+                    "REACHABLE_NEXT_SESSION",
+                    "NOT_REACHABLE_NEXT_SESSION",
+                }
+                or any(
+                    value is None
+                    for value in (
+                        self.next_day_reference_price,
+                        self.raw_trigger_price,
+                        self.trigger_price,
+                        self.trigger_change_pct,
+                        self.lower_limit_price,
+                        self.upper_limit_price,
+                    )
+                )
+            ):
+                raise ValueError("price scenario requires a complete next-session condition")
+        return self
+
+
+class RegulationRecentEventStockItem(ApiModel):
+    code: str = Field(pattern=r"^[0-9]{6}$")
+    symbol: str = Field(pattern=r"^(SSE|SZSE):[0-9]{6}$")
+    name: str | None
+    exchange: Literal["SSE", "SZSE"]
+    segment: Literal["SSE_MAIN", "SZSE_MAIN", "GEM"]
+    official_event_count_30d: int = Field(ge=1)
+    latest_source_event_id: str
+    latest_event_date: date
+    latest_event_published_at: ApiTimestamp
+    latest_event_level: Literal["ABNORMAL", "SERIOUS_ABNORMAL"]
+    latest_event_direction: Literal["UP", "DOWN"] | None
+    latest_event_source_title: str
+    latest_event_source_url: str
+    next_triggers: list[RegulationNextTriggerItem]
+
+
+class RegulationRecentNextTriggerResponse(RegulationQueryMetadata):
+    next_trade_date: date
+    lookback_trading_days: Literal[30]
+    lookback_start_date: date
+    items: list[RegulationRecentEventStockItem]
 
 
 class HealthResponse(ApiModel):

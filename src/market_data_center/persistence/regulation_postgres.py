@@ -1,6 +1,7 @@
 """PostgreSQL access for versioned Regulation calculations."""
 
 import hashlib
+import json
 from collections import defaultdict
 from datetime import date, datetime, time
 from decimal import Decimal
@@ -209,15 +210,31 @@ limit 1
                 {"trade_date": trade_date, "input_hash": input_hash},
             ).scalar_one_or_none()
 
-    def start_calculation(self, run: RegulationCalculationRun) -> UUID:
+    def start_calculation(
+        self, run: RegulationCalculationRun, input_events: tuple[RegulationEventRecord, ...]
+    ) -> UUID:
         if run.status is not RegulationRunStatus.RUNNING:
             raise ValueError("only a running regulation calculation can be started")
+        keys = [
+            {
+                "source_code": event.source_code,
+                "source_event_id": event.source_event_id,
+                "source_content_hash": event.source_content_hash,
+            }
+            for event in sorted(input_events, key=lambda e: (e.source_code, e.source_event_id))
+        ]
+        if len({(e.source_code, e.source_event_id) for e in input_events}) != len(keys):
+            raise ValueError("calculation input events must have unique natural keys")
+        parameters = {**_run_parameters(run), "input_event_keys": json.dumps(keys)}
         with self._engine.begin() as connection:
             calculation_id = connection.execute(
-                _INSERT_RUNNING_RUN, _run_parameters(run)
+                _INSERT_RUNNING_RUN, parameters
             ).scalar_one_or_none()
         if calculation_id is None:
-            raise ValueError("regulation calculation is already running or published")
+            raise ValueError(
+                "regulation calculation is already running/published "
+                "or input events are unavailable"
+            )
         if not isinstance(calculation_id, UUID):
             raise TypeError("regulation calculation id must be a UUID")
         return calculation_id
@@ -791,12 +808,19 @@ insert into regulation.calculation_run (
     calculation_id, trade_date, next_trade_date, status, algorithm_version,
     rule_set_version, rule_set_hash, scenario_config_version, input_hash,
     market_watermark, capital_watermark, event_watermark, expected_count,
-    complete_count, incomplete_count, not_applicable_count, started_at, completed_at
-) values (
+    complete_count, incomplete_count, not_applicable_count, started_at, completed_at,
+    input_event_keys
+) select
     :calculation_id, :trade_date, :next_trade_date, :status, :algorithm_version,
     :rule_set_version, :rule_set_hash, :scenario_config_version, :input_hash,
     :market_watermark, :capital_watermark, :event_watermark, :expected_count,
-    :complete_count, :incomplete_count, :not_applicable_count, :started_at, :completed_at
+    :complete_count, :incomplete_count, :not_applicable_count, :started_at, :completed_at,
+    cast(:input_event_keys as jsonb)
+where jsonb_array_length(cast(:input_event_keys as jsonb)) = (
+    select count(*) from jsonb_to_recordset(cast(:input_event_keys as jsonb))
+        as k(source_code text, source_event_id text, source_content_hash text)
+    join regulation.event e using (source_code, source_event_id, source_content_hash)
+    where e.observed_at <= :event_watermark
 )
 on conflict (trade_date, input_hash) do update set
     status = 'RUNNING',
@@ -807,6 +831,7 @@ on conflict (trade_date, input_hash) do update set
     market_watermark = excluded.market_watermark,
     capital_watermark = excluded.capital_watermark,
     event_watermark = excluded.event_watermark,
+    input_event_keys = excluded.input_event_keys,
     expected_count = excluded.expected_count,
     complete_count = excluded.complete_count,
     incomplete_count = excluded.incomplete_count,

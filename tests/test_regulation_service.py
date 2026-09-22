@@ -13,6 +13,7 @@ from market_data_center.domain.regulation import (
     RegulationCalculationRun,
     RegulationCoverage,
     RegulationDirection,
+    RegulationEventRecord,
     RegulationResetLevel,
     RegulationRule,
     RegulationRuleKind,
@@ -79,6 +80,7 @@ class FakePersistence:
         self.source = source
         self.existing: UUID | None = None
         self.started: list[RegulationCalculationRun] = []
+        self.input_events: list[tuple[RegulationEventRecord, ...]] = []
         self.published: list[tuple[RegulationCalculationRun, RegulationCalculationOutput]] = []
         self.failed: list[tuple[UUID, datetime]] = []
 
@@ -91,8 +93,11 @@ class FakePersistence:
         assert len(input_hash) == 64
         return self.existing
 
-    def start_calculation(self, run: RegulationCalculationRun) -> UUID:
+    def start_calculation(
+        self, run: RegulationCalculationRun, input_events: tuple[RegulationEventRecord, ...]
+    ) -> UUID:
         self.started.append(run)
+        self.input_events.append(input_events)
         return run.calculation_id
 
     def publish_calculation(
@@ -111,6 +116,7 @@ def test_service_publishes_one_versioned_daily_calculation() -> None:
     summary = service.calculate(TRADE_DATE)
 
     assert summary.reused is False
+    assert persistence.input_events == [()]
     assert summary.status is RegulationRunStatus.SUCCEEDED
     assert summary.trade_date == TRADE_DATE
     assert summary.next_trade_date == NEXT_DATE

@@ -12,6 +12,29 @@ see the [configuration maintenance record](最小生产发布运行手册.md#同
 
 ## Preconditions
 
+### Regulation query release (2026-09-22)
+
+Apply ordered migration `20260922000100` through the protected production workflow
+before updating API and Worker to the same reviewed commit. The two new RPCs are
+read-only and executable only by `market_data_api`; do not grant internal-table reads.
+Preserve the current environment files, least-privilege credentials and restart drop-ins.
+Restart the single Worker only after checking that no collection/recovery workflow is
+active, outside the auction collection window. No job time or enablement changes are needed.
+
+Authenticated smoke queries use `trade_date`, optional `limit` (1–500), and `cursor`:
+`/api/v1/regulation/triggers` and `/api/v1/regulation/recent-events/next-triggers`.
+Check `/healthz`, `/readyz`, `/openapi.json`, and `scripts/check_fastapi_release.py`.
+PARTIAL computations return 200 with coverage; missing exact-date calculations return
+404. Old calculations without `input_event_keys` also return 404 for recent events,
+even when live events exist. Do not fabricate this list or silently use another version.
+Future scheduled calculations capture it automatically; historical recomputation needs
+separate explicit authorization. A 404 on a legacy run is not a failed migration.
+
+The owner explicitly waived database/Raw backup and restore drills for this release
+only. This does not waive migration permissions, isolated integration tests or runtime
+health checks. No data is deleted by this migration; application rollback keeps the
+additive schema and restores the previously verified release.
+
 1. Apply repository migrations to the existing production PostgreSQL through the protected workflow.
    Do not copy or cut over data. Migration
    `20260809000100_create_fastapi_reader_role.sql` creates the NOLOGIN `market_data_api` role;

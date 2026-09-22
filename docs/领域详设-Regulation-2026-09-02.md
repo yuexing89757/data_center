@@ -288,6 +288,7 @@ Domain 对象不包含 `ingestion_id` 或 `calculation_id`；服务和持久化�
 | `market_watermark` | 股票/指数行情输入水位 |
 | `capital_watermark` | 公司行动输入水位 |
 | `event_watermark` | 官方事件最大观察时间/来源水位 |
+| `input_event_keys` | 同一计算输入内公告自然键与内容哈希清单；null=旧批次未知，[]=已捕获且无公告 |
 | `expected_count`、`complete_count` | 覆盖统计 |
 | `incomplete_count`、`not_applicable_count` | 缺口与排除统计 |
 | `started_at`、`completed_at` | 审计时间 |

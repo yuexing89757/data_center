@@ -259,7 +259,7 @@ def test_start_calculation_inserts_running_run_and_can_retry_failed_input() -> N
         completed_at=None,
     )
 
-    started_id = persistence.start_calculation(run)
+    started_id = persistence.start_calculation(run, ())
 
     assert started_id == calculation_id
     sql = str(connection.execute.call_args.args[0])

@@ -728,6 +728,78 @@
           }
         }
       }
+    },
+    {
+      "name": "market_regulation_triggers",
+      "description": "Read exact-date calculated closing triggers from one published version; no date fallback. Requires the dedicated API role; anonymous access is denied.",
+      "endpoint": "query_regulation_triggers",
+      "read_only": true,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "p_trade_date"
+        ],
+        "properties": {
+          "p_trade_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Exact trading date, not before 2026-07-06."
+          },
+          "p_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 2048,
+            "default": null,
+            "description": "Opaque cursor bound to endpoint, date, page size and calculation version. Do not decode or modify."
+          },
+          "p_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 100
+          }
+        }
+      }
+    },
+    {
+      "name": "market_regulation_recent_event_next_triggers",
+      "description": "Read official events in exactly 30 trading sessions and next-session conditions under three index scenarios from one version. Conditions are not price predictions. Requires the dedicated API role; anonymous access is denied.",
+      "endpoint": "query_regulation_recent_event_next_triggers",
+      "read_only": true,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "p_trade_date"
+        ],
+        "properties": {
+          "p_trade_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Exact trading date, not before 2026-07-06."
+          },
+          "p_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 2048,
+            "default": null,
+            "description": "Opaque cursor bound to endpoint, date, page size and calculation version. Do not decode or modify."
+          },
+          "p_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 100
+          }
+        }
+      }
     }
   ]
 }

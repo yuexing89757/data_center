@@ -399,6 +399,140 @@
           }
         }
       }
+    },
+    "/rpc/query_regulation_triggers": {
+      "post": {
+        "operationId": "query_regulation_triggers",
+        "summary": "Read exact-date calculated closing triggers from one published version; no date fallback.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "Requires the dedicated API role. Anonymous roles cannot execute. Decimals are strings, missing values are null. SQLSTATE 22023 means invalid parameters; P0002 means no compatible exact-date publication.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "p_trade_date"
+                ],
+                "properties": {
+                  "p_trade_date": {
+                    "type": "string",
+                    "format": "date",
+                    "description": "Exact trading date, not before 2026-07-06."
+                  },
+                  "p_cursor": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "default": null,
+                    "description": "Opaque cursor bound to endpoint, date, page size and calculation version. Do not decode or modify."
+                  },
+                  "p_limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 500,
+                    "default": 100
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "One coherent published calculation with coverage and keyset pagination.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegulationTriggerResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid date, bounds or cursor (22023)."
+          },
+          "404": {
+            "description": "No compatible published calculation (P0002)."
+          }
+        }
+      }
+    },
+    "/rpc/query_regulation_recent_event_next_triggers": {
+      "post": {
+        "operationId": "query_regulation_recent_event_next_triggers",
+        "summary": "Read official events in exactly 30 trading sessions and next-session conditions under three index scenarios from one version. Conditions are not price predictions.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "Requires the dedicated API role. Anonymous roles cannot execute. Decimals are strings, missing values are null. SQLSTATE 22023 means invalid parameters; P0002 means no compatible exact-date publication.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "p_trade_date"
+                ],
+                "properties": {
+                  "p_trade_date": {
+                    "type": "string",
+                    "format": "date",
+                    "description": "Exact trading date, not before 2026-07-06."
+                  },
+                  "p_cursor": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "default": null,
+                    "description": "Opaque cursor bound to endpoint, date, page size and calculation version. Do not decode or modify."
+                  },
+                  "p_limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 500,
+                    "default": 100
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "One coherent published calculation with coverage and keyset pagination.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegulationRecentNextTriggerResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid date, bounds or cursor (22023)."
+          },
+          "404": {
+            "description": "No compatible published calculation (P0002)."
+          }
+        }
+      }
     }
   },
   "components": {
@@ -496,6 +630,794 @@
             ]
           }
         }
+      },
+      "RegulationCoverage": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_count": {
+            "minimum": 0,
+            "title": "Expected Count",
+            "type": "integer"
+          },
+          "complete_count": {
+            "minimum": 0,
+            "title": "Complete Count",
+            "type": "integer"
+          },
+          "incomplete_count": {
+            "minimum": 0,
+            "title": "Incomplete Count",
+            "type": "integer"
+          },
+          "not_applicable_count": {
+            "minimum": 0,
+            "title": "Not Applicable Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_count",
+          "complete_count",
+          "incomplete_count",
+          "not_applicable_count"
+        ],
+        "title": "RegulationCoverage",
+        "type": "object"
+      },
+      "RegulationTriggerStockItem": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "symbol": {
+            "pattern": "^(SSE|SZSE):[0-9]{6}$",
+            "title": "Symbol",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "exchange": {
+            "enum": [
+              "SSE",
+              "SZSE"
+            ],
+            "title": "Exchange",
+            "type": "string"
+          },
+          "segment": {
+            "enum": [
+              "SSE_MAIN",
+              "SZSE_MAIN",
+              "GEM"
+            ],
+            "title": "Segment",
+            "type": "string"
+          },
+          "calculated_state": {
+            "enum": [
+              "ABNORMAL_TRIGGERED",
+              "SERIOUS_TRIGGERED"
+            ],
+            "title": "Calculated State",
+            "type": "string"
+          },
+          "announced_state": {
+            "enum": [
+              "NONE",
+              "ABNORMAL",
+              "SERIOUS_ABNORMAL"
+            ],
+            "title": "Announced State",
+            "type": "string"
+          },
+          "triggered_rules": {
+            "items": {
+              "$ref": "#/components/schemas/RegulationTriggeredRuleItem"
+            },
+            "title": "Triggered Rules",
+            "type": "array"
+          }
+        },
+        "required": [
+          "code",
+          "symbol",
+          "name",
+          "exchange",
+          "segment",
+          "calculated_state",
+          "announced_state",
+          "triggered_rules"
+        ],
+        "title": "RegulationTriggerStockItem",
+        "type": "object"
+      },
+      "RegulationTriggeredRuleItem": {
+        "additionalProperties": false,
+        "properties": {
+          "rule_code": {
+            "title": "Rule Code",
+            "type": "string"
+          },
+          "level": {
+            "description": "普通异常或严重异常级别",
+            "enum": [
+              "ABNORMAL",
+              "SERIOUS_ABNORMAL"
+            ],
+            "title": "Level",
+            "type": "string"
+          },
+          "direction": {
+            "description": "监管规则的上涨、下跌或无方向条件",
+            "enum": [
+              "UP",
+              "DOWN",
+              "NONE"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "CUMULATIVE_DEVIATION",
+              "TURNOVER_COMPOSITE",
+              "EVENT_COUNT"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "window_start_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window Start Date"
+          },
+          "window_end_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window End Date"
+          },
+          "observed_window_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed Window Days"
+          },
+          "current_value": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Value"
+          },
+          "threshold": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Threshold"
+          },
+          "secondary_current_value": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secondary Current Value"
+          },
+          "secondary_threshold": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secondary Threshold"
+          },
+          "event_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Count"
+          },
+          "required_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Required Count"
+          },
+          "selected_reset_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Reset Date"
+          }
+        },
+        "required": [
+          "rule_code",
+          "level",
+          "direction",
+          "kind",
+          "window_start_date",
+          "window_end_date",
+          "observed_window_days",
+          "current_value",
+          "threshold",
+          "secondary_current_value",
+          "secondary_threshold",
+          "event_count",
+          "required_count",
+          "selected_reset_date"
+        ],
+        "title": "RegulationTriggeredRuleItem",
+        "type": "object"
+      },
+      "RegulationTriggerResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "calculation_id": {
+            "format": "uuid",
+            "title": "Calculation Id",
+            "type": "string"
+          },
+          "calculation_status": {
+            "enum": [
+              "SUCCEEDED",
+              "PARTIAL"
+            ],
+            "title": "Calculation Status",
+            "type": "string"
+          },
+          "completed_at": {
+            "title": "Completed At",
+            "type": "string",
+            "format": "date-time"
+          },
+          "event_watermark": {
+            "title": "Event Watermark",
+            "type": "string",
+            "format": "date-time"
+          },
+          "algorithm_version": {
+            "title": "Algorithm Version",
+            "type": "string"
+          },
+          "rule_set_version": {
+            "title": "Rule Set Version",
+            "type": "string"
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/RegulationCoverage"
+          },
+          "returned_count": {
+            "maximum": 500,
+            "minimum": 0,
+            "title": "Returned Count",
+            "type": "integer"
+          },
+          "has_more": {
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RegulationTriggerStockItem"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "trade_date",
+          "calculation_id",
+          "calculation_status",
+          "completed_at",
+          "event_watermark",
+          "algorithm_version",
+          "rule_set_version",
+          "coverage",
+          "returned_count",
+          "has_more",
+          "next_cursor",
+          "items"
+        ],
+        "title": "RegulationTriggerResponse",
+        "type": "object"
+      },
+      "RegulationNextTriggerItem": {
+        "additionalProperties": false,
+        "properties": {
+          "level": {
+            "description": "普通异常或严重异常级别",
+            "enum": [
+              "ABNORMAL",
+              "SERIOUS_ABNORMAL"
+            ],
+            "title": "Level",
+            "type": "string"
+          },
+          "direction": {
+            "description": "监管规则的上涨、下跌或无方向条件",
+            "enum": [
+              "UP",
+              "DOWN",
+              "NONE"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
+          "rule_code": {
+            "title": "Rule Code",
+            "type": "string"
+          },
+          "benchmark_symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Benchmark Symbol"
+          },
+          "scenario_code": {
+            "enum": [
+              "CURRENT",
+              "NONE",
+              "INDEX_DOWN_2",
+              "INDEX_FLAT",
+              "INDEX_UP_2"
+            ],
+            "title": "Scenario Code",
+            "type": "string"
+          },
+          "scenario_index_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scenario Index Pct"
+          },
+          "next_day_reference_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Day Reference Price"
+          },
+          "raw_trigger_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Trigger Price"
+          },
+          "trigger_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trigger Price"
+          },
+          "trigger_change_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trigger Change Pct"
+          },
+          "lower_limit_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lower Limit Price"
+          },
+          "upper_limit_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Upper Limit Price"
+          },
+          "reachability": {
+            "enum": [
+              "CURRENTLY_TRIGGERED",
+              "NOT_PRICE_CALCULABLE",
+              "REACHABLE_NEXT_SESSION",
+              "NOT_REACHABLE_NEXT_SESSION"
+            ],
+            "title": "Reachability",
+            "type": "string"
+          },
+          "window_start_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window Start Date"
+          },
+          "window_end_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window End Date"
+          },
+          "requires_official_event_confirmation": {
+            "title": "Requires Official Event Confirmation",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "level",
+          "direction",
+          "rule_code",
+          "benchmark_symbol",
+          "scenario_code",
+          "scenario_index_pct",
+          "next_day_reference_price",
+          "raw_trigger_price",
+          "trigger_price",
+          "trigger_change_pct",
+          "lower_limit_price",
+          "upper_limit_price",
+          "reachability",
+          "window_start_date",
+          "window_end_date",
+          "requires_official_event_confirmation"
+        ],
+        "title": "RegulationNextTriggerItem",
+        "type": "object"
+      },
+      "RegulationRecentEventStockItem": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "symbol": {
+            "pattern": "^(SSE|SZSE):[0-9]{6}$",
+            "title": "Symbol",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "exchange": {
+            "enum": [
+              "SSE",
+              "SZSE"
+            ],
+            "title": "Exchange",
+            "type": "string"
+          },
+          "segment": {
+            "enum": [
+              "SSE_MAIN",
+              "SZSE_MAIN",
+              "GEM"
+            ],
+            "title": "Segment",
+            "type": "string"
+          },
+          "official_event_count_30d": {
+            "minimum": 1,
+            "title": "Official Event Count 30D",
+            "type": "integer"
+          },
+          "latest_source_event_id": {
+            "title": "Latest Source Event Id",
+            "type": "string"
+          },
+          "latest_event_date": {
+            "format": "date",
+            "title": "Latest Event Date",
+            "type": "string"
+          },
+          "latest_event_published_at": {
+            "title": "Latest Event Published At",
+            "type": "string",
+            "format": "date-time"
+          },
+          "latest_event_level": {
+            "enum": [
+              "ABNORMAL",
+              "SERIOUS_ABNORMAL"
+            ],
+            "title": "Latest Event Level",
+            "type": "string"
+          },
+          "latest_event_direction": {
+            "anyOf": [
+              {
+                "enum": [
+                  "UP",
+                  "DOWN"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Event Direction"
+          },
+          "latest_event_source_title": {
+            "title": "Latest Event Source Title",
+            "type": "string"
+          },
+          "latest_event_source_url": {
+            "title": "Latest Event Source Url",
+            "type": "string"
+          },
+          "next_triggers": {
+            "items": {
+              "$ref": "#/components/schemas/RegulationNextTriggerItem"
+            },
+            "title": "Next Triggers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "code",
+          "symbol",
+          "name",
+          "exchange",
+          "segment",
+          "official_event_count_30d",
+          "latest_source_event_id",
+          "latest_event_date",
+          "latest_event_published_at",
+          "latest_event_level",
+          "latest_event_direction",
+          "latest_event_source_title",
+          "latest_event_source_url",
+          "next_triggers"
+        ],
+        "title": "RegulationRecentEventStockItem",
+        "type": "object"
+      },
+      "RegulationRecentNextTriggerResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "calculation_id": {
+            "format": "uuid",
+            "title": "Calculation Id",
+            "type": "string"
+          },
+          "calculation_status": {
+            "enum": [
+              "SUCCEEDED",
+              "PARTIAL"
+            ],
+            "title": "Calculation Status",
+            "type": "string"
+          },
+          "completed_at": {
+            "title": "Completed At",
+            "type": "string",
+            "format": "date-time"
+          },
+          "event_watermark": {
+            "title": "Event Watermark",
+            "type": "string",
+            "format": "date-time"
+          },
+          "algorithm_version": {
+            "title": "Algorithm Version",
+            "type": "string"
+          },
+          "rule_set_version": {
+            "title": "Rule Set Version",
+            "type": "string"
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/RegulationCoverage"
+          },
+          "returned_count": {
+            "maximum": 500,
+            "minimum": 0,
+            "title": "Returned Count",
+            "type": "integer"
+          },
+          "has_more": {
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "next_trade_date": {
+            "format": "date",
+            "title": "Next Trade Date",
+            "type": "string"
+          },
+          "lookback_trading_days": {
+            "const": 30,
+            "title": "Lookback Trading Days",
+            "type": "integer"
+          },
+          "lookback_start_date": {
+            "format": "date",
+            "title": "Lookback Start Date",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RegulationRecentEventStockItem"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "trade_date",
+          "calculation_id",
+          "calculation_status",
+          "completed_at",
+          "event_watermark",
+          "algorithm_version",
+          "rule_set_version",
+          "coverage",
+          "returned_count",
+          "has_more",
+          "next_cursor",
+          "next_trade_date",
+          "lookback_trading_days",
+          "lookback_start_date",
+          "items"
+        ],
+        "title": "RegulationRecentNextTriggerResponse",
+        "type": "object"
       }
     },
     "requestBodies": {

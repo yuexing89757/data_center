@@ -229,6 +229,14 @@ def test_fastapi_preflight_checks_call_auction_market_snapshot_rpc() -> None:
     assert "api_v1.query_latest_stock_quotes(text[],integer)" not in PUBLISHED_FUNCTIONS
 
 
+def test_fastapi_preflight_checks_regulation_trigger_query_rpcs() -> None:
+    assert "api_v1.query_regulation_triggers(date,text,integer)" in PUBLISHED_FUNCTIONS
+    assert (
+        "api_v1.query_regulation_recent_event_next_triggers(date,text,integer)"
+        in PUBLISHED_FUNCTIONS
+    )
+
+
 def test_latest_stock_daily_indicator_rpc_is_private_and_bounded() -> None:
     migration = (
         (MIGRATION_DIR / "20260822000100_query_latest_stock_daily_indicators.sql")

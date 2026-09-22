@@ -10,6 +10,57 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-21-regulation-trigger-query-design.md`
 
+## 2026-09-22 Public-Read Continuation Checkpoint
+
+The owner authorized completing the two RPCs, FastAPI routes/models, contracts and
+tests, followed by production migration and deployment. This continuation does not
+change the existing collection schedule, enable reconciliation, or authorize a
+historical recomputation. Task 6 remains a separate unfinished delivery.
+
+- Work branch: `codex/regulation-query-apis`, in the existing checkout as requested.
+- Existing unrelated operations-document edits are preserved.
+- Local API routes/models and RPC-only query service are implemented; focused tests
+  first failed on absent routes/models and then passed. These are not deployed APIs.
+- Three local contract drafts are synchronized using the existing FastAPI exporter
+  and `scripts/export_regulation_contracts.py`.
+- `tests/test_regulation_query_postgres.py` prepares real-database acceptance cases
+  for version selection, 30-session bounds, event watermark, pagination and grants.
+- Docker is now available. RPC acceptance tests ran RED for absent functions, then
+  GREEN against `20260922000100_add_regulation_trigger_query_apis.sql` on a new,
+  loopback-only disposable PostgreSQL 15 container. No production database was used.
+- Before adversarial review: formatting, Ruff and mypy passed; the complete suite
+  returned 1057 passed and 4 environment skips (missing pg_dump and Windows symlink
+  support). These results do not clear the subsequent release blocker below.
+- **Resolved release blocker, reproduced locally before the fix:** an official event
+  inserted by delayed collection/Raw replay after publication can retain an older
+  `observed_at <= event_watermark`. The recent-events RPC then changes event counts
+  and ordering under the same calculation ID and can omit stocks across pages.
+  `test_regulation_recent_rpc_pages_do_not_change_after_late_raw_replay` now passes
+  against captured input membership. A timestamp cutoff alone cannot
+  reconstruct the original REPEATABLE READ input membership.
+- The approved fix persists actual calculation/event input association in the
+  calculation write path and requires Worker delivery. Historical membership is
+  not fabricated, and queries do not silently fall back to another calculation.
+- Owner subsequently approved the consistency fix and Worker update, without
+  automatic historical recomputation. Implementation checklist:
+  - [x] Capture immutable natural keys/content hashes from the loaded calculation
+    input into `calculation_run.input_event_keys` atomically when starting a run.
+  - [x] Join only those keys in recent-event queries; legacy null returns P0002,
+    captured empty arrays return an empty list. Do not repair old runs implicitly.
+  - [x] Verify late replay, empty/legacy runs, failed-run retry and version pinning.
+  - [ ] Complete full gates and review, then protected migration and API/Worker
+    deployment; keep schedule unchanged and do not run historical ingestion.
+- Fresh full verification after the fix: 1063 passed, 4 environment skips; Ruff
+  format/check and mypy pass. The independent reviewer cleared the blocker.
+- The owner authorized merging into master, pushing, protected migration and
+  API/Worker deployment, and waived database/Raw backups and restore drills for this
+  release. Production work still follows the runbook; no historical recomputation.
+
+Public-read details follow the domain design: return `has_more`; bind cursors to
+endpoint, exact date, page size and calculation ID, and keep subsequent pages on
+that published calculation even if a newer version appears. A historical name
+missing from the name-history facts remains null, never a current-name fallback.
+
 ## Global Constraints
 
 - Create and link a GitHub Issue before implementation; GitHub Issues are the only task-planning system of record.

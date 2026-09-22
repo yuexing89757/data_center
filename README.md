@@ -38,6 +38,17 @@ See [INSTALL-WINDOWS.md](INSTALL-WINDOWS.md) for the Chinese installation and ve
 
 ## Development
 
+Regulation public reads (migration `20260922000100`):
+`GET /api/v1/regulation/triggers` and
+`GET /api/v1/regulation/recent-events/next-triggers` require an exact `trade_date`
+and API key, with `limit` 1–500 and an optional calculation-pinned `cursor`.
+They read published calculations only; no ingestion or recomputation is triggered.
+The recent-event query uses the actual immutable event input list captured by the
+Worker. Legacy runs without that list return 404 rather than reconstructing history;
+an explicitly captured empty list returns 200 with no items. These are deterministic
+rule conditions, not predictions. Deployment requires both API and Worker updates;
+this change does not alter job schedules or automatically recompute historical runs.
+
 Ingestion reliability: invalid normalized shareholder-count rows are retained in Raw and
 ERROR audit records, while valid rows publish with a partial outcome (ADR-0057). Regulation
 benchmark collection verifies and fills its 30-trading-session input window. The Worker's

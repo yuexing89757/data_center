@@ -16,6 +16,7 @@ from market_data_center.domain.regulation import (
     RegulationCalculationRun,
     RegulationCalculationSummary,
     RegulationCoverage,
+    RegulationEventRecord,
     RegulationRunStatus,
 )
 from market_data_center.regulation_calculator import calculate_regulation
@@ -26,7 +27,9 @@ class RegulationPersistencePort(Protocol):
 
     def find_calculation(self, trade_date: date, input_hash: str) -> UUID | None: ...
 
-    def start_calculation(self, run: RegulationCalculationRun) -> UUID: ...
+    def start_calculation(
+        self, run: RegulationCalculationRun, input_events: tuple[RegulationEventRecord, ...]
+    ) -> UUID: ...
 
     def publish_calculation(
         self, run: RegulationCalculationRun, output: RegulationCalculationOutput
@@ -137,7 +140,8 @@ class RegulationService:
             started_at=started_at,
             completed_at=None,
         )
-        calculation_id = self._persistence.start_calculation(running)
+        input_events = tuple(event for candidate in source.candidates for event in candidate.events)
+        calculation_id = self._persistence.start_calculation(running, input_events)
         running = replace(running, calculation_id=calculation_id)
         try:
             output = self._calculator(source)

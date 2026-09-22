@@ -31,6 +31,8 @@ EXPECTED_ENDPOINTS = {
     "query_dragon_tiger_trades_by_seat",
     "query_dragon_tiger_event_metrics",
     "query_hot_money_actions_by_date",
+    "query_regulation_triggers",
+    "query_regulation_recent_event_next_triggers",
 }
 
 
