@@ -1,9 +1,9 @@
 # 存储生命周期与定时清理设计
 
 - 日期：2026-09-22
-- 状态：Scope approved; detailed design awaiting review（尚未实现）
+- 状态：Approved（项目所有者于2026-09-22确认详设；尚未实现）
 - GitHub Issue：[\#84](https://github.com/yuexing89757/data_center/issues/84)
-- 关联：ADR-0006、ADR-0015、ADR-0017、ADR-0019、ADR-0050、ADR-0054、ADR-0058（Proposed）
+- 关联：ADR-0006、ADR-0015、ADR-0017、ADR-0019、ADR-0050、ADR-0054、ADR-0058（Accepted）
 
 ## 1. 目标与现状
 
@@ -194,5 +194,5 @@ reader不能直接回滚运行；需选择兼容版本，或先通过受控、�
 - 发布清理：当前双服务不同版本、依赖位于旧目录、两个回滚版本、未知目录、引用变化及默认预览。
 - 运行 ruff format/check、mypy、完整pytest及隔离数据库门禁，禁止使用生产库作集成测试。
 
-本轮只形成详设和ADR草案；文档经复核后才进入实施计划、migration与代码。用户尚未授权本次
+详设已经确认，实施按同日的存储清理与发布物清理两个计划推进；计划中的代码和migration尚未交付。用户尚未授权本次
 生产迁移、部署或首次生产清理。如发现Raw/数据库历史缺口，不通过本功能自动补造或掩盖。
