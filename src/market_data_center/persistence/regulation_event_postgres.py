@@ -100,7 +100,6 @@ class PostgreSQLRegulationEventPersistence:
                     text("""
                         select source_content_hash from regulation.event
                         where source_code=:source_code and source_event_id=:source_event_id
-                        for update
                     """),
                     {
                         "source_code": record.source_code,
@@ -120,7 +119,6 @@ class PostgreSQLRegulationEventPersistence:
                           and period_end_date=:period_end_date
                           and event_level=:event_level
                           and direction is not distinct from :direction
-                        for update
                     """),
                     _event_params(record, run),
                 ).one_or_none()

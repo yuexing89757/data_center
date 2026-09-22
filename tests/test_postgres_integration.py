@@ -436,10 +436,18 @@ def test_regulation_schema_catalog_constraints_and_private_grants(
             connection.execute("select count(*) from regulation.rule")
 
 
+@pytest.mark.parametrize("as_worker", [False, True])
 def test_regulation_event_persistence_is_immutable_idempotent_and_private(
     database_engine: Engine,
+    as_worker: bool,
+    request: pytest.FixtureRequest,
 ) -> None:
     _commit_security_prerequisite(PostgreSQLPersistence(database_engine))
+    if as_worker:
+        database_engine = create_engine(
+            database_engine.url, connect_args={"options": "-c role=market_data_worker"}
+        )
+        request.addfinalizer(database_engine.dispose)
     persistence = PostgreSQLRegulationEventPersistence(database_engine)
     request_params = {
         "observed_from": "2026-07-28T00:00:00+00:00",
