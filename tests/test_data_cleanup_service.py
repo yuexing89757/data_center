@@ -5,6 +5,7 @@ import pytest
 from market_data_center.data_cleanup_service import (
     DataCleanupService,
     DataCleanupSummary,
+    quality_result_cutoff,
     retention_cutoff,
     six_calendar_months_before,
 )
@@ -25,7 +26,7 @@ class FakeCleanupPersistence:
         self.requested_dates: tuple[date, int] | None = None
         self.deleted_before: date | None = None
         self.history_deleted_before: date | None = None
-        self.quality_results_deleted_before: date | None = None
+        self.quality_result_deleted_before: date | None = None
 
     def latest_completed_trading_dates(self, reference_date: date, limit: int) -> tuple[date, ...]:
         self.requested_dates = (reference_date, limit)
@@ -42,7 +43,7 @@ class FakeCleanupPersistence:
         return self.history_deleted_rows
 
     def delete_quality_results_before(self, cutoff_date: date) -> int:
-        self.quality_results_deleted_before = cutoff_date
+        self.quality_result_deleted_before = cutoff_date
         return self.quality_result_deleted_rows
 
 
@@ -84,7 +85,7 @@ def test_cleanup_service_deletes_only_after_cutoff_is_resolved() -> None:
         dates=(date(2026, 9, 2), date(2026, 9, 1), date(2026, 8, 31)),
         verified_and_deleted=(123, 123),
         history_deleted_rows=45,
-        quality_result_deleted_rows=7,
+        quality_result_deleted_rows=67,
     )
 
     result = DataCleanupService(persistence).run(date(2026, 9, 3))
@@ -97,12 +98,12 @@ def test_cleanup_service_deletes_only_after_cutoff_is_resolved() -> None:
         history_cutoff_date=date(2026, 3, 3),
         history_deleted_rows=45,
         quality_result_cutoff_date=date(2026, 8, 4),
-        quality_result_deleted_rows=7,
+        quality_result_deleted_rows=67,
     )
     assert persistence.requested_dates == (date(2026, 9, 3), 3)
     assert persistence.deleted_before == date(2026, 8, 31)
     assert persistence.history_deleted_before == date(2026, 3, 3)
-    assert persistence.quality_results_deleted_before == date(2026, 8, 4)
+    assert persistence.quality_result_deleted_before == date(2026, 8, 4)
 
 
 def test_cleanup_service_does_not_delete_when_calendar_history_is_incomplete() -> None:
@@ -114,6 +115,7 @@ def test_cleanup_service_does_not_delete_when_calendar_history_is_incomplete() -
         DataCleanupService(persistence).run(date(2026, 9, 3))
 
     assert persistence.deleted_before is None
+    assert persistence.quality_result_deleted_before is None
 
 
 def test_cleanup_summary_rejects_negative_deleted_count() -> None:
@@ -128,6 +130,29 @@ def test_cleanup_summary_rejects_negative_deleted_count() -> None:
             quality_result_cutoff_date=date(2026, 8, 4),
             quality_result_deleted_rows=0,
         )
+
+
+def test_cleanup_summary_rejects_negative_quality_result_deleted_count() -> None:
+    with pytest.raises(ValueError, match="quality_result_deleted_rows"):
+        DataCleanupSummary(
+            cutoff_date=date(2026, 8, 31),
+            retained_trading_days=3,
+            verified_rows=0,
+            deleted_rows=0,
+            history_cutoff_date=date(2026, 3, 3),
+            history_deleted_rows=0,
+            quality_result_cutoff_date=date(2026, 8, 4),
+            quality_result_deleted_rows=-1,
+        )
+
+
+def test_quality_result_cutoff_returns_thirty_calendar_days_before() -> None:
+    assert quality_result_cutoff(date(2026, 9, 16)) == date(2026, 8, 17)
+
+
+def test_quality_result_cutoff_crosses_month_and_year_boundaries() -> None:
+    assert quality_result_cutoff(date(2026, 3, 1)) == date(2026, 1, 30)
+    assert quality_result_cutoff(date(2027, 1, 15)) == date(2026, 12, 16)
 
 
 @pytest.mark.parametrize(

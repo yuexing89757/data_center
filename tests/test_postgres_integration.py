@@ -1337,6 +1337,90 @@ def test_cleanup_persistence_deletes_expired_history_only(
     assert remaining == [date(2026, 9, 2)]
 
 
+def test_cleanup_persistence_deletes_expired_quality_results_only(
+    database_engine: Engine,
+) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    old_ingestion_id = uuid4()
+    new_ingestion_id = uuid4()
+    with database_engine.begin() as connection:
+        connection.execute(
+            text("""
+                insert into ingestion.ingestion_run (
+                    ingestion_id, provider_code, dataset_code, status,
+                    requested_at, started_at, finished_at
+                ) values
+                    (:old_ingestion_id, 'baostock', 'security', 'succeeded',
+                     :old_at, :old_at, :old_at),
+                    (:new_ingestion_id, 'baostock', 'security', 'succeeded',
+                     :new_at, :new_at, :new_at)
+            """),
+            {
+                "old_ingestion_id": old_ingestion_id,
+                "new_ingestion_id": new_ingestion_id,
+                "old_at": datetime(2026, 8, 16, 15, 0, 0, tzinfo=UTC),
+                "new_at": datetime(2026, 8, 16, 17, 0, 0, tzinfo=UTC),
+            },
+        )
+    with database_engine.begin() as connection:
+        connection.execute(
+            text("""
+                insert into audit.quality_result (
+                    quality_result_id, ingestion_id, dataset_code, rule_code,
+                    severity, status, message, created_at
+                ) values
+                    (:old_id, :old_ingestion_id, 'security',
+                     'security.provider_normalization', 'info', 'passed',
+                     'old', :before_cutoff),
+                    (:new_id, :new_ingestion_id, 'security',
+                     'security.provider_normalization', 'info', 'passed',
+                     'new', :after_cutoff)
+            """),
+            {
+                "old_id": uuid4(),
+                "old_ingestion_id": old_ingestion_id,
+                "new_id": uuid4(),
+                "new_ingestion_id": new_ingestion_id,
+                # 2026-08-17 Shanghai midnight == 2026-08-16 16:00 UTC.
+                "before_cutoff": datetime(2026, 8, 16, 15, 0, 0, tzinfo=UTC),
+                "after_cutoff": datetime(2026, 8, 16, 17, 0, 0, tzinfo=UTC),
+            },
+        )
+
+    deleted = persistence.delete_quality_results_before(date(2026, 8, 17))
+
+    assert deleted == 1
+    with database_engine.connect() as connection:
+        remaining = (
+            connection.execute(
+                text("""
+                select message
+                from audit.quality_result
+                order by created_at
+            """)
+            )
+            .scalars()
+            .all()
+        )
+    assert remaining == ["new"]
+
+
+def test_only_worker_can_delete_quality_results(
+    migrated_database_url: str,
+) -> None:
+    relation = sql.Identifier("audit", "quality_result")
+    with psycopg.connect(migrated_database_url, autocommit=True) as connection:
+        connection.execute("set role market_data_worker")
+        connection.execute(sql.SQL("delete from {} where false").format(relation))
+        connection.execute("reset role")
+
+        for role in ("anon", "authenticated", "market_data_api"):
+            connection.execute(sql.SQL("set role {}").format(sql.Identifier(role)))
+            with pytest.raises(InsufficientPrivilege):
+                connection.execute(sql.SQL("delete from {} where false").format(relation))
+            connection.execute("rollback")
+
+
 def test_only_worker_can_delete_series_snapshot_details(
     migrated_database_url: str,
 ) -> None:

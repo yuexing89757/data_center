@@ -72,7 +72,6 @@ insert into operations.workflow_run (
             )
         return value is True
 
-<<<<<<< HEAD
     def has_completed_on_date(self, workflow_code: WorkflowCode, trade_date: date) -> bool:
         """Return True if the workflow has a succeeded or partial run on trade_date."""
         with self._engine.connect() as connection:
@@ -82,18 +81,6 @@ insert into operations.workflow_run (
                         select 1 from operations.workflow_run
                         where workflow_code=:workflow_code
                           and status in ('succeeded', 'partial')
-=======
-    def has_succeeded_or_partial_on_date(
-        self, workflow_code: WorkflowCode, trade_date: date
-    ) -> bool:
-        with self._engine.connect() as connection:
-            value = connection.scalar(
-                text("""
-                    select exists (
-                        select 1 from operations.workflow_run
-                        where workflow_code=:workflow_code
-                          and status in ('succeeded','partial')
->>>>>>> branch 'master' of https://github.com/yuexing89757/data_center.git
                           and (scheduled_for at time zone 'Asia/Shanghai')::date=:trade_date
                     )
                 """),

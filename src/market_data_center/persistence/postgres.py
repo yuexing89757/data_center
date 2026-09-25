@@ -265,7 +265,7 @@ where trade_date < :cutoff_date
 
 DELETE_QUALITY_RESULTS_BEFORE = text("""
 delete from audit.quality_result
-where created_at < :cutoff_date
+where created_at < cast(:cutoff_date as timestamp) at time zone 'Asia/Shanghai'
 """)
 
 LATEST_COMPLETED_TRADING_DATES = text("""

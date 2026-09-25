@@ -773,7 +773,6 @@ def run_dragon_tiger_seat_profile_job() -> None:
 def _require_dragon_tiger_profile_prerequisites(
     operations: PostgreSQLOperationsPersistence, trade_date: date
 ) -> None:
-<<<<<<< HEAD
     # daily_market accepts succeeded or partial: partial means some symbols have gaps
     # but enough data was collected for seat-profile derivation.
     if not operations.has_completed_on_date(WorkflowCode.DAILY_MARKET, trade_date):
@@ -781,15 +780,6 @@ def _require_dragon_tiger_profile_prerequisites(
     # dragon_tiger_daily must fully succeed: a partial run means billboard data is
     # incomplete and seat-profile calculation would produce incorrect results.
     if not operations.has_succeeded_on_date(WorkflowCode.DRAGON_TIGER_DAILY, trade_date):
-=======
-    daily_market_ready = operations.has_succeeded_or_partial_on_date(
-        WorkflowCode.DAILY_MARKET, trade_date
-    )
-    dragon_tiger_ready = operations.has_succeeded_on_date(
-        WorkflowCode.DRAGON_TIGER_DAILY, trade_date
-    )
-    if not daily_market_ready or not dragon_tiger_ready:
->>>>>>> branch 'master' of https://github.com/yuexing89757/data_center.git
         raise ProviderError("DT_PROFILE_PREREQUISITE_FAILED")
 
 
@@ -843,7 +833,7 @@ def run_regulation_daily_calculation_job() -> None:
 
 
 def run_data_cleanup_job() -> None:
-    """Delete auction-series details older than three completed trading days."""
+    """Delete auction-series details, old history snapshots, and stale quality results."""
     settings = WorkerSettings()  # type: ignore[call-arg]
     scheduling = SchedulerSettings()
     engine = create_engine(
