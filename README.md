@@ -12,6 +12,10 @@ packaged HTTP API is not enabled by the Worker release; no OS-level collection s
 release gates, read-only smoke checks, and rollback boundaries. Packaging does not prove that
 production backup restore or credential rotation has passed.
 
+The current same-host production services use loopback PostgreSQL with separate credentials and
+systemd 255 restart-backoff drop-ins (10–120 seconds). Preserve the protected environment and
+drop-ins on later releases; the [runbook](docs/最小生产发布运行手册.md) records verification and rollback.
+
 ## Windows deployment
 
 Install `uv`, then prepare the environment with the root deployment script. On the first run it creates `.env`; fill `DATABASE_URL` and `RAW_DATA_ROOT`, then run the same command again. The Worker builds its PYTDX pool when it starts:
@@ -33,6 +37,23 @@ This launches the FastAPI read-only API (`http://127.0.0.1:8000`) and the `marke
 See [INSTALL-WINDOWS.md](INSTALL-WINDOWS.md) for the Chinese installation and verification guide.
 
 ## Development
+
+Regulation public reads (migration `20260922000100`):
+`GET /api/v1/regulation/triggers` and
+`GET /api/v1/regulation/recent-events/next-triggers` require an exact `trade_date`
+and API key, with `limit` 1–500 and an optional calculation-pinned `cursor`.
+They read published calculations only; no ingestion or recomputation is triggered.
+The recent-event query uses the actual immutable event input list captured by the
+Worker. Legacy runs without that list return 404 rather than reconstructing history;
+an explicitly captured empty list returns 200 with no items. These are deterministic
+rule conditions, not predictions. Deployment requires both API and Worker updates;
+this change does not alter job schedules or automatically recompute historical runs.
+
+Ingestion reliability: invalid normalized shareholder-count rows are retained in Raw and
+ERROR audit records, while valid rows publish with a partial outcome (ADR-0057). Regulation
+benchmark collection verifies and fills its 30-trading-session input window. The Worker's
+singleton database lock uses autocommit and a 30-second heartbeat; loss stops scheduling.
+See [recovery notes](docs/Raw重放与运行恢复.md) before any authorized production replay.
 
 Build one exact-date same-day limit-up snapshot manually (never falls back to an older date):
 
@@ -239,10 +260,11 @@ immutable Raw data. See [ADR-0003](docs/adr/ADR-0003-同花顺动态板块指数
 
 The daily local-TDX workflow and cross-platform APScheduler deployment are documented in [docs/Worker日常采集与调度.md](docs/Worker日常采集与调度.md).
 
-The opt-in Regulation workflow runs inside the Worker at 22:30 Asia/Shanghai on weekdays. It
-collects the three allowlisted official benchmark indices, evaluates the configured exchange rules,
-and persists deterministic next-session trigger scenarios. Enable it only after applying the ordered
-migration with `REGULATION_DAILY_ENABLED=true`; run one exact date manually with
+The opt-in Regulation workflow runs inside the Worker at 22:00 Asia/Shanghai on weekdays. It
+collects SSE/SZSE official regulation events and the three allowlisted official benchmark indices,
+evaluates the configured exchange rules, and persists deterministic next-session trigger scenarios.
+An independent 08:30 reconciliation run versions late official events. Enable these jobs only after
+source-rights review and the ordered migrations; run one exact date manually with
 `market-data-center regulation-calculate --trade-date YYYY-MM-DD`. Its output is a rules-based
 condition calculation, not a prediction or a statement that suspension or another action is certain.
 

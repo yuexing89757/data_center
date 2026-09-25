@@ -1,3 +1,4 @@
+import gzip
 from collections.abc import Sequence
 from datetime import UTC, date, datetime
 from json import dumps
@@ -113,3 +114,34 @@ def test_orphan_scan_rejects_partition_date_mismatch(tmp_path: Path) -> None:
 
     with pytest.raises(RawIntegrityError, match="partition"):
         DragonTigerOrphanRecovery(raw_store=store, persistence=Persistence()).scan()
+
+
+@pytest.mark.parametrize("keep_plain", [False, True])
+def test_orphan_scan_keeps_one_logical_identity_for_gzip(tmp_path: Path, keep_plain: bool) -> None:
+    store = LocalRawStore(tmp_path)
+    stored = store.write_jsonl(
+        provider="eastmoney",
+        dataset="dragon_tiger",
+        partition_date=date(2025, 1, 3),
+        ingestion_id=INGESTION_ID,
+        rows=_raw_rows(),
+        schema_version="eastmoney.dragon_tiger.v3",
+    )
+    plain = tmp_path / stored.object_path
+    compressed = plain.with_name(plain.name + ".gz")
+    compressed.write_bytes(gzip.compress(plain.read_bytes(), mtime=0))
+    if not keep_plain:
+        plain.unlink()
+    recovery = DragonTigerOrphanRecovery(
+        raw_store=store, persistence=Persistence(), clock=lambda: NOW
+    )
+
+    scan = recovery.scan()
+
+    assert len(scan.candidates) == 1
+    candidate = scan.candidates[0]
+    assert candidate.object_path == stored.object_path
+    assert candidate.content_sha256 == stored.content_sha256
+    assert candidate.byte_size == stored.byte_size
+    assert candidate.row_count == stored.row_count
+    assert compressed.exists()

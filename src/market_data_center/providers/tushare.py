@@ -882,7 +882,7 @@ def _map_shareholder_count(row: Mapping[str, str]) -> ShareholderCountRecord:
     _, _, symbol = _normalize_symbol(row["ts_code"])
     statistics_date = _parse_date(row["end_date"])
     announcement_date = _parse_date(row["ann_date"])
-    shareholder_count = _strict_positive_integer(row.get("holder_num"), "holder_num")
+    shareholder_count = _strict_integer(row.get("holder_num"), "holder_num")
     return ShareholderCountRecord(
         symbol=symbol,
         statistics_date=statistics_date,
@@ -968,13 +968,12 @@ def _optional_int(value: str | None) -> int | None:
         raise ProviderError(f"invalid Tushare integer: {value}") from error
 
 
-def _strict_positive_integer(value: str | None, field_name: str) -> int:
-    if value is None or not value.strip() or not value.strip().isdigit():
+def _strict_integer(value: str | None, field_name: str) -> int:
+    # Parse the source's integer faithfully; domain validation quarantines <= 0.
+    candidate = value.strip() if value is not None else ""
+    if not candidate or not candidate.removeprefix("-").isdigit():
         raise ProviderError(f"invalid Tushare integer: {field_name}")
-    result = int(value)
-    if result <= 0:
-        raise ProviderError(f"Tushare {field_name} must be positive")
-    return result
+    return int(candidate)
 
 
 def _decimal(value: str | None) -> Decimal | None:

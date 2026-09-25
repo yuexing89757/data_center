@@ -897,6 +897,50 @@ def test_shareholder_count_request_with_only_missing_values_is_failed_and_retain
     assert prepared.quality_results[0].rule_code == "shareholder_count.missing_source_value"
 
 
+@pytest.mark.parametrize("include_valid", [True, False])
+def test_shareholder_invalid_dates_are_quarantined_without_discarding_valid_rows(
+    tmp_path: Path, include_valid: bool
+) -> None:
+    class AbortPersistence(StubPersistence):
+        def abort_shareholder_count_batches(self, batches, *, error_type):
+            pass
+
+    class InvalidDateProvider(StubShareholderCountProvider):
+        def fetch_shareholder_counts(self, source_symbol, start_date, end_date):
+            valid = _shareholder_count()
+            invalid = replace(
+                valid, statistics_date=date(2026, 9, 7), announcement_date=date(2026, 9, 4)
+            )
+            records = [valid, invalid] if include_valid else [invalid]
+            return ProviderBatch(
+                records=records,
+                raw_rows=[{"row": str(i)} for i in range(len(records))],
+                request_params={},
+                schema_version="tushare.shareholder_count.v1",
+            )
+
+    pipeline = IngestionPipeline(
+        provider=InvalidDateProvider(),
+        raw_store=LocalRawStore(tmp_path),
+        persistence=AbortPersistence(),
+    )
+    prepared = pipeline.prepare_shareholder_count_request(
+        None, date(2026, 8, 23), date(2026, 9, 21)
+    )
+    assert prepared.run.status is (
+        IngestionStatus.PARTIAL if include_valid else IngestionStatus.FAILED
+    )
+    assert prepared.run.accepted_rows == int(include_valid)
+    assert prepared.run.rejected_rows == 1
+    assert prepared.manifest is not None
+    assert prepared.manifest.row_count == 1 + int(include_valid)
+    finding = prepared.quality_results[0]
+    assert finding.severity.value == "error"
+    assert finding.status.value == "failed"
+    assert finding.natural_key["statistics_date"] == "2026-09-07"
+    assert "announcement precedes" in finding.message
+
+
 def test_provider_failure_marks_run_failed_without_leaking_message(tmp_path: Path) -> None:
     provider = StubProvider()
     provider.fail_security = True

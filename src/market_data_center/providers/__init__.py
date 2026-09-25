@@ -12,6 +12,7 @@ from market_data_center.providers.contracts import (
     ProviderBatch,
     ProviderError,
     ProviderRequestUnavailable,
+    RegulationEventProvider,
 )
 from market_data_center.providers.eastmoney_dragon_tiger import (
     EastmoneyDragonTigerAdapter,
@@ -30,6 +31,8 @@ from market_data_center.providers.router import (
     RoutedResult,
     RoutingAttempt,
 )
+from market_data_center.providers.sse_regulation import SSEOfficialRegulationEventProvider
+from market_data_center.providers.szse_regulation import SZSEOfficialRegulationEventProvider
 from market_data_center.providers.tushare import TushareBseSecurityProvider, TushareProvider
 
 __all__ = [
@@ -49,8 +52,11 @@ __all__ = [
     "ProviderRouter",
     "ProviderRoutingError",
     "PytdxProvider",
+    "RegulationEventProvider",
     "RoutedResult",
     "RoutingAttempt",
+    "SSEOfficialRegulationEventProvider",
+    "SZSEOfficialRegulationEventProvider",
     "TushareBseSecurityProvider",
     "TushareProvider",
     "available_board_index_provider_codes",

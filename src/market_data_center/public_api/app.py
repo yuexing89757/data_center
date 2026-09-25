@@ -61,6 +61,8 @@ from market_data_center.public_api.models import (
     LatestStockQuoteQuery,
     LatestStockQuoteResponse,
     LimitUpPoolResponse,
+    RegulationRecentNextTriggerResponse,
+    RegulationTriggerResponse,
     SecuritySearchResponse,
     TopGainers20dResponse,
 )
@@ -169,6 +171,60 @@ def create_app(
         tencent_quote_live_service or DirectTencentQuoteLiveService.from_settings(configured)
     )
     _install_exception_handlers(app)
+
+    @app.get(
+        "/api/v1/regulation/triggers",
+        response_model=RegulationTriggerResponse,
+        responses={status: {"model": ErrorResponse} for status in (401, 404, 422, 503)},
+        tags=["市场数据"],
+        summary="查询收盘达到异常或严重异常条件的股票",
+        description=(
+            "精确查询指定交易日的已发布计算版本，不回退日期。按股票聚合触发规则，"
+            "分别返回系统计算状态和交易所公告状态；仅查数据库，不触发采集或重算。"
+            "结果是规则条件测算，不是价格预测或交易所正式认定。"
+        ),
+    )
+    def regulation_triggers(
+        _: ApiKeyDependency,
+        service: QueryServiceDependency,
+        trade_date: Annotated[date, Query(ge=date(2026, 7, 6))],
+        limit: Annotated[int, Query(ge=1, le=500)] = 100,
+        cursor: Annotated[str | None, Query(min_length=1, max_length=2048)] = None,
+    ) -> RegulationTriggerResponse:
+        try:
+            return service.regulation_triggers(trade_date, cursor, limit)
+        except PublicQueryInvalid as error:
+            raise HTTPException(422, "query parameters were rejected") from error
+        except PublicQueryTimeout as error:
+            raise PublicQueryUnavailable("regulation query timed out") from error
+
+    @app.get(
+        "/api/v1/regulation/recent-events/next-triggers",
+        response_model=RegulationRecentNextTriggerResponse,
+        responses={status: {"model": ErrorResponse} for status in (401, 404, 422, 503)},
+        tags=["市场数据"],
+        summary="查询近三十个交易日正式异动股票的下一交易日触发条件",
+        description=(
+            "精确日期、不回退；近30个交易日包含查询日，只接受计算事件水位以内的"
+            "且实际参与该批计算的交易所正式公告。旧批次没有公告输入清单时返回404，不推断历史。"
+            "返回普通异常和严重异常在基准指数-2%、0%、+2%三个情景下"
+            "所需收盘价、涨跌幅及可达性。已触发或不能仅按价格反解的规则不伪造价格。"
+            "仅查数据库，不触发采集或重算；不是股价预测，实际认定以交易所公告为准。"
+        ),
+    )
+    def regulation_recent_next_triggers(
+        _: ApiKeyDependency,
+        service: QueryServiceDependency,
+        trade_date: Annotated[date, Query(ge=date(2026, 7, 6))],
+        limit: Annotated[int, Query(ge=1, le=500)] = 100,
+        cursor: Annotated[str | None, Query(min_length=1, max_length=2048)] = None,
+    ) -> RegulationRecentNextTriggerResponse:
+        try:
+            return service.regulation_recent_next_triggers(trade_date, cursor, limit)
+        except PublicQueryInvalid as error:
+            raise HTTPException(422, "query parameters were rejected") from error
+        except PublicQueryTimeout as error:
+            raise PublicQueryUnavailable("regulation query timed out") from error
 
     @app.get(
         "/healthz",

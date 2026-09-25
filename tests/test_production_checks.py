@@ -24,6 +24,21 @@ VIEW_COUNT = cast(Any, SMOKE_CHECKS["_view_count"])
 PUBLISHED_FUNCTIONS = cast(tuple[str, ...], FASTAPI_CHECKS["PUBLISHED_FUNCTIONS"])
 
 
+def test_regulation_design_documents_lock_query_and_schedule_semantics() -> None:
+    adr = (PROJECT_ROOT / "docs/adr/ADR-0048-沪深主板与创业板监管异动规则测算.md").read_text(
+        encoding="utf-8"
+    )
+    design = (PROJECT_ROOT / "docs/领域详设-Regulation-2026-09-02.md").read_text(encoding="utf-8")
+    for required in (
+        "周一至周五22:00",
+        "api_v1.query_regulation_triggers",
+        "api_v1.query_regulation_recent_event_next_triggers",
+        "最近30个交易日",
+        "regulation_event_reconciliation",
+    ):
+        assert required in adr or required in design
+
+
 def test_regulation_migration_is_private_typed_and_has_26_official_rules() -> None:
     migration = (
         (MIGRATION_DIR / "20260902000100_create_regulation.sql").read_text(encoding="utf-8").lower()
@@ -52,6 +67,27 @@ def test_regulation_migration_is_private_typed_and_has_26_official_rules() -> No
     )
     assert all(token not in migration for token in ("ts_code", "'high'", "'medium'", "'low'"))
     assert "jsonb" not in migration
+
+
+def test_regulation_event_ingestion_migration_extends_controlled_catalogs() -> None:
+    migration = (
+        (MIGRATION_DIR / "20260921000100_add_regulation_event_ingestion.sql")
+        .read_text(encoding="utf-8")
+        .lower()
+    )
+
+    for provider in ("sse_official", "szse_official"):
+        assert f"'{provider}'" in migration
+    assert migration.count("'regulation_event'") >= 2
+    assert "'regulation_event_reconciliation'" in migration
+    assert "drop constraint regulation_event_direction_check" in migration
+    assert "direction is null or direction in ('up', 'down')" in migration
+    assert "on regulation.event (period_end_date desc, symbol)" in migration
+    assert not re.search(
+        r"(?im)^grant\s+.*\bon\s+regulation\.event\s+to\s+"
+        r"(public|anon|authenticated|market_data_api)",
+        migration,
+    )
 
 
 def test_dragon_tiger_replacement_migration_is_bounded_private_and_read_only() -> None:
@@ -191,6 +227,14 @@ def test_fastapi_preflight_checks_call_auction_market_snapshot_rpc() -> None:
     assert not any("persist_board_index_daily_bars_live" in item for item in PUBLISHED_FUNCTIONS)
     assert "api_v1.query_latest_stock_daily_indicators(text[])" in PUBLISHED_FUNCTIONS
     assert "api_v1.query_latest_stock_quotes(text[],integer)" not in PUBLISHED_FUNCTIONS
+
+
+def test_fastapi_preflight_checks_regulation_trigger_query_rpcs() -> None:
+    assert "api_v1.query_regulation_triggers(date,text,integer)" in PUBLISHED_FUNCTIONS
+    assert (
+        "api_v1.query_regulation_recent_event_next_triggers(date,text,integer)"
+        in PUBLISHED_FUNCTIONS
+    )
 
 
 def test_latest_stock_daily_indicator_rpc_is_private_and_bounded() -> None:

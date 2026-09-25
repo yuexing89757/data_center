@@ -6,6 +6,9 @@ from market_data_center.persistence.dragon_tiger_postgres import (
 )
 from market_data_center.persistence.operations_postgres import PostgreSQLOperationsPersistence
 from market_data_center.persistence.postgres import PostgreSQLPersistence
+from market_data_center.persistence.regulation_event_postgres import (
+    PostgreSQLRegulationEventPersistence,
+)
 from market_data_center.persistence.regulation_postgres import PostgreSQLRegulationPersistence
 from market_data_center.persistence.stock_pool_postgres import PostgreSQLStockPoolPersistence
 
@@ -14,6 +17,7 @@ __all__ = [
     "PostgreSQLDragonTigerPersistence",
     "PostgreSQLOperationsPersistence",
     "PostgreSQLPersistence",
+    "PostgreSQLRegulationEventPersistence",
     "PostgreSQLRegulationPersistence",
     "PostgreSQLStockPoolPersistence",
 ]

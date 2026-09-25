@@ -87,6 +87,13 @@ from market_data_center.domain.call_auction_market_series import (
     universe_hash,
 )
 from market_data_center.domain.operations import ExecutionStatus, TriggerSource, WorkflowCode
+from market_data_center.domain.regulation import (
+    RegulationDirection,
+    RegulationEventRecord,
+    RegulationEventType,
+    RegulationRuleLevel,
+    RegulationSegment,
+)
 from market_data_center.domain.today_limit_up import (
     LimitUpSourceRecord,
     TodayLimitUpSnapshotStatus,
@@ -109,6 +116,10 @@ from market_data_center.persistence.dragon_tiger_profile_postgres import (
 )
 from market_data_center.persistence.hot_money_postgres import PostgreSQLHotMoneyPersistence
 from market_data_center.persistence.operations_postgres import PostgreSQLOperationsPersistence
+from market_data_center.persistence.regulation_event_postgres import (
+    PostgreSQLRegulationEventPersistence,
+    RegulationEventContentConflict,
+)
 from market_data_center.persistence.regulation_postgres import (
     PostgreSQLRegulationPersistence,
 )
@@ -423,6 +434,77 @@ def test_regulation_schema_catalog_constraints_and_private_grants(
         connection.execute("set role anon")
         with pytest.raises(InsufficientPrivilege):
             connection.execute("select count(*) from regulation.rule")
+
+
+def test_regulation_event_persistence_is_immutable_idempotent_and_private(
+    database_engine: Engine,
+) -> None:
+    _commit_security_prerequisite(PostgreSQLPersistence(database_engine))
+    persistence = PostgreSQLRegulationEventPersistence(database_engine)
+    request_params = {
+        "observed_from": "2026-07-28T00:00:00+00:00",
+        "observed_to": "2026-07-29T00:00:00+00:00",
+    }
+    event = RegulationEventRecord(
+        symbol=SYMBOL,
+        exchange=Exchange.SSE,
+        segment=RegulationSegment.SSE_MAIN,
+        event_type=RegulationEventType.ABNORMAL_VOLATILITY,
+        event_level=RegulationRuleLevel.ABNORMAL,
+        direction=RegulationDirection.UP,
+        period_start_date=date(2026, 7, 24),
+        period_end_date=TRADE_DATE,
+        published_at=datetime.combine(TRADE_DATE, time.min, tzinfo=UTC),
+        effective_reset_date=None,
+        source_event_id="20260728:600000:1",
+        source_title="浦发银行 涨幅偏离累计达20%",
+        source_url="https://www.sse.com.cn/disclosure/test",
+        source_content_hash="a" * 64,
+        source_code="sse_official",
+        explicit_rule_codes=("SSE_MAIN_ABNORMAL_3D_DEV_UP",),
+        observed_at=NOW,
+    )
+
+    first = replace(
+        _running_run(DatasetCode.REGULATION_EVENT, ProviderCode.SSE_OFFICIAL),
+        request_params=request_params,
+    )
+    persistence.begin_ingestion(first)
+    first_summary = persistence.publish_success(_completed_run(first), (), (event,))
+
+    repeated = replace(
+        _running_run(DatasetCode.REGULATION_EVENT, ProviderCode.SSE_OFFICIAL),
+        request_params=request_params,
+    )
+    persistence.begin_ingestion(repeated)
+    repeated_summary = persistence.publish_success(_completed_run(repeated), (), (event,))
+
+    changed = replace(
+        _running_run(DatasetCode.REGULATION_EVENT, ProviderCode.SSE_OFFICIAL),
+        request_params=request_params,
+    )
+    persistence.begin_ingestion(changed)
+    with pytest.raises(RegulationEventContentConflict):
+        persistence.publish_success(
+            _completed_run(changed), (), (replace(event, source_content_hash="b" * 64),)
+        )
+
+    assert first_summary.unchanged_events == 0
+    assert repeated_summary.unchanged_events == 1
+    with database_engine.connect() as connection:
+        stored = connection.execute(
+            text(
+                "select count(*), min(source_content_hash) from regulation.event "
+                "where source_code='sse_official' and source_event_id=:source_event_id"
+            ),
+            {"source_event_id": event.source_event_id},
+        ).one()
+        assert stored == (1, "a" * 64)
+        for role in ("anon", "authenticated", "market_data_api"):
+            assert not connection.execute(
+                text("select has_table_privilege(:role, 'regulation.event', 'select')"),
+                {"role": role},
+            ).scalar_one()
 
 
 @pytest.fixture
@@ -8662,6 +8744,86 @@ insert into core.stock_daily_indicator (
             ).scalar_one()
             > 0
         )
+
+
+def test_regulation_benchmark_gaps_use_thirty_sessions_and_require_previous_close(
+    database_engine: Engine,
+) -> None:
+    ingestion_id = uuid4()
+    days = tuple(
+        date(2026, 8, 1) + timedelta(days=n)
+        for n in range(52)
+        if (date(2026, 8, 1) + timedelta(days=n)).weekday() < 5
+    )
+    with database_engine.begin() as connection:
+        connection.execute(
+            text("""
+insert into ingestion.ingestion_run
+(ingestion_id,provider_code,dataset_code,status,requested_at,started_at,finished_at)
+values (:id,'baostock','daily_bar','succeeded',now(),now(),now())
+"""),
+            {"id": ingestion_id},
+        )
+        connection.execute(
+            text("""
+insert into core.trading_calendar
+(market,trade_date,is_trading_day,source_code,ingestion_id)
+values ('CN_A_SHARE',:day,true,'baostock',:id)
+"""),
+            [{"day": day, "id": ingestion_id} for day in days],
+        )
+        connection.execute(
+            text("""
+insert into core.security
+(symbol,code,exchange,current_name,security_type,status,source_code,ingestion_id)
+values ('SSE:000002','000002','SSE','Benchmark','index','listed','baostock',:id)
+"""),
+            {"id": ingestion_id},
+        )
+        connection.execute(
+            text("""
+insert into core.daily_bar
+(symbol,trade_date,market,open,high,low,close,previous_close,volume,amount,trade_status,source_code,ingestion_id)
+values ('SSE:000002',:day,'CN_A_SHARE',100,100,100,100,:previous,1,100,'trading','baostock',:id)
+"""),
+            [
+                {"day": days[-1], "previous": 100, "id": ingestion_id},
+                {"day": days[-2], "previous": None, "id": ingestion_id},
+            ],
+        )
+    gaps = PostgreSQLRegulationPersistence(database_engine).benchmark_gaps(days[-1])
+    assert gaps["SSE:000002"] == days[-30:-1]
+    assert gaps["SZSE:399107"] == days[-30:]
+    assert gaps["SZSE:399102"] == days[-30:]
+    with pytest.raises(ValueError, match="calendar"):
+        PostgreSQLRegulationPersistence(database_engine).benchmark_gaps(days[5])
+
+
+def test_database_task_lock_holds_without_idle_transaction(database_engine: Engine) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    with (
+        persistence.task_lock("integration:autocommit-lock"),
+        database_engine.connect() as observer,
+    ):
+        states = (
+            observer.execute(
+                text("""
+select a.state from pg_stat_activity a
+where a.datname=current_database() and exists (
+select 1 from pg_locks l where l.pid=a.pid and l.locktype='advisory' and l.granted)
+""")
+            )
+            .scalars()
+            .all()
+        )
+        assert states == ["idle"]
+        with (
+            pytest.raises(RuntimeError, match="already running"),
+            persistence.task_lock("integration:autocommit-lock"),
+        ):
+            pytest.fail("second connection must not acquire the held lock")
+    with persistence.task_lock("integration:autocommit-lock"):
+        pass
 
 
 def _envelopes[

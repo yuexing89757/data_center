@@ -10,11 +10,13 @@ from pathlib import Path
 from signal import SIGINT, SIGTERM, signal
 from sqlite3 import Error as SQLiteError
 from sqlite3 import connect
+from threading import Event
 from time import sleep
 from types import FrameType
 from typing import Protocol
 from zoneinfo import ZoneInfo
 
+from apscheduler.events import EVENT_SCHEDULER_STARTED  # type: ignore[import-untyped]
 from apscheduler.executors.pool import ThreadPoolExecutor  # type: ignore[import-untyped]
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore  # type: ignore[import-untyped]
 from apscheduler.schedulers.blocking import BlockingScheduler  # type: ignore[import-untyped]
@@ -810,7 +812,8 @@ def run_regulation_daily_calculation_job() -> None:
                                 provider=provider,
                                 persistence=facts,
                                 raw_store=LocalRawStore(settings.raw_data_root),
-                            )
+                            ),
+                            PostgreSQLRegulationPersistence(engine),
                         ).collect(trade_date),
                     )
                 execution.step(
@@ -1112,10 +1115,31 @@ def run_worker(*, check: bool = False) -> None:
         raise SystemExit(0 if report.healthy else 1)
     worker_settings = WorkerSettings()  # type: ignore[call-arg]
     lock_engine = create_engine(
-        sqlalchemy_url(worker_settings.database_url.get_secret_value()), pool_pre_ping=True
+        sqlalchemy_url(worker_settings.database_url.get_secret_value()),
+        pool_pre_ping=True,
+        connect_args={
+            "connect_timeout": 10,
+            "keepalives": 1,
+            "keepalives_idle": 30,
+            "keepalives_interval": 10,
+            "keepalives_count": 3,
+            "options": "-c statement_timeout=15000",
+        },
     )
 
     scheduler: BlockingScheduler | None = None
+    lock_lost = Event()
+
+    def stop_after_lock_loss() -> None:
+        lock_lost.set()
+        LOGGER.error("scheduler database lock lost; stopping scheduling")
+        if scheduler is not None and scheduler.running:
+            scheduler.shutdown(wait=True)
+
+    def check_startup_lock(event: object) -> None:
+        del event
+        if lock_lost.is_set():
+            stop_after_lock_loss()
 
     def stop_scheduler(signum: int, frame: FrameType | None) -> None:
         del frame
@@ -1127,13 +1151,18 @@ def run_worker(*, check: bool = False) -> None:
     signal(SIGTERM, stop_scheduler)
     admin_server = None
     try:
-        with PostgreSQLPersistence(lock_engine).task_lock(SCHEDULER_LOCK_KEY):
+        with PostgreSQLPersistence(lock_engine).task_lock(
+            SCHEDULER_LOCK_KEY, on_lock_lost=stop_after_lock_loss
+        ):
             run_stale_recovery_job()
             scheduler, admin_server = prepare_locked_worker(
                 scheduler_settings,
                 PostgreSQLPersistence(lock_engine),
                 PostgreSQLOperationsPersistence(lock_engine),
             )
+            if lock_lost.is_set():
+                raise RuntimeError("scheduler lock connection lost during startup")
+            scheduler.add_listener(check_startup_lock, EVENT_SCHEDULER_STARTED)
             LOGGER.info("starting Market Data Center scheduler")
             scheduler.start()
     finally:

@@ -157,3 +157,32 @@ def test_daily_bar_explicitly_requests_unadjusted_prices() -> None:
 
 def test_standard_symbol_maps_to_baostock_source_symbol() -> None:
     assert BaoStockProvider(FakeClient()).source_symbol("SSE:600000") == "sh.600000"
+
+
+@pytest.mark.parametrize("raises", [True, False])
+def test_logout_failure_does_not_discard_successful_data_or_leak_source_message(
+    raises: bool, caplog: pytest.LogCaptureFixture
+) -> None:
+    class LogoutFailure(FakeClient):
+        def logout(self) -> FakeResponse:
+            if raises:
+                raise OSError("sensitive upstream message")
+            result = FakeResponse()
+            result.error_code = "1"
+            result.error_msg = "sensitive upstream message"
+            return result
+
+    with BaoStockProvider(LogoutFailure()) as provider:
+        records = provider.fetch_securities().records
+    assert len(records) == 1
+    assert "logout" in caplog.text
+    assert "sensitive upstream message" not in caplog.text
+
+
+def test_logout_failure_does_not_replace_original_exception() -> None:
+    class LogoutFailure(FakeClient):
+        def logout(self) -> FakeResponse:
+            raise OSError("logout network failure")
+
+    with pytest.raises(ValueError, match="original failure"), BaoStockProvider(LogoutFailure()):
+        raise ValueError("original failure")

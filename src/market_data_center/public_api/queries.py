@@ -29,11 +29,21 @@ from market_data_center.public_api.models import (
     HotMoneyActionResponse,
     LatestStockDailyIndicatorResponse,
     LimitUpPoolResponse,
+    RegulationRecentNextTriggerResponse,
+    RegulationTriggerResponse,
     SecurityItem,
     TopGainers20dResponse,
 )
 
 LOGGER = logging.getLogger(__name__)
+
+QUERY_REGULATION_TRIGGERS = text("""
+select api_v1.query_regulation_triggers(:trade_date, :cursor, :limit) as payload
+""")
+
+QUERY_REGULATION_RECENT_NEXT = text("""
+select api_v1.query_regulation_recent_event_next_triggers(:trade_date, :cursor, :limit) as payload
+""")
 
 QUERY_SECURITIES = text("""
 select *
@@ -206,6 +216,14 @@ class PublicQueryUnavailable(PublicQueryError):
 
 
 class PublicQueryService(Protocol):
+    def regulation_triggers(
+        self, trade_date: date, cursor: str | None, limit: int
+    ) -> RegulationTriggerResponse: ...
+
+    def regulation_recent_next_triggers(
+        self, trade_date: date, cursor: str | None, limit: int
+    ) -> RegulationRecentNextTriggerResponse: ...
+
     def ready(self) -> None: ...
 
     def search_securities(self, query: str, limit: int) -> tuple[SecurityItem, ...]: ...
@@ -554,6 +572,26 @@ class PostgreSQLPublicQueryService:
             {"symbol": symbol, "offset": offset, "limit": limit},
         )
         return AuctionIndicativeDetailResponse.model_validate(rows[0]["payload"])
+
+    def regulation_triggers(
+        self, trade_date: date, cursor: str | None, limit: int
+    ) -> RegulationTriggerResponse:
+        rows = self._execute(
+            QUERY_REGULATION_TRIGGERS,
+            {"trade_date": trade_date, "cursor": cursor, "limit": limit},
+            statement_timeout_ms=5000,
+        )
+        return RegulationTriggerResponse.model_validate(rows[0]["payload"])
+
+    def regulation_recent_next_triggers(
+        self, trade_date: date, cursor: str | None, limit: int
+    ) -> RegulationRecentNextTriggerResponse:
+        rows = self._execute(
+            QUERY_REGULATION_RECENT_NEXT,
+            {"trade_date": trade_date, "cursor": cursor, "limit": limit},
+            statement_timeout_ms=5000,
+        )
+        return RegulationRecentNextTriggerResponse.model_validate(rows[0]["payload"])
 
     def _execute(
         self,

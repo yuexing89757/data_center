@@ -27,6 +27,8 @@ PUBLISHED_FUNCTIONS = (
     "api_v1.query_dragon_tiger_events_by_symbol(text,date,date,text,integer,integer,integer)",
     "api_v1.query_dragon_tiger_trades_by_seat(uuid,date,date,integer,integer)",
     "api_v1.query_dragon_tiger_event_metrics(uuid)",
+    "api_v1.query_regulation_triggers(date,text,integer)",
+    "api_v1.query_regulation_recent_event_next_triggers(date,text,integer)",
 )
 
 

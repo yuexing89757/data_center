@@ -136,6 +136,11 @@ cn-a-share-regulation-2026-07-06.v1
 
 ### 4.3 基准指数
 
+2026-09-22 采集修复：Worker 先检查截至目标日的30个实际交易日，只对缺失/无效前收盘价的
+白名单指数补采缺口所在的有界区间，随后重新查询数据库覆盖；完整指数不发起网络请求。
+个别来源失败或历史缺口保留在 `missing_symbols` 和 Operations partial 中，其他板块继续计算，
+由 Calculator 标记受影响板块不完整。日历不足、数据库或程序错误仍使任务失败；不修改公式版本。
+
 | segment | benchmark_symbol | benchmark_name |
 | --- | --- | --- |
 | SSE_MAIN | `SSE:000002` | 上证A股指数 |
@@ -283,6 +288,7 @@ Domain 对象不包含 `ingestion_id` 或 `calculation_id`；服务和持久化�
 | `market_watermark` | 股票/指数行情输入水位 |
 | `capital_watermark` | 公司行动输入水位 |
 | `event_watermark` | 官方事件最大观察时间/来源水位 |
+| `input_event_keys` | 同一计算输入内公告自然键与内容哈希清单；null=旧批次未知，[]=已捕获且无公告 |
 | `expected_count`、`complete_count` | 覆盖统计 |
 | `incomplete_count`、`not_applicable_count` | 缺口与排除统计 |
 | `started_at`、`completed_at` | 审计时间 |
@@ -566,7 +572,7 @@ Raw 保留来源响应字段、文档 URL、来源发布时间、抓取页游标
 
 Workflow code：`regulation_daily_calculation`
 Job ID：`regulation-daily-calculation`
-触发：周一至周五22:30，`Asia/Shanghai`，默认关闭。
+触发：周一至周五22:00，`Asia/Shanghai`，默认关闭。
 
 步骤：
 
@@ -638,55 +644,63 @@ APScheduler JobStore 只保存调度状态，不复制到 Regulation 或 Operati
 
 ## 13. 公开读取契约
 
-RPC：
+公开读取拆分为两个 RPC：
 
 ```text
-api_v1.query_regulation_warnings(
+api_v1.query_regulation_triggers(
     p_trade_date date,
-    p_exchange text default null,
-    p_segment text default null,
-    p_symbol text default null,
-    p_rule_code text default null,
-    p_calculated_state text default null,
-    p_announced_state text default null,
-    p_reachability text default null,
+    p_cursor text default null,
+    p_limit integer default 100
+) -> jsonb
+
+api_v1.query_regulation_recent_event_next_triggers(
+    p_trade_date date,
     p_cursor text default null,
     p_limit integer default 100
 ) -> jsonb
 ```
+
+`query_regulation_triggers` 返回指定交易日收盘计算触发的股票并按股票聚合逐规则结果；
+`query_regulation_recent_event_next_triggers` 只选择截至指定日期最近30个交易日内、事件水位以内的
+交易所正式事件，并返回普通异常、严重异常及三个指数情景下的下一交易日条件。两个 RPC 都使用
+精确日期、不回退，并且一次响应只读取一个已发布的 `calculation_id`。
 
 约束：
 
 - `p_trade_date` 必填且不得早于2026-07-06；
 - 不回退到其他交易日；
 - `p_limit` 为1至500；
-- cursor编码上一页 `(symbol, rule_code, scenario_code)`，与过滤参数绑定；
+- 当日触发游标编码状态等级和 `symbol`；近30日游标编码最近事件日期和 `symbol`；
+- 游标必须绑定接口和版本，不允许跨接口使用；
 - 选择该日最新已完成的 SUCCEEDED/PARTIAL CalculationRun，一次响应只使用一个 calculation_id；
 - 无兼容计算版本使用 SQLSTATE `P0002`；非法参数使用 `22023`；
 - 函数锁定 `search_path`、5秒 statement timeout、撤销 public执行权，只授予API角色；
 - 返回 `items`、`returned_count`、`has_more`、`next_cursor` 和计算批次/覆盖元数据。
 
-每个 item 返回：
+当日触发接口按股票聚合，股票 item 返回：
 
 ```text
-trade_date, next_trade_date, symbol, exchange, segment,
-rule_code, rule_level, direction,
-calculated_state, announced_state,
-current_value, threshold, distance,
-scenario_code, scenario_index_pct,
-next_day_reference_price, next_day_trigger_price, next_day_trigger_pct,
-price_limit_ratio, lower_limit_price, upper_limit_price,
-reachability, requires_official_event_confirmation,
-window_start_date, window_end_date, message,
-data_completeness,
-calculation_id, algorithm_version, rule_set_version,
-scenario_config_version, event_watermark
+code, symbol, name, exchange, segment, calculated_state, announced_state,
+triggered_rules[]
 ```
+
+近30日接口按股票聚合，股票 item 返回：
+
+```text
+code, symbol, name, exchange, segment, official_event_count_30d,
+latest_source_event_id, latest_event_date, latest_event_published_at,
+latest_event_level, latest_event_direction, latest_event_source_title,
+latest_event_source_url, next_triggers[]
+```
+
+两个响应都返回 calculation_id、completed_at、event_watermark、算法/规则版本、覆盖数、
+returned_count 和 next_cursor。数值字段保持 Decimal 精度；缺失值保持 null。
 
 FastAPI：
 
 ```text
-GET /api/v1/regulation/warnings
+GET /api/v1/regulation/triggers
+GET /api/v1/regulation/recent-events/next-triggers
 ```
 
 FastAPI复用现有API Key，只调用RPC。同步：

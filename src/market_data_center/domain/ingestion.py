@@ -19,6 +19,8 @@ class ProviderCode(StrEnum):
     PYSNOWBALL = "pysnowball"
     EASTMONEY = "eastmoney"
     TENCENT_QUOTE = "tencent_quote"
+    SSE_OFFICIAL = "sse_official"
+    SZSE_OFFICIAL = "szse_official"
 
 
 class DatasetCode(StrEnum):
@@ -46,6 +48,7 @@ class DatasetCode(StrEnum):
     CONVERTIBLE_BOND_DAILY_BAR = "convertible_bond_daily_bar"
     TRADING_BILLBOARD = "trading_billboard"
     DRAGON_TIGER = "dragon_tiger"
+    REGULATION_EVENT = "regulation_event"
 
 
 class IngestionStatus(StrEnum):

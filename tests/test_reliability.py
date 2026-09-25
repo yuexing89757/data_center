@@ -1,3 +1,4 @@
+import gzip
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
@@ -28,6 +29,7 @@ from market_data_center.domain import (
     QualitySeverity,
     RawFileFormat,
     RawManifest,
+    RegulationEventRecord,
     SecurityRecord,
     ShareholderCountRecord,
 )
@@ -111,6 +113,14 @@ class StubReliabilityPersistence:
                 IngestionRun,
                 RawManifest | None,
                 Sequence[DragonTigerEventRecord],
+                Sequence[QualityResult],
+            ]
+        ] = []
+        self.regulation_event_commits: list[
+            tuple[
+                IngestionRun,
+                RawManifest | None,
+                Sequence[RegulationEventRecord],
                 Sequence[QualityResult],
             ]
         ] = []
@@ -270,6 +280,15 @@ class StubReliabilityPersistence:
     ) -> None:
         self.dragon_tiger_commits.append((run, manifest, records, quality_results))
 
+    def commit_regulation_event_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest | None,
+        records: Sequence[RegulationEventRecord],
+        quality_results: Sequence[QualityResult],
+    ) -> None:
+        self.regulation_event_commits.append((run, manifest, records, quality_results))
+
     def stale_ingestion_run_ids(self, stale_before: datetime) -> Sequence[UUID]:
         return self.stale_ids
 
@@ -280,7 +299,10 @@ class StubReliabilityPersistence:
         return self.stale_ids
 
 
-def test_raw_replay_reuses_verified_raw_lineage_without_new_manifest(tmp_path: Path) -> None:
+@pytest.mark.parametrize("compressed", [False, True])
+def test_raw_replay_reuses_verified_raw_lineage_without_new_manifest(
+    tmp_path: Path, compressed: bool
+) -> None:
     store = LocalRawStore(tmp_path)
     source = _source(
         store,
@@ -299,6 +321,11 @@ def test_raw_replay_reuses_verified_raw_lineage_without_new_manifest(tmp_path: P
         ],
         request_params={},
     )
+    if compressed:
+        assert source.manifest is not None
+        plain = tmp_path / source.manifest.object_path
+        plain.with_name(plain.name + ".gz").write_bytes(gzip.compress(plain.read_bytes(), mtime=0))
+        plain.unlink()
     persistence = StubReliabilityPersistence(source)
     service = RawReplayService(
         raw_store=store,
@@ -755,6 +782,48 @@ def test_raw_replay_keeps_bse_shareholder_count_in_raw_but_not_core(tmp_path: Pa
     assert batch.quality_results[0].rule_code == "shareholder_count.unsupported_exchange"
 
 
+def test_shareholder_replay_quarantines_date_conflict_with_original_raw_lineage(
+    tmp_path: Path,
+) -> None:
+    store = LocalRawStore(tmp_path)
+    source = _source(
+        store,
+        provider=ProviderCode.TUSHARE,
+        dataset=DatasetCode.SHAREHOLDER_COUNT,
+        schema_version="tushare.shareholder_count.v1",
+        rows=[
+            {
+                "ts_code": "600000.SH",
+                "ann_date": "20260904",
+                "end_date": "20260907",
+                "holder_num": "47405",
+            },
+            {
+                "ts_code": "600000.SH",
+                "ann_date": "20260820",
+                "end_date": "20260630",
+                "holder_num": "12001",
+            },
+        ],
+        request_params={"source_symbol": None, "start_date": "20260801", "end_date": "20260921"},
+    )
+    persistence = StubReliabilityPersistence(source)
+    summary = RawReplayService(
+        raw_store=store,
+        persistence=persistence,
+        clock=lambda: NOW,
+        uuid_factory=lambda: REPLAY_RUN_ID,
+    ).replay(SOURCE_RUN_ID)
+    assert summary.accepted_rows == 1
+    assert summary.rejected_rows == 1
+    batch = persistence.shareholder_count_commits[0][0]
+    assert batch.run.status is IngestionStatus.PARTIAL
+    assert batch.manifest is None
+    assert batch.run.replayed_from_raw_id == source.manifest.raw_id
+    assert batch.records[0].record.shareholder_count == 12001
+    assert batch.quality_results[0].severity.value == "error"
+
+
 def test_raw_replay_normalizes_and_commits_classification_catalog(
     tmp_path: Path,
 ) -> None:
@@ -968,6 +1037,58 @@ def test_cross_source_comparison_reports_differences_without_writes(tmp_path: Pa
     assert changed_fields["close"] == {"akshare": "10.60", "baostock": "10.50"}
     assert persistence.created == []
     assert persistence.daily_commits == []
+
+
+def test_raw_replay_republishes_verified_sse_regulation_events(tmp_path: Path) -> None:
+    store = LocalRawStore(tmp_path)
+    source = _source(
+        store,
+        provider=ProviderCode.SSE_OFFICIAL,
+        dataset=DatasetCode.REGULATION_EVENT,
+        schema_version="sse.regulation_event.v1",
+        rows=[
+            {
+                "source": "sse_official",
+                "payload": dumps(
+                    {
+                        "secCode": "600000",
+                        "secAbbr": "浦发银行",
+                        "refType": "1",
+                        "tradeDate": "20260729",
+                        "abnormalStart": "20260727",
+                        "abnormalEnd": "20260729",
+                        "secValue": "20.12",
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+            }
+        ],
+        request_params={
+            "observed_from": "2026-07-28T16:00:00+00:00",
+            "observed_to": "2026-07-29T16:00:00+00:00",
+            "observed_at": "2026-07-29T14:00:00+08:00",
+            "trade_date_start": "2026-07-29",
+            "trade_date_end": "2026-07-29",
+        },
+    )
+    persistence = StubReliabilityPersistence(source)
+
+    summary = RawReplayService(
+        raw_store=store,
+        persistence=persistence,
+        clock=lambda: NOW,
+        uuid_factory=lambda: REPLAY_RUN_ID,
+    ).replay(SOURCE_RUN_ID)
+
+    assert summary.status == "succeeded"
+    assert summary.accepted_rows == 1
+    [(run, manifest, records, quality)] = persistence.regulation_event_commits
+    assert run.replayed_from_raw_id == RAW_ID
+    assert manifest is None
+    assert [record.symbol for record in records] == ["SSE:600000"]
+    assert quality == ()
 
 
 def _dragon_tiger_source(

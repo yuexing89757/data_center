@@ -3,7 +3,44 @@
 This runbook packages but does not authorize deployment or public exposure. Worker and API remain
 separate services, users, environment files, credentials, and failure domains.
 
+On 2026-09-22, the production API and Worker were explicitly authorized to use the verified
+same-host PostgreSQL through `127.0.0.1:5432`, retaining their separate database identities.
+Production systemd 255 drop-ins now increase failure-restart delays from 10 seconds over five
+steps to a 120-second ceiling. This is a configuration-only change, not a database cutover or
+an API release. Preserve these drop-ins and protected environment files during later releases;
+see the [configuration maintenance record](最小生产发布运行手册.md#同机数据库直连与重启退避2026-09-22).
+
 ## Preconditions
+
+### Regulation query release (2026-09-22)
+
+Apply ordered migration `20260922000100` through the protected production workflow
+before updating API and Worker to the same reviewed commit. The two new RPCs are
+read-only and executable only by `market_data_api`; do not grant internal-table reads.
+Preserve the current environment files, least-privilege credentials and restart drop-ins.
+Restart the single Worker only after checking that no collection/recovery workflow is
+active, outside the auction collection window. No job time or enablement changes are needed.
+
+Authenticated smoke queries use `trade_date`, optional `limit` (1–500), and `cursor`:
+`/api/v1/regulation/triggers` and `/api/v1/regulation/recent-events/next-triggers`.
+Check `/healthz`, `/readyz`, `/openapi.json`, and `scripts/check_fastapi_release.py`.
+PARTIAL computations return 200 with coverage; missing exact-date calculations return
+404. Old calculations without `input_event_keys` also return 404 for recent events,
+even when live events exist. Do not fabricate this list or silently use another version.
+Future scheduled calculations capture it automatically; historical recomputation needs
+separate explicit authorization. A 404 on a legacy run is not a failed migration.
+
+The owner explicitly waived database/Raw backup and restore drills for this release
+only. This does not waive migration permissions, isolated integration tests or runtime
+health checks. No data is deleted by this migration; application rollback keeps the
+additive schema and restores the previously verified release.
+
+Production smoke exposed stale planner statistics for a freshly published 4,602-stock
+batch: PostgreSQL estimated one status/rule row and repeatedly scanned the rule batch,
+causing the five-second timeout. Follow-up migration `20260922000200` materializes only
+that calculation's complete triggered rules once and reuses them. It changes neither
+the read contract nor timeouts/grants. An isolated 4k-stock regression reproduces the
+old timeout and verifies the bounded query without relying on manual production ANALYZE.
 
 1. Apply repository migrations to the existing production PostgreSQL through the protected workflow.
    Do not copy or cut over data. Migration

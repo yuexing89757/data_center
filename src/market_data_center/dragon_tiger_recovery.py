@@ -82,14 +82,20 @@ class DragonTigerOrphanRecovery:
         self._uuid_factory = uuid_factory
 
     def scan(self) -> DragonTigerOrphanScan:
-        dataset_root = (self._raw_store.root / "eastmoney" / "dragon_tiger").resolve()
+        dataset_root = self._raw_store.root / "eastmoney" / "dragon_tiger"
+        if (
+            dataset_root.is_symlink()
+            or dataset_root.is_junction()
+            or dataset_root.parent.is_symlink()
+        ):
+            raise RawIntegrityError("DragonTiger Raw root contains a link")
         if not dataset_root.is_relative_to(self._raw_store.root):
             raise RawIntegrityError("DragonTiger Raw root escapes configured storage")
         if not dataset_root.exists():
             return DragonTigerOrphanScan(())
-        candidates = tuple(
-            self._inspect(path, dataset_root) for path in sorted(dataset_root.rglob("*.jsonl"))
-        )
+        logical_paths = set(dataset_root.rglob("*.jsonl"))
+        logical_paths.update(path.with_suffix("") for path in dataset_root.rglob("*.jsonl.gz"))
+        candidates = tuple(self._inspect(path, dataset_root) for path in sorted(logical_paths))
         return DragonTigerOrphanScan(candidates)
 
     def register(
@@ -162,7 +168,7 @@ class DragonTigerOrphanRecovery:
             self._raw_store.root
         ):
             raise RawIntegrityError("DragonTiger orphan Raw path escapes configured storage")
-        relative = resolved.relative_to(self._raw_store.root)
+        relative = path.relative_to(self._raw_store.root)
         parts = relative.parts
         if len(parts) != 6 or parts[:2] != ("eastmoney", "dragon_tiger"):
             raise RawIntegrityError("DragonTiger orphan Raw path is invalid")
@@ -181,7 +187,7 @@ class DragonTigerOrphanRecovery:
             or not parts[4].startswith("day=")
         ):
             raise RawIntegrityError("DragonTiger orphan Raw partition is invalid")
-        payload = resolved.read_bytes()
+        payload = self._raw_store.read_payload(relative.as_posix(), max_bytes=_MAX_RAW_BYTES)
         if not payload or len(payload) > _MAX_RAW_BYTES:
             raise RawIntegrityError("DragonTiger orphan Raw byte bound is invalid")
         lines = payload.splitlines()

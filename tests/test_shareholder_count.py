@@ -95,3 +95,24 @@ def test_source_hash_and_batch_uniqueness_are_enforced() -> None:
         )
     with pytest.raises(ValueError, match="duplicate"):
         validate_shareholder_counts((record, record), known_symbols={record.symbol})
+
+
+def test_partition_rejects_all_duplicate_rows_and_preserves_valid_other_keys() -> None:
+    from market_data_center.domain.shareholder_count import partition_shareholder_counts
+
+    record = _record()
+    values = dict(
+        symbol="SZSE:000001",
+        statistics_date=record.statistics_date,
+        announcement_date=record.announcement_date,
+        shareholder_count=123,
+    )
+    other = ShareholderCountRecord(
+        **values, revision_key=shareholder_count_revision_key(**values), source_code="tushare"
+    )
+    result = partition_shareholder_counts(
+        (record, record, other), known_symbols={record.symbol, other.symbol}
+    )
+    assert result.accepted == (other,)
+    assert len(result.rejected) == 2
+    assert all("duplicate" in reason for _, reason in result.rejected)
