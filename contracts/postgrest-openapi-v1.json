@@ -533,6 +533,63 @@
           }
         }
       }
+    },
+    "/rpc/query_regulation_symbol_trigger": {
+      "post": {
+        "operationId": "query_regulation_symbol_trigger",
+        "summary": "Read one stock's exact-date trigger state, official event count in 30 trading sessions, system-measured abnormal count in 10 sessions, and next-session trigger conditions under three index scenarios. Conditions are not price predictions.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "Requires the dedicated API role. Anonymous roles cannot execute. Decimals are strings, missing values are null. SQLSTATE 22023 means invalid parameters; P0002 means no compatible exact-date publication.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "p_trade_date",
+                  "p_symbol"
+                ],
+                "properties": {
+                  "p_trade_date": {
+                    "type": "string",
+                    "format": "date",
+                    "description": "Exact trading date, not before 2026-07-06."
+                  },
+                  "p_symbol": {
+                    "type": "string",
+                    "pattern": "^(SSE|SZSE):[0-9]{6}$",
+                    "description": "Standard symbol such as SSE:600000; must be covered by the published version."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "One coherent published calculation with coverage and keyset pagination.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegulationSymbolTriggerResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid date, bounds or cursor (22023)."
+          },
+          "404": {
+            "description": "No compatible published calculation (P0002)."
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1417,6 +1474,325 @@
           "items"
         ],
         "title": "RegulationRecentNextTriggerResponse",
+        "type": "object"
+      },
+      "RegulationSymbolTriggerResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "calculation_id": {
+            "format": "uuid",
+            "title": "Calculation Id",
+            "type": "string"
+          },
+          "calculation_status": {
+            "enum": [
+              "SUCCEEDED",
+              "PARTIAL"
+            ],
+            "title": "Calculation Status",
+            "type": "string"
+          },
+          "completed_at": {
+            "title": "Completed At",
+            "type": "string",
+            "format": "date-time"
+          },
+          "event_watermark": {
+            "title": "Event Watermark",
+            "type": "string",
+            "format": "date-time"
+          },
+          "algorithm_version": {
+            "title": "Algorithm Version",
+            "type": "string"
+          },
+          "rule_set_version": {
+            "title": "Rule Set Version",
+            "type": "string"
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/RegulationCoverage"
+          },
+          "returned_count": {
+            "maximum": 500,
+            "minimum": 0,
+            "title": "Returned Count",
+            "type": "integer"
+          },
+          "has_more": {
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "next_trade_date": {
+            "format": "date",
+            "title": "Next Trade Date",
+            "type": "string"
+          },
+          "lookback_trading_days": {
+            "const": 30,
+            "title": "Lookback Trading Days",
+            "type": "integer"
+          },
+          "lookback_start_date": {
+            "format": "date",
+            "title": "Lookback Start Date",
+            "type": "string"
+          },
+          "code": {
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "symbol": {
+            "pattern": "^(SSE|SZSE):[0-9]{6}$",
+            "title": "Symbol",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "exchange": {
+            "enum": [
+              "SSE",
+              "SZSE"
+            ],
+            "title": "Exchange",
+            "type": "string"
+          },
+          "segment": {
+            "enum": [
+              "SSE_MAIN",
+              "SZSE_MAIN",
+              "GEM"
+            ],
+            "title": "Segment",
+            "type": "string"
+          },
+          "applicability": {
+            "enum": [
+              "APPLICABLE",
+              "NOT_APPLICABLE",
+              "INSUFFICIENT_DATA"
+            ],
+            "title": "Applicability",
+            "type": "string"
+          },
+          "data_completeness": {
+            "enum": [
+              "COMPLETE",
+              "INCOMPLETE",
+              "NOT_APPLICABLE"
+            ],
+            "title": "Data Completeness",
+            "type": "string"
+          },
+          "calculated_state": {
+            "enum": [
+              "NORMAL",
+              "ABNORMAL_TRIGGERED",
+              "SERIOUS_TRIGGERED"
+            ],
+            "title": "Calculated State",
+            "type": "string"
+          },
+          "announced_state": {
+            "enum": [
+              "NONE",
+              "ABNORMAL",
+              "SERIOUS_ABNORMAL"
+            ],
+            "title": "Announced State",
+            "type": "string"
+          },
+          "is_triggered_today": {
+            "title": "Is Triggered Today",
+            "type": "boolean"
+          },
+          "close": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Close"
+          },
+          "stock_daily_return_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stock Daily Return Pct"
+          },
+          "benchmark_symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Benchmark Symbol"
+          },
+          "benchmark_close": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Benchmark Close"
+          },
+          "benchmark_daily_return_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Benchmark Daily Return Pct"
+          },
+          "daily_deviation_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Daily Deviation Pct"
+          },
+          "official_event_count_30d": {
+            "minimum": 0,
+            "title": "Official Event Count 30D",
+            "type": "integer"
+          },
+          "official_event_direction_30d": {
+            "anyOf": [
+              {
+                "enum": [
+                  "UP",
+                  "DOWN"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Official Event Direction 30D"
+          },
+          "abnormal_count_10d": {
+            "minimum": 0,
+            "title": "Abnormal Count 10D",
+            "type": "integer"
+          },
+          "abnormal_count_10d_up": {
+            "minimum": 0,
+            "title": "Abnormal Count 10D Up",
+            "type": "integer"
+          },
+          "abnormal_count_10d_down": {
+            "minimum": 0,
+            "title": "Abnormal Count 10D Down",
+            "type": "integer"
+          },
+          "triggered_rules": {
+            "items": {
+              "$ref": "#/components/schemas/RegulationTriggeredRuleItem"
+            },
+            "title": "Triggered Rules",
+            "type": "array"
+          },
+          "next_triggers": {
+            "items": {
+              "$ref": "#/components/schemas/RegulationNextTriggerItem"
+            },
+            "title": "Next Triggers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "trade_date",
+          "calculation_id",
+          "calculation_status",
+          "completed_at",
+          "event_watermark",
+          "algorithm_version",
+          "rule_set_version",
+          "coverage",
+          "returned_count",
+          "has_more",
+          "next_cursor",
+          "next_trade_date",
+          "lookback_trading_days",
+          "lookback_start_date",
+          "code",
+          "symbol",
+          "name",
+          "exchange",
+          "segment",
+          "applicability",
+          "data_completeness",
+          "calculated_state",
+          "announced_state",
+          "is_triggered_today",
+          "close",
+          "stock_daily_return_pct",
+          "benchmark_symbol",
+          "benchmark_close",
+          "benchmark_daily_return_pct",
+          "daily_deviation_pct",
+          "official_event_count_30d",
+          "official_event_direction_30d",
+          "abnormal_count_10d",
+          "abnormal_count_10d_up",
+          "abnormal_count_10d_down",
+          "triggered_rules",
+          "next_triggers"
+        ],
+        "title": "RegulationSymbolTriggerResponse",
         "type": "object"
       }
     },

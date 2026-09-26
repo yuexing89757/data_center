@@ -23,6 +23,7 @@ from market_data_center.persistence.regulation_postgres import (
 )
 from market_data_center.public_api.models import (
     RegulationRecentNextTriggerResponse,
+    RegulationSymbolTriggerResponse,
     RegulationTriggerResponse,
 )
 from market_data_center.regulation_service import RegulationService
@@ -345,6 +346,81 @@ def test_regulation_rpc_validation_and_no_date_fallback(regulation_database):
                     _query(c, rpc, **kwargs)
                 assert error.value.orig.sqlstate == state, kwargs
                 savepoint.rollback()
+
+
+def test_regulation_symbol_rpc_returns_dual_counts_and_next_conditions(regulation_database):
+    with regulation_database.connect() as c:
+        payload = c.execute(
+            text("select api_v1.query_regulation_symbol_trigger(:day, 'SSE:600004')"),
+            {"day": DAY},
+        ).scalar_one()
+        assert payload["calculation_id"] == str(RUN)
+        assert payload["symbol"] == "SSE:600004"
+        assert payload["name"] == "Historical Name"
+        assert payload["is_triggered_today"] is False
+        assert payload["calculated_state"] == "NORMAL"
+        assert payload["applicability"] == "APPLICABLE"
+        assert payload["official_event_count_30d"] == 2
+        assert payload["abnormal_count_10d"] == 0
+        assert payload["triggered_rules"] == []
+        assert len(payload["next_triggers"]) == 7  # 2 rules x 3 scenarios + turnover NONE
+        price_rows = [r for r in payload["next_triggers"] if r["scenario_code"] not in {"CURRENT", "NONE"}]
+        assert {r["scenario_code"] for r in price_rows} == {
+            "INDEX_DOWN_2",
+            "INDEX_FLAT",
+            "INDEX_UP_2",
+        }
+        assert price_rows[0]["trigger_change_pct"] == "6.50000000"
+        RegulationSymbolTriggerResponse.model_validate(payload)
+
+        triggered = c.execute(
+            text("select api_v1.query_regulation_symbol_trigger(:day, 'SSE:600000')"),
+            {"day": DAY},
+        ).scalar_one()
+        assert triggered["is_triggered_today"] is True
+        assert triggered["calculated_state"] == "SERIOUS_TRIGGERED"
+        assert triggered["official_event_count_30d"] == 1
+        assert len(triggered["triggered_rules"]) == 2
+        assert triggered["triggered_rules"][0]["level"] == "SERIOUS_ABNORMAL"
+        assert triggered["next_triggers"][0]["reachability"] == "CURRENTLY_TRIGGERED"
+        assert triggered["next_triggers"][0]["trigger_price"] is None
+        RegulationSymbolTriggerResponse.model_validate(triggered)
+
+
+def test_regulation_symbol_rpc_rejects_bad_parameters_and_missing_coverage(regulation_database):
+    with regulation_database.connect() as c:
+        for kwargs, state in (
+            ({"day": None}, "22023"),
+            ({"day": date(2026, 7, 5)}, "22023"),
+            ({"day": date(2026, 9, 19)}, "22023"),  # non-trading day
+            ({"day": date(2026, 9, 17)}, "P0002"),  # no published calculation
+        ):
+            savepoint = c.begin_nested()
+            with pytest.raises(DBAPIError) as error:
+                c.execute(
+                    text("select api_v1.query_regulation_symbol_trigger(:day, 'SSE:600000')"),
+                    kwargs,
+                )
+            assert error.value.orig.sqlstate == state, kwargs
+            savepoint.rollback()
+        # Valid stock that exists in core.security but not in the calculation batch.
+        savepoint = c.begin_nested()
+        with pytest.raises(DBAPIError) as error:
+            c.execute(
+                text("select api_v1.query_regulation_symbol_trigger(:day, 'SZSE:000001')"),
+                {"day": DAY},
+            )
+        assert error.value.orig.sqlstate == "P0002"
+        savepoint.rollback()
+        # Malformed symbol never reaches a table scan.
+        savepoint = c.begin_nested()
+        with pytest.raises(DBAPIError) as error:
+            c.execute(
+                text("select api_v1.query_regulation_symbol_trigger(:day, 'not-a-symbol')"),
+                {"day": DAY},
+            )
+        assert error.value.orig.sqlstate == "22023"
+        savepoint.rollback()
 
 
 def test_regulation_recent_rpc_pages_do_not_change_after_late_raw_replay(regulation_database):

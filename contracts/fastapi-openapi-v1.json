@@ -6227,6 +6227,364 @@
         "title": "RegulationRecentNextTriggerResponse",
         "type": "object"
       },
+      "RegulationSymbolTriggerResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "abnormal_count_10d": {
+            "description": "最近10个交易日内系统测算的异动次数，含上涨与下跌。",
+            "minimum": 0.0,
+            "title": "Abnormal Count 10D",
+            "type": "integer"
+          },
+          "abnormal_count_10d_down": {
+            "description": "最近10个交易日内系统测算的下跌方向异动次数。",
+            "minimum": 0.0,
+            "title": "Abnormal Count 10D Down",
+            "type": "integer"
+          },
+          "abnormal_count_10d_up": {
+            "description": "最近10个交易日内系统测算的上涨方向异动次数。",
+            "minimum": 0.0,
+            "title": "Abnormal Count 10D Up",
+            "type": "integer"
+          },
+          "algorithm_version": {
+            "description": "计算算法版本。",
+            "title": "Algorithm Version",
+            "type": "string"
+          },
+          "announced_state": {
+            "description": "事件水位以内交易所已经正式公告的状态。",
+            "enum": [
+              "NONE",
+              "ABNORMAL",
+              "SERIOUS_ABNORMAL"
+            ],
+            "title": "Announced State",
+            "type": "string"
+          },
+          "applicability": {
+            "description": "该股票是否适用监管异动规则：适用、不适用或输入不足。",
+            "enum": [
+              "APPLICABLE",
+              "NOT_APPLICABLE",
+              "INSUFFICIENT_DATA"
+            ],
+            "title": "Applicability",
+            "type": "string"
+          },
+          "benchmark_close": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "查询日基准指数收盘点位。",
+            "title": "Benchmark Close"
+          },
+          "benchmark_daily_return_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "查询日基准指数涨跌幅，单位为百分比。",
+            "title": "Benchmark Daily Return Pct"
+          },
+          "benchmark_symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "规则采用的基准指数标准代码。",
+            "title": "Benchmark Symbol"
+          },
+          "calculated_state": {
+            "description": "系统计算达到条件的状态，不等同于交易所正式认定。",
+            "enum": [
+              "NORMAL",
+              "ABNORMAL_TRIGGERED",
+              "SERIOUS_TRIGGERED"
+            ],
+            "title": "Calculated State",
+            "type": "string"
+          },
+          "calculation_id": {
+            "description": "计算批次标识。",
+            "format": "uuid",
+            "title": "Calculation Id",
+            "type": "string"
+          },
+          "calculation_status": {
+            "description": "已发布计算批次状态；PARTIAL 表示存在输入不完整证券。",
+            "enum": [
+              "SUCCEEDED",
+              "PARTIAL"
+            ],
+            "title": "Calculation Status",
+            "type": "string"
+          },
+          "close": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "收盘价。",
+            "title": "Close"
+          },
+          "code": {
+            "description": "不含交易所前缀的六位股票代码。",
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "completed_at": {
+            "description": "计算批次完成时间，按上海时区格式化。",
+            "example": "2026-09-18 09:35:00",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+            "title": "Completed At",
+            "type": "string"
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/RegulationCoverage",
+            "description": "所选计算版本的证券覆盖统计。"
+          },
+          "daily_deviation_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "查询日个股与基准指数涨跌幅之差，单位为百分比。",
+            "title": "Daily Deviation Pct"
+          },
+          "data_completeness": {
+            "description": "该股票规则测算的输入完整性。",
+            "enum": [
+              "COMPLETE",
+              "INCOMPLETE",
+              "NOT_APPLICABLE"
+            ],
+            "title": "Data Completeness",
+            "type": "string"
+          },
+          "event_watermark": {
+            "description": "计算采用的正式事件观察水位，晚到事件不混入旧版本。",
+            "example": "2026-09-18 09:35:00",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+            "title": "Event Watermark",
+            "type": "string"
+          },
+          "exchange": {
+            "description": "证券所属交易所。",
+            "enum": [
+              "SSE",
+              "SZSE"
+            ],
+            "title": "Exchange",
+            "type": "string"
+          },
+          "has_more": {
+            "description": "是否还有未返回的记录。",
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "is_triggered_today": {
+            "description": "查询日收盘是否达到异常或严重异常条件；不等同于交易所正式认定。",
+            "title": "Is Triggered Today",
+            "type": "boolean"
+          },
+          "lookback_start_date": {
+            "description": "最近30个交易日中最早的交易日。",
+            "format": "date",
+            "title": "Lookback Start Date",
+            "type": "string"
+          },
+          "lookback_trading_days": {
+            "const": 30,
+            "description": "正式异动回看交易日数，固定为30并包含查询日。",
+            "title": "Lookback Trading Days",
+            "type": "integer"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "证券或板块名称。",
+            "title": "Name"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "下一页游标；没有更多记录时为空。",
+            "title": "Next Cursor"
+          },
+          "next_trade_date": {
+            "description": "查询日期之后的下一交易日。",
+            "format": "date",
+            "title": "Next Trade Date",
+            "type": "string"
+          },
+          "next_triggers": {
+            "description": "下一交易日各规则和指数情景的条件测算，不是价格预测。",
+            "items": {
+              "$ref": "#/components/schemas/RegulationNextTriggerItem"
+            },
+            "title": "Next Triggers",
+            "type": "array"
+          },
+          "official_event_count_30d": {
+            "description": "最近30个交易日内、水位以内的正式异动事件数。",
+            "minimum": 0.0,
+            "title": "Official Event Count 30D",
+            "type": "integer"
+          },
+          "official_event_direction_30d": {
+            "anyOf": [
+              {
+                "enum": [
+                  "UP",
+                  "DOWN"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "最近30个交易日内最近一次正式异动的方向；无事件时为空。",
+            "title": "Official Event Direction 30D"
+          },
+          "returned_count": {
+            "description": "本次实际返回的记录数。",
+            "maximum": 500.0,
+            "minimum": 0.0,
+            "title": "Returned Count",
+            "type": "integer"
+          },
+          "rule_set_version": {
+            "description": "交易所规则集版本。",
+            "title": "Rule Set Version",
+            "type": "string"
+          },
+          "segment": {
+            "description": "监管规则所属板块：沪市主板、深市主板或创业板。",
+            "enum": [
+              "SSE_MAIN",
+              "SZSE_MAIN",
+              "GEM"
+            ],
+            "title": "Segment",
+            "type": "string"
+          },
+          "stock_daily_return_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "查询日个股涨跌幅，单位为百分比。",
+            "title": "Stock Daily Return Pct"
+          },
+          "symbol": {
+            "description": "带交易所前缀的标准证券代码。",
+            "pattern": "^(SSE|SZSE):[0-9]{6}$",
+            "title": "Symbol",
+            "type": "string"
+          },
+          "trade_date": {
+            "description": "交易日。",
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "triggered_rules": {
+            "description": "该股票达到条件且输入完整的规则列表。",
+            "items": {
+              "$ref": "#/components/schemas/RegulationTriggeredRuleItem"
+            },
+            "title": "Triggered Rules",
+            "type": "array"
+          }
+        },
+        "required": [
+          "trade_date",
+          "calculation_id",
+          "calculation_status",
+          "completed_at",
+          "event_watermark",
+          "algorithm_version",
+          "rule_set_version",
+          "coverage",
+          "returned_count",
+          "has_more",
+          "next_cursor",
+          "next_trade_date",
+          "lookback_trading_days",
+          "lookback_start_date",
+          "code",
+          "symbol",
+          "name",
+          "exchange",
+          "segment",
+          "applicability",
+          "data_completeness",
+          "calculated_state",
+          "announced_state",
+          "is_triggered_today",
+          "close",
+          "stock_daily_return_pct",
+          "benchmark_symbol",
+          "benchmark_close",
+          "benchmark_daily_return_pct",
+          "daily_deviation_pct",
+          "official_event_count_30d",
+          "official_event_direction_30d",
+          "abnormal_count_10d",
+          "abnormal_count_10d_up",
+          "abnormal_count_10d_down",
+          "triggered_rules",
+          "next_triggers"
+        ],
+        "title": "RegulationSymbolTriggerResponse",
+        "type": "object"
+      },
       "RegulationTriggerResponse": {
         "additionalProperties": false,
         "properties": {
@@ -8910,6 +9268,98 @@
           }
         ],
         "summary": "查询近三十个交易日正式异动股票的下一交易日触发条件",
+        "tags": [
+          "市场数据"
+        ]
+      }
+    },
+    "/api/v1/regulation/symbols/{code}/trigger-status": {
+      "get": {
+        "description": "精确查询指定交易日的已发布计算版本，不回退日期。返回该股票当日是否达到异常或严重异常条件、最近30个交易日内交易所正式公告的异动次数（含方向）、最近10个交易日的系统测算异动次数，以及下一交易日在基准指数-2%、0%、+2%三个情景下触发下一次异动所需的收盘价与涨跌幅。仅查数据库，不触发采集或重算；结果是规则条件测算，不是价格预测，实际认定以交易所公告为准。",
+        "operationId": "regulation_symbol_trigger_api_v1_regulation_symbols__code__trigger_status_get",
+        "parameters": [
+          {
+            "description": "不含交易所前缀的六位股票代码。",
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "description": "Six-digit stock code; the exchange is resolved from Security facts.",
+              "pattern": "^[0-9]{6}$",
+              "title": "Code",
+              "type": "string"
+            }
+          },
+          {
+            "description": "交易日。",
+            "in": "query",
+            "name": "trade_date",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "Trade Date",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegulationSymbolTriggerResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "按六位代码查询单只股票的当日异动状态与下一交易日触发条件",
         "tags": [
           "市场数据"
         ]

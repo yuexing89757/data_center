@@ -62,6 +62,7 @@ from market_data_center.public_api.models import (
     LatestStockQuoteResponse,
     LimitUpPoolResponse,
     RegulationRecentNextTriggerResponse,
+    RegulationSymbolTriggerResponse,
     RegulationTriggerResponse,
     SecuritySearchResponse,
     TopGainers20dResponse,
@@ -221,6 +222,39 @@ def create_app(
     ) -> RegulationRecentNextTriggerResponse:
         try:
             return service.regulation_recent_next_triggers(trade_date, cursor, limit)
+        except PublicQueryInvalid as error:
+            raise HTTPException(422, "query parameters were rejected") from error
+        except PublicQueryTimeout as error:
+            raise PublicQueryUnavailable("regulation query timed out") from error
+
+    @app.get(
+        "/api/v1/regulation/symbols/{code}/trigger-status",
+        response_model=RegulationSymbolTriggerResponse,
+        responses={status: {"model": ErrorResponse} for status in (401, 404, 422, 503)},
+        tags=["市场数据"],
+        summary="按六位代码查询单只股票的当日异动状态与下一交易日触发条件",
+        description=(
+            "精确查询指定交易日的已发布计算版本，不回退日期。返回该股票当日是否达到异常"
+            "或严重异常条件、最近30个交易日内交易所正式公告的异动次数（含方向）、"
+            "最近10个交易日的系统测算异动次数，以及下一交易日在基准指数-2%、0%、+2%"
+            "三个情景下触发下一次异动所需的收盘价与涨跌幅。仅查数据库，不触发采集或重算；"
+            "结果是规则条件测算，不是价格预测，实际认定以交易所公告为准。"
+        ),
+    )
+    def regulation_symbol_trigger(
+        _: ApiKeyDependency,
+        service: QueryServiceDependency,
+        code: Annotated[
+            str,
+            Path(
+                pattern=STOCK_CODE_PATTERN,
+                description="Six-digit stock code; the exchange is resolved from Security facts.",
+            ),
+        ],
+        trade_date: Annotated[date, Query(ge=date(2026, 7, 6))],
+    ) -> RegulationSymbolTriggerResponse:
+        try:
+            return service.regulation_symbol_trigger(code, trade_date)
         except PublicQueryInvalid as error:
             raise HTTPException(422, "query parameters were rejected") from error
         except PublicQueryTimeout as error:

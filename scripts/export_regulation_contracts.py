@@ -1,4 +1,4 @@
-"""Synchronize the two bounded Regulation RPC contracts from the owned API models."""
+"""Synchronize the bounded Regulation RPC contracts from the owned API models."""
 
 from copy import deepcopy
 from json import dumps, loads
@@ -6,24 +6,11 @@ from pathlib import Path
 
 from market_data_center.public_api.models import (
     RegulationRecentNextTriggerResponse,
+    RegulationSymbolTriggerResponse,
     RegulationTriggerResponse,
 )
 
 CONTRACT_ROOT = Path(__file__).parents[1] / "contracts"
-OPERATIONS = (
-    (
-        "query_regulation_triggers",
-        RegulationTriggerResponse,
-        "Read exact-date calculated closing triggers from one published version; no date fallback.",
-    ),
-    (
-        "query_regulation_recent_event_next_triggers",
-        RegulationRecentNextTriggerResponse,
-        "Read official events in exactly 30 trading sessions and next-session conditions "
-        "under three "
-        "index scenarios from one version. Conditions are not price predictions.",
-    ),
-)
 REQUEST = {
     "type": "object",
     "additionalProperties": False,
@@ -45,6 +32,49 @@ REQUEST = {
         "p_limit": {"type": "integer", "minimum": 1, "maximum": 500, "default": 100},
     },
 }
+SYMBOL_REQUEST = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["p_trade_date", "p_symbol"],
+    "properties": {
+        "p_trade_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Exact trading date, not before 2026-07-06.",
+        },
+        "p_symbol": {
+            "type": "string",
+            "pattern": r"^(SSE|SZSE):[0-9]{6}$",
+            "description": "Standard symbol such as SSE:600000; must be covered by the "
+            "published version.",
+        },
+    },
+}
+OPERATIONS = (
+    (
+        "query_regulation_triggers",
+        RegulationTriggerResponse,
+        "Read exact-date calculated closing triggers from one published version; no date fallback.",
+        REQUEST,
+    ),
+    (
+        "query_regulation_recent_event_next_triggers",
+        RegulationRecentNextTriggerResponse,
+        "Read official events in exactly 30 trading sessions and next-session conditions "
+        "under three "
+        "index scenarios from one version. Conditions are not price predictions.",
+        REQUEST,
+    ),
+    (
+        "query_regulation_symbol_trigger",
+        RegulationSymbolTriggerResponse,
+        "Read one stock's exact-date trigger state, official event count in 30 trading "
+        "sessions, system-measured abnormal count in 10 sessions, and next-session "
+        "trigger conditions under three index scenarios. Conditions are not price "
+        "predictions.",
+        SYMBOL_REQUEST,
+    ),
+)
 
 
 def main() -> None:
@@ -52,9 +82,9 @@ def main() -> None:
     agent_path = CONTRACT_ROOT / "agent-tools-v1.json"
     postgrest = loads(postgrest_path.read_text(encoding="utf-8"))
     agent = loads(agent_path.read_text(encoding="utf-8"))
-    endpoints = {rpc for rpc, _, _ in OPERATIONS}
+    endpoints = {rpc for rpc, *_ in OPERATIONS}
     agent["tools"] = [tool for tool in agent["tools"] if tool["endpoint"] not in endpoints]
-    for rpc, model, description in OPERATIONS:
+    for rpc, model, description, request in OPERATIONS:
         schema = model.model_json_schema(
             mode="serialization", ref_template="#/components/schemas/{model}"
         )
@@ -80,7 +110,7 @@ def main() -> None:
                 "requestBody": {
                     "required": True,
                     "content": {
-                        "application/json": {"schema": deepcopy(REQUEST)},
+                        "application/json": {"schema": deepcopy(request)},
                     },
                 },
                 "responses": {
@@ -109,7 +139,7 @@ def main() -> None:
                 + " Requires the dedicated API role; anonymous access is denied.",
                 "endpoint": rpc,
                 "read_only": True,
-                "input_schema": deepcopy(REQUEST),
+                "input_schema": deepcopy(request),
             }
         )
     for path, content in ((postgrest_path, postgrest), (agent_path, agent)):

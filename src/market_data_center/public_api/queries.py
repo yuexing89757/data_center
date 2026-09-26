@@ -30,6 +30,7 @@ from market_data_center.public_api.models import (
     LatestStockDailyIndicatorResponse,
     LimitUpPoolResponse,
     RegulationRecentNextTriggerResponse,
+    RegulationSymbolTriggerResponse,
     RegulationTriggerResponse,
     SecurityItem,
     TopGainers20dResponse,
@@ -43,6 +44,10 @@ select api_v1.query_regulation_triggers(:trade_date, :cursor, :limit) as payload
 
 QUERY_REGULATION_RECENT_NEXT = text("""
 select api_v1.query_regulation_recent_event_next_triggers(:trade_date, :cursor, :limit) as payload
+""")
+
+QUERY_REGULATION_SYMBOL_TRIGGER = text("""
+select api_v1.query_regulation_symbol_trigger(:trade_date, :symbol) as payload
 """)
 
 QUERY_SECURITIES = text("""
@@ -223,6 +228,10 @@ class PublicQueryService(Protocol):
     def regulation_recent_next_triggers(
         self, trade_date: date, cursor: str | None, limit: int
     ) -> RegulationRecentNextTriggerResponse: ...
+
+    def regulation_symbol_trigger(
+        self, code: str, trade_date: date
+    ) -> RegulationSymbolTriggerResponse: ...
 
     def ready(self) -> None: ...
 
@@ -592,6 +601,25 @@ class PostgreSQLPublicQueryService:
             statement_timeout_ms=5000,
         )
         return RegulationRecentNextTriggerResponse.model_validate(rows[0]["payload"])
+
+    def regulation_symbol_trigger(
+        self, code: str, trade_date: date
+    ) -> RegulationSymbolTriggerResponse:
+        matches = tuple(
+            item
+            for item in self.search_securities(code, 100)
+            if item.code == code and item.security_type.value == "stock"
+        )
+        if not matches:
+            raise PublicQueryNotFound("stock code was not found")
+        if len(matches) != 1:
+            raise PublicQueryAmbiguous("stock code is ambiguous across exchanges")
+        rows = self._execute(
+            QUERY_REGULATION_SYMBOL_TRIGGER,
+            {"trade_date": trade_date, "symbol": matches[0].symbol},
+            statement_timeout_ms=5000,
+        )
+        return RegulationSymbolTriggerResponse.model_validate(rows[0]["payload"])
 
     def _execute(
         self,

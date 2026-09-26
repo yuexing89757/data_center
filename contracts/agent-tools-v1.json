@@ -800,6 +800,32 @@
           }
         }
       }
+    },
+    {
+      "name": "market_regulation_symbol_trigger",
+      "description": "Read one stock's exact-date trigger state, official event count in 30 trading sessions, system-measured abnormal count in 10 sessions, and next-session trigger conditions under three index scenarios. Conditions are not price predictions. Requires the dedicated API role; anonymous access is denied.",
+      "endpoint": "query_regulation_symbol_trigger",
+      "read_only": true,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "p_trade_date",
+          "p_symbol"
+        ],
+        "properties": {
+          "p_trade_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Exact trading date, not before 2026-07-06."
+          },
+          "p_symbol": {
+            "type": "string",
+            "pattern": "^(SSE|SZSE):[0-9]{6}$",
+            "description": "Standard symbol such as SSE:600000; must be covered by the published version."
+          }
+        }
+      }
     }
   ]
 }

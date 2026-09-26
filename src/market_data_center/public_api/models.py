@@ -189,6 +189,35 @@ class RegulationRecentNextTriggerResponse(RegulationQueryMetadata):
     items: list[RegulationRecentEventStockItem]
 
 
+class RegulationSymbolTriggerResponse(RegulationQueryMetadata):
+    next_trade_date: date
+    lookback_trading_days: Literal[30]
+    lookback_start_date: date
+    code: str = Field(pattern=r"^[0-9]{6}$")
+    symbol: str = Field(pattern=r"^(SSE|SZSE):[0-9]{6}$")
+    name: str | None
+    exchange: Literal["SSE", "SZSE"]
+    segment: Literal["SSE_MAIN", "SZSE_MAIN", "GEM"]
+    applicability: Literal["APPLICABLE", "NOT_APPLICABLE", "INSUFFICIENT_DATA"]
+    data_completeness: Literal["COMPLETE", "INCOMPLETE", "NOT_APPLICABLE"]
+    calculated_state: Literal["NORMAL", "ABNORMAL_TRIGGERED", "SERIOUS_TRIGGERED"]
+    announced_state: Literal["NONE", "ABNORMAL", "SERIOUS_ABNORMAL"]
+    is_triggered_today: bool
+    close: Decimal | None
+    stock_daily_return_pct: Decimal | None
+    benchmark_symbol: str | None
+    benchmark_close: Decimal | None
+    benchmark_daily_return_pct: Decimal | None
+    daily_deviation_pct: Decimal | None
+    official_event_count_30d: int = Field(ge=0)
+    official_event_direction_30d: Literal["UP", "DOWN"] | None
+    abnormal_count_10d: int = Field(ge=0)
+    abnormal_count_10d_up: int = Field(ge=0)
+    abnormal_count_10d_down: int = Field(ge=0)
+    triggered_rules: list[RegulationTriggeredRuleItem]
+    next_triggers: list[RegulationNextTriggerItem]
+
+
 class HealthResponse(ApiModel):
     status: str
     service: str = "market-data-center-api"

@@ -284,3 +284,180 @@ def test_regulation_checked_contracts_are_bounded_and_datetime_formats_differ():
         "current_value"
     ]
     assert numeric["anyOf"][0]["type"] == "string"
+
+
+def symbol_trigger_payload() -> dict[str, Any]:
+    return {
+        "trade_date": "2026-09-18",
+        "calculation_id": "00000000-0000-0000-0000-000000000123",
+        "calculation_status": "PARTIAL",
+        "completed_at": "2026-09-18T14:05:00.123+00:00",
+        "event_watermark": "2026-09-18T13:00:00+00:00",
+        "algorithm_version": "regulation-core.v1",
+        "rule_set_version": "cn-a-share-regulation-2026-07-06.v1",
+        "coverage": {
+            "expected_count": 3,
+            "complete_count": 1,
+            "incomplete_count": 1,
+            "not_applicable_count": 1,
+        },
+        "returned_count": 1,
+        "has_more": False,
+        "next_cursor": None,
+        "next_trade_date": "2026-09-21",
+        "lookback_trading_days": 30,
+        "lookback_start_date": "2026-08-10",
+        "code": "000001",
+        "symbol": "SZSE:000001",
+        "name": "测试证券",
+        "exchange": "SZSE",
+        "segment": "SZSE_MAIN",
+        "applicability": "APPLICABLE",
+        "data_completeness": "COMPLETE",
+        "calculated_state": "ABNORMAL_TRIGGERED",
+        "announced_state": "NONE",
+        "is_triggered_today": True,
+        "close": "10.00000000",
+        "stock_daily_return_pct": "3.50000000",
+        "benchmark_symbol": "SZSE:399107",
+        "benchmark_close": "1200.00000000",
+        "benchmark_daily_return_pct": "0.50000000",
+        "daily_deviation_pct": "3.00000000",
+        "official_event_count_30d": 1,
+        "official_event_direction_30d": "UP",
+        "abnormal_count_10d": 2,
+        "abnormal_count_10d_up": 2,
+        "abnormal_count_10d_down": 0,
+        "triggered_rules": [
+            {
+                "rule_code": "SZSE_MAIN_ABNORMAL_3D_DEV_UP",
+                "level": "ABNORMAL",
+                "direction": "UP",
+                "kind": "CUMULATIVE_DEVIATION",
+                "window_start_date": "2026-09-16",
+                "window_end_date": "2026-09-18",
+                "observed_window_days": 3,
+                "current_value": "20.12345678",
+                "threshold": "20.00000000",
+                "secondary_current_value": None,
+                "secondary_threshold": None,
+                "event_count": None,
+                "required_count": None,
+                "selected_reset_date": None,
+            }
+        ],
+        "next_triggers": [
+            {
+                "rule_code": "SZSE_MAIN_ABNORMAL_3D_DEV_UP",
+                "level": "ABNORMAL",
+                "direction": "UP",
+                "benchmark_symbol": "SZSE:399107",
+                "scenario_code": "INDEX_FLAT",
+                "scenario_index_pct": "0.00000000",
+                "next_day_reference_price": "10.00000000",
+                "raw_trigger_price": "10.64800000",
+                "trigger_price": "10.65000000",
+                "trigger_change_pct": "6.50000000",
+                "lower_limit_price": "9.00000000",
+                "upper_limit_price": "11.00000000",
+                "reachability": "REACHABLE_NEXT_SESSION",
+                "window_start_date": "2026-09-17",
+                "window_end_date": "2026-09-21",
+                "requires_official_event_confirmation": False,
+            }
+        ],
+    }
+
+
+class _StubQueryService:
+    """Injectable stand-in matching the PublicQueryService protocol surface used here."""
+
+    def search_securities(self, query: str, limit: int):
+        assert (query, limit) == ("000001", 100)
+        return (
+            SimpleNamespace(
+                code="000001",
+                symbol="SZSE:000001",
+                security_type=SimpleNamespace(value="stock"),
+            ),
+        )
+
+    def regulation_symbol_trigger(self, code: str, trade_date: date):
+        assert code == "000001"
+        return models.RegulationSymbolTriggerResponse.model_validate(
+            symbol_trigger_payload()
+        )
+
+
+def symbol_client_for() -> TestClient:
+    app = create_app(
+        settings=ApiSettings(
+            _env_file=None,
+            fastapi_api_key=SecretStr(KEY),
+            fastapi_database_url=SecretStr("unused"),
+        ),
+        query_service=_StubQueryService(),  # type: ignore[arg-type]
+        auction_indicative_service=object(),  # type: ignore[arg-type]
+        tencent_quote_live_service=object(),  # type: ignore[arg-type]
+    )
+    return TestClient(app)
+
+
+def test_regulation_symbol_trigger_resolves_code_and_returns_status():
+    client = symbol_client_for()
+    response = client.get(
+        "/api/v1/regulation/symbols/000001/trigger-status",
+        params={"trade_date": "2026-09-18"},
+        headers=HEADERS,
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["code"] == "000001"
+    assert body["symbol"] == "SZSE:000001"
+    assert body["is_triggered_today"] is True
+    assert body["calculated_state"] == "ABNORMAL_TRIGGERED"
+    assert body["official_event_count_30d"] == 1
+    assert body["official_event_direction_30d"] == "UP"
+    assert body["abnormal_count_10d_up"] == 2
+    assert body["next_triggers"][0]["trigger_change_pct"] == "6.50000000"
+    assert body["completed_at"] == "2026-09-18 22:05:00"
+
+
+def test_regulation_symbol_trigger_requires_auth_and_valid_parameters():
+    client = symbol_client_for()
+    url = "/api/v1/regulation/symbols/000001/trigger-status"
+    assert client.get(url, params={"trade_date": "2026-09-18"}).status_code == 401
+    for params in ({}, {"trade_date": "bad"}, {"trade_date": "2026-07-05"}):
+        assert client.get(url, params=params, headers=HEADERS).status_code == 422
+    # Non-six-digit path is rejected by the route pattern before hitting the service.
+    assert (
+        client.get(
+            "/api/v1/regulation/symbols/ABC123/trigger-status",
+            params={"trade_date": "2026-09-18"},
+            headers=HEADERS,
+        ).status_code
+        == 422
+    )
+
+
+def test_regulation_symbol_trigger_normal_state_keeps_nulls_and_zero_counts():
+    payload = symbol_trigger_payload()
+    payload.update(
+        {
+            "calculated_state": "NORMAL",
+            "is_triggered_today": False,
+            "announced_state": "NONE",
+            "official_event_count_30d": 0,
+            "official_event_direction_30d": None,
+            "abnormal_count_10d": 0,
+            "abnormal_count_10d_up": 0,
+            "abnormal_count_10d_down": 0,
+            "triggered_rules": [],
+            "next_triggers": [],
+        }
+    )
+    result = models.RegulationSymbolTriggerResponse.model_validate(payload)
+    assert result.is_triggered_today is False
+    assert result.official_event_count_30d == 0
+    assert result.triggered_rules == []
+    assert result.next_triggers == []
