@@ -22,6 +22,15 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from market_data_center.database_urls import sqlalchemy_url
 from market_data_center.domain import ClassificationType
 from market_data_center.providers.eastmoney_auction import EastmoneyAuctionIndicativeProvider
+from market_data_center.providers.kaipanla_alerts import (
+    KaipanlaAlertsProvider,
+    KaipanlaAlertsUpstream,
+)
+from market_data_center.providers.kaipanla_auction import (
+    KaipanlaAuctionInvalid,
+    KaipanlaAuctionProvider,
+    KaipanlaAuctionUpstream,
+)
 from market_data_center.public_api.auction_indicative_live import (
     AuctionIndicativeLiveBusy,
     AuctionIndicativeLiveInvalid,
@@ -34,6 +43,8 @@ from market_data_center.public_api.auction_indicative_write import (
     AuctionIndicativeApiPersistence,
     AuctionIndicativePersistenceQueue,
 )
+from market_data_center.public_api.kaipanla_alerts import router as kaipanla_alerts_router
+from market_data_center.public_api.kaipanla_auction import router as kaipanla_auction_router
 from market_data_center.public_api.models import (
     AuctionIndicativeDetailResponse,
     AuctionOnePriceLimitResponse,
@@ -94,6 +105,8 @@ def create_app(
     query_service: PublicQueryService | None = None,
     auction_indicative_service: LiveAuctionIndicativeService | None = None,
     tencent_quote_live_service: TencentQuoteLiveService | None = None,
+    kaipanla_alerts_provider: KaipanlaAlertsProvider | None = None,
+    kaipanla_auction_provider: KaipanlaAuctionProvider | None = None,
 ) -> FastAPI:
     configured = settings or ApiSettings()  # type: ignore[call-arg]
     owned_engine: Engine | None = None
@@ -146,11 +159,20 @@ def create_app(
         openapi_tags=[
             {"name": "系统状态", "description": "服务存活状态与数据库就绪状态检查。"},
             {"name": "市场数据", "description": "只读的 A 股市场事实与客观衍生结果查询。"},
+            {"name": "实时接口", "description": "请求时直接读取外部来源，不持久化查询结果。"},
         ],
         lifespan=lifespan,
     )
     app.state.api_settings = configured
     app.state.query_service = query_service
+    app.state.kaipanla_alerts_provider = kaipanla_alerts_provider or KaipanlaAlertsProvider(
+        timeout_seconds=configured.fastapi_kaipanla_timeout_seconds
+    )
+    app.include_router(kaipanla_alerts_router, dependencies=[Depends(_require_api_key)])
+    app.state.kaipanla_auction_provider = kaipanla_auction_provider or KaipanlaAuctionProvider(
+        timeout_seconds=configured.fastapi_kaipanla_timeout_seconds
+    )
+    app.include_router(kaipanla_auction_router, dependencies=[Depends(_require_api_key)])
     if auction_indicative_service is None:
         assert owned_write_engine is not None
         raw_root = configured.fastapi_auction_raw_root
@@ -869,6 +891,18 @@ def _require_bounded_date_range(start_date: date, end_date: date) -> None:
 
 
 def _install_exception_handlers(app: FastAPI) -> None:
+    @app.exception_handler(KaipanlaAuctionUpstream)
+    async def kaipanla_auction_upstream(_: Request, __: KaipanlaAuctionUpstream) -> JSONResponse:
+        return _error_response(502, "upstream_error", "Kaipanla auction provider request failed")
+
+    @app.exception_handler(KaipanlaAuctionInvalid)
+    async def kaipanla_auction_invalid(_: Request, __: KaipanlaAuctionInvalid) -> JSONResponse:
+        return _error_response(422, "validation_error", "auction request parameters are invalid")
+
+    @app.exception_handler(KaipanlaAlertsUpstream)
+    async def kaipanla_alerts_upstream(_: Request, __: KaipanlaAlertsUpstream) -> JSONResponse:
+        return _error_response(502, "upstream_error", "Kaipanla alert provider request failed")
+
     @app.exception_handler(TencentQuoteLiveUpstream)
     async def tencent_quote_upstream(_: Request, __: TencentQuoteLiveUpstream) -> JSONResponse:
         return _error_response(502, "upstream_error", "Tencent quote provider request failed")
