@@ -45,6 +45,8 @@ COUNT_QUERIES = {
     ),
     "board_index_daily_bar": "select count(*) from core.board_index_daily_bar",
     "quality_result": "select count(*) from audit.quality_result",
+    "quality_archive": "select count(*) from audit.quality_archive",
+    "data_cleanup_report": "select count(*) from operations.data_cleanup_report",
     "daily_bar": "select count(*) from core.daily_bar",
     "daily_price_limit": "select count(*) from derived.daily_price_limit",
     "daily_metric": "select count(*) from derived.daily_metric",

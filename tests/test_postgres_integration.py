@@ -1534,7 +1534,7 @@ def test_cleanup_persistence_deletes_expired_history_only(
     assert remaining == [date(2026, 9, 2)]
 
 
-def test_cleanup_persistence_deletes_expired_quality_results_only(
+def test_cleanup_persistence_rejects_unarchived_quality_deletion(
     database_engine: Engine,
 ) -> None:
     persistence = PostgreSQLPersistence(database_engine)
@@ -1584,9 +1584,8 @@ def test_cleanup_persistence_deletes_expired_quality_results_only(
             },
         )
 
-    deleted = persistence.delete_quality_results_before(date(2026, 8, 17))
-
-    assert deleted == 1
+    with pytest.raises(RuntimeError, match="verified archive and exact IDs"):
+        persistence.delete_quality_results_before(date(2026, 8, 17))
     with database_engine.connect() as connection:
         remaining = (
             connection.execute(
@@ -1599,7 +1598,7 @@ def test_cleanup_persistence_deletes_expired_quality_results_only(
             .scalars()
             .all()
         )
-    assert remaining == ["new"]
+    assert remaining == ["old", "new"]
 
 
 def test_only_worker_can_delete_quality_results(
@@ -1616,6 +1615,377 @@ def test_only_worker_can_delete_quality_results(
             with pytest.raises(InsufficientPrivilege):
                 connection.execute(sql.SQL("delete from {} where false").format(relation))
             connection.execute("rollback")
+
+
+@pytest.fixture
+def quality_archive_worker(database_engine, migrated_database_url):
+    from sqlalchemy import event
+
+    from market_data_center.persistence.quality_archive_postgres import QualityArchivePersistence
+
+    engine = create_engine(_sqlalchemy_url(migrated_database_url))
+
+    @event.listens_for(engine, "connect")
+    def set_worker(dbapi_connection, record):
+        with dbapi_connection.cursor() as cursor:
+            cursor.execute("set role market_data_worker")
+        dbapi_connection.commit()
+
+    try:
+        yield QualityArchivePersistence(engine)
+    finally:
+        engine.dispose()
+
+
+def _seed_archive_quality(
+    engine,
+    *,
+    status="partial",
+    rule="realtime_quote.lot_precision",
+    severity="info",
+    dataset="call_auction_market_series",
+    details=None,
+    created=None,
+    ingestion_id=None,
+):
+    from datetime import timedelta
+
+    ingestion_id = ingestion_id or uuid4()
+    created = created or datetime.now(UTC) - timedelta(days=50)
+    quality_id = uuid4()
+    with engine.begin() as c:
+        c.execute(
+            text("""insert into ingestion.ingestion_run
+            (ingestion_id, provider_code, dataset_code, status,
+             requested_at, started_at, finished_at)
+            values (:id, 'pytdx_hq', :dataset, :status, :created, :created, :finished)
+            on conflict do nothing"""),
+            {
+                "id": ingestion_id,
+                "dataset": dataset,
+                "status": status,
+                "created": created,
+                "finished": created if status != "running" else None,
+            },
+        )
+        c.execute(
+            text("""insert into audit.quality_result
+            (quality_result_id, ingestion_id, dataset_code, rule_code, severity, status,
+             natural_key, message, details, created_at)
+            values (:id, :ingestion, :dataset, :rule, :severity, 'failed',
+                '{"symbol": "SSE:600000", "observed_at": null}',
+                '质量提示', cast(:details as jsonb), :created)"""),
+            {
+                "id": quality_id,
+                "ingestion": ingestion_id,
+                "dataset": dataset,
+                "rule": rule,
+                "severity": severity,
+                "details": details or '{"exact":1.234567890123456789}',
+                "created": created,
+            },
+        )
+    return ingestion_id, quality_id
+
+
+def test_quality_archive_worker_exact_delete_roundtrip_and_idempotency(
+    database_engine, quality_archive_worker, tmp_path
+):
+    from datetime import timedelta
+
+    from market_data_center.quality_archive import read_quality_archive, write_quality_archive
+
+    repo = quality_archive_worker
+    ingestion_id, original_id = _seed_archive_quality(database_engine)
+    cutoff = datetime.now(UTC) - timedelta(days=30)
+    (group,) = repo.quality_candidates(cutoff)
+    rows = repo.load_quality_rows(group)
+    assert "1.234567890123456789" in rows[0]
+    archive = write_quality_archive(tmp_path, group, rows, operation_id=uuid4())
+    assert (
+        repo.commit_quality_archive(tmp_path, archive, rows, cutoff, checkpoint=lambda: None) == 1
+    )
+    assert (
+        repo.commit_quality_archive(tmp_path, archive, rows, cutoff, checkpoint=lambda: None) == 0
+    )
+    (registered,) = repo.archives(ingestion_id)
+    assert read_quality_archive(tmp_path, registered) == rows
+    with database_engine.connect() as c:
+        summary = c.execute(text("select * from audit.quality_result")).mappings().one()
+        assert summary["quality_result_id"] != original_id
+        assert summary["severity"] == "info" and summary["status"] == "failed"
+        assert summary["details"]["finding_count"] == 1
+        assert summary["details"]["affected_keys"] == [
+            {"symbol": "SSE:600000", "observed_at": None}
+        ]
+        assert summary["details"]["archive_id"] == str(archive.archive_id)
+    with repo.transaction() as c:
+        assert (
+            c.execute(text("delete from audit.quality_result returning quality_result_id")).all()
+            == []
+        )
+
+
+@pytest.mark.parametrize(
+    "failure", ["missing", "corrupt", "changed", "delete_failure", "new_record"]
+)
+def test_quality_archive_failure_preserves_originals(
+    database_engine, quality_archive_worker, tmp_path, failure
+):
+    from datetime import timedelta
+
+    from sqlalchemy import event
+
+    from market_data_center.quality_archive import write_quality_archive
+    from market_data_center.raw_store import RawIntegrityError
+
+    repo = quality_archive_worker
+    ingestion_id, original_id = _seed_archive_quality(database_engine)
+    cutoff = datetime.now(UTC) - timedelta(days=30)
+    (group,) = repo.quality_candidates(cutoff)
+    rows = repo.load_quality_rows(group)
+    archive = write_quality_archive(tmp_path, group, rows, operation_id=uuid4())
+    if failure == "missing":
+        (tmp_path / archive.object_path).unlink()
+    elif failure == "corrupt":
+        (tmp_path / archive.object_path).write_bytes(b"bad")
+    elif failure == "changed":
+        with database_engine.begin() as c:
+            c.execute(
+                text(
+                    "update audit.quality_result set message = 'changed' "
+                    "where quality_result_id = :id"
+                ),
+                {"id": original_id},
+            )
+    elif failure == "new_record":
+        _seed_archive_quality(database_engine, ingestion_id=ingestion_id)
+    else:
+
+        @event.listens_for(repo.engine, "before_cursor_execute")
+        def fail_delete(conn, cursor, statement, params, context, executemany):
+            if statement.strip().startswith("delete from audit.quality_result"):
+                raise RuntimeError("injected rollback")
+
+    with pytest.raises((RawIntegrityError, RuntimeError)):
+        repo.commit_quality_archive(tmp_path, archive, rows, cutoff, checkpoint=lambda: None)
+    with database_engine.connect() as c:
+        assert (
+            c.execute(
+                text("select count(*) from audit.quality_result where quality_result_id = :id"),
+                {"id": original_id},
+            ).scalar_one()
+            == 1
+        )
+        assert c.execute(text("select count(*) from audit.quality_archive")).scalar_one() == 0
+        assert (
+            c.execute(
+                text(
+                    "select count(*) from audit.quality_result "
+                    "where details ? 'aggregation_version'"
+                )
+            ).scalar_one()
+            == 0
+        )
+
+
+def test_quality_archive_candidate_boundaries_and_rls(database_engine, quality_archive_worker):
+    from datetime import timedelta
+
+    repo = quality_archive_worker
+    cutoff = datetime.now(UTC) - timedelta(days=30)
+    for changes in [
+        dict(severity="error"),
+        dict(dataset="security"),
+        dict(rule="other"),
+        dict(details='{"aggregation_version":"v1"}'),
+        dict(status="running"),
+        dict(created=cutoff),
+        dict(created=cutoff + timedelta(seconds=1)),
+    ]:
+        _seed_archive_quality(database_engine, **changes)
+    cross_id, _ = _seed_archive_quality(database_engine)
+    _seed_archive_quality(database_engine, ingestion_id=cross_id, created=cutoff)
+    good_id, _ = _seed_archive_quality(database_engine, status="failed")
+    candidates = repo.quality_candidates(cutoff)
+    assert [g.ingestion_id for g in candidates] == [good_id]
+    with repo.transaction() as c:
+        # A bare DELETE cannot erase even an eligible row without archive evidence.
+        assert (
+            c.execute(text("delete from audit.quality_result returning quality_result_id")).all()
+            == []
+        )
+
+
+def test_quality_archive_metadata_permissions(migrated_database_url):
+    with psycopg.connect(migrated_database_url, autocommit=True) as c:
+        for role in ("anon", "authenticated", "market_data_api"):
+            c.execute(sql.SQL("set role {}").format(sql.Identifier(role)))
+            for table in ("audit.quality_archive", "operations.data_cleanup_report"):
+                with pytest.raises(InsufficientPrivilege):
+                    c.execute(f"select * from {table}")
+                with pytest.raises(InsufficientPrivilege):
+                    c.execute(f"delete from {table} where false")
+            c.execute("reset role")
+        c.execute("set role market_data_worker")
+        for statement in (
+            "delete from audit.quality_archive where false",
+            "update audit.quality_archive set row_count=1 where false",
+            "update audit.quality_result set message=message where false",
+            "delete from operations.data_cleanup_report where false",
+            "update operations.data_cleanup_report set reference_date=current_date where false",
+        ):
+            with pytest.raises(InsufficientPrivilege):
+                c.execute(statement)
+
+
+def test_quality_archive_exact_ids_do_not_authorize_unlisted_or_error_rows(
+    database_engine, quality_archive_worker, tmp_path
+):
+    from datetime import timedelta
+
+    from market_data_center.quality_archive import write_quality_archive
+
+    repo = quality_archive_worker
+    ingestion_id, _ = _seed_archive_quality(database_engine)
+    cutoff = datetime.now(UTC) - timedelta(days=30)
+    (group,) = repo.quality_candidates(cutoff)
+    rows = repo.load_quality_rows(group)
+    archive = write_quality_archive(tmp_path, group, rows, operation_id=uuid4())
+    repo.commit_quality_archive(tmp_path, archive, rows, cutoff, checkpoint=lambda: None)
+    _seed_archive_quality(
+        database_engine, ingestion_id=ingestion_id, created=group.first_created_at
+    )
+    _, protected = _seed_archive_quality(
+        database_engine, ingestion_id=ingestion_id, severity="error", created=group.first_created_at
+    )
+    # A damaged registration which lists ERROR must still not authorize deletion.
+    with database_engine.begin() as c:
+        c.execute(
+            text(
+                "update audit.quality_archive set quality_ids = array[:id]::uuid[] "
+                "where ingestion_id = :ingestion"
+            ),
+            {"id": protected, "ingestion": ingestion_id},
+        )
+    with repo.transaction() as c:
+        assert (
+            c.execute(text("delete from audit.quality_result returning quality_result_id")).all()
+            == []
+        )
+
+
+def test_quality_archive_report_lifecycle_and_owned_temp(database_engine, quality_archive_worker):
+    from market_data_center.domain.operations import TriggerSource, WorkflowCode
+    from market_data_center.operations_service import WorkflowExecutionService
+    from market_data_center.persistence.operations_postgres import PostgreSQLOperationsPersistence
+    from market_data_center.quality_archive import archive_temp_path
+    from market_data_center.quality_cleanup_service import quality_cutoff
+
+    repo = quality_archive_worker
+    now = datetime.now(UTC)
+    execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(repo.engine)).start(
+        WorkflowCode.DATA_CLEANUP, now, TriggerSource.MANUAL
+    )
+    run_id = execution.run.workflow_run_id
+    repo.start_report(run_id, now.date(), now, quality_cutoff(now.date()), {"free_bytes": 1024})
+    operation_id = uuid4()
+    repo.register_temp(run_id, operation_id, archive_temp_path(operation_id), now)
+    repo.finish_report(
+        run_id, now, "partial", {"error_code": "archive_disk_space_low"}, {"free_bytes": 1024}
+    )
+    with repo.transaction() as c:
+        report = c.execute(text("select * from operations.data_cleanup_report")).mappings().one()
+        assert report["status"] == "partial"
+        assert report["owned_temps"][0]["operation_id"] == str(operation_id)
+        assert (
+            c.execute(
+                text(
+                    "update operations.data_cleanup_report set status='running', finished_at=null "
+                    "returning workflow_run_id"
+                )
+            ).all()
+            == []
+        )
+    with pytest.raises(RuntimeError, match="not running"):
+        repo.register_temp(run_id, uuid4(), "unused", now)
+    execution.succeed()
+
+
+@pytest.mark.parametrize("history", [False, True])
+def test_snapshot_cleanup_checkpoint_prevents_delete_after_lock_loss(database_engine, history):
+    from sqlalchemy import event
+
+    statements = []
+
+    @event.listens_for(database_engine, "before_cursor_execute")
+    def record(conn, cursor, statement, params, context, executemany):
+        statements.append(statement.strip().lower())
+
+    def stop():
+        raise RuntimeError("maintenance_lock_lost")
+
+    repo = PostgreSQLPersistence(database_engine)
+    method = (
+        repo.delete_call_auction_market_series_snapshot_history_before
+        if history
+        else repo.verify_and_delete_archived_call_auction_market_series_snapshots_before
+    )
+    with pytest.raises(RuntimeError, match="maintenance_lock_lost"):
+        method(date(2026, 1, 1), checkpoint=stop)
+    assert not any(item.startswith("delete ") for item in statements)
+
+
+def test_quality_archive_sql_limits_and_read_only_preview(quality_archive_worker):
+    repo = quality_archive_worker
+    with repo.transaction(readonly=True) as c:
+        assert c.scalar(text("show transaction_read_only")) == "on"
+        assert c.scalar(text("show lock_timeout")) == "2s"
+        assert c.scalar(text("show statement_timeout")) == "30s"
+        assert c.scalar(text("show timezone")) == "UTC"
+
+
+def test_quality_archive_parent_lock_blocks_concurrent_quality_insert(
+    database_engine, quality_archive_worker, tmp_path
+):
+    from concurrent.futures import ThreadPoolExecutor
+    from datetime import timedelta
+
+    from sqlalchemy.exc import OperationalError
+
+    from market_data_center.quality_archive import write_quality_archive
+
+    repo = quality_archive_worker
+    ingestion_id, _ = _seed_archive_quality(database_engine)
+    cutoff = datetime.now(UTC) - timedelta(days=30)
+    (group,) = repo.quality_candidates(cutoff)
+    rows = repo.load_quality_rows(group)
+    archive = write_quality_archive(tmp_path, group, rows, operation_id=uuid4())
+    checked = False
+
+    def contender():
+        with repo.transaction() as c:
+            c.execute(text("set local lock_timeout='100ms'"))
+            c.execute(
+                text("""insert into audit.quality_result
+                (ingestion_id, dataset_code, rule_code, severity, status, message)
+                values (:id, 'call_auction_market_series', 'realtime_quote.lot_precision',
+                        'info', 'failed', 'concurrent')"""),
+                {"id": ingestion_id},
+            )
+
+    def checkpoint():
+        nonlocal checked
+        if checked:
+            return
+        checked = True
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            with pytest.raises(OperationalError) as error:
+                pool.submit(contender).result(timeout=5)
+            assert error.value.orig.sqlstate == "55P03"
+
+    assert repo.commit_quality_archive(tmp_path, archive, rows, cutoff, checkpoint=checkpoint) == 1
+    assert checked
 
 
 def test_only_worker_can_delete_series_snapshot_details(
@@ -6619,6 +6989,9 @@ def test_worker_has_only_ingestion_permissions(
 ) -> None:
     _prepare_api_data(database_engine)
     expected = {
+        ("audit", "quality_archive", "INSERT"),
+        ("audit", "quality_archive", "SELECT"),
+        ("audit", "quality_result", "DELETE"),
         ("audit", "quality_result", "INSERT"),
         ("audit", "quality_result", "SELECT"),
         ("core", "daily_bar", "INSERT"),
@@ -6681,6 +7054,7 @@ def test_worker_has_only_ingestion_permissions(
 
 def test_internal_tables_have_rls_with_worker_only_policies(database_engine: Engine) -> None:
     expected_tables = {
+        ("audit", "quality_archive"),
         ("audit", "quality_result"),
         ("core", "daily_bar"),
         ("core", "deducted_profit"),

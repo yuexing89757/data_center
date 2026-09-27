@@ -1,7 +1,8 @@
 """Fail-closed retention cleanup for call-auction series detail facts and quality results."""
 
 from calendar import monthrange
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from typing import Protocol
 
@@ -15,14 +16,12 @@ class DataCleanupPersistence(Protocol):
     ) -> tuple[date, ...]: ...
 
     def verify_and_delete_archived_call_auction_market_series_snapshots_before(
-        self, cutoff_date: date
+        self, cutoff_date: date, *, checkpoint: Callable[[], None] = lambda: None
     ) -> tuple[int, int]: ...
 
     def delete_call_auction_market_series_snapshot_history_before(
-        self, cutoff_date: date
+        self, cutoff_date: date, *, checkpoint: Callable[[], None] = lambda: None
     ) -> int: ...
-
-    def delete_quality_results_before(self, cutoff_date: date) -> int: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,6 +53,12 @@ class DataCleanupSummary:
             raise ValueError("verified_rows must equal deleted_rows")
 
 
+class DataCleanupFailure(RuntimeError):
+    def __init__(self, result: DataCleanupSummary) -> None:
+        super().__init__("snapshot_cleanup_failed_after_online_commit")
+        self.result = result
+
+
 def retention_cutoff(reference_date: date, completed_dates: tuple[date, ...]) -> date:
     if len(completed_dates) != RETAINED_COMPLETED_TRADING_DAYS:
         raise RuntimeError("cleanup requires three completed trading dates")
@@ -80,34 +85,40 @@ class DataCleanupService:
     def __init__(self, persistence: DataCleanupPersistence) -> None:
         self._persistence = persistence
 
-    def run(self, reference_date: date) -> DataCleanupSummary:
+    def run(
+        self, reference_date: date, *, checkpoint: Callable[[], None] = lambda: None
+    ) -> DataCleanupSummary:
+        checkpoint()
         dates = self._persistence.latest_completed_trading_dates(
             reference_date,
             RETAINED_COMPLETED_TRADING_DAYS,
         )
         cutoff_date = retention_cutoff(reference_date, dates)
+        checkpoint()
         verified_rows, deleted_rows = (
             self._persistence.verify_and_delete_archived_call_auction_market_series_snapshots_before(
-                cutoff_date
+                cutoff_date, checkpoint=checkpoint
             )
         )
         history_cutoff_date = six_calendar_months_before(reference_date)
-        history_deleted_rows = (
-            self._persistence.delete_call_auction_market_series_snapshot_history_before(
-                history_cutoff_date
-            )
-        )
         qr_cutoff_date = quality_result_cutoff(reference_date)
-        quality_result_deleted_rows = self._persistence.delete_quality_results_before(
-            qr_cutoff_date
-        )
-        return DataCleanupSummary(
+        committed = DataCleanupSummary(
             cutoff_date=cutoff_date,
             retained_trading_days=len(dates),
             verified_rows=verified_rows,
             deleted_rows=deleted_rows,
             history_cutoff_date=history_cutoff_date,
-            history_deleted_rows=history_deleted_rows,
+            history_deleted_rows=0,
             quality_result_cutoff_date=qr_cutoff_date,
-            quality_result_deleted_rows=quality_result_deleted_rows,
+            quality_result_deleted_rows=0,
         )
+        try:
+            checkpoint()
+            history_deleted_rows = (
+                self._persistence.delete_call_auction_market_series_snapshot_history_before(
+                    history_cutoff_date, checkpoint=checkpoint
+                )
+            )
+        except Exception as error:
+            raise DataCleanupFailure(committed) from error
+        return replace(committed, history_deleted_rows=history_deleted_rows)

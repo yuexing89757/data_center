@@ -642,7 +642,21 @@ def _configure_data_cleanup_runner(
         return fire_time
 
     monkeypatch.setattr(scheduler_module, "_scheduled_job_fire_time", scheduled_fire_time)
-    monkeypatch.setattr(scheduler_module, "DataCleanupService", FakeService)
+    from zoneinfo import ZoneInfo
+
+    from market_data_center import cleanup_workflow
+
+    def run_cleanup(engine, settings, execution, *, now, scheduled):
+        assert scheduled is True
+        execution.step(
+            "cleanup_call_auction_market_series_snapshots",
+            1,
+            lambda: FakeService(("facts", engine)).run(
+                fire_time.astimezone(ZoneInfo("Asia/Shanghai")).date()
+            ),
+        )
+
+    monkeypatch.setattr(cleanup_workflow, "run_cleanup_workflow", run_cleanup)
     return captured, engine
 
 

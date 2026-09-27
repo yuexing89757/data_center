@@ -31,7 +31,6 @@ from market_data_center.call_auction_market_series_service import (
 )
 from market_data_center.cli import run_daily_workflow, run_stock_daily_indicator_workflow
 from market_data_center.close_price_new_highs_service import ClosePriceNewHighsService
-from market_data_center.data_cleanup_service import DataCleanupService
 from market_data_center.database_urls import sqlalchemy_url
 from market_data_center.domain.operations import TriggerSource, WorkflowCode
 from market_data_center.dragon_tiger_profile_service import DragonTigerProfileService
@@ -836,7 +835,9 @@ def run_regulation_daily_calculation_job() -> None:
 
 
 def run_data_cleanup_job() -> None:
-    """Delete auction-series details, old history snapshots, and stale quality results."""
+    """Archive verified quality evidence and clean bounded snapshot retention."""
+    from market_data_center.cleanup_workflow import run_cleanup_workflow
+
     settings = WorkerSettings()  # type: ignore[call-arg]
     scheduling = SchedulerSettings()
     engine = create_engine(
@@ -848,19 +849,13 @@ def run_data_cleanup_job() -> None:
             scheduling,
             weekdays_only=False,
         )
-        reference_date = fire_time.astimezone(ZoneInfo(SCHEDULER_TIMEZONE)).date()
         execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
             WorkflowCode.DATA_CLEANUP,
             fire_time,
             TriggerSource.SCHEDULED,
         )
         try:
-            service = DataCleanupService(PostgreSQLPersistence(engine))
-            execution.step(
-                "cleanup_call_auction_market_series_snapshots",
-                1,
-                lambda: service.run(reference_date),
-            )
+            run_cleanup_workflow(engine, settings, execution, now=datetime.now(UTC), scheduled=True)
         except BaseException as error:
             execution.fail(error)
             raise

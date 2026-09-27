@@ -27,6 +27,8 @@ TARGET_SCHEMAS = (
     "today_limit_down",
 )
 EXPECTED_TABLES = {
+    ("audit", "quality_archive"),
+    ("operations", "data_cleanup_report"),
     ("audit", "quality_result"),
     ("billboard", "dragon_tiger_event"),
     ("billboard", "dragon_tiger_reason"),

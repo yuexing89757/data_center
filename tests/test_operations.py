@@ -33,6 +33,33 @@ from market_data_center.shareholder_count_batch import ShareholderCountSyncSumma
 NOW = datetime(2026, 8, 2, 10, tzinfo=UTC)
 
 
+def test_failed_cleanup_keeps_previously_committed_counts():
+    from market_data_center.quality_cleanup_service import (
+        QualityCleanupFailure,
+        QualityCleanupResult,
+    )
+
+    persistence = MemoryOperationsPersistence()
+    execution = WorkflowExecutionService(cast(PostgreSQLOperationsPersistence, persistence)).start(
+        WorkflowCode.DATA_CLEANUP, NOW, TriggerSource.SCHEDULED
+    )
+    error = QualityCleanupFailure(
+        QualityCleanupResult(
+            scanned=2, completed=1, deleted_rows=5000, errors=("OperationalError",)
+        )
+    )
+
+    def operation():
+        raise error
+
+    with pytest.raises(QualityCleanupFailure):
+        execution.step("archive_auction_quality", 2, operation)
+    execution.fail(error)
+    assert persistence.finished_jobs[0].accepted_rows == 1
+    assert persistence.finished_jobs[0].status is ExecutionStatus.FAILED
+    assert persistence.finished_workflows[0].accepted_rows == 1
+
+
 def test_dragon_tiger_daily_is_a_distinct_workflow_identity() -> None:
     assert WorkflowCode("dragon_tiger_daily") is WorkflowCode.DRAGON_TIGER_DAILY
     assert WorkflowCode("security_bse_daily") is WorkflowCode.SECURITY_BSE_DAILY
@@ -137,7 +164,10 @@ def test_job_catalog_is_stable_and_references_defined_workflows() -> None:
     assert workflows["shareholder_count_backfill"].step_codes == ("shareholder_count_backfill",)
     assert workflows["dragon_tiger_daily"].step_codes == ("collect_dragon_tiger",)
     assert workflows["security_bse_daily"].step_codes == ("sync_bse_security",)
-    assert workflows["data_cleanup"].step_codes == ("cleanup_call_auction_market_series_snapshots",)
+    assert workflows["data_cleanup"].step_codes == (
+        "cleanup_call_auction_market_series_snapshots",
+        "archive_auction_quality",
+    )
     assert all(job.timezone == "Asia/Shanghai" for job in jobs)
     assert {workflow.value for workflow in WorkflowCode} == set(workflows)
 
@@ -187,7 +217,10 @@ def test_job_catalog_owns_all_fixed_schedules() -> None:
     assert jobs["recover-stale-ingestion-runs"].interval_hours == 1
     assert jobs["pytdx-pool-refresh"].interval_hours == 1
     assert all(job.timezone == "Asia/Shanghai" for job in jobs.values())
-    assert all(job.timeout_seconds == 21_600 for job in jobs.values())
+    assert jobs["data-cleanup-daily"].timeout_seconds == 3600
+    assert all(
+        job.timeout_seconds == 21_600 for job in jobs.values() if job.code != "data-cleanup-daily"
+    )
     shareholder_count = jobs["shareholder-count-daily"]
     assert shareholder_count.workflow_code == "shareholder_count_daily"
     assert shareholder_count.day_of_week is None

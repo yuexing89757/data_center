@@ -33,12 +33,14 @@ class FakeCleanupPersistence:
         return self.dates
 
     def verify_and_delete_archived_call_auction_market_series_snapshots_before(
-        self, cutoff_date: date
+        self, cutoff_date: date, **kwargs
     ) -> tuple[int, int]:
         self.deleted_before = cutoff_date
         return self.verified_and_deleted
 
-    def delete_call_auction_market_series_snapshot_history_before(self, cutoff_date: date) -> int:
+    def delete_call_auction_market_series_snapshot_history_before(
+        self, cutoff_date: date, **kwargs
+    ) -> int:
         self.history_deleted_before = cutoff_date
         return self.history_deleted_rows
 
@@ -98,12 +100,22 @@ def test_cleanup_service_deletes_only_after_cutoff_is_resolved() -> None:
         history_cutoff_date=date(2026, 3, 3),
         history_deleted_rows=45,
         quality_result_cutoff_date=date(2026, 8, 4),
-        quality_result_deleted_rows=67,
+        quality_result_deleted_rows=0,
     )
     assert persistence.requested_dates == (date(2026, 9, 3), 3)
     assert persistence.deleted_before == date(2026, 8, 31)
     assert persistence.history_deleted_before == date(2026, 3, 3)
-    assert persistence.quality_result_deleted_before == date(2026, 8, 4)
+    assert persistence.quality_result_deleted_before is None
+
+
+def test_snapshot_cleanup_never_calls_unarchived_quality_delete() -> None:
+    class ForbiddenQualityDelete(FakeCleanupPersistence):
+        def delete_quality_results_before(self, cutoff_date: date) -> int:
+            raise AssertionError("unarchived quality evidence must be retained")
+
+    persistence = ForbiddenQualityDelete((date(2026, 9, 2), date(2026, 9, 1), date(2026, 8, 31)))
+    result = DataCleanupService(persistence).run(date(2026, 9, 3))
+    assert result.quality_result_deleted_rows == 0
 
 
 def test_cleanup_service_does_not_delete_when_calendar_history_is_incomplete() -> None:
@@ -148,6 +160,22 @@ def test_cleanup_summary_rejects_negative_quality_result_deleted_count() -> None
 
 def test_quality_result_cutoff_returns_thirty_calendar_days_before() -> None:
     assert quality_result_cutoff(date(2026, 9, 16)) == date(2026, 8, 17)
+
+
+def test_history_failure_preserves_committed_online_counts():
+    from market_data_center.data_cleanup_service import DataCleanupFailure
+
+    class HistoryFailure(FakeCleanupPersistence):
+        def delete_call_auction_market_series_snapshot_history_before(self, cutoff_date, **kwargs):
+            raise RuntimeError("private database details")
+
+    persistence = HistoryFailure(
+        (date(2026, 9, 2), date(2026, 9, 1), date(2026, 8, 31)), verified_and_deleted=(12, 12)
+    )
+    with pytest.raises(DataCleanupFailure) as failure:
+        DataCleanupService(persistence).run(date(2026, 9, 3))
+    assert failure.value.result.deleted_rows == 12
+    assert failure.value.result.history_deleted_rows == 0
 
 
 def test_quality_result_cutoff_crosses_month_and_year_boundaries() -> None:

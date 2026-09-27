@@ -196,8 +196,8 @@ WORKFLOW_DEFINITIONS = (
     WorkflowDefinition(
         "data_cleanup",
         "数据清理任务",
-        "清理竞价序列明细(保留三个已完成交易日)与质检结果(保留三十个自然日)。",
-        ("cleanup_call_auction_market_series_snapshots",),
+        "校验归档后清理竞价序列; 白名单质检明细超过30天完整归档后精确清理。",
+        ("cleanup_call_auction_market_series_snapshots", "archive_auction_quality"),
     ),
 )
 
@@ -446,13 +446,13 @@ def job_definitions(settings: SchedulerSettings) -> tuple[JobDefinition, ...]:
         JobDefinition(
             DATA_CLEANUP_JOB_ID,
             "数据清理任务",
-            "校验归档后清理在线快照, 清理六个月以前的历史快照, 并清理三十天以前的质检结果。",
+            "校验归档后清理在线快照及六个月前历史; 超过30天的白名单质检明细归档后清理。",
             "data_cleanup",
             "cron",
             "每天 03:00",
             timezone,
             settings.data_cleanup_enabled,
-            timeout,
+            3600,
             "归档缺失或缺少三个已完成交易日时保持在线数据不变; 下一日自动重试。",
             hour=3,
             minute=0,

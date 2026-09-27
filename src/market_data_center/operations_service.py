@@ -10,7 +10,7 @@ from market_data_center.call_auction_market_series_service import (
 )
 from market_data_center.call_auction_market_service import CallAuctionMarketCollectionSummary
 from market_data_center.daily_bar_batch import DailyBarBulkSummary
-from market_data_center.data_cleanup_service import DataCleanupSummary
+from market_data_center.data_cleanup_service import DataCleanupFailure, DataCleanupSummary
 from market_data_center.domain.auction import AuctionCollectionSummary
 from market_data_center.domain.close_price_new_highs import ClosePriceNewHighBuildSummary
 from market_data_center.domain.ingestion import IngestionRun, IngestionStatus
@@ -33,6 +33,7 @@ from market_data_center.persistence.operations_postgres import PostgreSQLOperati
 from market_data_center.persistence.today_limit_down_postgres import TodayLimitDownFillSummary
 from market_data_center.persistence.today_limit_up_postgres import TodayLimitUpFillSummary
 from market_data_center.providers.pytdx_pool import PytdxPoolRefreshResult
+from market_data_center.quality_cleanup_service import QualityCleanupFailure, QualityCleanupResult
 from market_data_center.regulation_benchmark_service import (
     RegulationBenchmarkCollectionSummary,
 )
@@ -62,11 +63,19 @@ class WorkflowExecution:
         try:
             result = operation()
         except BaseException as error:
+            fetched = accepted = rejected = 0
+            if isinstance(error, (DataCleanupFailure, QualityCleanupFailure)):
+                fetched, accepted, rejected, _ = _result_statistics(error.result)
+                self._accepted_rows += accepted
+                self._rejected_rows += rejected
             self._persistence.finish_job(
                 job.finish(
                     ExecutionStatus.FAILED,
                     datetime.now(UTC),
                     error_summary=safe_error_summary(error),
+                    fetched_rows=fetched,
+                    accepted_rows=accepted,
+                    rejected_rows=rejected,
                 )
             )
             raise
@@ -130,6 +139,13 @@ def safe_error_summary(error: BaseException) -> str:
 
 
 def _result_statistics(result: object) -> tuple[int, int, int, ExecutionStatus]:
+    if isinstance(result, QualityCleanupResult):
+        return (
+            result.scanned,
+            result.completed,
+            result.failed,
+            ExecutionStatus.PARTIAL if result.partial else ExecutionStatus.SUCCEEDED,
+        )
     if isinstance(result, DataCleanupSummary):
         return (
             result.verified_rows + result.history_deleted_rows + result.quality_result_deleted_rows,

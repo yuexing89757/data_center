@@ -230,6 +230,10 @@ market-data-center worker --check
 
 ## 关键文件
 
+03:00 `data_cleanup` 的质量清理由无归档删除改为“完整归档、在线汇总、精确 ID 删除”。
+实际启动越过04:00记 partial，不侵占早盘；单实例和30分钟协作预算由 Service 保证。
+详见[质量归档与受限清理](质量归档与受限清理.md)，本地实现不表示生产已部署。
+
 | 文件 | 职责 |
 |---|---|
 | `src/market_data_center/scheduler.py` | 调度核心：`run_worker`、`build_scheduler`、job 执行函数、健康检查 |

@@ -268,11 +268,6 @@ delete from core.stock_daily_indicator
 where trade_date < :cutoff_date
 """)
 
-DELETE_QUALITY_RESULTS_BEFORE = text("""
-delete from audit.quality_result
-where created_at < cast(:cutoff_date as timestamp) at time zone 'Asia/Shanghai'
-""")
-
 LATEST_COMPLETED_TRADING_DATES = text("""
 select trade_date
 from core.trading_calendar
@@ -1276,12 +1271,7 @@ group by trade_date
         return result.rowcount
 
     def delete_quality_results_before(self, cutoff_date: date) -> int:
-        with self._engine.begin() as connection:
-            result = connection.execute(
-                DELETE_QUALITY_RESULTS_BEFORE,
-                {"cutoff_date": cutoff_date},
-            )
-        return result.rowcount
+        raise RuntimeError("quality deletion requires a verified archive and exact IDs")
 
     def latest_completed_trading_dates(self, reference_date: date, limit: int) -> tuple[date, ...]:
         if limit < 1:
@@ -1311,8 +1301,12 @@ group by trade_date
     def verify_and_delete_archived_call_auction_market_series_snapshots_before(
         self,
         cutoff_date: date,
+        *,
+        checkpoint: Callable[[], None] = lambda: None,
     ) -> tuple[int, int]:
         with self._engine.begin() as connection:
+            connection.execute(text("set local lock_timeout = '2s'"))
+            connection.execute(text("set local statement_timeout = '30s'"))
             connection.execute(
                 text("lock table realtime.call_auction_market_series_snapshot in share mode")
             )
@@ -1328,21 +1322,29 @@ group by trade_date
                 raise RuntimeError(
                     f"online auction snapshots are not fully archived: {missing_rows} rows missing"
                 )
+            checkpoint()
             result = connection.execute(
                 DELETE_CALL_AUCTION_MARKET_SERIES_SNAPSHOTS_BEFORE,
                 {"cutoff_date": cutoff_date},
             )
+            checkpoint()
         return int(verified_rows or 0), result.rowcount
 
     def delete_call_auction_market_series_snapshot_history_before(
         self,
         cutoff_date: date,
+        *,
+        checkpoint: Callable[[], None] = lambda: None,
     ) -> int:
         with self._engine.begin() as connection:
+            connection.execute(text("set local lock_timeout = '2s'"))
+            connection.execute(text("set local statement_timeout = '30s'"))
+            checkpoint()
             result = connection.execute(
                 DELETE_CALL_AUCTION_MARKET_SERIES_SNAPSHOT_HISTORY_BEFORE,
                 {"cutoff_date": cutoff_date},
             )
+            checkpoint()
         return result.rowcount
 
     def known_trading_dates(self, dates: Collection[date]) -> set[date]:

@@ -125,6 +125,9 @@ class _DragonTigerBackfillIncomplete(RuntimeError):
 
 def main() -> None:
     args = _parser().parse_args()
+    if args.dataset in {"data-cleanup", "quality-archive-inspect"}:
+        _run_cleanup_command(args)
+        return
     if args.dataset == "worker":
         from market_data_center.scheduler import run_worker
 
@@ -1450,6 +1453,70 @@ def _dragon_tiger_provider(provider_code: str) -> DragonTigerProvider:
     return EastmoneyDragonTigerAdapter()
 
 
+def _run_cleanup_command(args: Namespace) -> None:
+    from market_data_center.cleanup_workflow import run_cleanup_workflow
+    from market_data_center.operations_service import WorkflowExecutionService
+    from market_data_center.persistence.operations_postgres import PostgreSQLOperationsPersistence
+    from market_data_center.persistence.quality_archive_postgres import QualityArchivePersistence
+    from market_data_center.quality_archive import read_quality_archive
+    from market_data_center.quality_cleanup_service import QualityCleanupService
+
+    if args.dataset == "data-cleanup" and args.execute != args.confirm:
+        print(dumps({"error": "execution_requires_execute_and_confirm"}))
+        raise SystemExit(2)
+    settings = WorkerSettings()  # type: ignore[call-arg]
+    engine = create_engine(
+        sqlalchemy_url(settings.database_url.get_secret_value()), pool_pre_ping=True
+    )
+    try:
+        repo = QualityArchivePersistence(engine)
+        service = QualityCleanupService(repo, settings.raw_data_root)
+        now = datetime.now(SHANGHAI_TIME_ZONE)
+        if args.dataset == "quality-archive-inspect":
+            archives = repo.archives(args.ingestion_id)
+            verified = [
+                {
+                    "rule_code": item.group.rule_code,
+                    "rows": len(read_quality_archive(settings.raw_data_root, item)),
+                    "content_sha256": item.content_sha256,
+                }
+                for item in archives
+            ]
+            print(
+                dumps(
+                    {"ingestion_id": str(args.ingestion_id), "archives": verified}, sort_keys=True
+                )
+            )
+        elif not args.execute:
+            print(
+                dumps(
+                    {
+                        "quality": service.preview(now.date()),
+                        "snapshots": repo.snapshot_preview(now.date()),
+                    },
+                    sort_keys=True,
+                )
+            )
+        else:
+            execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
+                WorkflowCode.DATA_CLEANUP, now, TriggerSource.MANUAL
+            )
+            try:
+                result = run_cleanup_workflow(engine, settings, execution, now=now, scheduled=False)
+            except BaseException as error:
+                execution.fail(error)
+                raise
+            execution.succeed()
+            print(dumps(result.report(), sort_keys=True))
+            if result.partial:
+                raise SystemExit(1)
+    except Exception as error:
+        print(dumps({"status": "failed", "error_code": type(error).__name__}, sort_keys=True))
+        raise SystemExit(1) from None
+    finally:
+        engine.dispose()
+
+
 def _parser() -> ArgumentParser:
     parser = ArgumentParser(prog="market-data-center")
     parser.add_argument(
@@ -1463,6 +1530,16 @@ def _parser() -> ArgumentParser:
         help="automatic routing or an explicit data provider (default: auto)",
     )
     subparsers = parser.add_subparsers(dest="dataset", required=True)
+    cleanup = subparsers.add_parser(
+        "data-cleanup", help="read-only cleanup preview; execution requires both flags"
+    )
+    cleanup.add_argument("--execute", action="store_true")
+    cleanup.add_argument("--confirm", action="store_true")
+    inspect = subparsers.add_parser(
+        "quality-archive-inspect",
+        help="verify full quality archives without exposing source payloads",
+    )
+    inspect.add_argument("--ingestion-id", type=UUID, required=True)
     dragon_tiger = subparsers.add_parser(
         "dragon-tiger-collect",
         help="collect exact-day Eastmoney A-share DragonTiger facts",

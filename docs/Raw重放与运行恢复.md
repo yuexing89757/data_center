@@ -118,3 +118,8 @@ market-data-center compare-daily-bars \
 - Daily Bar 引用未知证券或非交易日：批次按 Validator 结果 partial/failed，不绕过质量规则。
 
 本地 Raw 必须与数据库备份成对保留。只有数据库 Manifest 而没有对应文件，无法完成重放。
+
+ADR-0058 质量归档新增 `audit.quality_archive` 和 `operations.data_cleanup_report` 恢复计数。
+文件备份必须覆盖 Raw 根下 `_quality_archive`（含 gzip）；只有登记表不等于保存了旧明细。
+恢复后可用 `quality-archive-inspect --ingestion-id <UUID>` 只读校验全字段、字节数和哈希。
+详见[质量归档与受限清理](质量归档与受限清理.md)。

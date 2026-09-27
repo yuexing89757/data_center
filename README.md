@@ -301,6 +301,10 @@ Compose service, run the integration marker, and remove the temporary volume aft
 
 Verified Raw replay, stale-run recovery, and read-only cross-provider Daily Bar comparison are documented in [docs/Raw重放与运行恢复.md](docs/Raw重放与运行恢复.md).
 
+Quality cleanup now requires a complete verified archive before deleting whitelisted old evidence.
+`uv run market-data-center data-cleanup` is read-only by default. See
+[质量归档与受限清理](docs/质量归档与受限清理.md) for bounds, permissions, and deployment prerequisites.
+
 Production migration and smoke verification can be started manually through the protected `Production migration and smoke check` GitHub Actions workflow.
 
 The operator-controlled `call-auction-indicative-detail` command captures one SSE/SZSE symbol for

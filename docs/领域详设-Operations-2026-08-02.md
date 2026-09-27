@@ -19,6 +19,11 @@ Operations bounded context 只记录 Worker 编排事实，不承载市场数据
 
 ## 边界
 
+`data_cleanup` 增加 `archive_auction_quality` 步骤；`operations.data_cleanup_report` 是内部维护
+报告，关联 WorkflowRun，存截止点、统计、容量与专属临时文件归属。报告终态不可再修改；容量或预算
+不足、损坏候选等记 partial，数据库等全局失败记 failed。步骤行数区分处理组数、实际归档明细数，
+不将 DELETE 数量换算成磁盘释放字节。见[质量归档与受限清理](质量归档与受限清理.md)。
+
 - APScheduler JobStore 只负责计划持久化，不作为执行历史；`job_state` 不进入领域。
 - IngestionRun 继续记录每个 Provider 数据批次；Operations 只记录工作流和步骤编排。
 - 错误摘要只允许异常类名或受控错误码，不保存异常正文、路径、参数、URL 和凭据。
