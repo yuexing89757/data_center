@@ -14,6 +14,13 @@
 严重异动、热门股、重点监控、问询函及相关查询共覆盖十四种只读请求。
 具体参数、来源字段限制和示例见[接口说明](开盘啦异动提醒实时接口.md)，边界见 ADR-0059。
 
+## 开盘啦市场情绪赚钱效应实时接口
+
+`GET /api/v1/realtime/kaipanla/market-emotion/money-effect` 请求时读取开盘啦首页“市场情绪 →
+赚钱效应”历史列表，返回来源日期、打板成功率和打板盈利率。接口支持有界 `offset`/`limit`，
+不读取展开详情、不自动翻页、不写数据库或 Raw，也不触发 Worker。完整字段、错误边界和示例见
+[接口说明](开盘啦市场情绪赚钱效应实时接口.md)，架构边界见 ADR-0059。
+
 The FastAPI process is an independent protocol boundary that connects directly to PostgreSQL. It
 does not require PostgREST or the Worker scheduler. Provider access and Raw capture exist only for
 the explicitly documented bounded single-symbol live-auction endpoint. The fixed THS:883423 bias

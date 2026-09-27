@@ -94,6 +94,7 @@
 
 ## Implementation workflow
 
+- Develop directly on `master` unless the user explicitly requests another branch or worktree.
 - Before editing, inspect the governing ADR/domain design, nearby tests, and the relevant
   migration or public contract. Prefer the smallest change that satisfies the issue.
 - Preserve existing user changes in a dirty worktree. Do not reformat or rewrite unrelated

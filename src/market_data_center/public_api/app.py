@@ -31,6 +31,10 @@ from market_data_center.providers.kaipanla_auction import (
     KaipanlaAuctionProvider,
     KaipanlaAuctionUpstream,
 )
+from market_data_center.providers.kaipanla_money_effect import (
+    KaipanlaMoneyEffectProvider,
+    KaipanlaMoneyEffectUpstream,
+)
 from market_data_center.public_api.auction_indicative_live import (
     AuctionIndicativeLiveBusy,
     AuctionIndicativeLiveInvalid,
@@ -45,6 +49,9 @@ from market_data_center.public_api.auction_indicative_write import (
 )
 from market_data_center.public_api.kaipanla_alerts import router as kaipanla_alerts_router
 from market_data_center.public_api.kaipanla_auction import router as kaipanla_auction_router
+from market_data_center.public_api.kaipanla_money_effect import (
+    router as kaipanla_money_effect_router,
+)
 from market_data_center.public_api.models import (
     AuctionIndicativeDetailResponse,
     AuctionOnePriceLimitResponse,
@@ -108,6 +115,7 @@ def create_app(
     tencent_quote_live_service: TencentQuoteLiveService | None = None,
     kaipanla_alerts_provider: KaipanlaAlertsProvider | None = None,
     kaipanla_auction_provider: KaipanlaAuctionProvider | None = None,
+    kaipanla_money_effect_provider: KaipanlaMoneyEffectProvider | None = None,
 ) -> FastAPI:
     configured = settings or ApiSettings()  # type: ignore[call-arg]
     owned_engine: Engine | None = None
@@ -174,6 +182,11 @@ def create_app(
         timeout_seconds=configured.fastapi_kaipanla_timeout_seconds
     )
     app.include_router(kaipanla_auction_router, dependencies=[Depends(_require_api_key)])
+    app.state.kaipanla_money_effect_provider = (
+        kaipanla_money_effect_provider
+        or KaipanlaMoneyEffectProvider(timeout_seconds=configured.fastapi_kaipanla_timeout_seconds)
+    )
+    app.include_router(kaipanla_money_effect_router, dependencies=[Depends(_require_api_key)])
     if auction_indicative_service is None:
         assert owned_write_engine is not None
         raw_root = configured.fastapi_auction_raw_root
@@ -925,6 +938,14 @@ def _require_bounded_date_range(start_date: date, end_date: date) -> None:
 
 
 def _install_exception_handlers(app: FastAPI) -> None:
+    @app.exception_handler(KaipanlaMoneyEffectUpstream)
+    async def kaipanla_money_effect_upstream(
+        _: Request, __: KaipanlaMoneyEffectUpstream
+    ) -> JSONResponse:
+        return _error_response(
+            502, "upstream_error", "Kaipanla money-effect provider request failed"
+        )
+
     @app.exception_handler(KaipanlaAuctionUpstream)
     async def kaipanla_auction_upstream(_: Request, __: KaipanlaAuctionUpstream) -> JSONResponse:
         return _error_response(502, "upstream_error", "Kaipanla auction provider request failed")

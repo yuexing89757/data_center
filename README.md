@@ -50,6 +50,12 @@ database/Raw writes or Worker jobs. See [the API guide](docs/开盘啦异动提�
 for date handling, paging, source-column limitations and examples. Restart the API process
 after updating code; no database migration is needed for these routes.
 
+Kaipanla home-page market-emotion money-effect history is exposed by
+`GET /api/v1/realtime/kaipanla/market-emotion/money-effect`. It returns the verified list
+fields only (date, board success rate and board profit rate), with bounded paging and no
+detail expansion, persistence or Worker job. See
+[the money-effect API guide](docs/开盘啦市场情绪赚钱效应实时接口.md).
+
 Regulation public reads (migration `20260922000100`):
 `GET /api/v1/regulation/triggers` and
 `GET /api/v1/regulation/recent-events/next-triggers` require an exact `trade_date`
