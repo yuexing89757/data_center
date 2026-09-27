@@ -9,6 +9,7 @@ from shutil import which
 from typing import cast
 from urllib.parse import urlsplit, urlunsplit
 from uuid import UUID, uuid4
+from zoneinfo import ZoneInfo
 
 import psycopg
 import pytest
@@ -5425,7 +5426,7 @@ def test_deducted_profit_is_idempotent_and_as_of_excludes_later_observation(
         current = (
             connection.execute(
                 text("select * from api_v1.query_deducted_profits_as_of(:as_of, null, 10)"),
-                {"as_of": date.today()},
+                {"as_of": datetime.now(ZoneInfo("Asia/Shanghai")).date()},
             )
             .mappings()
             .all()
