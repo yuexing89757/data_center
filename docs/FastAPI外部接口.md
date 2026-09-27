@@ -1,5 +1,11 @@
 # FastAPI external read-only API
 
+## 开盘啦市场情绪折线图
+
+`GET /api/v1/realtime/kaipanla/market-emotion/chart?offset=0&limit=100`，分类“实时接口”。
+返回日期、情绪指标、大幅回撤家数、涨停家数、连板高度，按日期倒序，复用 API Key。
+请求时读取来源历史序列，不入库。详见[图表接口说明](开盘啦市场情绪图实时接口.md)。
+
 ## 开盘啦竞价实时接口
 
 `GET /api/v1/realtime/kaipanla/auction-pool`，分类“实时接口”，复用现有鉴权与错误格式。

@@ -56,6 +56,10 @@ fields only (date, board success rate and board profit rate), with bounded pagin
 detail expansion, persistence or Worker job. See
 [the money-effect API guide](docs/开盘啦市场情绪赚钱效应实时接口.md).
 
+The historical market-emotion chart is available at
+`GET /api/v1/realtime/kaipanla/market-emotion/chart?offset=0&limit=100`.
+See [the chart API guide](docs/开盘啦市场情绪图实时接口.md).
+
 Regulation public reads (migration `20260922000100`):
 `GET /api/v1/regulation/triggers` and
 `GET /api/v1/regulation/recent-events/next-triggers` require an exact `trade_date`

@@ -31,6 +31,10 @@ from market_data_center.providers.kaipanla_auction import (
     KaipanlaAuctionProvider,
     KaipanlaAuctionUpstream,
 )
+from market_data_center.providers.kaipanla_emotion_chart import (
+    KaipanlaEmotionChartProvider,
+    KaipanlaEmotionChartUpstream,
+)
 from market_data_center.providers.kaipanla_money_effect import (
     KaipanlaMoneyEffectProvider,
     KaipanlaMoneyEffectUpstream,
@@ -49,6 +53,9 @@ from market_data_center.public_api.auction_indicative_write import (
 )
 from market_data_center.public_api.kaipanla_alerts import router as kaipanla_alerts_router
 from market_data_center.public_api.kaipanla_auction import router as kaipanla_auction_router
+from market_data_center.public_api.kaipanla_emotion_chart import (
+    router as kaipanla_emotion_chart_router,
+)
 from market_data_center.public_api.kaipanla_money_effect import (
     router as kaipanla_money_effect_router,
 )
@@ -116,6 +123,7 @@ def create_app(
     kaipanla_alerts_provider: KaipanlaAlertsProvider | None = None,
     kaipanla_auction_provider: KaipanlaAuctionProvider | None = None,
     kaipanla_money_effect_provider: KaipanlaMoneyEffectProvider | None = None,
+    kaipanla_emotion_chart_provider: KaipanlaEmotionChartProvider | None = None,
 ) -> FastAPI:
     configured = settings or ApiSettings()  # type: ignore[call-arg]
     owned_engine: Engine | None = None
@@ -187,6 +195,11 @@ def create_app(
         or KaipanlaMoneyEffectProvider(timeout_seconds=configured.fastapi_kaipanla_timeout_seconds)
     )
     app.include_router(kaipanla_money_effect_router, dependencies=[Depends(_require_api_key)])
+    app.state.kaipanla_emotion_chart_provider = (
+        kaipanla_emotion_chart_provider
+        or KaipanlaEmotionChartProvider(timeout_seconds=configured.fastapi_kaipanla_timeout_seconds)
+    )
+    app.include_router(kaipanla_emotion_chart_router, dependencies=[Depends(_require_api_key)])
     if auction_indicative_service is None:
         assert owned_write_engine is not None
         raw_root = configured.fastapi_auction_raw_root
@@ -938,6 +951,14 @@ def _require_bounded_date_range(start_date: date, end_date: date) -> None:
 
 
 def _install_exception_handlers(app: FastAPI) -> None:
+    @app.exception_handler(KaipanlaEmotionChartUpstream)
+    async def kaipanla_emotion_chart_upstream(
+        _: Request, __: KaipanlaEmotionChartUpstream
+    ) -> JSONResponse:
+        return _error_response(
+            502, "upstream_error", "Kaipanla emotion-chart provider request failed"
+        )
+
     @app.exception_handler(KaipanlaMoneyEffectUpstream)
     async def kaipanla_money_effect_upstream(
         _: Request, __: KaipanlaMoneyEffectUpstream

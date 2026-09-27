@@ -5594,6 +5594,141 @@
         "title": "KaipanlaAuctionResponse",
         "type": "object"
       },
+      "KaipanlaEmotionChartItem": {
+        "additionalProperties": false,
+        "properties": {
+          "consecutive_limit_up_height": {
+            "description": "来源连板高度，单位板。",
+            "minimum": 0.0,
+            "title": "Consecutive Limit Up Height",
+            "type": "integer"
+          },
+          "emotion_index": {
+            "description": "开盘啦情绪指标，来源值，非本系统计算。",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Emotion Index",
+            "type": "integer"
+          },
+          "large_drawdown_count": {
+            "description": "来源标记为大幅回撤的股票家数。",
+            "minimum": 0.0,
+            "title": "Large Drawdown Count",
+            "type": "integer"
+          },
+          "limit_up_count": {
+            "description": "图表来源口径的涨停家数。",
+            "minimum": 0.0,
+            "title": "Limit Up Count",
+            "type": "integer"
+          },
+          "trade_date": {
+            "description": "来源交易日期，YYYY-MM-DD。",
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "trade_date",
+          "emotion_index",
+          "large_drawdown_count",
+          "limit_up_count",
+          "consecutive_limit_up_height"
+        ],
+        "title": "KaipanlaEmotionChartItem",
+        "type": "object"
+      },
+      "KaipanlaEmotionChartResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "description": "按日期倒序排列的历史图表数据。",
+            "items": {
+              "$ref": "#/components/schemas/KaipanlaEmotionChartItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "description": "每页条数上限。",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "next_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "满页时可尝试的下一页偏移，下页可能为空。",
+            "title": "Next Offset"
+          },
+          "observed_at": {
+            "description": "收到响应的上海时区时间。",
+            "example": "2026-09-18 09:35:00",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "offset": {
+            "description": "来源列表偏移。",
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Offset",
+            "type": "integer"
+          },
+          "persisted": {
+            "const": false,
+            "description": "固定 false，响应不入库。",
+            "title": "Persisted",
+            "type": "boolean"
+          },
+          "returned_count": {
+            "description": "实际返回条数。",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Returned Count",
+            "type": "integer"
+          },
+          "source_code": {
+            "const": "kaipanla",
+            "description": "数据来源：开盘啦。",
+            "title": "Source Code",
+            "type": "string"
+          },
+          "source_layout": {
+            "const": "kaipanla.market_emotion.chart.v1",
+            "description": "已验证的历史图表布局版本。",
+            "title": "Source Layout",
+            "type": "string"
+          },
+          "total": {
+            "description": "来源没有可靠总数，固定为空。",
+            "title": "Total",
+            "type": "null"
+          }
+        },
+        "required": [
+          "source_code",
+          "source_layout",
+          "persisted",
+          "observed_at",
+          "offset",
+          "limit",
+          "returned_count",
+          "total",
+          "next_offset",
+          "items"
+        ],
+        "title": "KaipanlaEmotionChartResponse",
+        "type": "object"
+      },
       "KaipanlaMoneyEffectItem": {
         "additionalProperties": false,
         "properties": {
@@ -10805,6 +10940,91 @@
           }
         ],
         "summary": "分页查询开盘啦竞价池",
+        "tags": [
+          "实时接口"
+        ]
+      }
+    },
+    "/api/v1/realtime/kaipanla/market-emotion/chart": {
+      "get": {
+        "description": "读取涨跌统计更多页面的历史图表，每次访问一页。返回情绪指标、大幅回撤家数、涨停家数和连板高度。复用 X-API-Key，不入库，不自动翻页。",
+        "operationId": "emotion_chart_api_v1_realtime_kaipanla_market_emotion_chart_get",
+        "parameters": [
+          {
+            "description": "从结果集起点跳过的记录数。",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 10000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "最多返回的记录数。",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KaipanlaEmotionChartResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "查询开盘啦市场情绪折线图",
         "tags": [
           "实时接口"
         ]
