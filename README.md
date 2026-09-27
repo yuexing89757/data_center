@@ -38,6 +38,18 @@ See [INSTALL-WINDOWS.md](INSTALL-WINDOWS.md) for the Chinese installation and ve
 
 ## Development
 
+Kaipanla auction-pool reads use `GET /api/v1/realtime/kaipanla/auction-pool` with
+optional `trade_date`, bounded `offset`/`limit` and `exclude_st`. Historical paging is
+verified; current HTTP placeholder responses return 502 (APP Socket is not integrated).
+Amounts are CNY and ratios are percentages; no database/Raw writes occur.
+See [the auction API guide](docs/开盘啦竞价实时接口.md).
+
+Kaipanla alerts are exposed by ten authenticated FastAPI routes under
+`/api/v1/realtime/kaipanla/alerts`, grouped as `实时接口`. They fetch on request without
+database/Raw writes or Worker jobs. See [the API guide](docs/开盘啦异动提醒实时接口.md)
+for date handling, paging, source-column limitations and examples. Restart the API process
+after updating code; no database migration is needed for these routes.
+
 Regulation public reads (migration `20260922000100`):
 `GET /api/v1/regulation/triggers` and
 `GET /api/v1/regulation/recent-events/next-triggers` require an exact `trade_date`

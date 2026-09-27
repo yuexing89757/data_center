@@ -5,6 +5,10 @@
 from typing import Any
 
 FIELD_DESCRIPTIONS_ZH = {
+    "exclude_st": "是否过滤 ST 股票，默认 true。",
+    "filter": "严重异动筛选：all 全部、triggered 已触发、suspended 被停牌。",
+    "before_date": "历史重点监控日期游标；省略则读取首批，后续使用 next_date。",
+    "triggered_only": "旧版历史是否仅查询已触发异动记录，仅指定 trade_date 时生效。",
     "cursor": "上一页返回的不透明游标，绑定接口、交易日、计算版本及每页上限。",
     "calculation_status": "已发布计算批次状态；PARTIAL 表示存在输入不完整证券。",
     "completed_at": "计算批次完成时间，按上海时区格式化。",

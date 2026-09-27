@@ -1,5 +1,19 @@
 # FastAPI external read-only API
 
+## 开盘啦竞价实时接口
+
+`GET /api/v1/realtime/kaipanla/auction-pool`，分类“实时接口”，复用现有鉴权与错误格式。
+支持 `trade_date`、`offset`、`limit`（1–30）、`exclude_st`；不入库，金额元、比例百分比。
+历史分页已验证，当前 HTTP 占位响应返回 502，尚未接入 APP 当日 Socket。
+完整字段、限制及示例见[竞价接口说明](开盘啦竞价实时接口.md)。
+
+## 开盘啦异动提醒实时接口
+
+新增 `/api/v1/realtime/kaipanla/alerts` 下十个路由，统一归类“实时接口”，复用
+`X-API-Key`、Pydantic、错误格式和中文文档。请求时读取上游，不写数据库、不保存 Raw。
+严重异动、热门股、重点监控、问询函及相关查询共覆盖十四种只读请求。
+具体参数、来源字段限制和示例见[接口说明](开盘啦异动提醒实时接口.md)，边界见 ADR-0059。
+
 The FastAPI process is an independent protocol boundary that connects directly to PostgreSQL. It
 does not require PostgREST or the Worker scheduler. Provider access and Raw capture exist only for
 the explicitly documented bounded single-symbol live-auction endpoint. The fixed THS:883423 bias
