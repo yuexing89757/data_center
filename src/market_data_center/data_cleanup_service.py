@@ -1,11 +1,12 @@
-"""Fail-closed retention cleanup for call-auction series detail facts."""
+"""Fail-closed retention cleanup for call-auction series detail facts and quality results."""
 
 from calendar import monthrange
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from typing import Protocol
 
 RETAINED_COMPLETED_TRADING_DAYS = 3
+QUALITY_RESULT_RETENTION_DAYS = 30
 
 
 class DataCleanupPersistence(Protocol):
@@ -21,6 +22,8 @@ class DataCleanupPersistence(Protocol):
         self, cutoff_date: date
     ) -> int: ...
 
+    def delete_quality_results_before(self, cutoff_date: date) -> int: ...
+
 
 @dataclass(frozen=True, slots=True)
 class DataCleanupSummary:
@@ -30,11 +33,22 @@ class DataCleanupSummary:
     deleted_rows: int
     history_cutoff_date: date
     history_deleted_rows: int
+    quality_result_cutoff_date: date
+    quality_result_deleted_rows: int
 
     def __post_init__(self) -> None:
-        if min(self.verified_rows, self.deleted_rows, self.history_deleted_rows) < 0:
+        if (
+            min(
+                self.verified_rows,
+                self.deleted_rows,
+                self.history_deleted_rows,
+                self.quality_result_deleted_rows,
+            )
+            < 0
+        ):
             raise ValueError(
-                "verified_rows, deleted_rows, and history_deleted_rows must be nonnegative"
+                "verified_rows, deleted_rows, history_deleted_rows, "
+                "and quality_result_deleted_rows must be nonnegative"
             )
         if self.verified_rows != self.deleted_rows:
             raise ValueError("verified_rows must equal deleted_rows")
@@ -58,6 +72,10 @@ def six_calendar_months_before(reference_date: date) -> date:
     return date(year, month, day)
 
 
+def quality_result_cutoff(reference_date: date) -> date:
+    return reference_date - timedelta(days=QUALITY_RESULT_RETENTION_DAYS)
+
+
 class DataCleanupService:
     def __init__(self, persistence: DataCleanupPersistence) -> None:
         self._persistence = persistence
@@ -79,6 +97,10 @@ class DataCleanupService:
                 history_cutoff_date
             )
         )
+        qr_cutoff_date = quality_result_cutoff(reference_date)
+        quality_result_deleted_rows = self._persistence.delete_quality_results_before(
+            qr_cutoff_date
+        )
         return DataCleanupSummary(
             cutoff_date=cutoff_date,
             retained_trading_days=len(dates),
@@ -86,4 +108,6 @@ class DataCleanupService:
             deleted_rows=deleted_rows,
             history_cutoff_date=history_cutoff_date,
             history_deleted_rows=history_deleted_rows,
+            quality_result_cutoff_date=qr_cutoff_date,
+            quality_result_deleted_rows=quality_result_deleted_rows,
         )

@@ -644,7 +644,7 @@ APScheduler JobStore 只保存调度状态，不复制到 Regulation 或 Operati
 
 ## 13. 公开读取契约
 
-公开读取拆分为两个 RPC：
+公开读取拆分为三个 RPC：
 
 ```text
 api_v1.query_regulation_triggers(
@@ -658,16 +658,24 @@ api_v1.query_regulation_recent_event_next_triggers(
     p_cursor text default null,
     p_limit integer default 100
 ) -> jsonb
+
+api_v1.query_regulation_symbol_trigger(
+    p_trade_date date,
+    p_symbol text
+) -> jsonb
 ```
 
 `query_regulation_triggers` 返回指定交易日收盘计算触发的股票并按股票聚合逐规则结果；
 `query_regulation_recent_event_next_triggers` 只选择截至指定日期最近30个交易日内、事件水位以内的
-交易所正式事件，并返回普通异常、严重异常及三个指数情景下的下一交易日条件。两个 RPC 都使用
-精确日期、不回退，并且一次响应只读取一个已发布的 `calculation_id`。
+交易所正式事件，并返回普通异常、严重异常及三个指数情景下的下一交易日条件；
+`query_regulation_symbol_trigger` 是无分页的单股精确查询，入参为标准 `symbol`
+（如 `SSE:600000`），返回该股票当日状态、双口径异动计数与下一交易日触发条件。
+三个 RPC 都使用精确日期、不回退，并且一次响应只读取一个已发布的 `calculation_id`。
 
 约束：
 
 - `p_trade_date` 必填且不得早于2026-07-06；
+- `p_symbol` 必须匹配 `^(SSE|SZSE):[0-9]{6}$`，且必须被所选计算版本覆盖，否则 `P0002`；
 - 不回退到其他交易日；
 - `p_limit` 为1至500；
 - 当日触发游标编码状态等级和 `symbol`；近30日游标编码最近事件日期和 `symbol`；
@@ -675,7 +683,8 @@ api_v1.query_regulation_recent_event_next_triggers(
 - 选择该日最新已完成的 SUCCEEDED/PARTIAL CalculationRun，一次响应只使用一个 calculation_id；
 - 无兼容计算版本使用 SQLSTATE `P0002`；非法参数使用 `22023`；
 - 函数锁定 `search_path`、5秒 statement timeout、撤销 public执行权，只授予API角色；
-- 返回 `items`、`returned_count`、`has_more`、`next_cursor` 和计算批次/覆盖元数据。
+- 返回 `items`、`returned_count`、`has_more`、`next_cursor` 和计算批次/覆盖元数据
+  （单股接口固定 `returned_count=1`、`has_more=false`、`next_cursor=null`）。
 
 当日触发接口按股票聚合，股票 item 返回：
 
@@ -693,7 +702,26 @@ latest_event_level, latest_event_direction, latest_event_source_title,
 latest_event_source_url, next_triggers[]
 ```
 
-两个响应都返回 calculation_id、completed_at、event_watermark、算法/规则版本、覆盖数、
+单股接口返回该股票的完整截面：
+
+```text
+code, symbol, name, exchange, segment, applicability, data_completeness,
+calculated_state, announced_state, is_triggered_today,
+close, stock_daily_return_pct, benchmark_symbol, benchmark_close,
+benchmark_daily_return_pct, daily_deviation_pct,
+official_event_count_30d, official_event_direction_30d,
+abnormal_count_10d, abnormal_count_10d_up, abnormal_count_10d_down,
+triggered_rules[], next_triggers[]
+```
+
+其中 `is_triggered_today` 由 `calculated_state <> 'NORMAL'` 导出；异动次数同时给出
+30个交易日交易所正式公告口径（`official_event_count_30d`，含最近一次方向
+`official_event_direction_30d`）与10个交易日系统测算口径
+（`abnormal_count_10d` 及其涨/跌分量）。`applicability` 或 `data_completeness`
+异常时状态保持 `NORMAL`、计数为0、数组为空，不推断。三情景 `next_triggers`
+与近30日接口同构，已触发规则以 `reachability='CURRENTLY_TRIGGERED'` 表示。
+
+两个分页响应都返回 calculation_id、completed_at、event_watermark、算法/规则版本、覆盖数、
 returned_count 和 next_cursor。数值字段保持 Decimal 精度；缺失值保持 null。
 
 FastAPI：
@@ -701,9 +729,11 @@ FastAPI：
 ```text
 GET /api/v1/regulation/triggers
 GET /api/v1/regulation/recent-events/next-triggers
+GET /api/v1/regulation/symbols/{code}/trigger-status
 ```
 
-FastAPI复用现有API Key，只调用RPC。同步：
+FastAPI 层接受六位 `code`，经 Security 事实解析为唯一股票 `symbol` 后调用 RPC；
+无匹配返回404、跨市场歧义返回409。FastAPI复用现有API Key，只调用RPC。同步：
 
 - `contracts/postgrest-openapi-v1.json`
 - `contracts/agent-tools-v1.json`
@@ -764,6 +794,8 @@ FastAPI复用现有API Key，只调用RPC。同步：
 
 - 表约束、有效期排斥、RLS、最小授权和事务回滚；
 - RPC精确日期、过滤、cursor、limit、排序、P0002/22023和5秒超时；
+- 单股RPC双口径计数、NORMAL空截面、symbol校验与版本外覆盖P0002；
+- 六位code解析：无匹配404、跨市场歧义409；
 - API角色不能select内部表，FastAPI不直接查询内部schema；
 - 三份契约字段、枚举和边界一致；
 - 22:30/08:30 Asia/Shanghai注册、默认关闭、休市跳过；

@@ -268,6 +268,11 @@ delete from core.stock_daily_indicator
 where trade_date < :cutoff_date
 """)
 
+DELETE_QUALITY_RESULTS_BEFORE = text("""
+delete from audit.quality_result
+where created_at < cast(:cutoff_date as timestamp) at time zone 'Asia/Shanghai'
+""")
+
 LATEST_COMPLETED_TRADING_DATES = text("""
 select trade_date
 from core.trading_calendar
@@ -1266,6 +1271,14 @@ group by trade_date
         with self._engine.begin() as connection:
             result = connection.execute(
                 DELETE_STOCK_DAILY_INDICATORS_BEFORE,
+                {"cutoff_date": cutoff_date},
+            )
+        return result.rowcount
+
+    def delete_quality_results_before(self, cutoff_date: date) -> int:
+        with self._engine.begin() as connection:
+            result = connection.execute(
+                DELETE_QUALITY_RESULTS_BEFORE,
                 {"cutoff_date": cutoff_date},
             )
         return result.rowcount

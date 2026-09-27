@@ -33,6 +33,7 @@ EXPECTED_ENDPOINTS = {
     "query_hot_money_actions_by_date",
     "query_regulation_triggers",
     "query_regulation_recent_event_next_triggers",
+    "query_regulation_symbol_trigger",
 }
 
 

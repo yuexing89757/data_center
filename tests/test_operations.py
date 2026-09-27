@@ -389,6 +389,8 @@ def test_execution_service_records_data_cleanup_deleted_rows() -> None:
         deleted_rows=123,
         history_cutoff_date=date(2026, 2, 2),
         history_deleted_rows=45,
+        quality_result_cutoff_date=date(2026, 8, 4),
+        quality_result_deleted_rows=7,
     )
 
     execution.step(
@@ -400,9 +402,9 @@ def test_execution_service_records_data_cleanup_deleted_rows() -> None:
 
     job = persistence.finished_jobs[0]
     workflow = persistence.finished_workflows[0]
-    assert (job.fetched_rows, job.accepted_rows, job.rejected_rows) == (168, 168, 0)
+    assert (job.fetched_rows, job.accepted_rows, job.rejected_rows) == (175, 175, 0)
     assert job.status is ExecutionStatus.SUCCEEDED
-    assert workflow.accepted_rows == 168
+    assert workflow.accepted_rows == 175
 
 
 def test_execution_service_records_auction_series_archive_statistics() -> None:
