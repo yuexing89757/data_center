@@ -364,7 +364,9 @@ def test_regulation_symbol_rpc_returns_dual_counts_and_next_conditions(regulatio
         assert payload["abnormal_count_10d"] == 0
         assert payload["triggered_rules"] == []
         assert len(payload["next_triggers"]) == 7  # 2 rules x 3 scenarios + turnover NONE
-        price_rows = [r for r in payload["next_triggers"] if r["scenario_code"] not in {"CURRENT", "NONE"}]
+        price_rows = [
+            r for r in payload["next_triggers"] if r["scenario_code"] not in {"CURRENT", "NONE"}
+        ]
         assert {r["scenario_code"] for r in price_rows} == {
             "INDEX_DOWN_2",
             "INDEX_FLAT",

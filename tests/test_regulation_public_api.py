@@ -384,9 +384,7 @@ class _StubQueryService:
 
     def regulation_symbol_trigger(self, code: str, trade_date: date):
         assert code == "000001"
-        return models.RegulationSymbolTriggerResponse.model_validate(
-            symbol_trigger_payload()
-        )
+        return models.RegulationSymbolTriggerResponse.model_validate(symbol_trigger_payload())
 
 
 def symbol_client_for() -> TestClient:
