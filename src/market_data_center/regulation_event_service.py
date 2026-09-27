@@ -100,7 +100,10 @@ class RegulationEventCollectionService:
     def collect(
         self, observed_from: datetime, observed_to: datetime
     ) -> RegulationEventCollectionSummary:
+        """Query a half-open historical date range; audit actual collection time separately."""
         _validate_utc_bounds(observed_from, observed_to)
+        start_date = observed_from.astimezone(_SHANGHAI).date()
+        end_date = (observed_to - timedelta(microseconds=1)).astimezone(_SHANGHAI).date()
         started = self._aware_utc_now()
         run = IngestionRun(
             ingestion_id=self._uuid_factory(),
@@ -110,8 +113,8 @@ class RegulationEventCollectionService:
             requested_at=started,
             started_at=started,
             request_params={
-                "observed_from": observed_from.isoformat(),
-                "observed_to": observed_to.isoformat(),
+                "trade_date_start": start_date.isoformat(),
+                "trade_date_end": end_date.isoformat(),
             },
         )
         try:
@@ -125,15 +128,22 @@ class RegulationEventCollectionService:
         quality: tuple[QualityResult, ...] = ()
         try:
             batch = self._fetch(observed_from, observed_to)
+            observed_until = self._aware_utc_now() + timedelta(microseconds=1)
             request_params = dict(batch.request_params)
-            request_params["observed_from"] = observed_from.isoformat()
-            request_params["observed_to"] = observed_to.isoformat()
+            request_params.update(
+                trade_date_start=start_date.isoformat(),
+                trade_date_end=end_date.isoformat(),
+                observed_from=started.isoformat(),
+                observed_to=observed_until.isoformat(),
+            )
             run = replace(run, request_params=request_params)
             stored = self._write_raw(batch, observed_from, run.ingestion_id)
             manifest = self._manifest(run.ingestion_id, stored)
             self._attach_manifest(run, manifest)
             records = self._normalize(batch)
-            quality = self._validate(records, observed_from, observed_to, run.ingestion_id)
+            quality = self._validate(
+                records, start_date, end_date, started, observed_until, run.ingestion_id
+            )
             completed = replace(
                 run,
                 status=IngestionStatus.SUCCEEDED,
@@ -216,15 +226,15 @@ class RegulationEventCollectionService:
     def _validate(
         self,
         records: tuple[RegulationEventRecord, ...],
+        start_date: date,
+        end_date: date,
         observed_from: datetime,
         observed_to: datetime,
         ingestion_id: UUID,
     ) -> tuple[QualityResult, ...]:
-        local_start = observed_from.astimezone(_SHANGHAI).date()
-        local_end = (observed_to - timedelta(microseconds=1)).astimezone(_SHANGHAI).date()
         if any(
             record.source_code != self._provider.source_code
-            or not local_start <= record.period_end_date <= local_end
+            or not start_date <= record.period_end_date <= end_date
             or not observed_from <= record.observed_at.astimezone(UTC) < observed_to
             for record in records
         ):

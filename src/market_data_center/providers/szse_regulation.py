@@ -8,7 +8,8 @@ import json
 import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
+from time import sleep
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.request import Request, urlopen
@@ -76,7 +77,7 @@ class SZSEOfficialRegulationEventProvider:
         if observed_at.tzinfo is None or observed_at.utcoffset() is None:
             raise ProviderError("provider clock must return a timezone-aware datetime")
         start_date = observed_from.astimezone(_SHANGHAI).date()
-        end_date = observed_to.astimezone(_SHANGHAI).date()
+        end_date = (observed_to - timedelta(microseconds=1)).astimezone(_SHANGHAI).date()
         evidence = self._fetch_evidence(start_date, end_date)
         raw_rows = tuple(_raw_row(listing, detail) for listing, detail in evidence)
         return ProviderBatch(
@@ -198,6 +199,7 @@ def _fetch(url: str, params: dict[str, str]) -> SZSEResponse:
         },
     )
     timeout = CONNECT_TIMEOUT_SECONDS + READ_TIMEOUT_SECONDS
+    sleep(1)  # Sequential collection only; do not parallelize official detail requests.
     with urlopen(request, timeout=timeout) as response:
         return SZSEResponse(
             url=response.geturl(),
@@ -444,5 +446,5 @@ def _validate_bounds(observed_from: datetime, observed_to: datetime) -> None:
     bounds = (observed_from, observed_to)
     if any(value.tzinfo is None or value.utcoffset() is None for value in bounds):
         raise ValueError("observation bounds must be timezone-aware")
-    if observed_to < observed_from:
-        raise ValueError("observation end must not precede start")
+    if observed_to <= observed_from:
+        raise ValueError("observation start must precede end")

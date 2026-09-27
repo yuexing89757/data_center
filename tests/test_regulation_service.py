@@ -75,6 +75,20 @@ def _source() -> RegulationCalculationInput:
     )
 
 
+def test_v1_input_hash_keeps_original_identity_after_reset_calendar_extension() -> None:
+    assert (
+        regulation_input_hash(_source())
+        == "0f17ce95d9058dd91468957f1eb08b2bc6b30d3667f6d3efb599223fa3c04573"
+    )
+
+
+def test_v2_input_hash_includes_resolved_calendar_dates() -> None:
+    source = replace(_source(), algorithm_version="regulation-calculator.v2")
+    assert regulation_input_hash(source) != regulation_input_hash(
+        replace(source, reset_trading_dates=(NEXT_DATE,))
+    )
+
+
 class FakePersistence:
     def __init__(self, source: RegulationCalculationInput) -> None:
         self.source = source

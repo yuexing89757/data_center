@@ -436,10 +436,18 @@ def test_regulation_schema_catalog_constraints_and_private_grants(
             connection.execute("select count(*) from regulation.rule")
 
 
+@pytest.mark.parametrize("as_worker", [False, True])
 def test_regulation_event_persistence_is_immutable_idempotent_and_private(
     database_engine: Engine,
+    as_worker: bool,
+    request: pytest.FixtureRequest,
 ) -> None:
     _commit_security_prerequisite(PostgreSQLPersistence(database_engine))
+    if as_worker:
+        database_engine = create_engine(
+            database_engine.url, connect_args={"options": "-c role=market_data_worker"}
+        )
+        request.addfinalizer(database_engine.dispose)
     persistence = PostgreSQLRegulationEventPersistence(database_engine)
     request_params = {
         "observed_from": "2026-07-28T00:00:00+00:00",
@@ -505,6 +513,113 @@ def test_regulation_event_persistence_is_immutable_idempotent_and_private(
                 text("select has_table_privilege(:role, 'regulation.event', 'select')"),
                 {"role": role},
             ).scalar_one()
+
+
+def test_regulation_event_cli_backfill_preserves_real_time_and_raw_replay(
+    database_engine: Engine,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    request: pytest.FixtureRequest,
+) -> None:
+    import json
+    import sys
+    from types import SimpleNamespace
+
+    from pydantic import SecretStr
+
+    import market_data_center.cli as cli
+    from market_data_center.providers.sse_regulation import (
+        SSEOfficialRegulationEventProvider,
+        SSEResponse,
+    )
+    from market_data_center.raw_store import LocalRawStore
+    from market_data_center.reliability import RawReplayService
+
+    facts = PostgreSQLPersistence(database_engine)
+    _commit_security_prerequisite(facts)
+    _commit_calendar_prerequisite(facts)
+    with database_engine.begin() as c:
+        c.execute(
+            text("""
+            insert into core.trading_calendar
+                (market, trade_date, is_trading_day, previous_trading_day,
+                 next_trading_day, source_code, ingestion_id)
+            select market, date '2026-07-29', true, trade_date, null, source_code, ingestion_id
+            from core.trading_calendar where trade_date = date '2026-07-28'
+        """)
+        )
+    database_engine = create_engine(
+        database_engine.url, connect_args={"options": "-c role=market_data_worker"}
+    )
+    request.addfinalizer(database_engine.dispose)
+    facts = PostgreSQLPersistence(database_engine)
+    row = {
+        "secCode": "600000",
+        "secAbbr": "测试",
+        "refType": "1",
+        "tradeDate": "20260728",
+        "abnormalStart": "20260724",
+        "abnormalEnd": "20260728",
+    }
+
+    def fetch(url, params):
+        assert params["tradeDateStart"] == params["tradeDateEnd"] == "2026-07-28"
+        return SSEResponse(
+            url,
+            "application/json",
+            json.dumps({"pageHelp": {"pageCount": 1, "data": [row]}}).encode(),
+        )
+
+    monkeypatch.setattr(
+        cli,
+        "WorkerSettings",
+        lambda: SimpleNamespace(
+            database_url=SecretStr("postgresql://unused/test"), raw_data_root=tmp_path
+        ),
+    )
+    monkeypatch.setattr(cli, "create_engine", lambda *a, **kw: database_engine)
+    monkeypatch.setattr(
+        cli,
+        "SSEOfficialRegulationEventProvider",
+        lambda: SSEOfficialRegulationEventProvider(fetch=fetch),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "market-data-center",
+            "regulation-events",
+            "--trade-date",
+            "2026-07-28",
+            "--source",
+            "sse_official",
+            "--confirm-official-source-terms-reviewed",
+        ],
+    )
+
+    cli.main()
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["accepted_events"] == 1
+    with database_engine.connect() as c:
+        event = c.execute(text("select * from regulation.event")).mappings().one()
+        assert event["period_end_date"] == date(2026, 7, 28)
+        assert event["observed_at"].date() > date(2026, 7, 28)
+        ingestion_id = event["ingestion_id"]
+    replay = RawReplayService(raw_store=LocalRawStore(tmp_path), persistence=facts)
+    assert replay.replay(ingestion_id, dry_run=True).status == "valid"
+    assert replay.replay(ingestion_id).accepted_rows == 1
+    with database_engine.connect() as c:
+        assert c.execute(text("select count(*) from regulation.event")).scalar_one() == 1
+        from market_data_center.persistence.regulation_postgres import _SELECT_EVENTS
+
+        row = (
+            c.execute(_SELECT_EVENTS, {"symbols": [SYMBOL], "trade_date": TRADE_DATE})
+            .mappings()
+            .one()
+        )
+        assert row["calendar_reset_date"] == date(2026, 7, 29)
+        assert row["effective_reset_date"] is None
 
 
 @pytest.fixture

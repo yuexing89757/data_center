@@ -93,12 +93,12 @@ def test_sse_raw_replay_reproduces_the_live_event() -> None:
 @pytest.mark.parametrize(
     ("ref_type", "direction", "rule_code"),
     [
-        ("Z3", RegulationDirection.UP, "SSE_MAIN_SERIOUS_10D_4_UP"),
-        ("Z4", RegulationDirection.DOWN, "SSE_MAIN_SERIOUS_10D_4_DOWN"),
-        ("Z5", RegulationDirection.UP, "SSE_MAIN_SERIOUS_10D_DEV_100_UP"),
-        ("Z6", RegulationDirection.DOWN, "SSE_MAIN_SERIOUS_10D_DEV_50_DOWN"),
-        ("Z7", RegulationDirection.UP, "SSE_MAIN_SERIOUS_30D_DEV_200_UP"),
-        ("Z8", RegulationDirection.DOWN, "SSE_MAIN_SERIOUS_30D_DEV_70_DOWN"),
+        ("Z3", RegulationDirection.UP, "SSE_MAIN_SERIOUS_10D_COUNT_UP"),
+        ("Z4", RegulationDirection.DOWN, "SSE_MAIN_SERIOUS_10D_COUNT_DOWN"),
+        ("Z5", RegulationDirection.UP, "SSE_MAIN_SERIOUS_10D_DEV_UP"),
+        ("Z6", RegulationDirection.DOWN, "SSE_MAIN_SERIOUS_10D_DEV_DOWN"),
+        ("Z7", RegulationDirection.UP, "SSE_MAIN_SERIOUS_30D_DEV_UP"),
+        ("Z8", RegulationDirection.DOWN, "SSE_MAIN_SERIOUS_30D_DEV_DOWN"),
     ],
 )
 def test_sse_provider_maps_serious_reasons(
@@ -166,3 +166,23 @@ def test_sse_provider_rejects_naive_observation_bounds() -> None:
     provider = _provider({1: _page([])})
     with pytest.raises(ValueError, match="timezone-aware"):
         provider.fetch_events(FROM.replace(tzinfo=None), TO)
+
+
+def test_sse_historical_query_excludes_the_midnight_upper_boundary() -> None:
+    requests = []
+
+    def fetch(url: str, params: dict[str, str]) -> SSEResponse:
+        requests.append(params)
+        return SSEResponse(url, "application/json", _page([_row()]))
+
+    now = datetime(2026, 9, 22, 12, tzinfo=SHANGHAI)
+    batch = SSEOfficialRegulationEventProvider(fetch=fetch, clock=lambda: now).fetch_events(
+        FROM, datetime(2026, 9, 19, tzinfo=SHANGHAI)
+    )
+    assert requests[0]["tradeDateEnd"] == "2026-09-18"
+    assert batch.request_params["trade_date_end"] == "2026-09-18"
+    [event] = batch.records
+    assert event.observed_at == now
+    assert normalize_sse_regulation_raw(
+        DatasetCode.REGULATION_EVENT, batch.schema_version, batch.raw_rows, batch.request_params
+    ) == (event,)

@@ -36,6 +36,34 @@ Raw 缺失、字节数或 SHA-256 不一致、行数不一致、不支持的 Sch
 
 ## 3. 恢复僵尸运行
 
+### 官方监管事件历史补采（2026-09-22）
+
+Issue #83 的受控入口 `regulation-events` 每次只查询一个精确交易日、一个官方来源。
+执行前必须明确确认交易所访问、保存和再分发条款，且目标日不早于 2026-07-06、不晚于今天，
+并存在于交易日历。不要并行调用官方源；适配器每个真实 HTTP 请求前间隔一秒，保留页数、
+文档数和网络超时上限。
+
+```bash
+market-data-center regulation-events --trade-date 2026-09-21 --source sse_official --confirm-official-source-terms-reviewed
+market-data-center regulation-events --trade-date 2026-09-21 --source szse_official --confirm-official-source-terms-reviewed
+market-data-center regulation-calculate --trade-date 2026-09-21
+```
+
+近30交易日查询需先按数据库日历补齐该窗口内两家的事件，不能只补目标日就声称窗口完整。
+逐日串行执行；失败保留 IngestionRun/质量记录和已取得的 Raw，不把失败日期当作无事件。
+完成后检查每个日期/来源的成功记录、Raw dry-run，再计算目标日并核验两个 API。
+
+历史查询区间采用上海时间半开区间，次日零点不混入下一日。Raw 的 `trade_date_start/end`
+是历史查询日期；`observed_at` 是本次真实抓取时间，`observed_from/to` 是本次采集审计区间，
+不是历史交易日。禁止回拨时钟、倒填观察时间或直接更新旧计算批次的公告清单。
+新事件改变输入哈希后生成新计算批次；无输入变化时仍复用旧批次，不强制覆盖。
+
+本入口不注册或启用任何定时任务、不改数据库结构和权限，也不访问竞价数据。
+生产执行及发布修复代码需要明确授权；2026-09-22 项目所有者已批准本次
+2026-08-11～2026-09-21 官方事件补采及仅 2026-09-21 重算，并确认官方源条款门禁。
+
+### 僵尸运行
+
 先查看超过 60 分钟仍为 `running` 的候选：
 
 ```bash
@@ -62,6 +90,13 @@ market-data-center compare-daily-bars \
 命令从历史成功/部分成功批次的 Raw 还原标准 DailyBarRecord，报告各 Provider 覆盖行数、可比较日期数和逐字段差异。金额和价格以十进制字符串输出。报告不修改 Core、不自动仲裁来源，也不把差异写成交易信号。
 
 ## 5. 常见阻断
+
+- 官方事件入库不可使用 `SELECT ... FOR UPDATE`：生产 Worker 对不可变公告只有 SELECT/INSERT
+  权限。使用受测的事务 advisory lock 和唯一约束，不临时增授 UPDATE。失败批次已保存 Raw 时，
+  先按精确 ingestion ID 执行 `raw-replay --dry-run`，获得本次生产授权后再重放。
+- `regulation-calculator.v2` 修复公告重置日期解析及 T/T+1 分离。完成所需官方公告补采后，
+  只对获批交易日执行 `regulation-calculate`，确认新批次的算法版本、公告输入清单与覆盖数。
+  老批次不覆盖；API 可查询新发布结果，不需要改变内部表权限或写接口。
 
 2026-09-22 修复后的注意事项：
 

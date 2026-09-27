@@ -61,6 +61,9 @@ from market_data_center.persistence.close_price_new_highs_postgres import (
     PostgreSQLClosePriceNewHighsPersistence,
 )
 from market_data_center.persistence.hot_money_postgres import PostgreSQLHotMoneyPersistence
+from market_data_center.persistence.regulation_event_postgres import (
+    PostgreSQLRegulationEventPersistence,
+)
 from market_data_center.pipeline import BoardIndexIngestionPipeline, IngestionPipeline
 from market_data_center.providers import (
     DragonTigerProvider,
@@ -69,6 +72,8 @@ from market_data_center.providers import (
     ProviderRouter,
     ProviderRoutingError,
     RoutedResult,
+    SSEOfficialRegulationEventProvider,
+    SZSEOfficialRegulationEventProvider,
     TushareBseSecurityProvider,
     available_board_index_provider_codes,
     available_provider_codes,
@@ -76,6 +81,7 @@ from market_data_center.providers import (
     create_provider,
 )
 from market_data_center.raw_store import LocalRawStore
+from market_data_center.regulation_event_service import RegulationEventCollectionService
 from market_data_center.regulation_service import RegulationService
 from market_data_center.reliability import (
     RawReplayService,
@@ -123,6 +129,9 @@ def main() -> None:
         from market_data_center.scheduler import run_worker
 
         run_worker(check=args.check)
+        return
+    if args.dataset == "regulation-events":
+        _run_regulation_event_command(args)
         return
     if args.dataset in {"shareholder-count-daily", "shareholder-count-backfill"}:
         _validate_shareholder_count_command(
@@ -1796,6 +1805,15 @@ def _parser() -> ArgumentParser:
     )
     regulation.add_argument("--trade-date", required=True, help="exact YYYY-MM-DD")
 
+    regulation_events = subparsers.add_parser(
+        "regulation-events", help="collect one exact day's official events and immutable Raw"
+    )
+    regulation_events.add_argument("--trade-date", required=True, help="exact YYYY-MM-DD")
+    regulation_events.add_argument(
+        "--source", required=True, choices=("sse_official", "szse_official")
+    )
+    regulation_events.add_argument("--confirm-official-source-terms-reviewed", action="store_true")
+
     today_limit_up = subparsers.add_parser(
         "today-limit-up-snapshot",
         help="idempotently fill one exact-date immutable same-day limit-up snapshot",
@@ -1853,6 +1871,52 @@ def _parser() -> ArgumentParser:
     comparison.add_argument("--symbol", required=True, help="standard symbol such as SSE:600000")
     _add_date_range(comparison)
     return parser
+
+
+def _validate_regulation_event_args(args: Namespace, *, today: date) -> date:
+    if not args.confirm_official_source_terms_reviewed:
+        raise ValueError("Official source terms review confirmation is required")
+    return _validate_regulation_calculation_date(args, today=today)
+
+
+def _run_regulation_event_command(args: Namespace) -> None:
+    trade_date = _validate_regulation_event_args(
+        args, today=datetime.now(SHANGHAI_TIME_ZONE).date()
+    )
+    settings = WorkerSettings()  # type: ignore[call-arg]
+    engine = create_engine(
+        sqlalchemy_url(settings.database_url.get_secret_value()), pool_pre_ping=True
+    )
+    try:
+        if not PostgreSQLPersistence(engine).is_trading_day(trade_date):
+            raise ValueError("requested date is not an available trading day")
+        provider = (
+            SSEOfficialRegulationEventProvider()
+            if args.source == "sse_official"
+            else SZSEOfficialRegulationEventProvider()
+        )
+        start = datetime.combine(trade_date, datetime.min.time(), tzinfo=SHANGHAI_TIME_ZONE)
+        summary = RegulationEventCollectionService(
+            persistence=PostgreSQLRegulationEventPersistence(engine),
+            raw_store=LocalRawStore(settings.raw_data_root),
+            provider=provider,
+        ).collect(start.astimezone(UTC), (start + timedelta(days=1)).astimezone(UTC))
+        print(dumps(asdict(summary), default=str, sort_keys=True))
+    except Exception as error:
+        print(
+            dumps(
+                {
+                    "status": "failed",
+                    "operation": "regulation-events",
+                    "error_type": type(error).__name__,
+                    "code": getattr(error, "code", None),
+                }
+            ),
+            file=stderr,
+        )
+        raise SystemExit(1) from None
+    finally:
+        engine.dispose()
 
 
 def _validate_regulation_calculation_date(args: Namespace, *, today: date) -> date:

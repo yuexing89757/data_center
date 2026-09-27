@@ -225,3 +225,28 @@ def test_szse_provider_rejects_naive_bounds() -> None:
     provider = _provider({1: _listing([])}, {})
     with pytest.raises(ValueError, match="timezone-aware"):
         provider.fetch_events(FROM.replace(tzinfo=None), TO)
+
+
+def test_szse_historical_query_excludes_the_midnight_upper_boundary() -> None:
+    requests = []
+    reason = "异常期间价格涨幅偏离值累计达到21.09%"
+
+    def fetch(url: str, params: dict[str, str]) -> SZSEResponse:
+        requests.append(params)
+        body = (
+            _listing([_listing_row("000001", reason)])
+            if params["CATALOGID"] == "1842_xxpl_after"
+            else _detail("000001", reason)
+        )
+        return SZSEResponse(url, "application/json", body)
+
+    now = datetime(2026, 9, 22, 12, tzinfo=SHANGHAI)
+    batch = SZSEOfficialRegulationEventProvider(fetch=fetch, clock=lambda: now).fetch_events(
+        FROM, datetime(2026, 9, 19, tzinfo=SHANGHAI)
+    )
+    assert requests[0]["txtEnd"] == "2026-09-18"
+    [event] = batch.records
+    assert event.observed_at == now
+    assert normalize_szse_regulation_raw(
+        DatasetCode.REGULATION_EVENT, batch.schema_version, batch.raw_rows, batch.request_params
+    ) == (event,)

@@ -49,6 +49,31 @@ def test_cli_still_accepts_an_explicit_provider() -> None:
     assert args.provider == "pytdx"
 
 
+@pytest.mark.parametrize("source", ["sse_official", "szse_official"])
+def test_regulation_event_collection_requires_date_and_review_confirmation(source: str) -> None:
+    args = _parser().parse_args(
+        [
+            "regulation-events",
+            "--source",
+            source,
+            "--trade-date",
+            "2026-09-21",
+            "--confirm-official-source-terms-reviewed",
+        ]
+    )
+    assert cli._validate_regulation_event_args(args, today=date(2026, 9, 22)) == date(2026, 9, 21)
+    args.confirm_official_source_terms_reviewed = False
+    with pytest.raises(ValueError, match="source terms"):
+        cli._validate_regulation_event_args(args, today=date(2026, 9, 22))
+
+
+@pytest.mark.parametrize("trade_date", ["2026-07-05", "2026-09-23"])
+def test_regulation_event_collection_rejects_unsupported_dates(trade_date: str) -> None:
+    args = Namespace(trade_date=trade_date, confirm_official_source_terms_reviewed=True)
+    with pytest.raises(ValueError):
+        cli._validate_regulation_event_args(args, today=date(2026, 9, 22))
+
+
 def test_cli_accepts_explicit_tushare_bse_security_sync() -> None:
     args = _parser().parse_args(["--provider", "tushare", "security-bse"])
 

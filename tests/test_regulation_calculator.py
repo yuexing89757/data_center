@@ -3,6 +3,8 @@ from datetime import date, datetime
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
+import pytest
+
 from market_data_center.domain.records import Exchange
 from market_data_center.domain.regulation import (
     AnnouncedRegulationState,
@@ -201,6 +203,147 @@ def test_deviation_compounds_and_two_sessions_can_trigger_three_day_rule() -> No
     assert result.triggered is True
     assert result.evaluation_state is RegulationEvaluationState.TRIGGERED_CALCULATED
     assert result.distance == Decimal("0")
+
+
+def _v2_event(event_id: str, day: date, **changes: object) -> RegulationEventRecord:
+    return replace(
+        _event(event_id, day, **changes),  # type: ignore[arg-type]
+        published_at=datetime.combine(day, datetime.min.time(), SHANGHAI),
+        effective_reset_date=None,
+    )
+
+
+def test_v2_resolves_publication_calendar_reset_without_mutating_event_or_v1() -> None:
+    event = _v2_event("reset", D2)
+    candidate = _candidate(
+        (_daily(D1, "0.1", "0"), _daily(D2, "0.1", "0"), _daily(D3, "0.01", "0")),
+        events=(event,),
+    )
+    legacy = _input((_rule(),), candidate)
+    output = calculate_regulation(replace(legacy, algorithm_version="regulation-calculator.v2"))
+    assert output.rule_results[0].current_value == Decimal("1")
+    assert output.rule_results[0].selected_reset_date == D3
+    assert output.statuses[0].abnormal_reset_date == D3
+    assert output.statuses[0].serious_reset_date is None
+    assert event.effective_reset_date is None
+    assert calculate_regulation(legacy).rule_results[0].triggered is True
+
+
+def test_v2_today_announcement_resets_tomorrow_not_today() -> None:
+    candidate = _candidate(
+        (_daily(D1, "0.05", "0"), _daily(D2, "0.05", "0"), _daily(D3, "0.01", "0")),
+        events=(_v2_event("today", D3),),
+    )
+    source = replace(_input((_rule(),), candidate), algorithm_version="regulation-calculator.v2")
+    output = calculate_regulation(source)
+    assert output.rule_results[0].current_value == Decimal("11.3525")
+    assert output.rule_results[0].selected_reset_date is None
+    flat = next(w for w in output.warnings if w.scenario_code is RegulationScenarioCode.INDEX_FLAT)
+    assert flat.window_start_date == D4
+    assert flat.next_day_trigger_pct == Decimal("20")
+
+
+def test_v2_explicit_future_resume_does_not_erase_prior_current_reset() -> None:
+    previous = _v2_event("previous", D1)
+    today = replace(_v2_event("today", D3), effective_reset_date=D4)
+    candidate = _candidate(
+        tuple(_daily(d, "0.01", "0") for d in DATES),
+        events=(previous, today),
+        abnormal_reset_date=D4,
+    )
+    output = calculate_regulation(
+        replace(_input((_rule(),), candidate), algorithm_version="regulation-calculator.v2")
+    )
+    assert output.rule_results[0].selected_reset_date == D2
+    assert output.rule_results[0].observed_window_days == 2
+
+
+def test_v2_preserves_explicit_input_boundary_for_tomorrow_without_source_event() -> None:
+    candidate = _candidate(tuple(_daily(d, "0.01", "0") for d in DATES), abnormal_reset_date=D4)
+    source = replace(_input((_rule(),), candidate), algorithm_version="regulation-calculator.v2")
+    output = calculate_regulation(source)
+    assert output.statuses[0].abnormal_reset_date is None
+    assert all(w.window_start_date == D4 for w in output.warnings)
+
+
+@pytest.mark.parametrize("from_event", [True, False])
+def test_v2_no_price_path_before_explicit_resumption(from_event: bool) -> None:
+    candidate = _candidate(
+        tuple(_daily(d, "0.01", "0") for d in DATES),
+        events=(replace(_v2_event("resume", D3), effective_reset_date=date(2026, 9, 4)),)
+        if from_event
+        else (),
+        abnormal_reset_date=None if from_event else date(2026, 9, 4),
+    )
+    serious = _rule(
+        rule_code="SSE_MAIN_SERIOUS_10D_DEV_UP",
+        level=RegulationRuleLevel.SERIOUS_ABNORMAL,
+        reset_level=RegulationResetLevel.SERIOUS_ABNORMAL,
+        window_days=10,
+        threshold_pct=Decimal("100"),
+    )
+    output = calculate_regulation(
+        replace(_input((_rule(), serious), candidate), algorithm_version="regulation-calculator.v2")
+    )
+    assert output.warnings == ()
+
+
+def test_v2_future_publication_does_not_suspend_earlier_next_session() -> None:
+    event = replace(
+        _v2_event("later", D3),
+        published_at=datetime(2026, 9, 4, tzinfo=SHANGHAI),
+        observed_at=datetime(2026, 9, 4, 10, tzinfo=SHANGHAI),
+        effective_reset_date=date(2026, 9, 7),
+    )
+    candidate = _candidate(tuple(_daily(d, "0.01", "0") for d in DATES), events=(event,))
+    source = replace(
+        _input((_rule(),), candidate),
+        algorithm_version="regulation-calculator.v2",
+        event_watermark=event.observed_at,
+    )
+    assert len(calculate_regulation(source).warnings) == 3
+
+
+def test_v2_separate_resets_and_observation_watermark() -> None:
+    ordinary = _v2_event("ordinary", D2)
+    serious = _v2_event("serious", D1, level=RegulationRuleLevel.SERIOUS_ABNORMAL)
+    hidden = replace(
+        serious, source_event_id="late", observed_at=datetime(2026, 9, 3, tzinfo=SHANGHAI)
+    )
+    serious_rule = _rule(
+        rule_code="SSE_MAIN_SERIOUS_10D_DEV_UP",
+        level=RegulationRuleLevel.SERIOUS_ABNORMAL,
+        reset_level=RegulationResetLevel.SERIOUS_ABNORMAL,
+        window_days=10,
+        threshold_pct=Decimal("100"),
+    )
+    candidate = _candidate(
+        tuple(_daily(d, "0.01", "0") for d in DATES), events=(ordinary, serious, hidden)
+    )
+    output = calculate_regulation(
+        replace(
+            _input((_rule(), serious_rule), candidate), algorithm_version="regulation-calculator.v2"
+        )
+    )
+    assert [r.selected_reset_date for r in output.rule_results] == [D3, D2]
+
+
+def test_v2_reset_uses_publication_date_and_exact_calendar_even_before_return_window() -> None:
+    # An older event must not be assigned the first day of the 30-day price window.
+    friday = date(2026, 8, 21)
+    monday = date(2026, 8, 24)
+    event = _v2_event("older", friday)
+    candidate = _candidate(tuple(_daily(d, "0.01", "0") for d in DATES), events=(event,))
+    source = replace(
+        _input((_rule(),), candidate),
+        algorithm_version="regulation-calculator.v2",
+        reset_trading_dates=(monday,),
+    )
+    assert calculate_regulation(source).statuses[0].abnormal_reset_date == monday
+    # A later publication must not reset on the earlier period end date.
+    later = replace(event, published_at=datetime(2026, 9, 1, tzinfo=SHANGHAI))
+    source = replace(source, candidates=(replace(candidate, events=(later,)),))
+    assert calculate_regulation(source).statuses[0].abnormal_reset_date == D3
 
 
 def test_deviation_exact_equality_triggers_without_summing_daily_differences() -> None:
@@ -504,3 +647,29 @@ def test_one_short_event_count_warning_requires_official_confirmation() -> None:
     assert len(count_warnings) == 3
     assert all(warning.requires_official_event_confirmation for warning in count_warnings)
     assert all("交易所正式认定" in warning.message for warning in count_warnings)
+
+
+@pytest.mark.parametrize("reset_tomorrow", [True, False])
+def test_v2_count_projection_uses_tomorrows_reset_and_rolling_window(reset_tomorrow: bool) -> None:
+    count_rule = _rule(
+        rule_code="SSE_MAIN_SERIOUS_10D_COUNT_UP",
+        level=RegulationRuleLevel.SERIOUS_ABNORMAL,
+        kind=RegulationRuleKind.EVENT_COUNT,
+        window_days=None,
+        threshold_pct=None,
+        count_window_days=3,
+        required_count=2,
+        counted_event_kind="PRICE_DEVIATION_ABNORMAL",
+        reset_level=RegulationResetLevel.SERIOUS_ABNORMAL,
+        benchmark_symbol=None,
+    )
+    events = (_v2_event("ordinary", D2 if reset_tomorrow else D1),)
+    if reset_tomorrow:
+        events += (_v2_event("serious", D3, level=RegulationRuleLevel.SERIOUS_ABNORMAL),)
+    candidate = _candidate(tuple(_daily(d, "0", "0") for d in DATES), events=events)
+    source = replace(
+        _input((_rule(), count_rule), candidate), algorithm_version="regulation-calculator.v2"
+    )
+    output = calculate_regulation(source)
+    assert output.rule_results[1].event_count == 1
+    assert not any(w.rule_code == count_rule.rule_code for w in output.warnings)
