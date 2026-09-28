@@ -1,6 +1,82 @@
 {
   "components": {
     "schemas": {
+      "AuctionHistoryItem": {
+        "additionalProperties": false,
+        "properties": {
+          "auction_change_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "竞价涨跌幅，单位百分比。",
+            "title": "Auction Change Pct"
+          },
+          "board_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源板块或题材文字。",
+            "title": "Board Name"
+          },
+          "code": {
+            "description": "六位股票代码。",
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "limit_up_bid_amount_cny": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "涨停委买额，单位元。",
+            "title": "Limit Up Bid Amount Cny"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源股票名称；缺失时为空。",
+            "title": "Name"
+          },
+          "symbol": {
+            "description": "标准证券代码，如 SZSE:001368。",
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "code",
+          "name",
+          "board_name",
+          "limit_up_bid_amount_cny",
+          "auction_change_pct"
+        ],
+        "title": "AuctionHistoryItem",
+        "type": "object"
+      },
       "AuctionIndicativeDetailItem": {
         "additionalProperties": false,
         "properties": {
@@ -744,6 +820,87 @@
           "fetched_at"
         ],
         "title": "BoardIndexBiasResponse",
+        "type": "object"
+      },
+      "BrokenLimitUpHistoryItem": {
+        "additionalProperties": false,
+        "properties": {
+          "change_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源涨跌幅，单位百分比。",
+            "title": "Change Pct"
+          },
+          "code": {
+            "description": "六位股票代码。",
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "limit_up_at": {
+            "anyOf": [
+              {
+                "example": "2026-09-18 09:35:00",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源涨停时间，上海时间。",
+            "example": "2026-09-28 09:44:54",
+            "title": "Limit Up At"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源股票名称；缺失时为空。",
+            "title": "Name"
+          },
+          "opened_at": {
+            "anyOf": [
+              {
+                "example": "2026-09-18 09:35:00",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源开板时间，上海时间。",
+            "example": "2026-09-28 09:45:12",
+            "title": "Opened At"
+          },
+          "symbol": {
+            "description": "标准证券代码，如 SZSE:001368。",
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "code",
+          "name",
+          "change_pct",
+          "limit_up_at",
+          "opened_at"
+        ],
+        "title": "BrokenLimitUpHistoryItem",
         "type": "object"
       },
       "CallAuctionGrabLineItem": {
@@ -5307,6 +5464,110 @@
         "title": "KaipanlaAlertResponse",
         "type": "object"
       },
+      "KaipanlaAuctionHistoryResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "description": "本页历史竞价股票记录。",
+            "items": {
+              "$ref": "#/components/schemas/AuctionHistoryItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "description": "每页上限，最多30条。",
+            "maximum": 30.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "list_type": {
+            "const": "auction",
+            "description": "历史竞价股票列表。",
+            "title": "List Type",
+            "type": "string"
+          },
+          "next_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "满页时可尝试的下页偏移。",
+            "title": "Next Offset"
+          },
+          "observed_at": {
+            "description": "取得响应的上海时间；不是行情事件时间。",
+            "example": "2026-09-29 01:00:00",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "offset": {
+            "description": "本页偏移。",
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Offset",
+            "type": "integer"
+          },
+          "persisted": {
+            "const": false,
+            "description": "固定 false；不保存数据库或 Raw。",
+            "title": "Persisted",
+            "type": "boolean"
+          },
+          "requested_date": {
+            "description": "请求的历史交易日期。",
+            "format": "date",
+            "title": "Requested Date",
+            "type": "string"
+          },
+          "returned_count": {
+            "description": "本页实际条数。",
+            "maximum": 30.0,
+            "minimum": 0.0,
+            "title": "Returned Count",
+            "type": "integer"
+          },
+          "source_code": {
+            "const": "kaipanla",
+            "description": "数据来源：开盘啦。",
+            "title": "Source Code",
+            "type": "string"
+          },
+          "total": {
+            "description": "固定为空；来源未提供可靠总数。",
+            "title": "Total",
+            "type": "null"
+          },
+          "trade_date": {
+            "description": "来源实际日期，必须与请求日期一致。",
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_code",
+          "persisted",
+          "requested_date",
+          "trade_date",
+          "observed_at",
+          "offset",
+          "limit",
+          "returned_count",
+          "total",
+          "next_offset",
+          "list_type",
+          "items"
+        ],
+        "title": "KaipanlaAuctionHistoryResponse",
+        "type": "object"
+      },
       "KaipanlaAuctionItem": {
         "additionalProperties": false,
         "properties": {
@@ -5594,6 +5855,110 @@
         "title": "KaipanlaAuctionResponse",
         "type": "object"
       },
+      "KaipanlaBrokenLimitUpHistoryResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "description": "本页历史炸板股票记录。",
+            "items": {
+              "$ref": "#/components/schemas/BrokenLimitUpHistoryItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "description": "每页上限，最多30条。",
+            "maximum": 30.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "list_type": {
+            "const": "broken_limit_up",
+            "description": "历史炸板股票列表。",
+            "title": "List Type",
+            "type": "string"
+          },
+          "next_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "满页时可尝试的下页偏移。",
+            "title": "Next Offset"
+          },
+          "observed_at": {
+            "description": "取得响应的上海时间；不是行情事件时间。",
+            "example": "2026-09-29 01:00:00",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "offset": {
+            "description": "本页偏移。",
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Offset",
+            "type": "integer"
+          },
+          "persisted": {
+            "const": false,
+            "description": "固定 false；不保存数据库或 Raw。",
+            "title": "Persisted",
+            "type": "boolean"
+          },
+          "requested_date": {
+            "description": "请求的历史交易日期。",
+            "format": "date",
+            "title": "Requested Date",
+            "type": "string"
+          },
+          "returned_count": {
+            "description": "本页实际条数。",
+            "maximum": 30.0,
+            "minimum": 0.0,
+            "title": "Returned Count",
+            "type": "integer"
+          },
+          "source_code": {
+            "const": "kaipanla",
+            "description": "数据来源：开盘啦。",
+            "title": "Source Code",
+            "type": "string"
+          },
+          "total": {
+            "description": "固定为空；来源未提供可靠总数。",
+            "title": "Total",
+            "type": "null"
+          },
+          "trade_date": {
+            "description": "来源实际日期，必须与请求日期一致。",
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_code",
+          "persisted",
+          "requested_date",
+          "trade_date",
+          "observed_at",
+          "offset",
+          "limit",
+          "returned_count",
+          "total",
+          "next_offset",
+          "list_type",
+          "items"
+        ],
+        "title": "KaipanlaBrokenLimitUpHistoryResponse",
+        "type": "object"
+      },
       "KaipanlaEmotionChartItem": {
         "additionalProperties": false,
         "properties": {
@@ -5727,6 +6092,214 @@
           "items"
         ],
         "title": "KaipanlaEmotionChartResponse",
+        "type": "object"
+      },
+      "KaipanlaLimitDownHistoryResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "description": "本页历史跌停股票记录。",
+            "items": {
+              "$ref": "#/components/schemas/LimitDownHistoryItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "description": "每页上限，最多30条。",
+            "maximum": 30.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "list_type": {
+            "const": "limit_down",
+            "description": "历史跌停股票列表。",
+            "title": "List Type",
+            "type": "string"
+          },
+          "next_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "满页时可尝试的下页偏移。",
+            "title": "Next Offset"
+          },
+          "observed_at": {
+            "description": "取得响应的上海时间；不是行情事件时间。",
+            "example": "2026-09-29 01:00:00",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "offset": {
+            "description": "本页偏移。",
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Offset",
+            "type": "integer"
+          },
+          "persisted": {
+            "const": false,
+            "description": "固定 false；不保存数据库或 Raw。",
+            "title": "Persisted",
+            "type": "boolean"
+          },
+          "requested_date": {
+            "description": "请求的历史交易日期。",
+            "format": "date",
+            "title": "Requested Date",
+            "type": "string"
+          },
+          "returned_count": {
+            "description": "本页实际条数。",
+            "maximum": 30.0,
+            "minimum": 0.0,
+            "title": "Returned Count",
+            "type": "integer"
+          },
+          "source_code": {
+            "const": "kaipanla",
+            "description": "数据来源：开盘啦。",
+            "title": "Source Code",
+            "type": "string"
+          },
+          "total": {
+            "description": "固定为空；来源未提供可靠总数。",
+            "title": "Total",
+            "type": "null"
+          },
+          "trade_date": {
+            "description": "来源实际日期，必须与请求日期一致。",
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_code",
+          "persisted",
+          "requested_date",
+          "trade_date",
+          "observed_at",
+          "offset",
+          "limit",
+          "returned_count",
+          "total",
+          "next_offset",
+          "list_type",
+          "items"
+        ],
+        "title": "KaipanlaLimitDownHistoryResponse",
+        "type": "object"
+      },
+      "KaipanlaLimitUpHistoryResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "description": "本页历史涨停股票记录。",
+            "items": {
+              "$ref": "#/components/schemas/LimitUpHistoryItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "description": "每页上限，最多30条。",
+            "maximum": 30.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "list_type": {
+            "const": "limit_up",
+            "description": "历史涨停股票列表。",
+            "title": "List Type",
+            "type": "string"
+          },
+          "next_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "满页时可尝试的下页偏移。",
+            "title": "Next Offset"
+          },
+          "observed_at": {
+            "description": "取得响应的上海时间；不是行情事件时间。",
+            "example": "2026-09-29 01:00:00",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "offset": {
+            "description": "本页偏移。",
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Offset",
+            "type": "integer"
+          },
+          "persisted": {
+            "const": false,
+            "description": "固定 false；不保存数据库或 Raw。",
+            "title": "Persisted",
+            "type": "boolean"
+          },
+          "requested_date": {
+            "description": "请求的历史交易日期。",
+            "format": "date",
+            "title": "Requested Date",
+            "type": "string"
+          },
+          "returned_count": {
+            "description": "本页实际条数。",
+            "maximum": 30.0,
+            "minimum": 0.0,
+            "title": "Returned Count",
+            "type": "integer"
+          },
+          "source_code": {
+            "const": "kaipanla",
+            "description": "数据来源：开盘啦。",
+            "title": "Source Code",
+            "type": "string"
+          },
+          "total": {
+            "description": "固定为空；来源未提供可靠总数。",
+            "title": "Total",
+            "type": "null"
+          },
+          "trade_date": {
+            "description": "来源实际日期，必须与请求日期一致。",
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_code",
+          "persisted",
+          "requested_date",
+          "trade_date",
+          "observed_at",
+          "offset",
+          "limit",
+          "returned_count",
+          "total",
+          "next_offset",
+          "list_type",
+          "items"
+        ],
+        "title": "KaipanlaLimitUpHistoryResponse",
         "type": "object"
       },
       "KaipanlaMoneyEffectItem": {
@@ -6457,6 +7030,161 @@
           "items"
         ],
         "title": "LatestStockQuoteResponse",
+        "type": "object"
+      },
+      "LimitDownHistoryItem": {
+        "additionalProperties": false,
+        "properties": {
+          "board_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源板块或题材文字。",
+            "title": "Board Name"
+          },
+          "code": {
+            "description": "六位股票代码。",
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "limit_down_at": {
+            "anyOf": [
+              {
+                "example": "2026-09-18 09:35:00",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源跌停时间，上海时间。",
+            "example": "2026-09-28 14:51:33",
+            "title": "Limit Down At"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源股票名称；缺失时为空。",
+            "title": "Name"
+          },
+          "sealed_amount_cny": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源封单金额，单位元。",
+            "title": "Sealed Amount Cny"
+          },
+          "symbol": {
+            "description": "标准证券代码，如 SZSE:001368。",
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "code",
+          "name",
+          "limit_down_at",
+          "sealed_amount_cny",
+          "board_name"
+        ],
+        "title": "LimitDownHistoryItem",
+        "type": "object"
+      },
+      "LimitUpHistoryItem": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "description": "六位股票代码。",
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "limit_up_at": {
+            "anyOf": [
+              {
+                "example": "2026-09-18 09:35:00",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源涨停时间，上海时间。",
+            "example": "2026-09-28 14:56:45",
+            "title": "Limit Up At"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源股票名称；缺失时为空。",
+            "title": "Name"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源涨停原因文字。",
+            "title": "Reason"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源首板/连板状态文字。",
+            "title": "Status"
+          },
+          "symbol": {
+            "description": "标准证券代码，如 SZSE:001368。",
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "code",
+          "name",
+          "limit_up_at",
+          "status",
+          "reason"
+        ],
+        "title": "LimitUpHistoryItem",
         "type": "object"
       },
       "LimitUpPoolItem": {
@@ -11110,6 +11838,394 @@
           }
         ],
         "summary": "分页查询开盘啦赚钱效应",
+        "tags": [
+          "实时接口"
+        ]
+      }
+    },
+    "/api/v1/realtime/kaipanla/market-emotion/stocks/auction": {
+      "get": {
+        "description": "按指定历史交易日读取一页竞价股票；仅返回已核实字段，不入库、不回退日期。",
+        "operationId": "auction_history_api_v1_realtime_kaipanla_market_emotion_stocks_auction_get",
+        "parameters": [
+          {
+            "description": "交易日。",
+            "in": "query",
+            "name": "trade_date",
+            "required": true,
+            "schema": {
+              "description": "必填历史交易日，YYYY-MM-DD。",
+              "format": "date",
+              "title": "Trade Date",
+              "type": "string"
+            }
+          },
+          {
+            "description": "从结果集起点跳过的记录数。",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 10000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "最多返回的记录数。",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 30,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KaipanlaAuctionHistoryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "查询开盘啦历史竞价股票",
+        "tags": [
+          "实时接口"
+        ]
+      }
+    },
+    "/api/v1/realtime/kaipanla/market-emotion/stocks/broken-limit-up": {
+      "get": {
+        "description": "按指定历史交易日读取一页炸板股票；仅返回已核实字段，不入库、不回退日期。",
+        "operationId": "broken_limit_up_history_api_v1_realtime_kaipanla_market_emotion_stocks_broken_limit_up_get",
+        "parameters": [
+          {
+            "description": "交易日。",
+            "in": "query",
+            "name": "trade_date",
+            "required": true,
+            "schema": {
+              "description": "必填历史交易日，YYYY-MM-DD。",
+              "format": "date",
+              "title": "Trade Date",
+              "type": "string"
+            }
+          },
+          {
+            "description": "从结果集起点跳过的记录数。",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 10000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "最多返回的记录数。",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 30,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KaipanlaBrokenLimitUpHistoryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "查询开盘啦历史炸板股票",
+        "tags": [
+          "实时接口"
+        ]
+      }
+    },
+    "/api/v1/realtime/kaipanla/market-emotion/stocks/limit-down": {
+      "get": {
+        "description": "按指定历史交易日读取一页跌停股票；仅返回已核实字段，不入库、不回退日期。",
+        "operationId": "limit_down_history_api_v1_realtime_kaipanla_market_emotion_stocks_limit_down_get",
+        "parameters": [
+          {
+            "description": "交易日。",
+            "in": "query",
+            "name": "trade_date",
+            "required": true,
+            "schema": {
+              "description": "必填历史交易日，YYYY-MM-DD。",
+              "format": "date",
+              "title": "Trade Date",
+              "type": "string"
+            }
+          },
+          {
+            "description": "从结果集起点跳过的记录数。",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 10000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "最多返回的记录数。",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 30,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KaipanlaLimitDownHistoryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "查询开盘啦历史跌停股票",
+        "tags": [
+          "实时接口"
+        ]
+      }
+    },
+    "/api/v1/realtime/kaipanla/market-emotion/stocks/limit-up": {
+      "get": {
+        "description": "按指定历史交易日读取一页涨停股票；仅返回已核实字段，不入库、不回退日期。",
+        "operationId": "limit_up_history_api_v1_realtime_kaipanla_market_emotion_stocks_limit_up_get",
+        "parameters": [
+          {
+            "description": "交易日。",
+            "in": "query",
+            "name": "trade_date",
+            "required": true,
+            "schema": {
+              "description": "必填历史交易日，YYYY-MM-DD。",
+              "format": "date",
+              "title": "Trade Date",
+              "type": "string"
+            }
+          },
+          {
+            "description": "从结果集起点跳过的记录数。",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 10000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "最多返回的记录数。",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 30,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KaipanlaLimitUpHistoryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "查询开盘啦历史涨停股票",
         "tags": [
           "实时接口"
         ]

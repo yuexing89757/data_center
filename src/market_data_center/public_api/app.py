@@ -35,6 +35,11 @@ from market_data_center.providers.kaipanla_emotion_chart import (
     KaipanlaEmotionChartProvider,
     KaipanlaEmotionChartUpstream,
 )
+from market_data_center.providers.kaipanla_market_history import (
+    KaipanlaMarketHistoryInvalid,
+    KaipanlaMarketHistoryProvider,
+    KaipanlaMarketHistoryUpstream,
+)
 from market_data_center.providers.kaipanla_money_effect import (
     KaipanlaMoneyEffectProvider,
     KaipanlaMoneyEffectUpstream,
@@ -55,6 +60,9 @@ from market_data_center.public_api.kaipanla_alerts import router as kaipanla_ale
 from market_data_center.public_api.kaipanla_auction import router as kaipanla_auction_router
 from market_data_center.public_api.kaipanla_emotion_chart import (
     router as kaipanla_emotion_chart_router,
+)
+from market_data_center.public_api.kaipanla_market_history import (
+    router as kaipanla_market_history_router,
 )
 from market_data_center.public_api.kaipanla_money_effect import (
     router as kaipanla_money_effect_router,
@@ -124,6 +132,7 @@ def create_app(
     kaipanla_auction_provider: KaipanlaAuctionProvider | None = None,
     kaipanla_money_effect_provider: KaipanlaMoneyEffectProvider | None = None,
     kaipanla_emotion_chart_provider: KaipanlaEmotionChartProvider | None = None,
+    kaipanla_market_history_provider: KaipanlaMarketHistoryProvider | None = None,
 ) -> FastAPI:
     configured = settings or ApiSettings()  # type: ignore[call-arg]
     owned_engine: Engine | None = None
@@ -190,6 +199,13 @@ def create_app(
         timeout_seconds=configured.fastapi_kaipanla_timeout_seconds
     )
     app.include_router(kaipanla_auction_router, dependencies=[Depends(_require_api_key)])
+    app.state.kaipanla_market_history_provider = (
+        kaipanla_market_history_provider
+        or KaipanlaMarketHistoryProvider(
+            timeout_seconds=configured.fastapi_kaipanla_timeout_seconds
+        )
+    )
+    app.include_router(kaipanla_market_history_router, dependencies=[Depends(_require_api_key)])
     app.state.kaipanla_money_effect_provider = (
         kaipanla_money_effect_provider
         or KaipanlaMoneyEffectProvider(timeout_seconds=configured.fastapi_kaipanla_timeout_seconds)
@@ -951,6 +967,18 @@ def _require_bounded_date_range(start_date: date, end_date: date) -> None:
 
 
 def _install_exception_handlers(app: FastAPI) -> None:
+    @app.exception_handler(KaipanlaMarketHistoryUpstream)
+    async def kaipanla_market_history_upstream(
+        _: Request, __: KaipanlaMarketHistoryUpstream
+    ) -> JSONResponse:
+        return _error_response(502, "upstream_error", "Kaipanla history provider request failed")
+
+    @app.exception_handler(KaipanlaMarketHistoryInvalid)
+    async def kaipanla_market_history_invalid(
+        _: Request, __: KaipanlaMarketHistoryInvalid
+    ) -> JSONResponse:
+        return _error_response(422, "validation_error", "history request parameters are invalid")
+
     @app.exception_handler(KaipanlaEmotionChartUpstream)
     async def kaipanla_emotion_chart_upstream(
         _: Request, __: KaipanlaEmotionChartUpstream

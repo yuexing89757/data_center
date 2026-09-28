@@ -3,9 +3,12 @@
 import json
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
+from fastapi.testclient import TestClient
+from pydantic import SecretStr
 
 from market_data_center.providers.kaipanla_market_history import (
     MAX_RESPONSE_BYTES,
@@ -13,9 +16,18 @@ from market_data_center.providers.kaipanla_market_history import (
     KaipanlaMarketHistoryProvider,
     KaipanlaMarketHistoryUpstream,
 )
+from market_data_center.public_api import create_app
+from market_data_center.settings import ApiSettings
 
 TRADE_DATE = date(2026, 9, 28)
 NOW = datetime(2026, 9, 28, 17, tzinfo=UTC)
+KEY = "test-market-history-api-key-000000000"
+ROUTES = {
+    "auction": "/api/v1/realtime/kaipanla/market-emotion/stocks/auction",
+    "limit_up": "/api/v1/realtime/kaipanla/market-emotion/stocks/limit-up",
+    "limit_down": "/api/v1/realtime/kaipanla/market-emotion/stocks/limit-down",
+    "broken_limit_up": "/api/v1/realtime/kaipanla/market-emotion/stocks/broken-limit-up",
+}
 
 
 def row(kind: str, code: str = "001368") -> list[object]:
@@ -200,3 +212,96 @@ def test_oversized_or_overfull_page_is_source_failure():
         provider(
             Transport({"errcode": 0, "day": "2026-09-28", "list": [row("auction")] * 2})
         ).fetch(kind="auction", trade_date=TRADE_DATE, limit=1)
+
+
+def client(transport: Transport) -> TestClient:
+    return TestClient(
+        create_app(
+            settings=ApiSettings(
+                _env_file=None,
+                fastapi_database_url=SecretStr("unused"),
+                fastapi_api_key=SecretStr(KEY),
+            ),
+            query_service=object(),
+            auction_indicative_service=object(),
+            kaipanla_market_history_provider=provider(transport),
+        )
+    )
+
+
+@pytest.mark.parametrize("kind", ROUTES)
+def test_history_routes_return_only_named_category_fields(kind):
+    transport = Transport({"errcode": 0, "day": "2026-09-28", "list": [row(kind)]})
+    response = client(transport).get(
+        ROUTES[kind], params={"trade_date": "2026-09-28"}, headers={"X-API-Key": KEY}
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["source_code"] == "kaipanla"
+    assert body["list_type"] == kind and body["persisted"] is False
+    assert body["observed_at"] == "2026-09-29 01:00:00"
+    assert body["requested_date"] == body["trade_date"] == "2026-09-28"
+    assert body["total"] is None and body["returned_count"] == 1
+    item = body["items"][0]
+    if kind == "auction":
+        assert item["limit_up_bid_amount_cny"] == "2404248.123456789"
+        assert item["auction_change_pct"] == "10.0567"
+        assert "limit_up_at" not in item
+    elif kind == "limit_up":
+        assert item["limit_up_at"] == "2026-09-28 14:56:45"
+        assert item["status"] == "首板" and item["reason"] == "海峡两岸"
+        assert "sealed_amount_cny" not in item
+    elif kind == "limit_down":
+        assert item["limit_down_at"] == "2026-09-28 14:51:33"
+        assert item["sealed_amount_cny"] == "2404248"
+        assert "change_pct" not in item
+    else:
+        assert item["limit_up_at"] == "2026-09-28 09:44:54"
+        assert item["opened_at"] == "2026-09-28 09:45:12"
+        assert item["change_pct"] == "17.06"
+
+
+@pytest.mark.parametrize("kind", ROUTES)
+def test_api_rejects_bad_query_and_requires_key_without_contacting_source(kind):
+    transport = Transport({"errcode": 0, "day": "2026-09-28", "list": []})
+    api = client(transport)
+    route = ROUTES[kind]
+    assert api.get(route, params={"trade_date": "2026-09-28"}).status_code == 401
+    for params in (
+        {},
+        {"trade_date": "2026-09-29"},
+        {"trade_date": "2026-02-30"},
+        {"limit": 31},
+        {"offset": -1},
+    ):
+        assert api.get(route, params=params, headers={"X-API-Key": KEY}).status_code == 422
+    assert transport.calls == []
+
+
+def test_source_failure_is_sanitized_as_502():
+    transport = Transport({"errcode": "1", "message": "private source detail"})
+    response = client(transport).get(
+        ROUTES["auction"], params={"trade_date": "2026-09-28"}, headers={"X-API-Key": KEY}
+    )
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "upstream_error"
+    assert "private source detail" not in response.text
+
+
+def test_authenticated_openapi_routes_match_checked_in_contract():
+    schema = (
+        client(Transport({"errcode": 0, "day": "2026-09-28", "list": []}))
+        .get("/openapi.json")
+        .json()
+    )
+    saved = json.loads(
+        (Path(__file__).parents[1] / "contracts/fastapi-openapi-v1.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    for route in ROUTES.values():
+        operation = schema["paths"][route]["get"]
+        assert operation["tags"] == ["实时接口"]
+        assert operation["security"] == [{"APIKeyHeader": []}]
+        assert {"401", "422", "502"} <= operation["responses"].keys()
+        assert saved["paths"][route] == schema["paths"][route]
