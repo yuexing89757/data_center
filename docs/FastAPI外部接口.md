@@ -1,5 +1,12 @@
 # FastAPI external read-only API
 
+## 开盘啦市场情绪历史股票列表
+
+四个历史交易日只读列表：`/api/v1/realtime/kaipanla/market-emotion/stocks/auction`、
+`/stocks/limit-up`、`/stocks/limit-down`、`/stocks/broken-limit-up`（后三项与第一项共用前缀）。
+均需 API Key 与 `trade_date`；每次只读取上游一页，不入库。类别字段、单位和失败边界见
+[历史股票列表接口说明](开盘啦市场情绪历史股票列表实时接口.md)。
+
 ## 开盘啦市场情绪折线图
 
 `GET /api/v1/realtime/kaipanla/market-emotion/chart?offset=0&limit=100`，分类“实时接口”。

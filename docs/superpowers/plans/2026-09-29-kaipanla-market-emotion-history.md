@@ -57,8 +57,12 @@
 ```python
 @pytest.mark.parametrize(
     ("kind", "pid_type", "sort_type"),
-    [("auction", "8", "18"), ("limit_up", "1", "6"),
-     ("limit_down", "3", "6"), ("broken_limit_up", "2", "4")],
+    [
+        ("auction", "8", "18"),
+        ("limit_up", "1", "6"),
+        ("limit_down", "3", "6"),
+        ("broken_limit_up", "2", "4"),
+    ],
 )
 def test_fixed_request(kind, pid_type, sort_type):
     transport = FakeTransport({"errcode": "0", "day": "2026-09-28", "list": [row(kind)]})
@@ -67,9 +71,7 @@ def test_fixed_request(kind, pid_type, sort_type):
     params = parse_qs(request.data.decode("ascii"))
     assert request.method == "POST"
     assert urlsplit(request.full_url).hostname == "apphis.kaipanla.com"
-    assert (params["PidType"], params["Type"], params["Order"]) == (
-        [pid_type], [sort_type], ["1"]
-    )
+    assert (params["PidType"], params["Type"], params["Order"]) == ([pid_type], [sort_type], ["1"])
     assert params["Day"] == ["2026-09-28"]
     assert params["Is_st"] == ["1"]
     assert not {"Token", "UserID", "DeviceID"} & params.keys()
@@ -133,13 +135,17 @@ assert client.get(ROUTES["auction"], params={"trade_date": "2026-09-28"}).status
 - [ ] **Step 3: Implement four explicit response models/routes.** In the new module, set router prefix `/api/v1/realtime/kaipanla/market-emotion` and tag `实时接口`; define common response fields with `ApiTimestamp`; four item models with exactly the corresponding Task 1 item fields; and `KaipanlaAuctionHistoryResponse`, `KaipanlaLimitUpHistoryResponse`, `KaipanlaLimitDownHistoryResponse`, `KaipanlaBrokenLimitUpHistoryResponse` with category-specific `list_type: Literal[...]` and `items` types. Each route requires `trade_date: Annotated[date, Query()]`, bounds `offset: Annotated[int, Query(ge=0, le=10000)] = 0` and `limit: Annotated[int, Query(ge=1, le=30)] = 30`. Resolve the provider from `request.app.state.kaipanla_market_history_provider`; pass a fixed literal kind to `fetch`. Use `ConfigDict(extra="forbid", from_attributes=True)`; do not accept arbitrary source parameters. In `app.py`, inject/configure the provider with existing timeout, register the router under `Depends(_require_api_key)`, and map provider Invalid/Upstream to existing 422/502 error shape.
 
 ```python
-@router.get("/stocks/limit-up", response_model=KaipanlaLimitUpHistoryResponse,
-            summary="查询开盘啦历史涨停股票")
-def limit_up_history(provider: Annotated[KaipanlaMarketHistoryProvider, Depends(_provider)],
-                     trade_date: Annotated[date, Query()],
-                     offset: Annotated[int, Query(ge=0, le=10000)] = 0,
-                     limit: Annotated[int, Query(ge=1, le=30)] = 30
-                     ) -> KaipanlaLimitUpHistoryResponse:
+@router.get(
+    "/stocks/limit-up",
+    response_model=KaipanlaLimitUpHistoryResponse,
+    summary="查询开盘啦历史涨停股票",
+)
+def limit_up_history(
+    provider: Annotated[KaipanlaMarketHistoryProvider, Depends(_provider)],
+    trade_date: Annotated[date, Query()],
+    offset: Annotated[int, Query(ge=0, le=10000)] = 0,
+    limit: Annotated[int, Query(ge=1, le=30)] = 30,
+) -> KaipanlaLimitUpHistoryResponse:
     return KaipanlaLimitUpHistoryResponse.model_validate(
         provider.fetch(kind="limit_up", trade_date=trade_date, offset=offset, limit=limit)
     )
@@ -149,24 +155,28 @@ Register the other three static operations with separate function names and cate
 
 ```python
 @router.get("/stocks/auction", response_model=KaipanlaAuctionHistoryResponse)
-def auction_history(provider: Annotated[KaipanlaMarketHistoryProvider, Depends(_provider)],
-                    trade_date: Annotated[date, Query()],
-                    offset: Annotated[int, Query(ge=0, le=10000)] = 0,
-                    limit: Annotated[int, Query(ge=1, le=30)] = 30
-                    ) -> KaipanlaAuctionHistoryResponse:
+def auction_history(
+    provider: Annotated[KaipanlaMarketHistoryProvider, Depends(_provider)],
+    trade_date: Annotated[date, Query()],
+    offset: Annotated[int, Query(ge=0, le=10000)] = 0,
+    limit: Annotated[int, Query(ge=1, le=30)] = 30,
+) -> KaipanlaAuctionHistoryResponse:
     return KaipanlaAuctionHistoryResponse.model_validate(
         provider.fetch(kind="auction", trade_date=trade_date, offset=offset, limit=limit)
     )
 
+
 @router.get("/stocks/limit-down", response_model=KaipanlaLimitDownHistoryResponse)
-def limit_down_history(provider: Annotated[KaipanlaMarketHistoryProvider, Depends(_provider)],
-                       trade_date: Annotated[date, Query()],
-                       offset: Annotated[int, Query(ge=0, le=10000)] = 0,
-                       limit: Annotated[int, Query(ge=1, le=30)] = 30
-                       ) -> KaipanlaLimitDownHistoryResponse:
+def limit_down_history(
+    provider: Annotated[KaipanlaMarketHistoryProvider, Depends(_provider)],
+    trade_date: Annotated[date, Query()],
+    offset: Annotated[int, Query(ge=0, le=10000)] = 0,
+    limit: Annotated[int, Query(ge=1, le=30)] = 30,
+) -> KaipanlaLimitDownHistoryResponse:
     return KaipanlaLimitDownHistoryResponse.model_validate(
         provider.fetch(kind="limit_down", trade_date=trade_date, offset=offset, limit=limit)
     )
+
 
 @router.get("/stocks/broken-limit-up", response_model=KaipanlaBrokenLimitUpHistoryResponse)
 def broken_limit_up_history(
@@ -200,7 +210,9 @@ def broken_limit_up_history(
 
 ```python
 def test_history_docs_cover_all_routes():
-    doc = (Path(__file__).parents[1] / "docs/开盘啦市场情绪历史股票列表实时接口.md").read_text(encoding="utf-8")
+    doc = (Path(__file__).parents[1] / "docs/开盘啦市场情绪历史股票列表实时接口.md").read_text(
+        encoding="utf-8"
+    )
     assert all(path in doc for path in ROUTES.values())
 ```
 
