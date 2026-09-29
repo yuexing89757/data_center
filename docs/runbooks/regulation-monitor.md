@@ -80,4 +80,15 @@ Java 正在 IDEA 调试时不杀进程、不复制 debugger 参数启动第二�
   Java 9 项定向测试和打包、前端 13 项测试和生产构建为既有验证记录，本轮未重跑。
 - Tabbit 浏览器连接因 Windows 临时目录权限失败；该失败不等于页面错误，未执行页面操作。
 
+## 生产迁移记录（2026-09-30）
+
+项目所有者明确授权本次跳过数据库/Raw备份及恢复演练，仅执行监控 schema 迁移。
+`master` 提交 `613cc40` 的 CI 通过；受保护工作流先以 `check` 模式确认仅缺
+`20260929000100_add_regulation_monitor.sql`，随后以 `apply` 模式完成迁移、schema 检查和
+数据库/PostgREST 冒烟：[执行记录](https://github.com/yuexing89757/data_center/actions/runs/36598621229)。
+迁移后只读核对：版本记录1条；三张新表均启用 RLS 且行数为0；Worker 对新表只有
+SELECT/INSERT，没有 UPDATE/DELETE；API 角色不能直接读新表，只能执行两个有界 RPC；
+匿名角色不能执行；旧正式事件查询仍排除 monitor 算法版本。本次未补数、未补算、
+未部署 API、未重启或启用 Worker。备份门禁的本次豁免不延伸到后续生产操作。
+
 回退：切回消费者版本/地址，保留新旧批次，不删表、不覆盖正式公告。
