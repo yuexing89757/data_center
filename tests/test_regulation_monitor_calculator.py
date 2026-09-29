@@ -241,6 +241,28 @@ def test_price_gap_poisoning_prevents_unreliable_continuation():
     assert not result.events
 
 
+def test_turnover_coverage_is_independent_and_heals_after_ten_complete_sessions():
+    rule = _rule(
+        rule_code="TURNOVER",
+        kind=Kind.TURNOVER_COMPOSITE,
+        direction=Direction.NONE,
+        threshold_pct=None,
+        window_days=3,
+        comparison_window_days=5,
+        ratio_threshold=Decimal(30),
+        secondary_threshold_pct=Decimal(20),
+        benchmark_symbol=None,
+    )
+    previous = ()
+    for length in range(1, 18):
+        src = source([0] * length, (_rule(), rule))
+        result = calculate_monitor_day(src, previous)
+        state = result.states[0]
+        assert state.complete  # Missing early turnover history never poisons price resets.
+        assert bool(state.turnover_missing_dates) is (length < 17)
+        previous = result.states
+
+
 def test_serious_price_and_count_rules_merge_then_next_session_resets():
     serious = _rule(
         rule_code="SSE_MAIN_SERIOUS_10D_DEV_UP",

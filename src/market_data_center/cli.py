@@ -82,7 +82,7 @@ from market_data_center.providers import (
 )
 from market_data_center.raw_store import LocalRawStore
 from market_data_center.regulation_event_service import RegulationEventCollectionService
-from market_data_center.regulation_service import RegulationService
+from market_data_center.regulation_service import RegulationMonitorService, RegulationService
 from market_data_center.reliability import (
     RawReplayService,
     compare_daily_bar_sources,
@@ -135,6 +135,9 @@ def main() -> None:
         return
     if args.dataset == "regulation-events":
         _run_regulation_event_command(args)
+        return
+    if args.dataset == "regulation-monitor":
+        _run_regulation_monitor_command(args)
         return
     if args.dataset in {"shareholder-count-daily", "shareholder-count-backfill"}:
         _validate_shareholder_count_command(
@@ -1882,6 +1885,18 @@ def _parser() -> ArgumentParser:
     )
     regulation.add_argument("--trade-date", required=True, help="exact YYYY-MM-DD")
 
+    monitor = subparsers.add_parser(
+        "regulation-monitor",
+        help="readonly monitor preflight; --execute publishes sequential close batches",
+    )
+    monitor.add_argument("--start-date", required=True, type=date.fromisoformat)
+    monitor.add_argument("--end-date", required=True, type=date.fromisoformat)
+    monitor.add_argument(
+        "--execute",
+        action="store_true",
+        help="explicitly write calculated batches; never ingest missing facts",
+    )
+
     regulation_events = subparsers.add_parser(
         "regulation-events", help="collect one exact day's official events and immutable Raw"
     )
@@ -1954,6 +1969,31 @@ def _validate_regulation_event_args(args: Namespace, *, today: date) -> date:
     if not args.confirm_official_source_terms_reviewed:
         raise ValueError("Official source terms review confirmation is required")
     return _validate_regulation_calculation_date(args, today=today)
+
+
+def _run_regulation_monitor_command(args: Namespace) -> None:
+    settings = WorkerSettings()  # type: ignore[call-arg]
+    engine = create_engine(
+        sqlalchemy_url(settings.database_url.get_secret_value()),
+        pool_pre_ping=True,
+        connect_args={} if args.execute else {"options": "-c default_transaction_read_only=on"},
+    )
+    try:
+        service = RegulationMonitorService(
+            PostgreSQLRegulationPersistence(engine),
+            clock=lambda: datetime.now(UTC),
+        )
+        report = service.preflight(args.start_date, args.end_date)
+        print(dumps(report, default=str, sort_keys=True))
+        if args.execute:
+            if not report["can_execute"]:
+                raise ValueError(
+                    "monitor preflight rejected execution; resolve missing dependencies"
+                )
+            for day in cast(list[date], report["trading_dates"]):
+                print(dumps(asdict(service.calculate(day)), default=str, sort_keys=True))
+    finally:
+        engine.dispose()
 
 
 def _run_regulation_event_command(args: Namespace) -> None:

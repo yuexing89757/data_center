@@ -72,7 +72,7 @@ from market_data_center.providers.pytdx_pool import (
 from market_data_center.providers.tushare import TushareBseSecurityProvider
 from market_data_center.raw_store import LocalRawStore
 from market_data_center.regulation_benchmark_service import RegulationBenchmarkService
-from market_data_center.regulation_service import RegulationService
+from market_data_center.regulation_service import RegulationMonitorService, RegulationService
 from market_data_center.reliability import recover_stale_runs
 from market_data_center.scheduling_catalog import (
     BOARD_INDEX_DAILY_BAR_JOB_ID,
@@ -823,9 +823,18 @@ def run_regulation_daily_calculation_job() -> None:
                         clock=lambda: datetime.now(UTC),
                     ).calculate(trade_date),
                 )
+                execution.step(
+                    "calculate_regulation_monitor",
+                    3,
+                    lambda: RegulationMonitorService(
+                        PostgreSQLRegulationPersistence(engine),
+                        clock=lambda: datetime.now(UTC),
+                    ).calculate(trade_date),
+                )
             else:
                 execution.step("collect_regulation_benchmarks", 1, lambda: 0)
                 execution.step("calculate_regulation_warnings", 2, lambda: 0)
+                execution.step("calculate_regulation_monitor", 3, lambda: 0)
         except BaseException as error:
             execution.fail(error)
             raise

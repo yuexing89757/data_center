@@ -309,6 +309,9 @@ Compose service, run the integration marker, and remove the temporary volume aft
 
 Verified Raw replay, stale-run recovery, and read-only cross-provider Daily Bar comparison are documented in [docs/Raw重放与运行恢复.md](docs/Raw重放与运行恢复.md).
 
+独立异动监控的只读接口、连续历史预检、发布边界和本地验收见
+[异动监控运行手册](docs/runbooks/regulation-monitor.md)。代码可用不等于生产批次已发布。
+
 Quality cleanup now requires a complete verified archive before deleting whitelisted old evidence.
 `uv run market-data-center data-cleanup` is read-only by default. See
 [质量归档与受限清理](docs/质量归档与受限清理.md) for bounds, permissions, and deployment prerequisites.

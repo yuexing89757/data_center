@@ -837,6 +837,19 @@ FastAPI 层接受六位 `code`，经 Security 事实解析为唯一股票 `symbo
 
 ## 17. 官方链接
 
+## 独立监控实现补充（ADR-0060）
+
+`regulation-monitor.v1` 使用独立 `monitor_context`、`monitor_input`、`calculated_event`。
+计算状态按前序发布批次串联，历史更正使后续旧链不可查询。正式公告与测算事件分开。
+只读 API 的候选游标绑定精确日期、搜索、分页大小及批次；单页 query 最多50股，
+每次返回规则、当日门槛、次日三情景之一、冻结的10日次数以及缺失原因。
+盘中参考价安全性通过同一有界 RPC 校验当前已知公司行为并返回校验时点；
+条件可能随后续公告变化，不能表述为次日价格预测。没有已确认无限售 A 股股本时，
+盘中换手状态保留缺失，不能拿自由流通股本或价格推算替代。
+操作步骤和仍待生产部署的数据条件见 [运行手册](runbooks/regulation-monitor.md)。
+
+### 官方来源
+
 - 上交所2026交易规则通知及现行文本：
   https://www.sse.com.cn/lawandrules/sselawsrules2025/trade/universal/c/c_20260424_10816492.shtml
 - 上交所股票交易规则正文入口：

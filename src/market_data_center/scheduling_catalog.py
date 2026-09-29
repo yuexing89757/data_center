@@ -191,7 +191,11 @@ WORKFLOW_DEFINITIONS = (
         "regulation_daily_calculation",
         "监管异动每日测算",
         "按官方规则计算收盘状态、T+1指数情景触发价和客观预警。",
-        ("collect_regulation_benchmarks", "calculate_regulation_warnings"),
+        (
+            "collect_regulation_benchmarks",
+            "calculate_regulation_warnings",
+            "calculate_regulation_monitor",
+        ),
     ),
     WorkflowDefinition(
         "data_cleanup",

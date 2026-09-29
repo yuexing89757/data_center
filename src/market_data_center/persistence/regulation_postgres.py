@@ -3,6 +3,7 @@
 import hashlib
 import json
 from collections import defaultdict
+from dataclasses import replace
 from datetime import date, datetime, time
 from decimal import Decimal
 from typing import cast
@@ -13,6 +14,8 @@ from sqlalchemy import Connection, Engine, RowMapping, bindparam, text
 
 from market_data_center.domain.records import Exchange
 from market_data_center.domain.regulation import (
+    MonitorDay,
+    MonitorState,
     RegulationApplicability,
     RegulationCalculationInput,
     RegulationCalculationOutput,
@@ -34,7 +37,13 @@ from market_data_center.domain.stock_pool import DailyPriceLimit, price_limit_ru
 from market_data_center.regulation_benchmark_service import REGULATION_BENCHMARK_SYMBOLS
 from market_data_center.regulation_calculator import (
     REGULATION_ALGORITHM_VERSION,
+    REGULATION_MONITOR_VERSION,
     REGULATION_SCENARIO_CONFIG_VERSION,
+)
+from market_data_center.regulation_monitor_codec import (
+    decode_monitor_state,
+    encode_monitor,
+    monitor_input_hash,
 )
 from market_data_center.stock_pool_calculator import calculate_price_limit_range
 
@@ -374,6 +383,160 @@ order by rule_code
                 )
             _complete_run(connection, run)
 
+    def load_monitor_checkpoint(
+        self, trade_date: date
+    ) -> tuple[UUID | None, tuple[MonitorState, ...]]:
+        with self._engine.connect() as connection:
+            return _monitor_checkpoint(connection, trade_date)
+
+    def load_monitor_trading_dates(self, start: date, end: date) -> tuple[date, ...]:
+        with self._engine.connect() as connection:
+            return tuple(
+                connection.execute(
+                    text("""
+                select trade_date from core.trading_calendar
+                where market='CN_A_SHARE' and is_trading_day and trade_date between :start and :end
+                order by trade_date
+            """),
+                    {"start": start, "end": end},
+                ).scalars()
+            )
+
+    def publish_monitor_day(
+        self,
+        run: RegulationCalculationRun,
+        source: RegulationCalculationInput,
+        result: MonitorDay,
+        *,
+        parent_calculation_id: UUID | None,
+        previous_states: tuple[MonitorState, ...],
+    ) -> None:
+        """Publish one immutable monitor snapshot without touching official results."""
+        _validate_publish(run, result.output)
+        if (
+            source.algorithm_version != REGULATION_MONITOR_VERSION
+            or run.algorithm_version != source.algorithm_version
+            or source.trade_date != run.trade_date
+            or source.next_trade_date != run.next_trade_date
+            or run.input_hash != monitor_input_hash(source, previous_states, parent_calculation_id)
+        ):
+            raise ValueError("monitor run does not match its versioned inputs")
+        states = {state.symbol: state for state in result.states}
+        if len(states) != len(result.states) or set(states) != {
+            c.symbol for c in source.candidates
+        }:
+            raise ValueError("monitor state coverage does not match source")
+        if any(state.through_date != source.trade_date for state in result.states):
+            raise ValueError("monitor state date does not match source")
+        if any(event.trade_date != source.trade_date for event in result.events):
+            raise ValueError("monitor events must belong to the calculation date")
+        prior = {state.symbol: state for state in previous_states}
+        rules_by_symbol: dict[str, list[object]] = defaultdict(list)
+        warnings_by_symbol: dict[str, list[object]] = defaultdict(list)
+        reasons_by_symbol: dict[str, set[str]] = defaultdict(set)
+        for rule_result in result.output.rule_results:
+            rules_by_symbol[rule_result.symbol].append(rule_result)
+            if rule_result.incomplete_reason:
+                reasons_by_symbol[rule_result.symbol].add("INCOMPLETE")
+        for warning in result.output.warnings:
+            warnings_by_symbol[warning.symbol].append(warning)
+            if warning.reachability.value == "REACHABLE_NEXT_SESSION":
+                reasons_by_symbol[warning.symbol].add("PRICE_CONDITION_REACHABLE")
+        with self._engine.begin() as connection:
+            # Serialize chain publication, including corrections to predecessor batches.
+            connection.execute(text("select pg_advisory_xact_lock(6260929001)"))
+            parent, stored_states = _monitor_checkpoint(connection, source.trade_date)
+            if parent != parent_calculation_id or sorted(
+                stored_states, key=lambda s: s.symbol
+            ) != sorted(previous_states, key=lambda s: s.symbol):
+                raise ValueError("monitor predecessor changed; reload and recompute")
+            running = connection.execute(
+                text("""
+                select input_hash from regulation.calculation_run
+                where calculation_id=:id and status='RUNNING' for update
+            """),
+                {"id": run.calculation_id},
+            ).scalar_one_or_none()
+            if running != run.input_hash:
+                raise ValueError("matching running monitor batch was not found")
+            connection.execute(
+                text("""
+                insert into regulation.monitor_context(calculation_id,parent_calculation_id,source)
+                values (:id,:parent,cast(:source as jsonb))
+            """),
+                {
+                    "id": run.calculation_id,
+                    "parent": parent,
+                    "source": encode_monitor(replace(source, candidates=())),
+                },
+            )
+            names = dict(
+                connection.execute(
+                    text("""
+                select symbol,name from core.security_name_history
+                where effective_from<=:day and (effective_to is null or effective_to>=:day)
+                  and symbol in :symbols
+            """).bindparams(bindparam("symbols", expanding=True)),
+                    {"day": source.trade_date, "symbols": list(states)},
+                )
+                .tuples()
+                .all()
+            )
+            inputs = []
+            for candidate in source.candidates:
+                symbol = candidate.symbol
+                state = states[symbol]
+                reasons = reasons_by_symbol[symbol]
+                if state.events:
+                    reasons.add("RECENT_CALCULATED_EVENT")
+                if not state.complete:
+                    reasons.add("INCOMPLETE")
+                inputs.append(
+                    {
+                        "id": run.calculation_id,
+                        "symbol": symbol,
+                        "name": names.get(symbol),
+                        "reasons": sorted(reasons),
+                        "payload": encode_monitor(
+                            {
+                                "candidate": candidate,
+                                "state": state,
+                                "previous_state": prior.get(symbol),
+                                "rule_results": rules_by_symbol[symbol],
+                                "warnings": warnings_by_symbol[symbol],
+                            }
+                        ),
+                    },
+                )
+            if inputs:
+                connection.execute(
+                    text("""
+                    insert into regulation.monitor_input
+                    (calculation_id,symbol,name,candidate_reasons,payload)
+                    values (:id,:symbol,:name,:reasons,cast(:payload as jsonb))
+                """),
+                    inputs,
+                )
+            for event in result.events:
+                connection.execute(
+                    text("""
+                    insert into regulation.calculated_event
+                    (calculation_id,symbol,trade_date,level,direction,kind,rule_codes,windows)
+                    values (:id,:symbol,:day,:level,:direction,:kind,:rules,cast(:windows as jsonb))
+                """),
+                    {
+                        "id": run.calculation_id,
+                        "symbol": event.symbol,
+                        "day": event.trade_date,
+                        "level": event.level.value,
+                        "direction": event.direction.value,
+                        "kind": event.kind.value,
+                        "rules": list(event.rule_codes),
+                        "windows": encode_monitor(event.windows),
+                    },
+                )
+            _complete_run(connection, run)
+
     def mark_calculation_failed(self, calculation_id: UUID, completed_at: datetime) -> None:
         with self._engine.begin() as connection:
             result = connection.execute(
@@ -386,6 +549,38 @@ where calculation_id = :calculation_id and status = 'RUNNING'
             )
             if result.rowcount != 1:
                 raise ValueError("running regulation calculation was not found")
+
+
+def _monitor_checkpoint(
+    connection: Connection, trade_date: date
+) -> tuple[UUID | None, tuple[MonitorState, ...]]:
+    parent = connection.execute(
+        text("""
+        select r.calculation_id from regulation.calculation_run r
+        join regulation.monitor_context m using(calculation_id)
+        where r.algorithm_version='regulation-monitor.v1'
+          and r.status in ('SUCCEEDED','PARTIAL') and r.completed_at is not null
+          and r.next_trade_date=:day
+          and r.trade_date=(select max(trade_date) from core.trading_calendar
+              where market='CN_A_SHARE' and is_trading_day and trade_date<:day)
+        order by r.completed_at desc,r.calculation_id desc limit 1
+    """),
+        {"day": trade_date},
+    ).scalar_one_or_none()
+    if parent is None:
+        return None, ()
+    if not connection.execute(
+        text("select regulation.monitor_chain_current(:id)"), {"id": parent}
+    ).scalar_one():
+        raise ValueError("monitor history was superseded; recompute from the first changed day")
+    states = connection.execute(
+        text("""
+        select payload->'state' from regulation.monitor_input
+        where calculation_id=:id order by symbol
+    """),
+        {"id": parent},
+    ).scalars()
+    return parent, tuple(decode_monitor_state(state) for state in states)
 
 
 def _load_active_rules(connection: Connection, trade_date: date) -> tuple[RegulationRule, ...]:

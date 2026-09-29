@@ -37,6 +37,7 @@ def test_regulation_workflow_collects_benchmarks_before_calculation() -> None:
     assert definition.step_codes == (
         "collect_regulation_benchmarks",
         "calculate_regulation_warnings",
+        "calculate_regulation_monitor",
     )
 
 
@@ -64,3 +65,76 @@ def test_regulation_worker_migration_adds_only_the_workflow_catalog_value() -> N
     assert "'regulation_daily_calculation'" in migration
     assert "security_type_check" not in migration
     assert "cron" not in migration
+
+
+@pytest.mark.parametrize("trading", [True, False])
+def test_worker_executes_monitor_after_existing_calculation(monkeypatch, trading):
+    from contextlib import nullcontext
+    from datetime import datetime
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+    from zoneinfo import ZoneInfo
+
+    from pydantic import SecretStr
+
+    from market_data_center import scheduler
+
+    actions, steps = [], []
+    engine = MagicMock()
+    execution = MagicMock()
+
+    def step(code, position, action):
+        steps.append(code)
+        return action()
+
+    execution.step.side_effect = step
+    monkeypatch.setattr(
+        scheduler,
+        "WorkerSettings",
+        lambda: SimpleNamespace(
+            database_url=SecretStr("postgresql://test@localhost/test"), raw_data_root=Path("unused")
+        ),
+    )
+    monkeypatch.setattr(scheduler, "create_engine", lambda *a, **k: engine)
+    monkeypatch.setattr(
+        scheduler,
+        "_scheduled_job_fire_time",
+        lambda *a: datetime(2026, 9, 29, 22, 30, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )
+    monkeypatch.setattr(
+        scheduler,
+        "PostgreSQLPersistence",
+        lambda _: SimpleNamespace(is_trading_day=lambda _: trading),
+    )
+    monkeypatch.setattr(scheduler, "PostgreSQLOperationsPersistence", lambda _: object())
+    monkeypatch.setattr(
+        scheduler, "WorkflowExecutionService", lambda _: SimpleNamespace(start=lambda *a: execution)
+    )
+    monkeypatch.setattr(scheduler, "create_provider", lambda _: nullcontext(object()))
+    monkeypatch.setattr(scheduler, "IngestionPipeline", lambda **k: object())
+    monkeypatch.setattr(scheduler, "LocalRawStore", lambda _: object())
+    monkeypatch.setattr(scheduler, "PostgreSQLRegulationPersistence", lambda _: object())
+    monkeypatch.setattr(
+        scheduler,
+        "RegulationBenchmarkService",
+        lambda *a: SimpleNamespace(collect=lambda _: actions.append("benchmarks")),
+    )
+    monkeypatch.setattr(
+        scheduler,
+        "RegulationService",
+        lambda *a, **k: SimpleNamespace(calculate=lambda _: actions.append("legacy")),
+    )
+    monkeypatch.setattr(
+        scheduler,
+        "RegulationMonitorService",
+        lambda *a, **k: SimpleNamespace(calculate=lambda _: actions.append("monitor")),
+    )
+    scheduler.run_regulation_daily_calculation_job()
+    assert steps == [
+        "collect_regulation_benchmarks",
+        "calculate_regulation_warnings",
+        "calculate_regulation_monitor",
+    ]
+    assert actions == (["benchmarks", "legacy", "monitor"] if trading else [])
+    execution.succeed.assert_called_once()
+    engine.dispose.assert_called_once()

@@ -1,14 +1,68 @@
 """Synchronize the bounded Regulation RPC contracts from the owned API models."""
 
 from copy import deepcopy
+from datetime import date, datetime
 from json import dumps, loads
 from pathlib import Path
+from uuid import UUID
 
+from market_data_center.domain.regulation import (
+    MonitorState,
+    RegulationCalculationInput,
+    RegulationCandidate,
+    RegulationRuleResult,
+    RegulationWarningResult,
+)
 from market_data_center.public_api.models import (
+    ApiModel,
+    RegulationCoverage,
     RegulationRecentNextTriggerResponse,
     RegulationSymbolTriggerResponse,
     RegulationTriggerResponse,
 )
+from market_data_center.public_api.regulation_monitor import MonitorCandidatesResponse
+
+
+class MonitorSnapshotPayload(ApiModel):
+    candidate: RegulationCandidate
+    state: MonitorState
+    previous_state: MonitorState | None
+    rule_results: list[RegulationRuleResult]
+    warnings: list[RegulationWarningResult]
+
+
+class MonitorSnapshotItem(ApiModel):
+    code: str
+    symbol: str | None
+    name: str | None
+    payload: MonitorSnapshotPayload | None
+    next_day_reference_safe: bool
+    target_applicability: str
+    target_applicability_reason: str | None
+    unrestricted_shares: int | None
+
+
+class MonitorInputsRpcResponse(ApiModel):
+    schema_version: str
+    trade_date: date
+    base_trade_date: date
+    next_trade_date: date
+    calculation_id: UUID
+    algorithm_version: str
+    rule_set_version: str
+    completed_at: datetime
+    count_cutoff_date: date
+    official_coverage: str
+    official_watermark: datetime | None
+    reference_checked_at: datetime
+    is_confirmed_close: bool
+    coverage: RegulationCoverage
+    source: RegulationCalculationInput
+    requested_count: int
+    found_count: int
+    missing_count: int
+    items: list[MonitorSnapshotItem]
+
 
 CONTRACT_ROOT = Path(__file__).parents[1] / "contracts"
 REQUEST = {
@@ -52,6 +106,39 @@ SYMBOL_REQUEST = {
 }
 OPERATIONS = (
     (
+        "query_regulation_monitor_candidates",
+        MonitorCandidatesResponse,
+        "Read the frozen close observation list; cursor binds date, search and batch.",
+        {
+            **REQUEST,
+            "properties": {
+                **REQUEST["properties"],
+                "p_limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 50},
+                "p_query": {"type": ["string", "null"], "maxLength": 80},
+            },
+        },
+    ),
+    (
+        "query_regulation_monitor_inputs",
+        MonitorInputsRpcResponse,
+        "Read at most 50 frozen monitor inputs plus timestamped known-reference guards; no writes.",
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["p_trade_date", "p_calculation_id", "p_codes"],
+            "properties": {
+                "p_trade_date": REQUEST["properties"]["p_trade_date"],
+                "p_calculation_id": {"type": "string", "format": "uuid"},
+                "p_codes": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 50,
+                    "items": {"type": "string", "pattern": "^[0-9]{6}$"},
+                },
+            },
+        },
+    ),
+    (
         "query_regulation_triggers",
         RegulationTriggerResponse,
         "Read exact-date calculated closing triggers from one published version; no date fallback.",
@@ -89,6 +176,21 @@ def main() -> None:
             mode="serialization", ref_template="#/components/schemas/{model}"
         )
         definitions = schema.pop("$defs", {})
+        if rpc == "query_regulation_monitor_candidates":
+            # RPC returns publication metadata; FastAPI adds generated_at on each request.
+            schema["properties"].pop("generated_at")
+            schema["required"].remove("generated_at")
+            schema["properties"].update(
+                {
+                    "completed_at": {"type": "string", "format": "date-time"},
+                    "official_coverage": {"type": "string"},
+                    "official_watermark": {"type": ["string", "null"], "format": "date-time"},
+                    "is_confirmed_close": {"type": "boolean"},
+                }
+            )
+            schema["required"].extend(
+                ["completed_at", "official_coverage", "official_watermark", "is_confirmed_close"]
+            )
         definitions[model.__name__] = schema
         # PostgREST retains timestamptz semantics. Only FastAPI uses Shanghai wall-clock strings.
         for definition in definitions.values():
@@ -129,6 +231,11 @@ def main() -> None:
                     },
                     "400": {"description": "Invalid date, bounds or cursor (22023)."},
                     "404": {"description": "No compatible published calculation (P0002)."},
+                    **(
+                        {"409": {"description": "Batch changed or checkpoint superseded (P0004)."}}
+                        if "monitor" in rpc
+                        else {}
+                    ),
                 },
             }
         }

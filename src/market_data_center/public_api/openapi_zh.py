@@ -370,6 +370,40 @@ FIELD_DESCRIPTIONS_ZH = {
 }
 
 
+FIELD_DESCRIPTIONS_ZH.update(
+    {
+        "base_trade_date": "本次测算依赖的已发布收盘批次日期。",
+        "candidate_basis": "进入收盘观察名单的依据；不代表已经触发异动。",
+        "count_cutoff_date": "已确认测算次数的截止交易日，不包含盘中假设事件。",
+        "calculated_price_abnormal_count_10d_up": "十日内测算上涨一般价格异动次数；未知为空。",
+        "calculated_price_abnormal_count_10d_down": "十日内测算下跌一般价格异动次数；未知为空。",
+        "calculated_turnover_count_10d": "近十个交易日系统测算的换手异动次数，与价格次数分开。",
+        "official_price_abnormal_count_10d_up": "官方公告上涨异动次数，公告覆盖不完整时为空。",
+        "official_price_abnormal_count_10d_down": "官方公告下跌异动次数，公告覆盖不完整时为空。",
+        "official_coverage": "官方公告覆盖状态，未知不等于零次。",
+        "official_watermark": "已知官方公告数据水位时间，不代表完整覆盖。",
+        "events": "截至批次日期的测算事件明细，不含盘中假设事件。",
+        "hypothetical_close_at": "把当前行情视为收盘时的行情时间；确认收盘模式为空。",
+        "quote_observed_at": "本次有效行情的最早观测时间。",
+        "missing_count": "本次请求中不在已发布覆盖范围内的证券数量。",
+        "missing_reason": "无法计算或不适用的具体原因，正常时为空。",
+        "missing_reasons": "数据缺口或条件限制的具体原因列表。",
+        "observation_mode": "盘中、午间暂停、收盘估算或已确认收盘模式。",
+        "reference_price": "计算触发涨跌幅使用的有效参考价格。",
+        "reference_checked_at": "按已知公司行为校验次日参考价条件的时间；后续公告可能改变条件。",
+        "reset_branch": "次日窗口采用的确认或假设重置分支。",
+        "rule_codes": "同一事件命中的规则编码，合并事件不重复计次。",
+        "rules": "逐条规则的当前值、门槛、状态和缺失原因。",
+        "schema_version": "独立异动监控接口契约版本。",
+        "state": "规则当前达到、当日可达、次日可达、未达到、缺数据或不适用状态。",
+        "today": "按当前指数和有效前收盘参考价测算的当日触发条件。",
+        "next_day": "以当下价格视为今日收盘、按所选指数情景计算的次日条件，不是预测。",
+        "total": "当前批次和筛选条件下的观察名单总数。",
+        "windows": "事件对应的起止交易日窗口。",
+    }
+)
+
+
 for side_en, side_zh in (("bid", "买"), ("ask", "卖")):
     for level, level_zh in enumerate(("一", "二", "三", "四", "五"), start=1):
         FIELD_DESCRIPTIONS_ZH[f"{side_en}{level}_price"] = f"{side_zh}{level_zh}价。"

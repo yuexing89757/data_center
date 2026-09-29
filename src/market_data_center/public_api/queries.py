@@ -4,7 +4,8 @@ import logging
 from collections.abc import Mapping, Sequence
 from datetime import date
 from decimal import Decimal
-from typing import Any, Never, Protocol
+from typing import Any, Never, Protocol, cast
+from uuid import UUID
 
 from sqlalchemy import Engine, RowMapping, text
 from sqlalchemy.exc import DBAPIError
@@ -208,6 +209,10 @@ class PublicQueryAmbiguous(PublicQueryError):
     pass
 
 
+class PublicQueryConflict(PublicQueryError):
+    pass
+
+
 class PublicQueryNotFound(PublicQueryError):
     pass
 
@@ -221,6 +226,14 @@ class PublicQueryUnavailable(PublicQueryError):
 
 
 class PublicQueryService(Protocol):
+    def query_regulation_monitor_candidates(
+        self, trade_date: date, limit: int, cursor: str | None, query: str | None
+    ) -> dict[str, object]: ...
+
+    def query_regulation_monitor_inputs(
+        self, trade_date: date, calculation_id: UUID, codes: tuple[str, ...]
+    ) -> dict[str, object]: ...
+
     def regulation_triggers(
         self, trade_date: date, cursor: str | None, limit: int
     ) -> RegulationTriggerResponse: ...
@@ -621,6 +634,32 @@ class PostgreSQLPublicQueryService:
         )
         return RegulationSymbolTriggerResponse.model_validate(rows[0]["payload"])
 
+    def query_regulation_monitor_candidates(
+        self, trade_date: date, limit: int, cursor: str | None, query: str | None
+    ) -> dict[str, object]:
+        rows = self._execute(
+            text(
+                "select api_v1.query_regulation_monitor_candidates("
+                ":trade_date,:limit,:cursor,:query) as payload"
+            ),
+            {"trade_date": trade_date, "limit": limit, "cursor": cursor, "query": query},
+            statement_timeout_ms=5000,
+        )
+        return cast(dict[str, object], rows[0]["payload"])
+
+    def query_regulation_monitor_inputs(
+        self, trade_date: date, calculation_id: UUID, codes: tuple[str, ...]
+    ) -> dict[str, object]:
+        rows = self._execute(
+            text(
+                "select api_v1.query_regulation_monitor_inputs("
+                ":trade_date,:calculation_id,:codes) as payload"
+            ),
+            {"trade_date": trade_date, "calculation_id": calculation_id, "codes": list(codes)},
+            statement_timeout_ms=5000,
+        )
+        return cast(dict[str, object], rows[0]["payload"])
+
     def _execute(
         self,
         statement: Any,
@@ -654,6 +693,8 @@ def _raise_safe_query_error(error: DBAPIError) -> Never:
         raise PublicQueryInvalid("query parameters were rejected") from error
     if sqlstate == "P0003":
         raise PublicQueryAmbiguous("stock code is ambiguous across exchanges") from error
+    if sqlstate == "P0004":
+        raise PublicQueryConflict("monitor batch/date conflict or superseded chain") from error
     if sqlstate == "P0002":
         raise PublicQueryNotFound("requested data was not found") from error
     if sqlstate == "57014":

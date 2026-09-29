@@ -116,6 +116,7 @@ from market_data_center.public_api.queries import (
     PublicQueryTimeout,
     PublicQueryUnavailable,
 )
+from market_data_center.public_api.regulation_monitor import router as regulation_monitor_router
 from market_data_center.public_api.tencent_quote_live import (
     DirectTencentQuoteLiveService,
     TencentQuoteLiveService,
@@ -202,6 +203,7 @@ def create_app(
         timeout_seconds=configured.fastapi_kaipanla_timeout_seconds
     )
     app.include_router(kaipanla_alerts_router, dependencies=[Depends(_require_api_key)])
+    app.include_router(regulation_monitor_router, dependencies=[Depends(_require_api_key)])
     app.state.kaipanla_auction_provider = kaipanla_auction_provider or KaipanlaAuctionProvider(
         timeout_seconds=configured.fastapi_kaipanla_timeout_seconds
     )

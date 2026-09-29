@@ -590,6 +590,152 @@
           }
         }
       }
+    },
+    "/rpc/query_regulation_monitor_candidates": {
+      "post": {
+        "operationId": "query_regulation_monitor_candidates",
+        "summary": "Read the frozen close observation list; cursor binds date, search and batch.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "Requires the dedicated API role. Anonymous roles cannot execute. Decimals are strings, missing values are null. SQLSTATE 22023 means invalid parameters; P0002 means no compatible exact-date publication.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "p_trade_date"
+                ],
+                "properties": {
+                  "p_trade_date": {
+                    "type": "string",
+                    "format": "date",
+                    "description": "Exact trading date, not before 2026-07-06."
+                  },
+                  "p_cursor": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "default": null,
+                    "description": "Opaque cursor bound to endpoint, date, page size and calculation version. Do not decode or modify."
+                  },
+                  "p_limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100,
+                    "default": 50
+                  },
+                  "p_query": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 80
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "One coherent published calculation with coverage and keyset pagination.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitorCandidatesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid date, bounds or cursor (22023)."
+          },
+          "404": {
+            "description": "No compatible published calculation (P0002)."
+          },
+          "409": {
+            "description": "Batch changed or checkpoint superseded (P0004)."
+          }
+        }
+      }
+    },
+    "/rpc/query_regulation_monitor_inputs": {
+      "post": {
+        "operationId": "query_regulation_monitor_inputs",
+        "summary": "Read at most 50 frozen monitor inputs plus timestamped known-reference guards; no writes.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "Requires the dedicated API role. Anonymous roles cannot execute. Decimals are strings, missing values are null. SQLSTATE 22023 means invalid parameters; P0002 means no compatible exact-date publication.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "p_trade_date",
+                  "p_calculation_id",
+                  "p_codes"
+                ],
+                "properties": {
+                  "p_trade_date": {
+                    "type": "string",
+                    "format": "date",
+                    "description": "Exact trading date, not before 2026-07-06."
+                  },
+                  "p_calculation_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "p_codes": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 50,
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[0-9]{6}$"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "One coherent published calculation with coverage and keyset pagination.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitorInputsRpcResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid date, bounds or cursor (22023)."
+          },
+          "404": {
+            "description": "No compatible published calculation (P0002)."
+          },
+          "409": {
+            "description": "Batch changed or checkpoint superseded (P0004)."
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1793,6 +1939,1758 @@
           "next_triggers"
         ],
         "title": "RegulationSymbolTriggerResponse",
+        "type": "object"
+      },
+      "MonitorCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Symbol"
+          },
+          "code": {
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "candidate_basis": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Candidate Basis",
+            "type": "array"
+          }
+        },
+        "required": [
+          "symbol",
+          "code",
+          "name",
+          "candidate_basis"
+        ],
+        "title": "MonitorCandidate",
+        "type": "object"
+      },
+      "MonitorCandidatesResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "schema_version": {
+            "const": "regulation-monitor.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "base_trade_date": {
+            "format": "date",
+            "title": "Base Trade Date",
+            "type": "string"
+          },
+          "next_trade_date": {
+            "format": "date",
+            "title": "Next Trade Date",
+            "type": "string"
+          },
+          "calculation_id": {
+            "format": "uuid",
+            "title": "Calculation Id",
+            "type": "string"
+          },
+          "algorithm_version": {
+            "title": "Algorithm Version",
+            "type": "string"
+          },
+          "rule_set_version": {
+            "title": "Rule Set Version",
+            "type": "string"
+          },
+          "count_cutoff_date": {
+            "format": "date",
+            "title": "Count Cutoff Date",
+            "type": "string"
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/RegulationCoverage"
+          },
+          "requested_count": {
+            "minimum": 0,
+            "title": "Requested Count",
+            "type": "integer"
+          },
+          "found_count": {
+            "minimum": 0,
+            "title": "Found Count",
+            "type": "integer"
+          },
+          "missing_count": {
+            "minimum": 0,
+            "title": "Missing Count",
+            "type": "integer"
+          },
+          "total": {
+            "minimum": 0,
+            "title": "Total",
+            "type": "integer"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "candidate_basis": {
+            "title": "Candidate Basis",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MonitorCandidate"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "completed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "official_coverage": {
+            "type": "string"
+          },
+          "official_watermark": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "is_confirmed_close": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "schema_version",
+          "trade_date",
+          "base_trade_date",
+          "next_trade_date",
+          "calculation_id",
+          "algorithm_version",
+          "rule_set_version",
+          "count_cutoff_date",
+          "coverage",
+          "requested_count",
+          "found_count",
+          "missing_count",
+          "total",
+          "next_cursor",
+          "candidate_basis",
+          "items",
+          "completed_at",
+          "official_coverage",
+          "official_watermark",
+          "is_confirmed_close"
+        ],
+        "title": "MonitorCandidatesResponse",
+        "type": "object"
+      },
+      "CalculatedEvent": {
+        "description": "A simulated close event, never a source/official announcement.",
+        "properties": {
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "level": {
+            "$ref": "#/components/schemas/RegulationRuleLevel"
+          },
+          "direction": {
+            "$ref": "#/components/schemas/RegulationDirection"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/RegulationRuleKind"
+          },
+          "rule_codes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Rule Codes",
+            "type": "array"
+          },
+          "windows": {
+            "items": {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "format": "date",
+                  "type": "string"
+                }
+              ],
+              "type": "array"
+            },
+            "title": "Windows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "symbol",
+          "trade_date",
+          "level",
+          "direction",
+          "kind",
+          "rule_codes",
+          "windows"
+        ],
+        "title": "CalculatedEvent",
+        "type": "object"
+      },
+      "DailyPriceLimit": {
+        "properties": {
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "previous_close": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Previous Close",
+            "type": "string"
+          },
+          "upper_limit": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Upper Limit",
+            "type": "string"
+          },
+          "lower_limit": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Lower Limit",
+            "type": "string"
+          },
+          "limit_ratio": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Limit Ratio",
+            "type": "string"
+          },
+          "price_tick": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Price Tick",
+            "type": "string"
+          },
+          "is_st": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is St"
+          },
+          "rule_version": {
+            "title": "Rule Version",
+            "type": "string"
+          },
+          "algorithm_version": {
+            "title": "Algorithm Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "trade_date",
+          "previous_close",
+          "upper_limit",
+          "lower_limit",
+          "limit_ratio",
+          "price_tick",
+          "is_st",
+          "rule_version",
+          "algorithm_version"
+        ],
+        "title": "DailyPriceLimit",
+        "type": "object"
+      },
+      "Exchange": {
+        "enum": [
+          "SSE",
+          "SZSE",
+          "BSE"
+        ],
+        "title": "Exchange",
+        "type": "string"
+      },
+      "MonitorSnapshotItem": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Symbol"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MonitorSnapshotPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "next_day_reference_safe": {
+            "title": "Next Day Reference Safe",
+            "type": "boolean"
+          },
+          "target_applicability": {
+            "title": "Target Applicability",
+            "type": "string"
+          },
+          "target_applicability_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Applicability Reason"
+          },
+          "unrestricted_shares": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unrestricted Shares"
+          }
+        },
+        "required": [
+          "code",
+          "symbol",
+          "name",
+          "payload",
+          "next_day_reference_safe",
+          "target_applicability",
+          "target_applicability_reason",
+          "unrestricted_shares"
+        ],
+        "title": "MonitorSnapshotItem",
+        "type": "object"
+      },
+      "MonitorSnapshotPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "candidate": {
+            "$ref": "#/components/schemas/RegulationCandidate"
+          },
+          "state": {
+            "$ref": "#/components/schemas/MonitorState"
+          },
+          "previous_state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MonitorState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rule_results": {
+            "items": {
+              "$ref": "#/components/schemas/RegulationRuleResult"
+            },
+            "title": "Rule Results",
+            "type": "array"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/RegulationWarningResult"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "candidate",
+          "state",
+          "previous_state",
+          "rule_results",
+          "warnings"
+        ],
+        "title": "MonitorSnapshotPayload",
+        "type": "object"
+      },
+      "MonitorState": {
+        "properties": {
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "through_date": {
+            "format": "date",
+            "title": "Through Date",
+            "type": "string"
+          },
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "abnormal_reset_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Abnormal Reset Date"
+          },
+          "serious_reset_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Serious Reset Date"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/CalculatedEvent"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "missing_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Reasons",
+            "type": "array"
+          },
+          "turnover_missing_dates": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "date",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Turnover Missing Dates"
+          }
+        },
+        "required": [
+          "symbol",
+          "through_date",
+          "complete",
+          "abnormal_reset_date",
+          "serious_reset_date",
+          "events",
+          "missing_reasons"
+        ],
+        "title": "MonitorState",
+        "type": "object"
+      },
+      "RegulationApplicability": {
+        "enum": [
+          "APPLICABLE",
+          "NOT_APPLICABLE",
+          "INSUFFICIENT_DATA"
+        ],
+        "title": "RegulationApplicability",
+        "type": "string"
+      },
+      "RegulationCalculationInput": {
+        "properties": {
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "next_trade_date": {
+            "format": "date",
+            "title": "Next Trade Date",
+            "type": "string"
+          },
+          "algorithm_version": {
+            "title": "Algorithm Version",
+            "type": "string"
+          },
+          "scenario_config_version": {
+            "title": "Scenario Config Version",
+            "type": "string"
+          },
+          "active_rules": {
+            "items": {
+              "$ref": "#/components/schemas/RegulationRule"
+            },
+            "title": "Active Rules",
+            "type": "array"
+          },
+          "trading_dates": {
+            "items": {
+              "format": "date",
+              "type": "string"
+            },
+            "title": "Trading Dates",
+            "type": "array"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/RegulationCandidate"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "rule_set_hash": {
+            "title": "Rule Set Hash",
+            "type": "string"
+          },
+          "market_watermark": {
+            "title": "Market Watermark",
+            "type": "string"
+          },
+          "capital_watermark": {
+            "title": "Capital Watermark",
+            "type": "string"
+          },
+          "event_watermark": {
+            "format": "date-time",
+            "title": "Event Watermark",
+            "type": "string"
+          },
+          "reset_trading_dates": {
+            "default": [],
+            "items": {
+              "format": "date",
+              "type": "string"
+            },
+            "title": "Reset Trading Dates",
+            "type": "array"
+          }
+        },
+        "required": [
+          "trade_date",
+          "next_trade_date",
+          "algorithm_version",
+          "scenario_config_version",
+          "active_rules",
+          "trading_dates",
+          "candidates",
+          "rule_set_hash",
+          "market_watermark",
+          "capital_watermark",
+          "event_watermark"
+        ],
+        "title": "RegulationCalculationInput",
+        "type": "object"
+      },
+      "RegulationCandidate": {
+        "properties": {
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "exchange": {
+            "$ref": "#/components/schemas/Exchange"
+          },
+          "segment": {
+            "$ref": "#/components/schemas/RegulationSegment"
+          },
+          "applicability": {
+            "$ref": "#/components/schemas/RegulationApplicability"
+          },
+          "applicability_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applicability Reason"
+          },
+          "daily_returns": {
+            "items": {
+              "$ref": "#/components/schemas/RegulationDailyReturn"
+            },
+            "title": "Daily Returns",
+            "type": "array"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/RegulationEventRecord"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "abnormal_reset_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Abnormal Reset Date"
+          },
+          "serious_reset_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Serious Reset Date"
+          },
+          "next_day_reference_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Day Reference Price"
+          },
+          "next_day_price_limit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DailyPriceLimit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "symbol",
+          "exchange",
+          "segment",
+          "applicability",
+          "applicability_reason",
+          "daily_returns",
+          "events",
+          "abnormal_reset_date",
+          "serious_reset_date",
+          "next_day_reference_price",
+          "next_day_price_limit"
+        ],
+        "title": "RegulationCandidate",
+        "type": "object"
+      },
+      "RegulationDailyReturn": {
+        "properties": {
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "stock_close": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stock Close"
+          },
+          "stock_reference_previous_close": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stock Reference Previous Close"
+          },
+          "stock_return": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stock Return"
+          },
+          "benchmark_close": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Benchmark Close"
+          },
+          "benchmark_previous_close": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Benchmark Previous Close"
+          },
+          "benchmark_return": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Benchmark Return"
+          },
+          "turnover_rate_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turnover Rate Pct"
+          }
+        },
+        "required": [
+          "trade_date",
+          "stock_close",
+          "stock_reference_previous_close",
+          "stock_return",
+          "benchmark_close",
+          "benchmark_previous_close",
+          "benchmark_return",
+          "turnover_rate_pct"
+        ],
+        "title": "RegulationDailyReturn",
+        "type": "object"
+      },
+      "RegulationDataCompleteness": {
+        "enum": [
+          "COMPLETE",
+          "INCOMPLETE",
+          "NOT_APPLICABLE"
+        ],
+        "title": "RegulationDataCompleteness",
+        "type": "string"
+      },
+      "RegulationDirection": {
+        "enum": [
+          "UP",
+          "DOWN",
+          "NONE"
+        ],
+        "title": "RegulationDirection",
+        "type": "string"
+      },
+      "RegulationEvaluationState": {
+        "enum": [
+          "NOT_TRIGGERED",
+          "TRIGGERED_CALCULATED",
+          "ANNOUNCED_BY_EXCHANGE"
+        ],
+        "title": "RegulationEvaluationState",
+        "type": "string"
+      },
+      "RegulationEventRecord": {
+        "properties": {
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "exchange": {
+            "$ref": "#/components/schemas/Exchange"
+          },
+          "segment": {
+            "$ref": "#/components/schemas/RegulationSegment"
+          },
+          "event_type": {
+            "$ref": "#/components/schemas/RegulationEventType"
+          },
+          "event_level": {
+            "$ref": "#/components/schemas/RegulationRuleLevel"
+          },
+          "direction": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RegulationDirection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "period_start_date": {
+            "format": "date",
+            "title": "Period Start Date",
+            "type": "string"
+          },
+          "period_end_date": {
+            "format": "date",
+            "title": "Period End Date",
+            "type": "string"
+          },
+          "published_at": {
+            "format": "date-time",
+            "title": "Published At",
+            "type": "string"
+          },
+          "effective_reset_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Reset Date"
+          },
+          "source_event_id": {
+            "title": "Source Event Id",
+            "type": "string"
+          },
+          "source_title": {
+            "title": "Source Title",
+            "type": "string"
+          },
+          "source_url": {
+            "title": "Source Url",
+            "type": "string"
+          },
+          "source_content_hash": {
+            "title": "Source Content Hash",
+            "type": "string"
+          },
+          "source_code": {
+            "title": "Source Code",
+            "type": "string"
+          },
+          "explicit_rule_codes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Explicit Rule Codes",
+            "type": "array"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "exchange",
+          "segment",
+          "event_type",
+          "event_level",
+          "direction",
+          "period_start_date",
+          "period_end_date",
+          "published_at",
+          "effective_reset_date",
+          "source_event_id",
+          "source_title",
+          "source_url",
+          "source_content_hash",
+          "source_code",
+          "explicit_rule_codes",
+          "observed_at"
+        ],
+        "title": "RegulationEventRecord",
+        "type": "object"
+      },
+      "RegulationEventType": {
+        "enum": [
+          "ABNORMAL_VOLATILITY",
+          "SERIOUS_ABNORMAL_VOLATILITY"
+        ],
+        "title": "RegulationEventType",
+        "type": "string"
+      },
+      "RegulationReachability": {
+        "enum": [
+          "CURRENT",
+          "REACHABLE_NEXT_SESSION",
+          "NOT_REACHABLE_NEXT_SESSION",
+          "NOT_PRICE_CALCULABLE"
+        ],
+        "title": "RegulationReachability",
+        "type": "string"
+      },
+      "RegulationResetLevel": {
+        "enum": [
+          "ABNORMAL",
+          "SERIOUS_ABNORMAL"
+        ],
+        "title": "RegulationResetLevel",
+        "type": "string"
+      },
+      "RegulationRule": {
+        "properties": {
+          "rule_code": {
+            "title": "Rule Code",
+            "type": "string"
+          },
+          "exchange": {
+            "$ref": "#/components/schemas/Exchange"
+          },
+          "segment": {
+            "$ref": "#/components/schemas/RegulationSegment"
+          },
+          "level": {
+            "$ref": "#/components/schemas/RegulationRuleLevel"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/RegulationRuleKind"
+          },
+          "direction": {
+            "$ref": "#/components/schemas/RegulationDirection"
+          },
+          "window_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window Days"
+          },
+          "threshold_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Threshold Pct"
+          },
+          "comparison_window_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comparison Window Days"
+          },
+          "ratio_threshold": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ratio Threshold"
+          },
+          "secondary_threshold_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secondary Threshold Pct"
+          },
+          "count_window_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Count Window Days"
+          },
+          "required_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Required Count"
+          },
+          "counted_event_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Counted Event Kind"
+          },
+          "reset_level": {
+            "$ref": "#/components/schemas/RegulationResetLevel"
+          },
+          "benchmark_symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Benchmark Symbol"
+          },
+          "rule_set_version": {
+            "title": "Rule Set Version",
+            "type": "string"
+          },
+          "effective_date": {
+            "format": "date",
+            "title": "Effective Date",
+            "type": "string"
+          },
+          "expire_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expire Date"
+          },
+          "source_document": {
+            "title": "Source Document",
+            "type": "string"
+          },
+          "source_clause": {
+            "title": "Source Clause",
+            "type": "string"
+          },
+          "source_url": {
+            "title": "Source Url",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "rule_code",
+          "exchange",
+          "segment",
+          "level",
+          "kind",
+          "direction",
+          "window_days",
+          "threshold_pct",
+          "comparison_window_days",
+          "ratio_threshold",
+          "secondary_threshold_pct",
+          "count_window_days",
+          "required_count",
+          "counted_event_kind",
+          "reset_level",
+          "benchmark_symbol",
+          "rule_set_version",
+          "effective_date",
+          "expire_date",
+          "source_document",
+          "source_clause",
+          "source_url",
+          "enabled"
+        ],
+        "title": "RegulationRule",
+        "type": "object"
+      },
+      "RegulationRuleKind": {
+        "enum": [
+          "CUMULATIVE_DEVIATION",
+          "TURNOVER_COMPOSITE",
+          "EVENT_COUNT"
+        ],
+        "title": "RegulationRuleKind",
+        "type": "string"
+      },
+      "RegulationRuleLevel": {
+        "enum": [
+          "ABNORMAL",
+          "SERIOUS_ABNORMAL"
+        ],
+        "title": "RegulationRuleLevel",
+        "type": "string"
+      },
+      "RegulationRuleResult": {
+        "properties": {
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "rule_code": {
+            "title": "Rule Code",
+            "type": "string"
+          },
+          "evaluation_state": {
+            "$ref": "#/components/schemas/RegulationEvaluationState"
+          },
+          "triggered": {
+            "title": "Triggered",
+            "type": "boolean"
+          },
+          "window_start_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window Start Date"
+          },
+          "window_end_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window End Date"
+          },
+          "observed_window_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed Window Days"
+          },
+          "current_value": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Value"
+          },
+          "threshold": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Threshold"
+          },
+          "distance": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Distance"
+          },
+          "secondary_current_value": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secondary Current Value"
+          },
+          "secondary_threshold": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secondary Threshold"
+          },
+          "event_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Count"
+          },
+          "required_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Required Count"
+          },
+          "selected_reset_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Reset Date"
+          },
+          "data_completeness": {
+            "$ref": "#/components/schemas/RegulationDataCompleteness"
+          },
+          "incomplete_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incomplete Reason"
+          }
+        },
+        "required": [
+          "symbol",
+          "rule_code",
+          "evaluation_state",
+          "triggered",
+          "window_start_date",
+          "window_end_date",
+          "observed_window_days",
+          "current_value",
+          "threshold",
+          "distance",
+          "secondary_current_value",
+          "secondary_threshold",
+          "event_count",
+          "required_count",
+          "selected_reset_date",
+          "data_completeness",
+          "incomplete_reason"
+        ],
+        "title": "RegulationRuleResult",
+        "type": "object"
+      },
+      "RegulationScenarioCode": {
+        "enum": [
+          "INDEX_DOWN_2",
+          "INDEX_FLAT",
+          "INDEX_UP_2",
+          "CURRENT",
+          "NONE"
+        ],
+        "title": "RegulationScenarioCode",
+        "type": "string"
+      },
+      "RegulationSegment": {
+        "enum": [
+          "SSE_MAIN",
+          "SZSE_MAIN",
+          "GEM"
+        ],
+        "title": "RegulationSegment",
+        "type": "string"
+      },
+      "RegulationWarningResult": {
+        "properties": {
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "next_trade_date": {
+            "format": "date",
+            "title": "Next Trade Date",
+            "type": "string"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "rule_code": {
+            "title": "Rule Code",
+            "type": "string"
+          },
+          "level": {
+            "$ref": "#/components/schemas/RegulationRuleLevel"
+          },
+          "direction": {
+            "$ref": "#/components/schemas/RegulationDirection"
+          },
+          "current_value": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Value"
+          },
+          "threshold": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Threshold"
+          },
+          "distance": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Distance"
+          },
+          "scenario_code": {
+            "$ref": "#/components/schemas/RegulationScenarioCode"
+          },
+          "scenario_index_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scenario Index Pct"
+          },
+          "next_day_reference_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Day Reference Price"
+          },
+          "raw_trigger_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Trigger Price"
+          },
+          "next_day_trigger_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Day Trigger Price"
+          },
+          "next_day_trigger_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Day Trigger Pct"
+          },
+          "price_limit_ratio": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Limit Ratio"
+          },
+          "lower_limit_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lower Limit Price"
+          },
+          "upper_limit_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Upper Limit Price"
+          },
+          "reachability": {
+            "$ref": "#/components/schemas/RegulationReachability"
+          },
+          "window_start_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window Start Date"
+          },
+          "window_end_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window End Date"
+          },
+          "requires_official_event_confirmation": {
+            "title": "Requires Official Event Confirmation",
+            "type": "boolean"
+          },
+          "message_template_code": {
+            "title": "Message Template Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "trade_date",
+          "next_trade_date",
+          "symbol",
+          "rule_code",
+          "level",
+          "direction",
+          "current_value",
+          "threshold",
+          "distance",
+          "scenario_code",
+          "scenario_index_pct",
+          "next_day_reference_price",
+          "raw_trigger_price",
+          "next_day_trigger_price",
+          "next_day_trigger_pct",
+          "price_limit_ratio",
+          "lower_limit_price",
+          "upper_limit_price",
+          "reachability",
+          "window_start_date",
+          "window_end_date",
+          "requires_official_event_confirmation",
+          "message_template_code",
+          "message"
+        ],
+        "title": "RegulationWarningResult",
+        "type": "object"
+      },
+      "MonitorInputsRpcResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "schema_version": {
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "base_trade_date": {
+            "format": "date",
+            "title": "Base Trade Date",
+            "type": "string"
+          },
+          "next_trade_date": {
+            "format": "date",
+            "title": "Next Trade Date",
+            "type": "string"
+          },
+          "calculation_id": {
+            "format": "uuid",
+            "title": "Calculation Id",
+            "type": "string"
+          },
+          "algorithm_version": {
+            "title": "Algorithm Version",
+            "type": "string"
+          },
+          "rule_set_version": {
+            "title": "Rule Set Version",
+            "type": "string"
+          },
+          "completed_at": {
+            "format": "date-time",
+            "title": "Completed At",
+            "type": "string"
+          },
+          "count_cutoff_date": {
+            "format": "date",
+            "title": "Count Cutoff Date",
+            "type": "string"
+          },
+          "official_coverage": {
+            "title": "Official Coverage",
+            "type": "string"
+          },
+          "official_watermark": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Official Watermark"
+          },
+          "reference_checked_at": {
+            "format": "date-time",
+            "title": "Reference Checked At",
+            "type": "string"
+          },
+          "is_confirmed_close": {
+            "title": "Is Confirmed Close",
+            "type": "boolean"
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/RegulationCoverage"
+          },
+          "source": {
+            "$ref": "#/components/schemas/RegulationCalculationInput"
+          },
+          "requested_count": {
+            "title": "Requested Count",
+            "type": "integer"
+          },
+          "found_count": {
+            "title": "Found Count",
+            "type": "integer"
+          },
+          "missing_count": {
+            "title": "Missing Count",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MonitorSnapshotItem"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "schema_version",
+          "trade_date",
+          "base_trade_date",
+          "next_trade_date",
+          "calculation_id",
+          "algorithm_version",
+          "rule_set_version",
+          "completed_at",
+          "count_cutoff_date",
+          "official_coverage",
+          "official_watermark",
+          "reference_checked_at",
+          "is_confirmed_close",
+          "coverage",
+          "source",
+          "requested_count",
+          "found_count",
+          "missing_count",
+          "items"
+        ],
+        "title": "MonitorInputsRpcResponse",
         "type": "object"
       }
     },

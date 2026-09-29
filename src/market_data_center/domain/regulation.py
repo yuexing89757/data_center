@@ -643,6 +643,8 @@ class MonitorState:
     serious_reset_date: date | None
     events: tuple[CalculatedEvent, ...]
     missing_reasons: tuple[str, ...]
+    # None means a legacy checkpoint with unverified turnover coverage.
+    turnover_missing_dates: tuple[date, ...] | None = None
 
     def __post_init__(self) -> None:
         if not _STANDARD_SYMBOL.fullmatch(self.symbol):

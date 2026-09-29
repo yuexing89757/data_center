@@ -8090,6 +8090,984 @@
         "title": "LimitUpPoolResponse",
         "type": "object"
       },
+      "MonitorCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "candidate_basis": {
+            "description": "进入收盘观察名单的依据；不代表已经触发异动。",
+            "items": {
+              "type": "string"
+            },
+            "title": "Candidate Basis",
+            "type": "array"
+          },
+          "code": {
+            "description": "不含交易所前缀的六位股票代码。",
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "证券或板块名称。",
+            "title": "Name"
+          },
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "带交易所前缀的标准证券代码。",
+            "title": "Symbol"
+          }
+        },
+        "required": [
+          "symbol",
+          "code",
+          "name",
+          "candidate_basis"
+        ],
+        "title": "MonitorCandidate",
+        "type": "object"
+      },
+      "MonitorCandidatesResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "algorithm_version": {
+            "description": "计算算法版本。",
+            "title": "Algorithm Version",
+            "type": "string"
+          },
+          "base_trade_date": {
+            "description": "本次测算依赖的已发布收盘批次日期。",
+            "format": "date",
+            "title": "Base Trade Date",
+            "type": "string"
+          },
+          "calculation_id": {
+            "description": "计算批次标识。",
+            "format": "uuid",
+            "title": "Calculation Id",
+            "type": "string"
+          },
+          "candidate_basis": {
+            "description": "进入收盘观察名单的依据；不代表已经触发异动。",
+            "title": "Candidate Basis",
+            "type": "string"
+          },
+          "count_cutoff_date": {
+            "description": "已确认测算次数的截止交易日，不包含盘中假设事件。",
+            "format": "date",
+            "title": "Count Cutoff Date",
+            "type": "string"
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/RegulationCoverage",
+            "description": "所选计算版本的证券覆盖统计。"
+          },
+          "found_count": {
+            "description": "查询到最新每日指标的股票数量。",
+            "minimum": 0.0,
+            "title": "Found Count",
+            "type": "integer"
+          },
+          "generated_at": {
+            "description": "结果生成时间。",
+            "example": "2026-09-18 09:35:00",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "items": {
+            "description": "返回的数据记录列表。",
+            "items": {
+              "$ref": "#/components/schemas/MonitorCandidate"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "missing_count": {
+            "description": "本次请求中不在已发布覆盖范围内的证券数量。",
+            "minimum": 0.0,
+            "title": "Missing Count",
+            "type": "integer"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "下一页游标；没有更多记录时为空。",
+            "title": "Next Cursor"
+          },
+          "next_trade_date": {
+            "description": "查询日期之后的下一交易日。",
+            "format": "date",
+            "title": "Next Trade Date",
+            "type": "string"
+          },
+          "requested_count": {
+            "description": "请求的股票代码数量。",
+            "minimum": 0.0,
+            "title": "Requested Count",
+            "type": "integer"
+          },
+          "rule_set_version": {
+            "description": "交易所规则集版本。",
+            "title": "Rule Set Version",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "regulation-monitor.v1",
+            "description": "独立异动监控接口契约版本。",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "total": {
+            "description": "当前批次和筛选条件下的观察名单总数。",
+            "minimum": 0.0,
+            "title": "Total",
+            "type": "integer"
+          },
+          "trade_date": {
+            "description": "交易日。",
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema_version",
+          "trade_date",
+          "base_trade_date",
+          "next_trade_date",
+          "calculation_id",
+          "algorithm_version",
+          "rule_set_version",
+          "generated_at",
+          "count_cutoff_date",
+          "coverage",
+          "requested_count",
+          "found_count",
+          "missing_count",
+          "total",
+          "next_cursor",
+          "candidate_basis",
+          "items"
+        ],
+        "title": "MonitorCandidatesResponse",
+        "type": "object"
+      },
+      "MonitorEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "direction": {
+            "description": "涨停或跌停方向。",
+            "title": "Direction",
+            "type": "string"
+          },
+          "kind": {
+            "description": "规则公式类型：累计偏离、换手率复合条件或正式事件次数。",
+            "title": "Kind",
+            "type": "string"
+          },
+          "level": {
+            "description": "盘口档位序号。",
+            "title": "Level",
+            "type": "string"
+          },
+          "rule_codes": {
+            "description": "同一事件命中的规则编码，合并事件不重复计次。",
+            "items": {
+              "type": "string"
+            },
+            "title": "Rule Codes",
+            "type": "array"
+          },
+          "symbol": {
+            "description": "带交易所前缀的标准证券代码。",
+            "title": "Symbol",
+            "type": "string"
+          },
+          "trade_date": {
+            "description": "交易日。",
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "windows": {
+            "description": "事件对应的起止交易日窗口。",
+            "items": {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "format": "date",
+                  "type": "string"
+                }
+              ],
+              "type": "array"
+            },
+            "title": "Windows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "symbol",
+          "trade_date",
+          "level",
+          "direction",
+          "kind",
+          "rule_codes",
+          "windows"
+        ],
+        "title": "MonitorEvent",
+        "type": "object"
+      },
+      "MonitorQueryRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "calculation_id": {
+            "description": "计算批次标识。",
+            "format": "uuid",
+            "title": "Calculation Id",
+            "type": "string"
+          },
+          "codes": {
+            "description": "不含交易所前缀的六位股票代码集合，最多五百个。",
+            "items": {
+              "pattern": "^[0-9]{6}$",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Codes",
+            "type": "array"
+          },
+          "scenario_index_pct": {
+            "default": "0",
+            "description": "下一交易日基准指数情景涨跌幅，单位为百分比。",
+            "enum": [
+              "-2",
+              "0",
+              "2"
+            ],
+            "title": "Scenario Index Pct",
+            "type": "string"
+          },
+          "trade_date": {
+            "description": "交易日。",
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "trade_date",
+          "calculation_id",
+          "codes"
+        ],
+        "title": "MonitorQueryRequest",
+        "type": "object"
+      },
+      "MonitorQueryResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "algorithm_version": {
+            "description": "计算算法版本。",
+            "title": "Algorithm Version",
+            "type": "string"
+          },
+          "base_trade_date": {
+            "description": "本次测算依赖的已发布收盘批次日期。",
+            "format": "date",
+            "title": "Base Trade Date",
+            "type": "string"
+          },
+          "calculation_id": {
+            "description": "计算批次标识。",
+            "format": "uuid",
+            "title": "Calculation Id",
+            "type": "string"
+          },
+          "count_cutoff_date": {
+            "description": "已确认测算次数的截止交易日，不包含盘中假设事件。",
+            "format": "date",
+            "title": "Count Cutoff Date",
+            "type": "string"
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/RegulationCoverage",
+            "description": "所选计算版本的证券覆盖统计。"
+          },
+          "found_count": {
+            "description": "查询到最新每日指标的股票数量。",
+            "minimum": 0.0,
+            "title": "Found Count",
+            "type": "integer"
+          },
+          "generated_at": {
+            "description": "结果生成时间。",
+            "example": "2026-09-18 09:35:00",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "hypothetical_close_at": {
+            "anyOf": [
+              {
+                "example": "2026-09-18 09:35:00",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "把当前行情视为收盘时的行情时间；确认收盘模式为空。",
+            "title": "Hypothetical Close At"
+          },
+          "items": {
+            "description": "返回的数据记录列表。",
+            "items": {
+              "$ref": "#/components/schemas/MonitorStock"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "missing_count": {
+            "description": "本次请求中不在已发布覆盖范围内的证券数量。",
+            "minimum": 0.0,
+            "title": "Missing Count",
+            "type": "integer"
+          },
+          "next_trade_date": {
+            "description": "查询日期之后的下一交易日。",
+            "format": "date",
+            "title": "Next Trade Date",
+            "type": "string"
+          },
+          "observation_mode": {
+            "description": "盘中、午间暂停、收盘估算或已确认收盘模式。",
+            "enum": [
+              "LIVE",
+              "MIDDAY_PAUSED",
+              "CLOSE_ESTIMATE",
+              "CONFIRMED_CLOSE"
+            ],
+            "title": "Observation Mode",
+            "type": "string"
+          },
+          "quote_observed_at": {
+            "anyOf": [
+              {
+                "example": "2026-09-18 09:35:00",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "本次有效行情的最早观测时间。",
+            "title": "Quote Observed At"
+          },
+          "reference_checked_at": {
+            "anyOf": [
+              {
+                "example": "2026-09-18 09:35:00",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "按已知公司行为校验次日参考价条件的时间；后续公告可能改变条件。",
+            "title": "Reference Checked At"
+          },
+          "requested_count": {
+            "description": "请求的股票代码数量。",
+            "minimum": 0.0,
+            "title": "Requested Count",
+            "type": "integer"
+          },
+          "rule_set_version": {
+            "description": "交易所规则集版本。",
+            "title": "Rule Set Version",
+            "type": "string"
+          },
+          "scenario_index_pct": {
+            "description": "下一交易日基准指数情景涨跌幅，单位为百分比。",
+            "enum": [
+              "-2",
+              "0",
+              "2"
+            ],
+            "title": "Scenario Index Pct",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "regulation-monitor.v1",
+            "description": "独立异动监控接口契约版本。",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "status": {
+            "description": "状态。",
+            "enum": [
+              "COMPLETE",
+              "PARTIAL"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "trade_date": {
+            "description": "交易日。",
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema_version",
+          "trade_date",
+          "base_trade_date",
+          "next_trade_date",
+          "calculation_id",
+          "algorithm_version",
+          "rule_set_version",
+          "generated_at",
+          "count_cutoff_date",
+          "coverage",
+          "requested_count",
+          "found_count",
+          "missing_count",
+          "status",
+          "observation_mode",
+          "quote_observed_at",
+          "hypothetical_close_at",
+          "scenario_index_pct",
+          "items"
+        ],
+        "title": "MonitorQueryResponse",
+        "type": "object"
+      },
+      "MonitorRule": {
+        "additionalProperties": false,
+        "properties": {
+          "benchmark_symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "规则采用的基准指数标准代码。",
+            "title": "Benchmark Symbol"
+          },
+          "current_value": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "当前规则观测值，含义取决于规则类型。",
+            "title": "Current Value"
+          },
+          "direction": {
+            "description": "涨停或跌停方向。",
+            "title": "Direction",
+            "type": "string"
+          },
+          "eligible_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "满足计算条件的股票数量。",
+            "title": "Eligible Count"
+          },
+          "kind": {
+            "description": "规则公式类型：累计偏离、换手率复合条件或正式事件次数。",
+            "title": "Kind",
+            "type": "string"
+          },
+          "level": {
+            "description": "盘口档位序号。",
+            "title": "Level",
+            "type": "string"
+          },
+          "missing_reasons": {
+            "description": "数据缺口或条件限制的具体原因列表。",
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Reasons",
+            "type": "array"
+          },
+          "name": {
+            "description": "证券或板块名称。",
+            "title": "Name",
+            "type": "string"
+          },
+          "next_day": {
+            "$ref": "#/components/schemas/MonitorThresholdView",
+            "description": "以当下价格视为今日收盘、按所选指数情景计算的次日条件，不是预测。"
+          },
+          "required_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "次数型规则要求的事件次数。",
+            "title": "Required Count"
+          },
+          "rule_code": {
+            "description": "版本化监管规则编码。",
+            "title": "Rule Code",
+            "type": "string"
+          },
+          "secondary_current_value": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "复合规则的第二观测值；不适用时为空。",
+            "title": "Secondary Current Value"
+          },
+          "secondary_threshold": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "复合规则的第二阈值；不适用时为空。",
+            "title": "Secondary Threshold"
+          },
+          "state": {
+            "description": "规则当前达到、当日可达、次日可达、未达到、缺数据或不适用状态。",
+            "enum": [
+              "CURRENT_REACHED",
+              "TODAY_REACHABLE",
+              "NEXT_REACHABLE",
+              "NOT_REACHED",
+              "INCOMPLETE",
+              "NOT_APPLICABLE"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "threshold": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "当前规则的触发阈值。",
+            "title": "Threshold"
+          },
+          "today": {
+            "$ref": "#/components/schemas/MonitorThresholdView",
+            "description": "按当前指数和有效前收盘参考价测算的当日触发条件。"
+          },
+          "window_end_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "规则实际计算窗口的结束交易日。",
+            "title": "Window End Date"
+          },
+          "window_start_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "规则实际计算窗口的起始交易日。",
+            "title": "Window Start Date"
+          }
+        },
+        "required": [
+          "rule_code",
+          "benchmark_symbol",
+          "name",
+          "level",
+          "direction",
+          "kind",
+          "window_start_date",
+          "window_end_date",
+          "current_value",
+          "threshold",
+          "secondary_current_value",
+          "secondary_threshold",
+          "state",
+          "today",
+          "next_day",
+          "eligible_count",
+          "required_count",
+          "missing_reasons"
+        ],
+        "title": "MonitorRule",
+        "type": "object"
+      },
+      "MonitorStock": {
+        "additionalProperties": false,
+        "properties": {
+          "applicability": {
+            "default": "INSUFFICIENT_DATA",
+            "description": "该股票是否适用监管异动规则：适用、不适用或输入不足。",
+            "title": "Applicability",
+            "type": "string"
+          },
+          "calculated_price_abnormal_count_10d_down": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "十日内测算下跌一般价格异动次数；未知为空。",
+            "title": "Calculated Price Abnormal Count 10D Down"
+          },
+          "calculated_price_abnormal_count_10d_up": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "十日内测算上涨一般价格异动次数；未知为空。",
+            "title": "Calculated Price Abnormal Count 10D Up"
+          },
+          "calculated_turnover_count_10d": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "近十个交易日系统测算的换手异动次数，与价格次数分开。",
+            "title": "Calculated Turnover Count 10D"
+          },
+          "change_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "相对上一交易日收盘价的涨跌幅，单位为百分比。",
+            "title": "Change Pct"
+          },
+          "code": {
+            "description": "不含交易所前缀的六位股票代码。",
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "events": {
+            "description": "截至批次日期的测算事件明细，不含盘中假设事件。",
+            "items": {
+              "$ref": "#/components/schemas/MonitorEvent"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "last_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "快照时点价格；竞价阶段按既定口径取值。",
+            "title": "Last Price"
+          },
+          "missing_reasons": {
+            "description": "数据缺口或条件限制的具体原因列表。",
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Reasons",
+            "type": "array"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "证券或板块名称。",
+            "title": "Name"
+          },
+          "official_coverage": {
+            "default": "UNKNOWN",
+            "description": "官方公告覆盖状态，未知不等于零次。",
+            "title": "Official Coverage",
+            "type": "string"
+          },
+          "official_price_abnormal_count_10d_down": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "官方公告下跌异动次数，公告覆盖不完整时为空。",
+            "title": "Official Price Abnormal Count 10D Down"
+          },
+          "official_price_abnormal_count_10d_up": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "官方公告上涨异动次数，公告覆盖不完整时为空。",
+            "title": "Official Price Abnormal Count 10D Up"
+          },
+          "official_watermark": {
+            "anyOf": [
+              {
+                "example": "2026-09-18 09:35:00",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "已知官方公告数据水位时间，不代表完整覆盖。",
+            "title": "Official Watermark"
+          },
+          "rules": {
+            "description": "逐条规则的当前值、门槛、状态和缺失原因。",
+            "items": {
+              "$ref": "#/components/schemas/MonitorRule"
+            },
+            "title": "Rules",
+            "type": "array"
+          },
+          "segment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "监管规则所属板块：沪市主板、深市主板或创业板。",
+            "title": "Segment"
+          },
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "带交易所前缀的标准证券代码。",
+            "title": "Symbol"
+          }
+        },
+        "required": [
+          "symbol",
+          "code",
+          "name"
+        ],
+        "title": "MonitorStock",
+        "type": "object"
+      },
+      "MonitorThresholdView": {
+        "additionalProperties": false,
+        "properties": {
+          "missing_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "无法计算或不适用的具体原因，正常时为空。",
+            "title": "Missing Reason"
+          },
+          "reachability": {
+            "description": "下一交易日可达、不可达、已触发或不能仅按价格计算。",
+            "title": "Reachability",
+            "type": "string"
+          },
+          "reference_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "计算触发涨跌幅使用的有效参考价格。",
+            "title": "Reference Price"
+          },
+          "reset_branch": {
+            "description": "次日窗口采用的确认或假设重置分支。",
+            "title": "Reset Branch",
+            "type": "string"
+          },
+          "scenario_index_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "下一交易日基准指数情景涨跌幅，单位为百分比。",
+            "title": "Scenario Index Pct"
+          },
+          "trade_date": {
+            "description": "交易日。",
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "trigger_change_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "触发收盘价相对参考价的涨跌幅，单位为百分比。",
+            "title": "Trigger Change Pct"
+          },
+          "trigger_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "按方向取整并复核后的下一交易日所需收盘价。",
+            "title": "Trigger Price"
+          },
+          "window_start_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "规则实际计算窗口的起始交易日。",
+            "title": "Window Start Date"
+          }
+        },
+        "required": [
+          "trade_date",
+          "trigger_price",
+          "trigger_change_pct",
+          "reachability",
+          "reference_price",
+          "scenario_index_pct",
+          "reset_branch",
+          "window_start_date",
+          "missing_reason"
+        ],
+        "title": "MonitorThresholdView",
+        "type": "object"
+      },
       "RegulationCoverage": {
         "additionalProperties": false,
         "properties": {
@@ -13239,6 +14217,253 @@
         "summary": "查询开盘啦历史涨停股票",
         "tags": [
           "实时接口"
+        ]
+      }
+    },
+    "/api/v1/regulation/monitor/candidates": {
+      "get": {
+        "description": "读取固定收盘批次的观察名单。游标绑定日期、搜索及批次。不触发采集或写入。",
+        "operationId": "candidates_api_v1_regulation_monitor_candidates_get",
+        "parameters": [
+          {
+            "description": "交易日。",
+            "in": "query",
+            "name": "trade_date",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "Trade Date",
+              "type": "string"
+            }
+          },
+          {
+            "description": "最多返回的记录数。",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "上一页返回的不透明游标，绑定接口、交易日、计算版本及每页上限。",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2048,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "证券代码或名称搜索词。",
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 80,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Query"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitorCandidatesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "查询异动测算观察名单",
+        "tags": [
+          "市场数据"
+        ]
+      }
+    },
+    "/api/v1/regulation/monitor/query": {
+      "post": {
+        "description": "有界查询最多50只股票。已确认次数冻结于收盘批次。实时门槛是条件测算而非预测。",
+        "operationId": "query_monitor_api_v1_regulation_monitor_query_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MonitorQueryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitorQueryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "查询当前页规则、动态门槛及测算次数",
+        "tags": [
+          "市场数据"
         ]
       }
     },

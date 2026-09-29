@@ -1068,6 +1068,25 @@ def calculate_monitor_day(
             source, candidate.symbol, rules, evaluated, RegulationRuleLevel.SERIOUS_ABNORMAL
         )
         events = (*ordinary, *serious)
+        turnover_gaps = (
+            set(
+                state.turnover_missing_dates
+                if state and state.turnover_missing_dates is not None
+                else (
+                    d
+                    for d in recent_dates
+                    if REGULATION_RULES_EFFECTIVE_FROM <= d < source.trade_date
+                )
+            )
+            & recent_dates
+        )
+        if any(
+            r.kind is RegulationRuleKind.TURNOVER_COMPOSITE
+            and evaluated[r.rule_code].result.data_completeness
+            is RegulationDataCompleteness.INCOMPLETE
+            for r in rules
+        ):
+            turnover_gaps.add(source.trade_date)
         price_hit = any(e.kind is RegulationRuleKind.CUMULATIVE_DEVIATION for e in ordinary)
         ordered = tuple(evaluated[r.rule_code] for r in rules)
         status = _status(source, candidate, ordered)
@@ -1089,6 +1108,7 @@ def calculate_monitor_day(
                 else (state.serious_reset_date if state else None),
                 (*history, *events),
                 tuple(sorted(set(reasons))),
+                tuple(sorted(turnover_gaps)),
             )
         )
         findings.extend(f"{candidate.symbol}:{reason}" for reason in sorted(set(reasons)))

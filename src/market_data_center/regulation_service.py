@@ -9,17 +9,31 @@ from decimal import Decimal
 from enum import Enum
 from typing import Protocol, cast
 from uuid import UUID, uuid4
+from zoneinfo import ZoneInfo
 
 from market_data_center.domain.regulation import (
+    REGULATION_RULES_EFFECTIVE_FROM,
+    MonitorDay,
+    MonitorState,
     RegulationCalculationInput,
     RegulationCalculationOutput,
     RegulationCalculationRun,
     RegulationCalculationSummary,
     RegulationCoverage,
+    RegulationDataCompleteness,
     RegulationEventRecord,
+    RegulationReachability,
     RegulationRunStatus,
+    RegulationScenarioCode,
+    RegulationWarningResult,
 )
-from market_data_center.regulation_calculator import calculate_regulation
+from market_data_center.persistence.regulation_postgres import PostgreSQLRegulationPersistence
+from market_data_center.regulation_calculator import (
+    REGULATION_MONITOR_VERSION,
+    calculate_regulation,
+)
+from market_data_center.regulation_monitor import project_monitor_close
+from market_data_center.regulation_monitor_codec import monitor_input_hash
 
 
 class RegulationPersistencePort(Protocol):
@@ -171,3 +185,241 @@ class RegulationService:
             warning_count=len(output.warnings),
             reused=False,
         )
+
+
+def _monitor_day(
+    source: RegulationCalculationInput, states: tuple[MonitorState, ...]
+) -> MonitorDay:
+    """Reuse conditional price math for the published three-scenario observation list."""
+    warnings = []
+    candidates = {c.symbol: c for c in source.candidates}
+    rules = {r.rule_code: r for r in source.active_rules}
+    result = None
+    for pct, code in (
+        (-2, RegulationScenarioCode.INDEX_DOWN_2),
+        (0, RegulationScenarioCode.INDEX_FLAT),
+        (2, RegulationScenarioCode.INDEX_UP_2),
+    ):
+        projection = project_monitor_close(source, states, Decimal(pct))
+        result = projection.day
+        values = {(r.symbol, r.rule_code): r for r in result.output.rule_results}
+        for condition in projection.conditions:
+            threshold = condition.next_day
+            if threshold.trigger_price is None:
+                continue
+            rule = rules[condition.rule_code]
+            value = values[(condition.symbol, condition.rule_code)]
+            limit = candidates[condition.symbol].next_day_price_limit
+            warnings.append(
+                RegulationWarningResult(
+                    trade_date=source.trade_date,
+                    next_trade_date=source.next_trade_date,
+                    symbol=condition.symbol,
+                    rule_code=rule.rule_code,
+                    level=rule.level,
+                    direction=rule.direction,
+                    current_value=value.current_value,
+                    threshold=value.threshold,
+                    distance=value.distance,
+                    scenario_code=code,
+                    scenario_index_pct=Decimal(pct),
+                    next_day_reference_price=threshold.reference_price,
+                    raw_trigger_price=None,
+                    next_day_trigger_price=threshold.trigger_price,
+                    next_day_trigger_pct=threshold.trigger_change_pct,
+                    price_limit_ratio=limit.limit_ratio if limit else None,
+                    lower_limit_price=limit.lower_limit if limit else None,
+                    upper_limit_price=limit.upper_limit if limit else None,
+                    reachability=(
+                        RegulationReachability.REACHABLE_NEXT_SESSION
+                        if threshold.reachability == "REACHABLE"
+                        else RegulationReachability.NOT_REACHABLE_NEXT_SESSION
+                    ),
+                    window_start_date=threshold.window_start_date,
+                    window_end_date=source.next_trade_date,
+                    requires_official_event_confirmation=False,
+                    message_template_code="REGULATION_MONITOR_CONDITION_V1",
+                    message="Conditional system calculation, not an exchange determination.",
+                )
+            )
+    assert result is not None
+    return replace(result, output=replace(result.output, warnings=tuple(warnings)))
+
+
+class RegulationMonitorService:
+    def __init__(
+        self, persistence: PostgreSQLRegulationPersistence, *, clock: Callable[[], datetime]
+    ) -> None:
+        self._persistence = persistence
+        self._clock = clock
+
+    def calculate(self, trade_date: date) -> RegulationCalculationSummary:
+        source = replace(
+            self._persistence.load_calculation_source(trade_date),
+            algorithm_version=REGULATION_MONITOR_VERSION,
+        )
+        parent, states = self._persistence.load_monitor_checkpoint(trade_date)
+        if trade_date != REGULATION_RULES_EFFECTIVE_FROM and parent is None:
+            raise ValueError("monitor requires a verified preceding checkpoint")
+        input_hash = monitor_input_hash(source, states, parent)
+        result = _monitor_day(source, states)
+        status = (
+            RegulationRunStatus.PARTIAL
+            if result.output.coverage.incomplete_count
+            else RegulationRunStatus.SUCCEEDED
+        )
+        existing = self._persistence.find_calculation(trade_date, input_hash)
+        if existing is not None:
+            current, _ = self._persistence.load_monitor_checkpoint(source.next_trade_date)
+            if current != existing:
+                raise ValueError("matching monitor inputs belong to a superseded publication")
+            return RegulationCalculationSummary(
+                existing,
+                trade_date,
+                source.next_trade_date,
+                status,
+                result.output.coverage,
+                len(result.output.warnings),
+                True,
+            )
+        running = RegulationCalculationRun(
+            calculation_id=uuid4(),
+            trade_date=trade_date,
+            next_trade_date=source.next_trade_date,
+            status=RegulationRunStatus.RUNNING,
+            algorithm_version=source.algorithm_version,
+            rule_set_version=source.active_rules[0].rule_set_version,
+            rule_set_hash=source.rule_set_hash,
+            scenario_config_version=source.scenario_config_version,
+            input_hash=input_hash,
+            market_watermark=source.market_watermark,
+            capital_watermark=source.capital_watermark,
+            event_watermark=source.event_watermark,
+            coverage=result.output.coverage,
+            started_at=self._clock(),
+            completed_at=None,
+        )
+        batch = self._persistence.start_calculation(
+            running, tuple(e for c in source.candidates for e in c.events)
+        )
+        completed = replace(
+            running, calculation_id=batch, status=status, completed_at=self._clock()
+        )
+        try:
+            self._persistence.publish_monitor_day(
+                completed, source, result, parent_calculation_id=parent, previous_states=states
+            )
+        except Exception:
+            self._persistence.mark_calculation_failed(batch, self._clock())
+            raise
+        return RegulationCalculationSummary(
+            batch,
+            trade_date,
+            source.next_trade_date,
+            status,
+            result.output.coverage,
+            len(result.output.warnings),
+            False,
+        )
+
+    def preflight(self, start_date: date, end_date: date) -> dict[str, object]:
+        today = self._clock().astimezone(ZoneInfo("Asia/Shanghai")).date()
+        if start_date < REGULATION_RULES_EFFECTIVE_FROM or not start_date <= end_date <= today:
+            raise ValueError("monitor requires an ordered nonfuture range from 2026-07-06")
+        if (end_date - start_date).days > 366:
+            raise ValueError("monitor preflight is limited to 366 calendar days")
+        dates = tuple(sorted(self._persistence.load_monitor_trading_dates(start_date, end_date)))
+        missing: list[dict[str, object]] = []
+        details: list[dict[str, object]] = []
+        detail_count = 0
+        symbols: set[str] = set()
+        rows = events = 0
+        can_execute = bool(dates)
+        states: tuple[MonitorState, ...] = ()
+        if dates:
+            try:
+                parent, states = self._persistence.load_monitor_checkpoint(dates[0])
+                if dates[0] != REGULATION_RULES_EFFECTIVE_FROM and parent is None:
+                    missing.append(
+                        {"trade_date": dates[0], "reason": "missing_continuous_checkpoint"}
+                    )
+                    can_execute = False
+            except ValueError:
+                missing.append({"trade_date": dates[0], "reason": "superseded_checkpoint"})
+                can_execute = False
+        for day in dates:
+            try:
+                source = replace(
+                    self._persistence.load_calculation_source(day),
+                    algorithm_version=REGULATION_MONITOR_VERSION,
+                )
+                result = _monitor_day(source, states)
+            except ValueError:
+                missing.append(
+                    {"trade_date": day, "reason": "invalid_or_missing_calculation_inputs"}
+                )
+                can_execute = False
+                break
+            symbols.update(c.symbol for c in source.candidates)
+            rows += len(result.states)
+            events += len(result.events)
+            states = result.states
+            incomplete_symbols = {
+                status.symbol
+                for status in result.output.statuses
+                if status.data_completeness is RegulationDataCompleteness.INCOMPLETE
+            }
+            day_gaps: set[tuple[str, str | None, str]] = {
+                (state.symbol, None, reason)
+                for state in states
+                if state.symbol in incomplete_symbols
+                for reason in state.missing_reasons
+            }
+            day_gaps.update(
+                (rule.symbol, rule.rule_code, rule.incomplete_reason)
+                for rule in result.output.rule_results
+                if rule.symbol in incomplete_symbols and rule.incomplete_reason
+            )
+            detail_count += len(day_gaps)
+            for symbol, rule_code, reason in sorted(
+                day_gaps, key=lambda gap: (gap[0], gap[1] or "", gap[2])
+            ):
+                if len(details) == 200:
+                    break
+                details.append(
+                    {
+                        "trade_date": day.isoformat(),
+                        "symbol": symbol,
+                        "rule_code": rule_code,
+                        "reason": reason,
+                    }
+                )
+            if result.output.coverage.incomplete_count:
+                reasons = sorted({reason for _, _, reason in day_gaps})
+                missing.append(
+                    {
+                        "trade_date": day,
+                        "count": result.output.coverage.incomplete_count,
+                        "reasons": reasons,
+                        "status": "PARTIAL",
+                    }
+                )
+            if not any(state.complete for state in states):
+                can_execute = False
+        return {
+            "start_date": start_date,
+            "end_date": end_date,
+            "trading_dates": list(dates),
+            "symbol_count": len(symbols),
+            "missing_dependencies": missing,
+            "missing_dependency_details": details,
+            "missing_detail_count": detail_count,
+            "missing_details_truncated": detail_count > len(details),
+            "affected_dates": list(dates),
+            "can_execute": can_execute,
+            "planned_writes": {
+                "batches": len(dates),
+                "monitor_inputs": rows,
+                "calculated_events": events,
+            },
+        }
