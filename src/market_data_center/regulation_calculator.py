@@ -6,8 +6,12 @@ from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
 from zoneinfo import ZoneInfo
 
 from market_data_center.domain.regulation import (
+    REGULATION_RULES_EFFECTIVE_FROM,
     AnnouncedRegulationState,
+    CalculatedEvent,
     CalculatedRegulationState,
+    MonitorDay,
+    MonitorState,
     RegulationApplicability,
     RegulationCalculationInput,
     RegulationCalculationOutput,
@@ -38,6 +42,7 @@ _SCENARIOS = {
     RegulationScenarioCode.INDEX_UP_2: Decimal("0.02"),
 }
 _DISCLAIMER = "本结果仅为公开规则条件测算,不构成价格预测;实际认定及监管措施以交易所公开信息为准。"
+REGULATION_MONITOR_VERSION = "regulation-monitor.v1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -899,4 +904,210 @@ def calculate_regulation(
         warnings=tuple(warnings),
         coverage=coverage,
         quality_findings=tuple(findings),
+    )
+
+
+def _monitor_events(
+    source: RegulationCalculationInput,
+    symbol: str,
+    rules: tuple[RegulationRule, ...],
+    evaluated: dict[str, _EvaluatedRule],
+    level: RegulationRuleLevel,
+) -> tuple[CalculatedEvent, ...]:
+    groups: dict[tuple[RegulationDirection, RegulationRuleKind], list[RegulationRuleResult]] = {}
+    for rule in rules:
+        item = evaluated.get(rule.rule_code)
+        if rule.level is not level or item is None or not item.calculated_triggered:
+            continue
+        # Count and deviation conditions describe one same-direction serious price event.
+        kind = (
+            RegulationRuleKind.TURNOVER_COMPOSITE
+            if rule.kind is RegulationRuleKind.TURNOVER_COMPOSITE
+            else RegulationRuleKind.CUMULATIVE_DEVIATION
+        )
+        groups.setdefault((rule.direction, kind), []).append(item.result)
+    return tuple(
+        CalculatedEvent(
+            symbol,
+            source.trade_date,
+            level,
+            direction,
+            kind,
+            tuple(sorted(item.rule_code for item in items)),
+            tuple(
+                sorted(
+                    {
+                        (item.window_start_date or source.trade_date, source.trade_date)
+                        for item in items
+                    }
+                )
+            ),
+        )
+        for (direction, kind), items in sorted(groups.items())
+    )
+
+
+def calculate_monitor_day(
+    source: RegulationCalculationInput, states: tuple[MonitorState, ...]
+) -> MonitorDay:
+    """Advance one verified close; all state and simulated events are immutable inputs/outputs."""
+    if source.algorithm_version != REGULATION_MONITOR_VERSION:
+        raise ValueError("monitor calculation requires its own algorithm version")
+    previous = max((d for d in source.trading_dates if d < source.trade_date), default=None)
+    by_symbol = {state.symbol: state for state in states}
+    if len(by_symbol) != len(states):
+        raise ValueError("duplicate monitor checkpoint")
+    if any(state.through_date != previous for state in states):
+        raise ValueError("monitor checkpoint must be from the preceding trading session")
+    recent_dates = set(source.trading_dates[-10:])
+    statuses: list[RegulationStatusResult] = []
+    results: list[RegulationRuleResult] = []
+    new_states: list[MonitorState] = []
+    all_events: list[CalculatedEvent] = []
+    findings: list[str] = []
+    for original in source.candidates:
+        state = by_symbol.get(original.symbol)
+        reasons = list(state.missing_reasons if state else ())
+        if (state is None and source.trade_date != REGULATION_RULES_EFFECTIVE_FROM) or (
+            state is not None and not state.complete
+        ):
+            reasons.append("missing_continuous_checkpoint")
+        if original.applicability is not RegulationApplicability.APPLICABLE:
+            reasons.append(original.applicability_reason or original.applicability.value)
+        target = next(
+            (r for r in original.daily_returns if r.trade_date == source.trade_date), None
+        )
+        if target is None or target.stock_return is None or target.benchmark_return is None:
+            reasons.append("missing_current_daily_return")
+        candidate = replace(
+            original,
+            events=(),
+            abnormal_reset_date=max(
+                REGULATION_RULES_EFFECTIVE_FROM,
+                state.abnormal_reset_date or REGULATION_RULES_EFFECTIVE_FROM
+                if state
+                else REGULATION_RULES_EFFECTIVE_FROM,
+                state.serious_reset_date or REGULATION_RULES_EFFECTIVE_FROM
+                if state
+                else REGULATION_RULES_EFFECTIVE_FROM,
+            ),
+            serious_reset_date=(state.serious_reset_date if state else None)
+            or REGULATION_RULES_EFFECTIVE_FROM,
+        )
+        rules = tuple(r for r in source.active_rules if r.segment is candidate.segment)
+        evaluated: dict[str, _EvaluatedRule] = {}
+        for rule in rules:
+            if rule.kind is RegulationRuleKind.EVENT_COUNT:
+                continue
+            if reasons:
+                item = replace_symbol(_incomplete_result(rule, reasons[0]), candidate.symbol)
+            elif rule.kind is RegulationRuleKind.TURNOVER_COMPOSITE:
+                item = _evaluate_turnover(
+                    source, replace(candidate, abnormal_reset_date=None), rule
+                )
+            else:
+                item = _evaluate_deviation(source, candidate, rule)
+            evaluated[rule.rule_code] = item
+        # A missing price observation makes future simulated resets unknowable, not zero.
+        for rule in rules:
+            price_item = evaluated.get(rule.rule_code)
+            if (
+                rule.kind is RegulationRuleKind.CUMULATIVE_DEVIATION
+                and price_item
+                and price_item.result.data_completeness is RegulationDataCompleteness.INCOMPLETE
+            ):
+                reasons.append(price_item.result.incomplete_reason or "missing_price_history")
+        if reasons:
+            evaluated = {
+                r.rule_code: replace_symbol(_incomplete_result(r, reasons[0]), candidate.symbol)
+                for r in rules
+                if r.kind is not RegulationRuleKind.EVENT_COUNT
+            }
+        ordinary = _monitor_events(
+            source, candidate.symbol, rules, evaluated, RegulationRuleLevel.ABNORMAL
+        )
+        history = tuple(e for e in (state.events if state else ()) if e.trade_date in recent_dates)
+        for rule in rules:
+            if rule.kind is not RegulationRuleKind.EVENT_COUNT:
+                continue
+            if reasons:
+                evaluated[rule.rule_code] = replace_symbol(
+                    _incomplete_result(rule, reasons[0]), candidate.symbol
+                )
+                continue
+            assert rule.required_count is not None and rule.count_window_days is not None
+            assert candidate.serious_reset_date is not None
+            dates = set(source.trading_dates[-rule.count_window_days :])
+            count = sum(
+                e.level is RegulationRuleLevel.ABNORMAL
+                and e.kind is RegulationRuleKind.CUMULATIVE_DEVIATION
+                and e.direction is rule.direction
+                and e.trade_date in dates
+                and e.trade_date >= candidate.serious_reset_date
+                for e in (*history, *ordinary)
+            )
+            hit = count >= rule.required_count
+            result = replace(
+                _incomplete_result(rule, "").result,
+                symbol=candidate.symbol,
+                current_value=Decimal(count),
+                threshold=Decimal(rule.required_count),
+                event_count=count,
+                required_count=rule.required_count,
+                distance=Decimal(max(rule.required_count - count, 0)),
+                triggered=hit,
+                evaluation_state=RegulationEvaluationState.TRIGGERED_CALCULATED
+                if hit
+                else RegulationEvaluationState.NOT_TRIGGERED,
+                data_completeness=RegulationDataCompleteness.COMPLETE,
+                incomplete_reason=None,
+                selected_reset_date=candidate.serious_reset_date,
+            )
+            evaluated[rule.rule_code] = _EvaluatedRule(result, hit)
+        serious = _monitor_events(
+            source, candidate.symbol, rules, evaluated, RegulationRuleLevel.SERIOUS_ABNORMAL
+        )
+        events = (*ordinary, *serious)
+        price_hit = any(e.kind is RegulationRuleKind.CUMULATIVE_DEVIATION for e in ordinary)
+        ordered = tuple(evaluated[r.rule_code] for r in rules)
+        status = _status(source, candidate, ordered)
+        if original.applicability is RegulationApplicability.NOT_APPLICABLE:
+            status = replace(status, data_completeness=RegulationDataCompleteness.NOT_APPLICABLE)
+        statuses.append(status)
+        results.extend(item.result for item in ordered)
+        all_events.extend(events)
+        new_states.append(
+            MonitorState(
+                candidate.symbol,
+                source.trade_date,
+                not reasons,
+                source.next_trade_date
+                if price_hit or serious
+                else (state.abnormal_reset_date if state else None),
+                source.next_trade_date
+                if serious
+                else (state.serious_reset_date if state else None),
+                (*history, *events),
+                tuple(sorted(set(reasons))),
+            )
+        )
+        findings.extend(f"{candidate.symbol}:{reason}" for reason in sorted(set(reasons)))
+    coverage = RegulationCoverage(
+        len(statuses),
+        sum(s.data_completeness is RegulationDataCompleteness.COMPLETE for s in statuses),
+        sum(s.data_completeness is RegulationDataCompleteness.INCOMPLETE for s in statuses),
+        sum(s.data_completeness is RegulationDataCompleteness.NOT_APPLICABLE for s in statuses),
+    )
+    return MonitorDay(
+        RegulationCalculationOutput(
+            source.trade_date,
+            source.next_trade_date,
+            tuple(statuses),
+            tuple(results),
+            (),
+            coverage,
+            tuple(findings),
+        ),
+        tuple(new_states),
+        tuple(all_events),
     )

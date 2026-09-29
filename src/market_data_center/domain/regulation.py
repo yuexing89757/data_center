@@ -611,3 +611,53 @@ class RegulationCalculationSummary:
             raise ValueError("next trade date must follow trade date")
         if self.warning_count < 0:
             raise ValueError("warning count must not be negative")
+
+
+@dataclass(frozen=True, slots=True)
+class CalculatedEvent:
+    """A simulated close event, never a source/official announcement."""
+
+    symbol: str
+    trade_date: date
+    level: RegulationRuleLevel
+    direction: RegulationDirection
+    kind: RegulationRuleKind
+    rule_codes: tuple[str, ...]
+    windows: tuple[tuple[date, date], ...]
+
+    def __post_init__(self) -> None:
+        if not _STANDARD_SYMBOL.fullmatch(self.symbol):
+            raise ValueError("calculated event requires a standard symbol")
+        if not self.rule_codes or tuple(sorted(set(self.rule_codes))) != self.rule_codes:
+            raise ValueError("calculated event rules must be nonempty, sorted and unique")
+        if any(start > end or end != self.trade_date for start, end in self.windows):
+            raise ValueError("calculated event windows must end on the event date")
+
+
+@dataclass(frozen=True, slots=True)
+class MonitorState:
+    symbol: str
+    through_date: date
+    complete: bool
+    abnormal_reset_date: date | None
+    serious_reset_date: date | None
+    events: tuple[CalculatedEvent, ...]
+    missing_reasons: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if not _STANDARD_SYMBOL.fullmatch(self.symbol):
+            raise ValueError("monitor state requires a standard symbol")
+        if any(e.symbol != self.symbol or e.trade_date > self.through_date for e in self.events):
+            raise ValueError("monitor state events must belong to its symbol and history")
+        keys = {(e.trade_date, e.level, e.direction, e.kind) for e in self.events}
+        if len(keys) != len(self.events):
+            raise ValueError("monitor state events must have unique natural keys")
+        if self.complete and self.missing_reasons:
+            raise ValueError("complete monitor state cannot have history gaps")
+
+
+@dataclass(frozen=True, slots=True)
+class MonitorDay:
+    output: RegulationCalculationOutput
+    states: tuple[MonitorState, ...]
+    events: tuple[CalculatedEvent, ...]
