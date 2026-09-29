@@ -60,6 +60,14 @@ The historical market-emotion chart is available at
 `GET /api/v1/realtime/kaipanla/market-emotion/chart?offset=0&limit=100`.
 See [the chart API guide](docs/开盘啦市场情绪图实时接口.md).
 
+Kaipanla board reads provide three authenticated GET routes under
+`/api/v1/realtime/kaipanla/boards`: latest rankings, `/history`, and
+`/{board_code}/members/history` with institutional profit forecasts. Each request reads one
+bounded HTTP page (up to 60 records), validates the actual source date and preserves Decimal
+precision, without database/Raw writes or Worker jobs. Historical members require a date
+before today in Shanghai; same-day TLS quotes are outside this scope. See
+[the board API guide](docs/开盘啦板块精选实时接口.md).
+
 Regulation public reads (migration `20260922000100`):
 `GET /api/v1/regulation/triggers` and
 `GET /api/v1/regulation/recent-events/next-triggers` require an exact `trade_date`

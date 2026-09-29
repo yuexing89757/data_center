@@ -5855,6 +5855,696 @@
         "title": "KaipanlaAuctionResponse",
         "type": "object"
       },
+      "KaipanlaBoardItem": {
+        "additionalProperties": false,
+        "properties": {
+          "amount_cny": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "成交额，单位元。",
+            "title": "Amount Cny"
+          },
+          "board_code": {
+            "description": "开盘啦板块代码，不等同于标准证券代码。",
+            "pattern": "^[0-9]{6}$",
+            "title": "Board Code",
+            "type": "string"
+          },
+          "change_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "板块涨跌幅，单位百分比。",
+            "title": "Change Pct"
+          },
+          "change_speed_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源涨速，单位百分比；统计窗口未披露。",
+            "title": "Change Speed Pct"
+          },
+          "large_order_net_amount_cny": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源大单净额，单位元；允许负值。",
+            "title": "Large Order Net Amount Cny"
+          },
+          "main_net_amount_cny": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源主力净额，单位元；允许负值。",
+            "title": "Main Net Amount Cny"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源板块名称。",
+            "title": "Name"
+          },
+          "strength": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源板块强度指标；非数据中心计算或交易建议。",
+            "title": "Strength"
+          },
+          "volume_ratio": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源量比，倍数。",
+            "title": "Volume Ratio"
+          }
+        },
+        "required": [
+          "board_code",
+          "name",
+          "strength",
+          "change_pct",
+          "change_speed_pct",
+          "amount_cny",
+          "main_net_amount_cny",
+          "volume_ratio",
+          "large_order_net_amount_cny"
+        ],
+        "title": "KaipanlaBoardItem",
+        "type": "object"
+      },
+      "KaipanlaBoardMember": {
+        "additionalProperties": false,
+        "properties": {
+          "actual_float_market_value_cny": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源实际流通市值，单位元。",
+            "title": "Actual Float Market Value Cny"
+          },
+          "amount_cny": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "成交额，单位元。",
+            "title": "Amount Cny"
+          },
+          "buy_share_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源买占比，单位百分比。",
+            "title": "Buy Share Pct"
+          },
+          "change_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源涨跌幅，单位百分比。",
+            "title": "Change Pct"
+          },
+          "close_limit_bid_amount_cny": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源收盘封单金额，单位元。",
+            "title": "Close Limit Bid Amount Cny"
+          },
+          "code": {
+            "description": "六位股票代码，保留前导零。",
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "concept": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源概念文本，不等同于数据中心分类成员关系。",
+            "title": "Concept"
+          },
+          "float_market_value_cny": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "流通市值，单位元。",
+            "title": "Float Market Value Cny"
+          },
+          "forecast_status": {
+            "description": "available有预测值；not_provided三项全为零或缺失；years_unverified年份无法确认。",
+            "enum": [
+              "available",
+              "not_provided",
+              "years_unverified"
+            ],
+            "title": "Forecast Status",
+            "type": "string"
+          },
+          "height_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源高度文字原样保留，不推导连续涨停天数。",
+            "title": "Height Label"
+          },
+          "large_order_net_amount_cny": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源大单净额，单位元。",
+            "title": "Large Order Net Amount Cny"
+          },
+          "last_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "所选历史日的来源价格，单位元。",
+            "title": "Last Price"
+          },
+          "leader_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源龙头标签，仅转述来源，不生成排名或选股判断。",
+            "title": "Leader Label"
+          },
+          "leading_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源领涨次数，整数。",
+            "title": "Leading Count"
+          },
+          "main_buy_amount_cny": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "主力买入金额，单位元。",
+            "title": "Main Buy Amount Cny"
+          },
+          "main_net_amount_cny": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "主力净额，单位元。",
+            "title": "Main Net Amount Cny"
+          },
+          "main_sell_amount_cny": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "主力卖出金额，单位元；保留来源负号。",
+            "title": "Main Sell Amount Cny"
+          },
+          "max_limit_bid_amount_cny": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源最大封单金额，单位元。",
+            "title": "Max Limit Bid Amount Cny"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源股票名称。",
+            "title": "Name"
+          },
+          "profit_forecasts": {
+            "description": "按来源标签顺序返回三年预测；年份无法核实时为空数组，零值不转为null。",
+            "items": {
+              "$ref": "#/components/schemas/KaipanlaProfitForecast"
+            },
+            "title": "Profit Forecasts",
+            "type": "array"
+          },
+          "sell_share_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源卖占比，单位百分比。",
+            "title": "Sell Share Pct"
+          },
+          "symbol": {
+            "description": "标准证券代码。",
+            "pattern": "^(SSE|SZSE|BSE):[0-9]{6}$",
+            "title": "Symbol",
+            "type": "string"
+          },
+          "total_market_value_cny": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "总市值，单位元。",
+            "title": "Total Market Value Cny"
+          },
+          "volume_ratio": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源量比，倍数。",
+            "title": "Volume Ratio"
+          }
+        },
+        "required": [
+          "symbol",
+          "code",
+          "name",
+          "concept",
+          "last_price",
+          "change_pct",
+          "amount_cny",
+          "actual_float_market_value_cny",
+          "main_buy_amount_cny",
+          "main_sell_amount_cny",
+          "main_net_amount_cny",
+          "buy_share_pct",
+          "sell_share_pct",
+          "volume_ratio",
+          "height_label",
+          "leader_label",
+          "close_limit_bid_amount_cny",
+          "max_limit_bid_amount_cny",
+          "total_market_value_cny",
+          "float_market_value_cny",
+          "leading_count",
+          "large_order_net_amount_cny",
+          "forecast_status",
+          "profit_forecasts"
+        ],
+        "title": "KaipanlaBoardMember",
+        "type": "object"
+      },
+      "KaipanlaBoardMembersResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "board_code": {
+            "description": "请求的开盘啦板块代码。",
+            "pattern": "^[0-9]{6}$",
+            "title": "Board Code",
+            "type": "string"
+          },
+          "forecast_years": {
+            "description": "已核实的三年预测年份；无法核实时为空。",
+            "items": {
+              "type": "integer"
+            },
+            "title": "Forecast Years",
+            "type": "array"
+          },
+          "items": {
+            "description": "本页历史成分股及来源机构预测。",
+            "items": {
+              "$ref": "#/components/schemas/KaipanlaBoardMember"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "description": "每页上限，最多60条。",
+            "maximum": 60.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "next_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "满页时可继续尝试的偏移；下页可能为空，达到上限则为空。",
+            "title": "Next Offset"
+          },
+          "observed_at": {
+            "description": "收到响应的上海时间；不是来源行情时点。",
+            "example": "2026-09-18 09:35:00",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "offset": {
+            "description": "本页记录偏移。",
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Offset",
+            "type": "integer"
+          },
+          "persisted": {
+            "const": false,
+            "description": "固定false；不存数据库或Raw，不触发Worker。",
+            "title": "Persisted",
+            "type": "boolean"
+          },
+          "query_mode": {
+            "description": "最新快照或指定日期历史查询。",
+            "enum": [
+              "latest",
+              "history"
+            ],
+            "title": "Query Mode",
+            "type": "string"
+          },
+          "requested_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "调用方请求日期；最新查询为空。",
+            "title": "Requested Date"
+          },
+          "returned_count": {
+            "description": "本页实际返回数量。",
+            "maximum": 60.0,
+            "minimum": 0.0,
+            "title": "Returned Count",
+            "type": "integer"
+          },
+          "source_code": {
+            "const": "kaipanla",
+            "description": "数据来源：开盘啦。",
+            "title": "Source Code",
+            "type": "string"
+          },
+          "total": {
+            "description": "固定null；来源Count可能仅为页长度，不能作为总数。",
+            "title": "Total",
+            "type": "null"
+          },
+          "trade_date": {
+            "description": "来源实际日期；历史必须匹配请求日，否则502。",
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_code",
+          "persisted",
+          "query_mode",
+          "requested_date",
+          "trade_date",
+          "observed_at",
+          "offset",
+          "limit",
+          "returned_count",
+          "total",
+          "next_offset",
+          "board_code",
+          "forecast_years",
+          "items"
+        ],
+        "title": "KaipanlaBoardMembersResponse",
+        "type": "object"
+      },
+      "KaipanlaBoardRankingResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "description": "本页板块排行，保留来源顺序。",
+            "items": {
+              "$ref": "#/components/schemas/KaipanlaBoardItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "description": "每页上限，最多60条。",
+            "maximum": 60.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "next_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "满页时可继续尝试的偏移；下页可能为空，达到上限则为空。",
+            "title": "Next Offset"
+          },
+          "observed_at": {
+            "description": "收到响应的上海时间；不是来源行情时点。",
+            "example": "2026-09-18 09:35:00",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "offset": {
+            "description": "本页记录偏移。",
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Offset",
+            "type": "integer"
+          },
+          "persisted": {
+            "const": false,
+            "description": "固定false；不存数据库或Raw，不触发Worker。",
+            "title": "Persisted",
+            "type": "boolean"
+          },
+          "query_mode": {
+            "description": "最新快照或指定日期历史查询。",
+            "enum": [
+              "latest",
+              "history"
+            ],
+            "title": "Query Mode",
+            "type": "string"
+          },
+          "requested_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "调用方请求日期；最新查询为空。",
+            "title": "Requested Date"
+          },
+          "returned_count": {
+            "description": "本页实际返回数量。",
+            "maximum": 60.0,
+            "minimum": 0.0,
+            "title": "Returned Count",
+            "type": "integer"
+          },
+          "source_code": {
+            "const": "kaipanla",
+            "description": "数据来源：开盘啦。",
+            "title": "Source Code",
+            "type": "string"
+          },
+          "total": {
+            "description": "固定null；来源Count可能仅为页长度，不能作为总数。",
+            "title": "Total",
+            "type": "null"
+          },
+          "trade_date": {
+            "description": "来源实际日期；历史必须匹配请求日，否则502。",
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_code",
+          "persisted",
+          "query_mode",
+          "requested_date",
+          "trade_date",
+          "observed_at",
+          "offset",
+          "limit",
+          "returned_count",
+          "total",
+          "next_offset",
+          "items"
+        ],
+        "title": "KaipanlaBoardRankingResponse",
+        "type": "object"
+      },
       "KaipanlaBrokenLimitUpHistoryResponse": {
         "additionalProperties": false,
         "properties": {
@@ -6420,6 +7110,37 @@
           "items"
         ],
         "title": "KaipanlaMoneyEffectResponse",
+        "type": "object"
+      },
+      "KaipanlaProfitForecast": {
+        "additionalProperties": false,
+        "properties": {
+          "net_profit_cny": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源机构预测净利润，单位元；保留零及负值，须结合forecast_status判断占位。",
+            "title": "Net Profit Cny"
+          },
+          "year": {
+            "description": "来源标签确认的预测年份，不包含实际利润年份。",
+            "maximum": 9999.0,
+            "minimum": 1900.0,
+            "title": "Year",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "year",
+          "net_profit_cny"
+        ],
+        "title": "KaipanlaProfitForecast",
         "type": "object"
       },
       "KaipanlaQuoteQuery": {
@@ -11668,6 +12389,296 @@
           }
         ],
         "summary": "分页查询开盘啦竞价池",
+        "tags": [
+          "实时接口"
+        ]
+      }
+    },
+    "/api/v1/realtime/kaipanla/boards": {
+      "get": {
+        "description": "复用X-API-Key，每次只读取一页开盘啦HTTP响应，不重试、不自动全量翻页、不落库。小数以字符串返回，金额单位元。沿next_offset分页，来源变动可能影响跨页一致性。实际行情日以trade_date为准。",
+        "operationId": "latest_boards_api_v1_realtime_kaipanla_boards_get",
+        "parameters": [
+          {
+            "description": "从结果集起点跳过的记录数。",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 10000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "最多返回的记录数。",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 60,
+              "maximum": 60,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KaipanlaBoardRankingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "查询开盘啦最新板块排行",
+        "tags": [
+          "实时接口"
+        ]
+      }
+    },
+    "/api/v1/realtime/kaipanla/boards/history": {
+      "get": {
+        "description": "复用X-API-Key，每次只读取一页开盘啦HTTP响应，不重试、不自动全量翻页、不落库。小数以字符串返回，金额单位元。沿next_offset分页，来源变动可能影响跨页一致性。必填trade_date，拒绝未来日期和来源日期错位。",
+        "operationId": "historical_boards_api_v1_realtime_kaipanla_boards_history_get",
+        "parameters": [
+          {
+            "description": "交易日。",
+            "in": "query",
+            "name": "trade_date",
+            "required": true,
+            "schema": {
+              "description": "指定日期，格式YYYY-MM-DD。",
+              "format": "date",
+              "title": "Trade Date",
+              "type": "string"
+            }
+          },
+          {
+            "description": "从结果集起点跳过的记录数。",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 10000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "最多返回的记录数。",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 60,
+              "maximum": 60,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KaipanlaBoardRankingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "查询开盘啦历史板块排行",
+        "tags": [
+          "实时接口"
+        ]
+      }
+    },
+    "/api/v1/realtime/kaipanla/boards/{board_code}/members/history": {
+      "get": {
+        "description": "复用X-API-Key，每次只读取一页开盘啦HTTP响应，不重试、不自动全量翻页、不落库。小数以字符串返回，金额单位元。沿next_offset分页，来源变动可能影响跨页一致性。trade_date必须早于上海当天；本接口不包含当天TLS行情。预测年份由来源标签确定，无法核实时不猜测。",
+        "operationId": "historical_members_api_v1_realtime_kaipanla_boards__board_code__members_history_get",
+        "parameters": [
+          {
+            "description": "板块的六位代码。",
+            "in": "path",
+            "name": "board_code",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9]{6}$",
+              "title": "Board Code",
+              "type": "string"
+            }
+          },
+          {
+            "description": "交易日。",
+            "in": "query",
+            "name": "trade_date",
+            "required": true,
+            "schema": {
+              "description": "指定日期，格式YYYY-MM-DD。",
+              "format": "date",
+              "title": "Trade Date",
+              "type": "string"
+            }
+          },
+          {
+            "description": "从结果集起点跳过的记录数。",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 10000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "最多返回的记录数。",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 60,
+              "maximum": 60,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KaipanlaBoardMembersResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "查询开盘啦历史成分股及机构预测",
         "tags": [
           "实时接口"
         ]
