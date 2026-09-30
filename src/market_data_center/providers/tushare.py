@@ -30,6 +30,7 @@ from market_data_center.domain.records import (
     DailyBarRecord,
     Exchange,
     Market,
+    RegulationStSnapshotRecord,
     SecurityRecord,
     SecurityStatus,
     SecurityType,
@@ -74,6 +75,7 @@ DAILY_BAR_FIELDS = (
     "vol",
     "amount",
 )
+REGULATION_ST_FIELDS = ("ts_code", "name", "trade_date", "type", "type_name")
 STOCK_DAILY_INDICATOR_FIELDS = (
     "ts_code",
     "trade_date",
@@ -391,6 +393,24 @@ class TushareProvider(AbstractContextManager["TushareProvider"]):
             record_factory=lambda: _complete_stock_daily_indicator_snapshot(rows),
         )
 
+    def fetch_regulation_st_snapshot(
+        self, trade_date: date
+    ) -> ProviderBatch[RegulationStSnapshotRecord]:
+        key = trade_date.strftime("%Y%m%d")
+        result = _provider_call(
+            "stock_st",
+            lambda: self._client.query(
+                "stock_st", params={"trade_date": key}, fields=REGULATION_ST_FIELDS
+            ),
+        )
+        rows = _rows(result, REGULATION_ST_FIELDS, "stock_st")
+        return ProviderBatch(
+            raw_rows=rows,
+            request_params={"trade_date": key},
+            schema_version="tushare.regulation_st_snapshot.v1",
+            record_factory=lambda: _regulation_st_snapshot(rows, trade_date),
+        )
+
     def fetch_deducted_profit_updates(
         self, as_of_date: date
     ) -> ProviderBatch[DeductedProfitRecord]:
@@ -558,6 +578,7 @@ def normalize_tushare_raw(
         DatasetCode.TRADING_CALENDAR: "tushare.trading_calendar.v1",
         DatasetCode.DAILY_BAR: "tushare.daily_bar.v1",
         DatasetCode.STOCK_DAILY_INDICATOR: "tushare.stock_daily_indicator.v1",
+        DatasetCode.REGULATION_ST_SNAPSHOT: "tushare.regulation_st_snapshot.v1",
         DatasetCode.DEDUCTED_PROFIT: "tushare.deducted_profit.v1",
         DatasetCode.SHAREHOLDER_COUNT: "tushare.shareholder_count.v1",
         DatasetCode.CONVERTIBLE_BOND: "tushare.convertible_bond.v1",
@@ -581,6 +602,8 @@ def normalize_tushare_raw(
             _map_stock_daily_indicator(row)
             for row in sorted(raw_rows, key=lambda row: row["trade_date"])
         )
+    if dataset_code is DatasetCode.REGULATION_ST_SNAPSHOT:
+        return tuple(_regulation_st_snapshot(raw_rows, _request_date(request_params, "trade_date")))
     if dataset_code is DatasetCode.DEDUCTED_PROFIT:
         disclosures = {
             (row["ts_code"], row["end_date"]): row
@@ -626,6 +649,21 @@ def _rows(
             raise ProviderError(f"Tushare {operation} missing fields: {', '.join(sorted(missing))}")
         rows.append({str(key): _raw_value(value) for key, value in item.items()})
     return rows
+
+
+def _regulation_st_snapshot(
+    rows: Sequence[Mapping[str, str]], trade_date: date
+) -> list[RegulationStSnapshotRecord]:
+    if not 0 < len(rows) < 1000:
+        raise ProviderError("Tushare stock_st day is empty or may be truncated")
+    symbols: list[str] = []
+    for row in rows:
+        if _parse_date(row["trade_date"]) != trade_date:
+            raise ProviderError("Tushare stock_st row date does not match request")
+        symbols.append(_normalize_symbol(row["ts_code"])[2])
+    if len(set(symbols)) != len(symbols):
+        raise ProviderError("Tushare stock_st contains duplicate symbols")
+    return [RegulationStSnapshotRecord(trade_date, tuple(sorted(symbols)), "tushare")]
 
 
 def _query_stock_basic(client: TushareClient, status: str) -> Sequence[Mapping[str, object]]:

@@ -132,6 +132,65 @@ class FakeClient:
         raise AssertionError(api_name)
 
 
+class FakeStockStClient(FakeClient):
+    def __init__(self, rows: Sequence[Mapping[str, object]]) -> None:
+        super().__init__()
+        self.rows = rows
+
+    def query(
+        self, api_name: str, *, params: Mapping[str, str], fields: Sequence[str]
+    ) -> Sequence[Mapping[str, object]]:
+        if api_name == "stock_st":
+            self.calls.append((api_name, params, fields))
+            return self.rows
+        return super().query(api_name, params=params, fields=fields)
+
+
+def _st_row(ts_code: str, trade_date: str = "20260706") -> Mapping[str, object]:
+    return {
+        "ts_code": ts_code,
+        "name": "*ST测试",
+        "trade_date": trade_date,
+        "type": "ST",
+        "type_name": "风险警示板",
+    }
+
+
+def test_stock_st_snapshot_preserves_full_raw_and_replays_same_symbols() -> None:
+    client = FakeStockStClient((_st_row("600000.SH"), _st_row("000001.SZ")))
+    batch = TushareProvider(client).fetch_regulation_st_snapshot(date(2026, 7, 6))
+
+    assert client.calls[0][1] == {"trade_date": "20260706"}
+    assert len(batch.raw_rows) == 2
+    assert batch.records[0].symbols == ("SSE:600000", "SZSE:000001")
+    assert batch.records[0].source_code == "tushare"
+    assert normalize_tushare_raw(
+        DatasetCode.REGULATION_ST_SNAPSHOT,
+        batch.schema_version,
+        batch.raw_rows,
+        batch.request_params,
+    ) == tuple(batch.records)
+
+
+@pytest.mark.parametrize(
+    "rows",
+    [
+        (),
+        (_st_row("600000.SH", "20260707"),),
+        (_st_row("600000.SH"), _st_row("600000.SH")),
+        (_st_row("bad.SH"),),
+        tuple(_st_row(f"{code:06d}.SH") for code in range(600000, 601000)),
+    ],
+)
+def test_stock_st_snapshot_rejects_incomplete_or_invalid_day(
+    rows: Sequence[Mapping[str, object]],
+) -> None:
+    batch = TushareProvider(FakeStockStClient(rows)).fetch_regulation_st_snapshot(date(2026, 7, 6))
+
+    with pytest.raises(ProviderError):
+        _ = batch.records
+
+
 class FakeBseBoundaryClient(FakeClient):
     def query(
         self, api_name: str, *, params: Mapping[str, str], fields: Sequence[str]

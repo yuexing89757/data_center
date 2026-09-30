@@ -49,6 +49,7 @@ class DatasetCode(StrEnum):
     TRADING_BILLBOARD = "trading_billboard"
     DRAGON_TIGER = "dragon_tiger"
     REGULATION_EVENT = "regulation_event"
+    REGULATION_ST_SNAPSHOT = "regulation_st_snapshot"
 
 
 class IngestionStatus(StrEnum):

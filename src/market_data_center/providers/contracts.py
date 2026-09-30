@@ -19,6 +19,7 @@ from market_data_center.domain.realtime_quote import FiveLevelQuoteSnapshotRecor
 from market_data_center.domain.records import (
     CapitalRecord,
     DailyBarRecord,
+    RegulationStSnapshotRecord,
     SecurityRecord,
     TradingDayRecord,
 )
@@ -45,6 +46,7 @@ type ProviderRecord = (
     | LimitDownSourceRecord
     | DragonTigerEventDraft
     | RegulationEventRecord
+    | RegulationStSnapshotRecord
 )
 type RawRow = Mapping[str, str]
 
@@ -73,6 +75,14 @@ class RegulationEventProvider(Protocol):
     def fetch_events(
         self, observed_from: datetime, observed_to: datetime
     ) -> "ProviderBatch[RegulationEventRecord]": ...
+
+
+class RegulationStSnapshotProvider(Protocol):
+    source_code: str
+
+    def fetch_regulation_st_snapshot(
+        self, trade_date: date
+    ) -> "ProviderBatch[RegulationStSnapshotRecord]": ...
 
 
 class MarketDataProvider(Protocol):

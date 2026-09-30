@@ -79,6 +79,19 @@ class TradingDayRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class RegulationStSnapshotRecord:
+    trade_date: date
+    symbols: tuple[str, ...]
+    source_code: str
+
+    def __post_init__(self) -> None:
+        if not self.symbols or tuple(sorted(set(self.symbols))) != self.symbols:
+            raise ValueError("ST snapshot must contain sorted unique symbols")
+        if self.source_code != "tushare":
+            raise ValueError("ST snapshot source must be tushare")
+
+
+@dataclass(frozen=True, slots=True)
 class DailyBarRecord:
     symbol: str
     trade_date: date
