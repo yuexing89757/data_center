@@ -89,6 +89,7 @@ def test_old_monitor_hash_does_not_gain_new_st_field() -> None:
     old = replace(source([Decimal("0.1")]), algorithm_version="regulation-monitor.v1")
     payload = asdict(old)
     payload.pop("st_watermark")
+    payload.pop("monitor_start_date")
     expected = sha256(
         encode_monitor({"source": payload, "states": (), "parent_calculation_id": None}).encode()
     ).hexdigest()

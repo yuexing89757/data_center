@@ -731,7 +731,7 @@
     },
     {
       "name": "market_regulation_monitor_candidates",
-      "description": "Read the frozen close observation list; cursor binds date, search and batch. Requires the dedicated API role; anonymous access is denied.",
+      "description": "Read the frozen close observation list with its count period; cursor binds date, search and batch. Requires the dedicated API role; anonymous access is denied.",
       "endpoint": "query_regulation_monitor_candidates",
       "read_only": true,
       "input_schema": {
@@ -774,7 +774,7 @@
     },
     {
       "name": "market_regulation_monitor_inputs",
-      "description": "Read at most 50 frozen monitor inputs plus timestamped known-reference guards; no writes. Requires the dedicated API role; anonymous access is denied.",
+      "description": "Read at most 50 frozen monitor inputs with their count period and timestamped known-reference guards; no writes. Requires the dedicated API role; anonymous access is denied.",
       "endpoint": "query_regulation_monitor_inputs",
       "read_only": true,
       "input_schema": {

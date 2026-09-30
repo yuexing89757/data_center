@@ -392,10 +392,19 @@ order by rule_code
             _complete_run(connection, run)
 
     def load_monitor_checkpoint(
-        self, trade_date: date
+        self,
+        trade_date: date,
+        *,
+        algorithm_version: str = REGULATION_MONITOR_VERSION,
+        monitor_start_date: date | None = None,
     ) -> tuple[UUID | None, tuple[MonitorState, ...]]:
         with self._engine.connect() as connection:
-            return _monitor_checkpoint(connection, trade_date)
+            return _monitor_checkpoint(
+                connection,
+                trade_date,
+                algorithm_version=algorithm_version,
+                monitor_start_date=monitor_start_date,
+            )
 
     def load_monitor_trading_dates(self, start: date, end: date) -> tuple[date, ...]:
         with self._engine.connect() as connection:
@@ -422,7 +431,7 @@ order by rule_code
         """Publish one immutable monitor snapshot without touching official results."""
         _validate_publish(run, result.output)
         if (
-            source.algorithm_version != REGULATION_MONITOR_VERSION
+            source.algorithm_version not in ("regulation-monitor.v2", REGULATION_MONITOR_VERSION)
             or run.algorithm_version != source.algorithm_version
             or source.trade_date != run.trade_date
             or source.next_trade_date != run.next_trade_date
@@ -453,7 +462,12 @@ order by rule_code
         with self._engine.begin() as connection:
             # Serialize chain publication, including corrections to predecessor batches.
             connection.execute(text("select pg_advisory_xact_lock(6260929001)"))
-            parent, stored_states = _monitor_checkpoint(connection, source.trade_date)
+            parent, stored_states = _monitor_checkpoint(
+                connection,
+                source.trade_date,
+                algorithm_version=source.algorithm_version,
+                monitor_start_date=source.monitor_start_date,
+            )
             if parent != parent_calculation_id or sorted(
                 stored_states, key=lambda s: s.symbol
             ) != sorted(previous_states, key=lambda s: s.symbol):
@@ -572,20 +586,30 @@ where calculation_id = :calculation_id and status = 'RUNNING'
 
 
 def _monitor_checkpoint(
-    connection: Connection, trade_date: date
+    connection: Connection,
+    trade_date: date,
+    *,
+    algorithm_version: str = REGULATION_MONITOR_VERSION,
+    monitor_start_date: date | None = None,
 ) -> tuple[UUID | None, tuple[MonitorState, ...]]:
     parent = connection.execute(
         text("""
         select r.calculation_id from regulation.calculation_run r
         join regulation.monitor_context m using(calculation_id)
-        where r.algorithm_version='regulation-monitor.v2'
+        where r.algorithm_version=:algorithm_version
+          and (cast(:monitor_start_date as date) is null or
+            coalesce(m.source->>'monitor_start_date','2026-07-06')::date=:monitor_start_date)
           and r.status in ('SUCCEEDED','PARTIAL') and r.completed_at is not null
           and r.next_trade_date=:day
           and r.trade_date=(select max(trade_date) from core.trading_calendar
               where market='CN_A_SHARE' and is_trading_day and trade_date<:day)
         order by r.completed_at desc,r.calculation_id desc limit 1
     """),
-        {"day": trade_date},
+        {
+            "day": trade_date,
+            "algorithm_version": algorithm_version,
+            "monitor_start_date": monitor_start_date,
+        },
     ).scalar_one_or_none()
     if parent is None:
         return None, ()

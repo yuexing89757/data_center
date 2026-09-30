@@ -57,6 +57,8 @@ class MonitorMetadata(ApiModel):
     rule_set_version: str
     generated_at: ApiTimestamp
     count_cutoff_date: date
+    monitor_start_date: date = Field(description="本期测算起算交易日, 此前事件不计入本期次数")
+    count_scope_label: str = Field(description="计数范围说明, 本期内仍按最近10个交易日统计")
     coverage: RegulationCoverage
     requested_count: int = Field(ge=0)
     found_count: int = Field(ge=0)
@@ -265,6 +267,8 @@ def _project_response(
     source = decode_monitor_source(
         {**raw["source"], "candidates": [i["payload"]["candidate"] for i in available]}
     )
+    if str(source.monitor_start_date) != str(raw["monitor_start_date"]):
+        raise ValueError("monitor count period does not match its published input")
     published = {i["symbol"]: decode_monitor_state(i["payload"]["state"]) for i in available}
     mode: Literal["LIVE", "MIDDAY_PAUSED", "CLOSE_ESTIMATE", "CONFIRMED_CLOSE"]
     if confirmed:

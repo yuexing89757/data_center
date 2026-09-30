@@ -52,6 +52,8 @@ class MonitorInputsRpcResponse(ApiModel):
     rule_set_version: str
     completed_at: datetime
     count_cutoff_date: date
+    monitor_start_date: date
+    count_scope_label: str
     official_coverage: str
     official_watermark: datetime | None
     reference_checked_at: datetime
@@ -108,7 +110,8 @@ OPERATIONS = (
     (
         "query_regulation_monitor_candidates",
         MonitorCandidatesResponse,
-        "Read the frozen close observation list; cursor binds date, search and batch.",
+        "Read the frozen close observation list with its count period; "
+        "cursor binds date, search and batch.",
         {
             **REQUEST,
             "properties": {
@@ -121,7 +124,8 @@ OPERATIONS = (
     (
         "query_regulation_monitor_inputs",
         MonitorInputsRpcResponse,
-        "Read at most 50 frozen monitor inputs plus timestamped known-reference guards; no writes.",
+        "Read at most 50 frozen monitor inputs with their count period "
+        "and timestamped known-reference guards; no writes.",
         {
             "type": "object",
             "additionalProperties": False,

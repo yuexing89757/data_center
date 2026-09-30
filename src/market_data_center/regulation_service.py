@@ -12,7 +12,7 @@ from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 from market_data_center.domain.regulation import (
-    REGULATION_RULES_EFFECTIVE_FROM,
+    REGULATION_MONITOR_START_DATE,
     MonitorDay,
     MonitorState,
     RegulationCalculationInput,
@@ -76,6 +76,7 @@ def regulation_input_hash(source: RegulationCalculationInput) -> str:
     """Hash a logical input snapshot independently of source row ordering."""
 
     payload = cast(dict[str, object], _canonical(source))
+    payload.pop("monitor_start_date")  # Monitor scope does not change the ordinary calculator.
     if source.algorithm_version in {"regulation-calculator.v1", "regulation-calculator.v2"}:
         payload.pop("st_watermark")
     if source.algorithm_version == "regulation-calculator.v1":
@@ -250,18 +251,28 @@ def _monitor_day(
 
 class RegulationMonitorService:
     def __init__(
-        self, persistence: PostgreSQLRegulationPersistence, *, clock: Callable[[], datetime]
+        self,
+        persistence: PostgreSQLRegulationPersistence,
+        *,
+        clock: Callable[[], datetime],
+        monitor_start_date: date = REGULATION_MONITOR_START_DATE,
     ) -> None:
         self._persistence = persistence
         self._clock = clock
+        self._monitor_start_date = monitor_start_date
 
     def calculate(self, trade_date: date) -> RegulationCalculationSummary:
         source = replace(
             self._persistence.load_calculation_source(trade_date),
             algorithm_version=REGULATION_MONITOR_VERSION,
+            monitor_start_date=self._monitor_start_date,
         )
-        parent, states = self._persistence.load_monitor_checkpoint(trade_date)
-        if trade_date != REGULATION_RULES_EFFECTIVE_FROM and parent is None:
+        parent, states = self._persistence.load_monitor_checkpoint(
+            trade_date,
+            algorithm_version=source.algorithm_version,
+            monitor_start_date=source.monitor_start_date,
+        )
+        if trade_date != self._monitor_start_date and parent is None:
             raise ValueError("monitor requires a verified preceding checkpoint")
         input_hash = monitor_input_hash(source, states, parent)
         result = _monitor_day(source, states)
@@ -272,7 +283,11 @@ class RegulationMonitorService:
         )
         existing = self._persistence.find_calculation(trade_date, input_hash)
         if existing is not None:
-            current, _ = self._persistence.load_monitor_checkpoint(source.next_trade_date)
+            current, _ = self._persistence.load_monitor_checkpoint(
+                source.next_trade_date,
+                algorithm_version=source.algorithm_version,
+                monitor_start_date=source.monitor_start_date,
+            )
             if current != existing:
                 raise ValueError("matching monitor inputs belong to a superseded publication")
             return RegulationCalculationSummary(
@@ -326,8 +341,10 @@ class RegulationMonitorService:
 
     def preflight(self, start_date: date, end_date: date) -> dict[str, object]:
         today = self._clock().astimezone(ZoneInfo("Asia/Shanghai")).date()
-        if start_date < REGULATION_RULES_EFFECTIVE_FROM or not start_date <= end_date <= today:
-            raise ValueError("monitor requires an ordered nonfuture range from 2026-07-06")
+        if start_date < self._monitor_start_date or not start_date <= end_date <= today:
+            raise ValueError(
+                f"monitor requires an ordered nonfuture range from {self._monitor_start_date}"
+            )
         if (end_date - start_date).days > 366:
             raise ValueError("monitor preflight is limited to 366 calendar days")
         dates = tuple(sorted(self._persistence.load_monitor_trading_dates(start_date, end_date)))
@@ -340,8 +357,12 @@ class RegulationMonitorService:
         states: tuple[MonitorState, ...] = ()
         if dates:
             try:
-                parent, states = self._persistence.load_monitor_checkpoint(dates[0])
-                if dates[0] != REGULATION_RULES_EFFECTIVE_FROM and parent is None:
+                parent, states = self._persistence.load_monitor_checkpoint(
+                    dates[0],
+                    algorithm_version=REGULATION_MONITOR_VERSION,
+                    monitor_start_date=self._monitor_start_date,
+                )
+                if dates[0] != self._monitor_start_date and parent is None:
                     missing.append(
                         {"trade_date": dates[0], "reason": "missing_continuous_checkpoint"}
                     )
@@ -354,6 +375,7 @@ class RegulationMonitorService:
                 source = replace(
                     self._persistence.load_calculation_source(day),
                     algorithm_version=REGULATION_MONITOR_VERSION,
+                    monitor_start_date=self._monitor_start_date,
                 )
                 result = _monitor_day(source, states)
             except ValueError:
@@ -410,6 +432,8 @@ class RegulationMonitorService:
                 can_execute = False
         return {
             "start_date": start_date,
+            "monitor_start_date": self._monitor_start_date,
+            "count_scope_label": "本期内次数(最近10个交易日)",
             "end_date": end_date,
             "trading_dates": list(dates),
             "symbol_count": len(symbols),

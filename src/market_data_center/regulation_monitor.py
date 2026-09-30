@@ -6,7 +6,6 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from market_data_center.domain.regulation import (
-    REGULATION_RULES_EFFECTIVE_FROM,
     MonitorDay,
     MonitorState,
     RegulationApplicability,
@@ -89,7 +88,7 @@ def _threshold(
         )
     if issue:
         return replace(empty, missing_reason=issue)
-    if state is None and target != REGULATION_RULES_EFFECTIVE_FROM:
+    if state is None and target != source.monitor_start_date:
         return replace(empty, missing_reason="missing_continuous_checkpoint")
     if state is not None and not state.complete:
         return replace(
@@ -103,6 +102,7 @@ def _threshold(
         count = sum(
             e.trade_date in dates
             and e.trade_date < target
+            and e.trade_date >= source.monitor_start_date
             and e.level is RegulationRuleLevel.ABNORMAL
             and e.kind is RegulationRuleKind.CUMULATIVE_DEVIATION
             and e.direction is rule.direction
@@ -134,7 +134,7 @@ def _threshold(
             return replace(empty, missing_reason="missing_ordinary_price_rule")
         rule = ordinary
     assert rule.window_days is not None and rule.threshold_pct is not None
-    reset = REGULATION_RULES_EFFECTIVE_FROM
+    reset = source.monitor_start_date
     if state:
         reset = max(reset, state.serious_reset_date or reset)
         if rule.level is RegulationRuleLevel.ABNORMAL:

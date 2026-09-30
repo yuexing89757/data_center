@@ -6,7 +6,6 @@ from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
 from zoneinfo import ZoneInfo
 
 from market_data_center.domain.regulation import (
-    REGULATION_RULES_EFFECTIVE_FROM,
     AnnouncedRegulationState,
     CalculatedEvent,
     CalculatedRegulationState,
@@ -42,7 +41,7 @@ _SCENARIOS = {
     RegulationScenarioCode.INDEX_UP_2: Decimal("0.02"),
 }
 _DISCLAIMER = "本结果仅为公开规则条件测算,不构成价格预测;实际认定及监管措施以交易所公开信息为准。"
-REGULATION_MONITOR_VERSION = "regulation-monitor.v2"
+REGULATION_MONITOR_VERSION = "regulation-monitor.v3"
 
 
 @dataclass(frozen=True, slots=True)
@@ -951,8 +950,9 @@ def calculate_monitor_day(
     source: RegulationCalculationInput, states: tuple[MonitorState, ...]
 ) -> MonitorDay:
     """Advance one verified close; all state and simulated events are immutable inputs/outputs."""
-    if source.algorithm_version != REGULATION_MONITOR_VERSION:
+    if source.algorithm_version not in ("regulation-monitor.v2", REGULATION_MONITOR_VERSION):
         raise ValueError("monitor calculation requires its own algorithm version")
+    start = source.monitor_start_date
     previous = max((d for d in source.trading_dates if d < source.trade_date), default=None)
     by_symbol = {state.symbol: state for state in states}
     if len(by_symbol) != len(states):
@@ -968,7 +968,7 @@ def calculate_monitor_day(
     for original in source.candidates:
         state = by_symbol.get(original.symbol)
         reasons = list(state.missing_reasons if state else ())
-        if (state is None and source.trade_date != REGULATION_RULES_EFFECTIVE_FROM) or (
+        if (state is None and source.trade_date != start) or (
             state is not None and not state.complete
         ):
             reasons.append("missing_continuous_checkpoint")
@@ -983,16 +983,11 @@ def calculate_monitor_day(
             original,
             events=(),
             abnormal_reset_date=max(
-                REGULATION_RULES_EFFECTIVE_FROM,
-                state.abnormal_reset_date or REGULATION_RULES_EFFECTIVE_FROM
-                if state
-                else REGULATION_RULES_EFFECTIVE_FROM,
-                state.serious_reset_date or REGULATION_RULES_EFFECTIVE_FROM
-                if state
-                else REGULATION_RULES_EFFECTIVE_FROM,
+                start,
+                state.abnormal_reset_date or start if state else start,
+                state.serious_reset_date or start if state else start,
             ),
-            serious_reset_date=(state.serious_reset_date if state else None)
-            or REGULATION_RULES_EFFECTIVE_FROM,
+            serious_reset_date=(state.serious_reset_date if state else None) or start,
         )
         rules = tuple(r for r in source.active_rules if r.segment is candidate.segment)
         evaluated: dict[str, _EvaluatedRule] = {}
@@ -1026,7 +1021,11 @@ def calculate_monitor_day(
         ordinary = _monitor_events(
             source, candidate.symbol, rules, evaluated, RegulationRuleLevel.ABNORMAL
         )
-        history = tuple(e for e in (state.events if state else ()) if e.trade_date in recent_dates)
+        history = tuple(
+            e
+            for e in (state.events if state else ())
+            if e.trade_date in recent_dates and e.trade_date >= start
+        )
         for rule in rules:
             if rule.kind is not RegulationRuleKind.EVENT_COUNT:
                 continue
@@ -1072,11 +1071,7 @@ def calculate_monitor_day(
             set(
                 state.turnover_missing_dates
                 if state and state.turnover_missing_dates is not None
-                else (
-                    d
-                    for d in recent_dates
-                    if REGULATION_RULES_EFFECTIVE_FROM <= d < source.trade_date
-                )
+                else (d for d in recent_dates if start <= d < source.trade_date)
             )
             & recent_dates
         )

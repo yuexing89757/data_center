@@ -29,6 +29,68 @@ from market_data_center.regulation_monitor_codec import monitor_input_hash
 pytestmark = pytest.mark.integration
 
 
+def test_period_genesis_and_checkpoints_do_not_mix_versions_or_origins(regulation_database):  # noqa: F811
+    from test_regulation_monitor_period import NEXT, START, first_day_source
+
+    engine = regulation_database
+    persistence = PostgreSQLRegulationPersistence(engine)
+    src = replace(
+        first_day_source(), algorithm_version="regulation-monitor.v3", monitor_start_date=START
+    )
+    result = calculate_monitor_day(src, ())
+    run = _run(
+        calculation_id=uuid4(),
+        trade_date=START,
+        next_trade_date=NEXT,
+        algorithm_version=src.algorithm_version,
+        input_hash=monitor_input_hash(src, (), None),
+        coverage=result.output.coverage,
+    )
+    persistence.start_calculation(
+        replace(run, status=RegulationRunStatus.RUNNING, completed_at=None), ()
+    )
+    persistence.publish_monitor_day(
+        run, src, result, parent_calculation_id=None, previous_states=()
+    )
+    assert (
+        persistence.load_monitor_checkpoint(
+            NEXT, algorithm_version=src.algorithm_version, monitor_start_date=START
+        )[0]
+        == run.calculation_id
+    )
+    for version, origin in [
+        ("regulation-monitor.v2", START),
+        (src.algorithm_version, date(2026, 8, 31)),
+    ]:
+        assert persistence.load_monitor_checkpoint(
+            NEXT, algorithm_version=version, monitor_start_date=origin
+        ) == (None, ())
+    with engine.connect() as c:
+        raw = c.execute(
+            text("""select api_v1.query_regulation_monitor_inputs(
+            '2026-09-01',:id,array['600000'])"""),
+            {"id": run.calculation_id},
+        ).scalar_one()
+        assert raw["monitor_start_date"] == "2026-09-01"
+        assert raw["count_scope_label"] == "本期内次数(最近10个交易日)"
+        assert raw["source"]["monitor_start_date"] == "2026-09-01"
+        assert raw["algorithm_version"] == "regulation-monitor.v3"
+        with c.begin_nested() as check:
+            c.execute(
+                text("""update regulation.monitor_context set source=
+                jsonb_set(source,'{monitor_start_date}','"2026-08-31"'::jsonb)
+                where calculation_id=:id"""),
+                {"id": run.calculation_id},
+            )
+            assert (
+                c.execute(
+                    text("select regulation.monitor_chain_current(:id)"), {"id": run.calculation_id}
+                ).scalar_one()
+                is False
+            )
+            check.rollback()
+
+
 def test_monitor_limits_are_rejected_with_parameter_error(database_engine):  # noqa: F811
     with database_engine.begin() as connection:
         with pytest.raises(DBAPIError) as error:
@@ -125,7 +187,9 @@ def test_publish_read_isolation_nulls_and_legacy_version_routing(regulation_data
     persistence.publish_monitor_day(
         run, src, result, parent_calculation_id=None, previous_states=()
     )
-    parent, states = persistence.load_monitor_checkpoint(next_day)
+    parent, states = persistence.load_monitor_checkpoint(
+        next_day, algorithm_version=src.algorithm_version
+    )
     assert parent == run.calculation_id
     assert states == result.states
     with engine.connect() as c:
@@ -332,13 +396,20 @@ def test_publish_read_isolation_nulls_and_legacy_version_routing(regulation_data
     persistence.publish_monitor_day(
         run2, day2, result2, parent_calculation_id=run.calculation_id, previous_states=result.states
     )
-    assert persistence.load_monitor_checkpoint(day2.next_trade_date)[0] == run2.calculation_id
+    assert (
+        persistence.load_monitor_checkpoint(
+            day2.next_trade_date, algorithm_version=src.algorithm_version
+        )[0]
+        == run2.calculation_id
+    )
     correction = replace(bad_run, completed_at=run.completed_at + timedelta(minutes=1))
     persistence.publish_monitor_day(
         correction, changed, result, parent_calculation_id=None, previous_states=()
     )
     with pytest.raises(ValueError, match="superseded"):
-        persistence.load_monitor_checkpoint(day2.next_trade_date)
+        persistence.load_monitor_checkpoint(
+            day2.next_trade_date, algorithm_version=src.algorithm_version
+        )
     with engine.connect() as c, pytest.raises(DBAPIError) as error:
         c.execute(
             text("select api_v1.query_regulation_monitor_inputs('2026-07-07',:id,array['600000'])"),

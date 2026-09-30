@@ -48,9 +48,11 @@ def monitor_input_hash(
         active_rules=tuple(sorted(source.active_rules, key=lambda r: r.rule_code)),
     )
     source_payload: object = stable_source
-    if source.algorithm_version == "regulation-monitor.v1":
+    if source.algorithm_version in ("regulation-monitor.v1", "regulation-monitor.v2"):
         legacy_payload = asdict(stable_source)
-        legacy_payload.pop("st_watermark")
+        legacy_payload.pop("monitor_start_date")
+        if source.algorithm_version == "regulation-monitor.v1":
+            legacy_payload.pop("st_watermark")
         source_payload = legacy_payload
     payload = encode_monitor(
         {

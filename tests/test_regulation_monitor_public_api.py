@@ -35,6 +35,8 @@ def payload():
         "rule_set_version": src.active_rules[0].rule_set_version,
         "completed_at": "2026-07-06T22:30:00+08:00",
         "count_cutoff_date": "2026-07-06",
+        "monitor_start_date": "2026-07-06",
+        "count_scope_label": "本期内次数(最近10个交易日)",
         "official_coverage": "UNKNOWN",
         "official_watermark": "2026-07-06T22:30:00+08:00",
         "coverage": {
@@ -103,6 +105,13 @@ def test_query_uses_frozen_counts_and_conditional_thresholds(monkeypatch):
     assert body["generated_at"] == "2026-07-07 10:00:00"
     assert body["count_cutoff_date"] == "2026-07-06"
     assert "api_v1.query_regulation_monitor_inputs(" in str(connection.execute.call_args.args[0])
+
+
+def test_monitor_response_reports_the_count_period(monkeypatch):
+    client, _ = setup(monkeypatch)
+    body = client.post(URL, headers=HEADERS, json=QUERY).json()
+    assert body["monitor_start_date"] == "2026-07-06"
+    assert body["count_scope_label"] == "本期内次数(最近10个交易日)"
 
 
 @pytest.mark.parametrize("codes", [[], ["1"], ["600000"] * 51])

@@ -30,7 +30,7 @@ class Persistence:
     def load_calculation_source(self, day):
         return self.sources[day]
 
-    def load_monitor_checkpoint(self, day):
+    def load_monitor_checkpoint(self, day, **kwargs):
         return self.checkpoints.get(day, (None, ()))
 
     def find_calculation(self, day, input_hash):
@@ -53,7 +53,9 @@ class Persistence:
 
 def service(p):
     return RegulationMonitorService(
-        p, clock=lambda: datetime(2026, 9, 29, 22, 30, tzinfo=ZoneInfo("Asia/Shanghai"))
+        p,
+        clock=lambda: datetime(2026, 9, 29, 22, 30, tzinfo=ZoneInfo("Asia/Shanghai")),
+        monitor_start_date=DAYS[0],
     )
 
 

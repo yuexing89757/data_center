@@ -594,7 +594,7 @@
     "/rpc/query_regulation_monitor_candidates": {
       "post": {
         "operationId": "query_regulation_monitor_candidates",
-        "summary": "Read the frozen close observation list; cursor binds date, search and batch.",
+        "summary": "Read the frozen close observation list with its count period; cursor binds date, search and batch.",
         "security": [
           {
             "bearerAuth": []
@@ -671,7 +671,7 @@
     "/rpc/query_regulation_monitor_inputs": {
       "post": {
         "operationId": "query_regulation_monitor_inputs",
-        "summary": "Read at most 50 frozen monitor inputs plus timestamped known-reference guards; no writes.",
+        "summary": "Read at most 50 frozen monitor inputs with their count period and timestamped known-reference guards; no writes.",
         "security": [
           {
             "bearerAuth": []
@@ -2029,6 +2029,17 @@
             "title": "Count Cutoff Date",
             "type": "string"
           },
+          "monitor_start_date": {
+            "description": "本期测算起算交易日, 此前事件不计入本期次数",
+            "format": "date",
+            "title": "Monitor Start Date",
+            "type": "string"
+          },
+          "count_scope_label": {
+            "description": "计数范围说明, 本期内仍按最近10个交易日统计",
+            "title": "Count Scope Label",
+            "type": "string"
+          },
           "coverage": {
             "$ref": "#/components/schemas/RegulationCoverage"
           },
@@ -2101,6 +2112,8 @@
           "algorithm_version",
           "rule_set_version",
           "count_cutoff_date",
+          "monitor_start_date",
+          "count_scope_label",
           "coverage",
           "requested_count",
           "found_count",
@@ -2542,6 +2555,17 @@
             },
             "title": "Reset Trading Dates",
             "type": "array"
+          },
+          "st_watermark": {
+            "default": "none",
+            "title": "St Watermark",
+            "type": "string"
+          },
+          "monitor_start_date": {
+            "default": "2026-07-06",
+            "format": "date",
+            "title": "Monitor Start Date",
+            "type": "string"
           }
         },
         "required": [
@@ -3618,6 +3642,15 @@
             "title": "Count Cutoff Date",
             "type": "string"
           },
+          "monitor_start_date": {
+            "format": "date",
+            "title": "Monitor Start Date",
+            "type": "string"
+          },
+          "count_scope_label": {
+            "title": "Count Scope Label",
+            "type": "string"
+          },
           "official_coverage": {
             "title": "Official Coverage",
             "type": "string"
@@ -3679,6 +3712,8 @@
           "rule_set_version",
           "completed_at",
           "count_cutoff_date",
+          "monitor_start_date",
+          "count_scope_label",
           "official_coverage",
           "official_watermark",
           "reference_checked_at",

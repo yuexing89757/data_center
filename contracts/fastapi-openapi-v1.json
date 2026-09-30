@@ -8172,6 +8172,11 @@
             "title": "Count Cutoff Date",
             "type": "string"
           },
+          "count_scope_label": {
+            "description": "计数范围说明, 本期内仍按最近10个交易日统计",
+            "title": "Count Scope Label",
+            "type": "string"
+          },
           "coverage": {
             "$ref": "#/components/schemas/RegulationCoverage",
             "description": "所选计算版本的证券覆盖统计。"
@@ -8202,6 +8207,12 @@
             "minimum": 0.0,
             "title": "Missing Count",
             "type": "integer"
+          },
+          "monitor_start_date": {
+            "description": "本期测算起算交易日, 此前事件不计入本期次数",
+            "format": "date",
+            "title": "Monitor Start Date",
+            "type": "string"
           },
           "next_cursor": {
             "anyOf": [
@@ -8261,6 +8272,8 @@
           "rule_set_version",
           "generated_at",
           "count_cutoff_date",
+          "monitor_start_date",
+          "count_scope_label",
           "coverage",
           "requested_count",
           "found_count",
@@ -8415,6 +8428,11 @@
             "title": "Count Cutoff Date",
             "type": "string"
           },
+          "count_scope_label": {
+            "description": "计数范围说明, 本期内仍按最近10个交易日统计",
+            "title": "Count Scope Label",
+            "type": "string"
+          },
           "coverage": {
             "$ref": "#/components/schemas/RegulationCoverage",
             "description": "所选计算版本的证券覆盖统计。"
@@ -8459,6 +8477,12 @@
             "minimum": 0.0,
             "title": "Missing Count",
             "type": "integer"
+          },
+          "monitor_start_date": {
+            "description": "本期测算起算交易日, 此前事件不计入本期次数",
+            "format": "date",
+            "title": "Monitor Start Date",
+            "type": "string"
           },
           "next_trade_date": {
             "description": "查询日期之后的下一交易日。",
@@ -8558,6 +8582,8 @@
           "rule_set_version",
           "generated_at",
           "count_cutoff_date",
+          "monitor_start_date",
+          "count_scope_label",
           "coverage",
           "requested_count",
           "found_count",

@@ -11,6 +11,7 @@ from market_data_center.domain.records import Exchange
 from market_data_center.domain.stock_pool import DailyPriceLimit
 
 REGULATION_RULES_EFFECTIVE_FROM = date(2026, 7, 6)
+REGULATION_MONITOR_START_DATE = date(2026, 9, 1)
 _STANDARD_SYMBOL = re.compile(r"^(SSE|SZSE):[0-9]{6}$")
 _LOWERCASE_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
@@ -422,8 +423,11 @@ class RegulationCalculationInput:
     event_watermark: datetime
     reset_trading_dates: tuple[date, ...] = ()
     st_watermark: str = "none"
+    monitor_start_date: date = REGULATION_RULES_EFFECTIVE_FROM
 
     def __post_init__(self) -> None:
+        if not REGULATION_RULES_EFFECTIVE_FROM <= self.monitor_start_date <= self.trade_date:
+            raise ValueError("monitor start date must be within the applicable calculation period")
         if self.next_trade_date <= self.trade_date:
             raise ValueError("next trade date must follow trade date")
         for field_name in (
