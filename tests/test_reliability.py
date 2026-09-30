@@ -35,6 +35,7 @@ from market_data_center.domain import (
 )
 from market_data_center.domain.dragon_tiger import DragonTigerSourceFinding
 from market_data_center.domain.ingestion import ReplaySource
+from market_data_center.domain.records import RegulationStSnapshotRecord
 from market_data_center.providers.contracts import ProviderError
 from market_data_center.raw_store import LocalRawStore, RawIntegrityError
 from market_data_center.reliability import (
@@ -124,6 +125,9 @@ class StubReliabilityPersistence:
                 Sequence[QualityResult],
             ]
         ] = []
+        self.regulation_st_commits: list[
+            tuple[IngestionRun, RawManifest | None, RegulationStSnapshotRecord]
+        ] = []
         self.stale_ids = [UUID("948c4e5b-97a1-4706-a1de-09c14670108a")]
         self.recovery_args: tuple[datetime, datetime, str] | None = None
         self.dragon_tiger_stock_queries: list[tuple[set[str], date]] = []
@@ -136,6 +140,14 @@ class StubReliabilityPersistence:
     def replay_source(self, ingestion_id: UUID) -> ReplaySource:
         assert ingestion_id == self.source.source_ingestion_id
         return self.source
+
+    def commit_regulation_st_snapshot_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest | None,
+        record: RegulationStSnapshotRecord,
+    ) -> None:
+        self.regulation_st_commits.append((run, manifest, record))
 
     def daily_bar_replay_sources(
         self, symbol: str, start_date: date, end_date: date
@@ -1089,6 +1101,49 @@ def test_raw_replay_republishes_verified_sse_regulation_events(tmp_path: Path) -
     assert manifest is None
     assert [record.symbol for record in records] == ["SSE:600000"]
     assert quality == ()
+
+
+def test_raw_replay_republishes_st_day_without_copying_raw(tmp_path: Path) -> None:
+    store = LocalRawStore(tmp_path)
+    source = _source(
+        store,
+        provider=ProviderCode.TUSHARE,
+        dataset=DatasetCode.REGULATION_ST_SNAPSHOT,
+        schema_version="tushare.regulation_st_snapshot.v1",
+        rows=[
+            {
+                "ts_code": "600000.SH",
+                "name": "*ST测试",
+                "trade_date": "20260729",
+                "type": "ST",
+                "type_name": "风险警示板",
+            },
+            {
+                "ts_code": "000001.SZ",
+                "name": "ST样例",
+                "trade_date": "20260729",
+                "type": "ST",
+                "type_name": "风险警示板",
+            },
+        ],
+        request_params={"trade_date": "20260729"},
+    )
+    persistence = StubReliabilityPersistence(source)
+
+    summary = RawReplayService(
+        raw_store=store,
+        persistence=persistence,
+        clock=lambda: NOW,
+        uuid_factory=lambda: REPLAY_RUN_ID,
+    ).replay(SOURCE_RUN_ID)
+
+    assert summary.status == "succeeded"
+    assert summary.fetched_rows == 2
+    assert summary.accepted_rows == 1
+    [(run, manifest, record)] = persistence.regulation_st_commits
+    assert run.replayed_from_raw_id == RAW_ID
+    assert manifest is None
+    assert record.symbols == ("SSE:600000", "SZSE:000001")
 
 
 def _dragon_tiger_source(

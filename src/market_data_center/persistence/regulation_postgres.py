@@ -190,6 +190,13 @@ order by security.symbol
                         },
                     ).mappings()
                 )
+                st_rows = tuple(
+                    connection.execute(
+                        text("""select symbols, ingestion_id from regulation.st_day_snapshot
+                                where trade_date = :trade_date"""),
+                        {"trade_date": trade_date},
+                    ).mappings()
+                )
 
         return _assemble_source(
             trade_date=trade_date,
@@ -201,6 +208,7 @@ order by security.symbol
             indicators=indicators,
             event_rows=event_rows,
             capital_rows=capital_rows,
+            st_snapshot=st_rows[0] if st_rows else None,
             benchmark_by_segment=benchmark_by_segment,
         )
 
@@ -459,15 +467,27 @@ order by rule_code
             ).scalar_one_or_none()
             if running != run.input_hash:
                 raise ValueError("matching running monitor batch was not found")
+            current_st_id = connection.execute(
+                text("""select ingestion_id from regulation.st_day_snapshot
+                        where trade_date=:day for share"""),
+                {"day": source.trade_date},
+            ).scalar_one_or_none()
+            current_st_watermark = (
+                _watermark(({"ingestion_id": current_st_id},)) if current_st_id else "none"
+            )
+            if current_st_watermark != source.st_watermark:
+                raise ValueError("ST snapshot changed; reload monitor inputs")
             connection.execute(
                 text("""
-                insert into regulation.monitor_context(calculation_id,parent_calculation_id,source)
-                values (:id,:parent,cast(:source as jsonb))
+                insert into regulation.monitor_context
+                    (calculation_id,parent_calculation_id,source,st_watermark)
+                values (:id,:parent,cast(:source as jsonb),:st_watermark)
             """),
                 {
                     "id": run.calculation_id,
                     "parent": parent,
                     "source": encode_monitor(replace(source, candidates=())),
+                    "st_watermark": source.st_watermark,
                 },
             )
             names = dict(
@@ -558,7 +578,7 @@ def _monitor_checkpoint(
         text("""
         select r.calculation_id from regulation.calculation_run r
         join regulation.monitor_context m using(calculation_id)
-        where r.algorithm_version='regulation-monitor.v1'
+        where r.algorithm_version='regulation-monitor.v2'
           and r.status in ('SUCCEEDED','PARTIAL') and r.completed_at is not null
           and r.next_trade_date=:day
           and r.trade_date=(select max(trade_date) from core.trading_calendar
@@ -689,6 +709,7 @@ def _assemble_source(
     indicators: tuple[RowMapping | dict[str, object], ...],
     event_rows: tuple[RowMapping | dict[str, object], ...],
     capital_rows: tuple[RowMapping | dict[str, object], ...],
+    st_snapshot: RowMapping | dict[str, object] | None,
     benchmark_by_segment: dict[RegulationSegment, str],
 ) -> RegulationCalculationInput:
     bars_by_key = {(str(row["symbol"]), row["trade_date"]): row for row in bars}
@@ -714,9 +735,6 @@ def _assemble_source(
             target_close,
             tuple(capital_by_key.get((symbol, next_trade_date), ())),
         )
-        name = security["name"]
-        is_st = bool(target_bar["is_st"]) if target_bar is not None else False
-        normalized_name = str(name).upper().replace(" ", "") if name is not None else ""
         ipo_date = security["ipo_date"]
         listing_days = (
             sum(ipo_date <= day <= next_trade_date for day in trading_dates)  # type: ignore[operator]
@@ -726,10 +744,10 @@ def _assemble_source(
         if str(security["status"]) != "listed":
             applicability = RegulationApplicability.NOT_APPLICABLE
             reason = "security_not_listed"
-        elif name is None:
+        elif st_snapshot is None:
             applicability = RegulationApplicability.INSUFFICIENT_DATA
-            reason = "missing_security_name_history"
-        elif is_st or normalized_name.startswith(("ST", "*ST")):
+            reason = "missing_regulation_st_snapshot"
+        elif symbol in cast(list[str], st_snapshot["symbols"]):
             applicability = RegulationApplicability.NOT_APPLICABLE
             reason = "st_security_excluded"
         elif listing_days <= 5:
@@ -849,7 +867,10 @@ def _assemble_source(
         trading_dates=trading_dates,
         candidates=tuple(sorted(candidates, key=lambda item: item.symbol)),
         rule_set_hash=hashlib.sha256(rule_payload.encode()).hexdigest(),
-        market_watermark=_watermark((*bars, *indicators)),
+        market_watermark=_watermark(
+            (*bars, *indicators, st_snapshot) if st_snapshot is not None else (*bars, *indicators)
+        ),
+        st_watermark=_watermark((st_snapshot,)) if st_snapshot is not None else "none",
         capital_watermark=_watermark(capital_rows),
         event_watermark=event_watermark,
         reset_trading_dates=tuple(

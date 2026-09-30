@@ -19,7 +19,10 @@ from test_regulation_persistence import _run
 from test_regulation_query_postgres import regulation_database  # noqa: F401
 
 from market_data_center.domain.regulation import RegulationDirection, RegulationRunStatus
-from market_data_center.persistence.regulation_postgres import PostgreSQLRegulationPersistence
+from market_data_center.persistence.regulation_postgres import (
+    PostgreSQLRegulationPersistence,
+    _watermark,
+)
 from market_data_center.regulation_calculator import calculate_monitor_day, calculate_regulation
 from market_data_center.regulation_monitor_codec import monitor_input_hash
 
@@ -55,6 +58,7 @@ def test_api_role_cannot_access_or_write_monitor_tables(database_engine):  # noq
 def test_publish_read_isolation_nulls_and_legacy_version_routing(regulation_database):  # noqa: F811
     engine = regulation_database
     persistence = PostgreSQLRegulationPersistence(engine)
+    st_ingestion_ids = {}
     with engine.begin() as c:
         c.execute(
             text("""insert into core.trading_calendar
@@ -63,6 +67,22 @@ def test_publish_read_isolation_nulls_and_legacy_version_routing(regulation_data
                 (select ingestion_id from ingestion.ingestion_run limit 1)
             from generate_series(date '2026-07-06',date '2026-07-08',interval '1 day') d""")
         )
+        for st_day in (date(2026, 7, 7), date(2026, 7, 8)):
+            st_id = uuid4()
+            st_ingestion_ids[st_day] = st_id
+            c.execute(
+                text("""insert into ingestion.ingestion_run
+                    (ingestion_id,provider_code,dataset_code,status,requested_at,started_at,finished_at)
+                    values (:id,'tushare','regulation_st_snapshot','succeeded',
+                        now(),now(),now())"""),
+                {"id": st_id},
+            )
+            c.execute(
+                text("""insert into regulation.st_day_snapshot
+                    (trade_date,symbols,symbol_count,source_code,ingestion_id)
+                    values (:day,'["SSE:600004"]'::jsonb,1,'tushare',:id)"""),
+                {"day": st_day, "id": st_id},
+            )
     day, next_day = date(2026, 7, 6), date(2026, 7, 7)
     candidate = _candidate((_daily(day, ".1", "-.1"),))
     candidate = replace(
@@ -87,7 +107,7 @@ def test_publish_read_isolation_nulls_and_legacy_version_routing(regulation_data
     )
     persistence.publish_calculation(old_run, old_output)
     second = replace(candidate, symbol="SSE:600001", next_day_price_limit=None)
-    src = replace(legacy, algorithm_version="regulation-monitor.v1", candidates=(candidate, second))
+    src = replace(legacy, algorithm_version="regulation-monitor.v2", candidates=(candidate, second))
     result = calculate_monitor_day(src, ())
     run = _run(
         calculation_id=uuid4(),
@@ -126,6 +146,30 @@ def test_publish_read_isolation_nulls_and_legacy_version_routing(regulation_data
         assert inputs["items"][0]["payload"]["state"]["events"][0]["direction"] == "UP"
         assert inputs["items"][1]["payload"] is None
         assert inputs["items"][0]["next_day_reference_safe"] is True
+        assert inputs["items"][0]["next_day_st_verified"] is True
+        with c.begin_nested() as check:
+            c.execute(text("delete from regulation.st_day_snapshot where trade_date='2026-07-08'"))
+            conditional = c.execute(
+                text("""select api_v1.query_regulation_monitor_inputs(
+                    '2026-07-07',:id,array['600000'])"""),
+                {"id": run.calculation_id},
+            ).scalar_one()
+            assert conditional["items"][0]["next_day_reference_safe"] is True
+            assert conditional["items"][0]["next_day_st_verified"] is False
+            check.rollback()
+        with c.begin_nested() as check:
+            c.execute(
+                text("""update regulation.st_day_snapshot
+                    set symbols='["SSE:600000"]'::jsonb where trade_date='2026-07-08'""")
+            )
+            known_st = c.execute(
+                text("""select api_v1.query_regulation_monitor_inputs(
+                    '2026-07-07',:id,array['600000'])"""),
+                {"id": run.calculation_id},
+            ).scalar_one()
+            assert known_st["items"][0]["next_day_reference_safe"] is False
+            assert known_st["items"][0]["next_day_st_verified"] is True
+            check.rollback()
         assert inputs["items"][0]["target_applicability"] == "INSUFFICIENT_DATA"
         assert inputs["items"][0]["target_applicability_reason"] == "listing_calendar_unverified"
         with c.begin_nested() as check:
@@ -141,8 +185,33 @@ def test_publish_read_isolation_nulls_and_legacy_version_routing(regulation_data
                 ),
                 {"id": run.calculation_id},
             ).scalar_one()
+            assert (
+                changed["items"][0]["target_applicability_reason"] == "listing_calendar_unverified"
+            )
+            c.execute(
+                text("""update regulation.st_day_snapshot
+                    set symbols='["SSE:600000"]'::jsonb where trade_date='2026-07-07'""")
+            )
+            changed = c.execute(
+                text(
+                    "select api_v1.query_regulation_monitor_inputs("
+                    "'2026-07-07',:id,array['600000'])"
+                ),
+                {"id": run.calculation_id},
+            ).scalar_one()
             assert changed["items"][0]["target_applicability"] == "NOT_APPLICABLE"
             assert changed["items"][0]["target_applicability_reason"] == "st_security_excluded"
+            c.execute(text("delete from regulation.st_day_snapshot where trade_date='2026-07-07'"))
+            missing_st = c.execute(
+                text(
+                    "select api_v1.query_regulation_monitor_inputs("
+                    "'2026-07-07',:id,array['600000'])"
+                ),
+                {"id": run.calculation_id},
+            ).scalar_one()
+            assert missing_st["items"][0]["target_applicability_reason"] == (
+                "missing_regulation_st_snapshot"
+            )
             check.rollback()
         assert inputs["items"][1]["next_day_reference_safe"] is False
         assert inputs["reference_checked_at"] is not None
@@ -165,7 +234,6 @@ def test_publish_read_isolation_nulls_and_legacy_version_routing(regulation_data
             ).scalar_one()
             == 2
         )
-
     # Pagination is tied to a single date/batch/search and cannot be replayed elsewhere.
     with engine.connect() as c:
         page = c.execute(
@@ -238,6 +306,7 @@ def test_publish_read_isolation_nulls_and_legacy_version_routing(regulation_data
         src,
         trade_date=next_day,
         next_trade_date=date(2026, 7, 8),
+        st_watermark=_watermark(({"ingestion_id": st_ingestion_ids[next_day]},)),
         trading_dates=(day, next_day),
         candidates=tuple(
             replace(
@@ -276,3 +345,24 @@ def test_publish_read_isolation_nulls_and_legacy_version_routing(regulation_data
             {"id": run2.calculation_id},
         )
     assert error.value.orig.sqlstate == "P0004"
+    with engine.begin() as c:
+        corrected_st_id = uuid4()
+        c.execute(
+            text("""insert into ingestion.ingestion_run
+                (ingestion_id,provider_code,dataset_code,status,requested_at,started_at,finished_at)
+                values (:id,'tushare','regulation_st_snapshot','succeeded',now(),now(),now())"""),
+            {"id": corrected_st_id},
+        )
+        c.execute(
+            text("""insert into regulation.st_day_snapshot
+                (trade_date,symbols,symbol_count,source_code,ingestion_id)
+                values ('2026-07-06','["SSE:600004"]'::jsonb,1,'tushare',:id)"""),
+            {"id": corrected_st_id},
+        )
+    with engine.connect() as c:
+        assert (
+            c.execute(
+                text("select regulation.monitor_chain_current(:id)"), {"id": run.calculation_id}
+            ).scalar_one()
+            is False
+        )

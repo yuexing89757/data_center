@@ -47,9 +47,14 @@ def monitor_input_hash(
         candidates=tuple(sorted(source.candidates, key=lambda c: c.symbol)),
         active_rules=tuple(sorted(source.active_rules, key=lambda r: r.rule_code)),
     )
+    source_payload: object = stable_source
+    if source.algorithm_version == "regulation-monitor.v1":
+        legacy_payload = asdict(stable_source)
+        legacy_payload.pop("st_watermark")
+        source_payload = legacy_payload
     payload = encode_monitor(
         {
-            "source": stable_source,
+            "source": source_payload,
             "states": tuple(sorted(states, key=lambda s: s.symbol)),
             "parent_calculation_id": parent_id,
         }

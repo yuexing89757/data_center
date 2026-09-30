@@ -9076,6 +9076,7 @@ def test_regulation_service_publishes_calculation_in_disposable_database(
 ) -> None:
     market_ingestion_id = uuid4()
     indicator_ingestion_id = uuid4()
+    st_ingestion_id = uuid4()
     trading_dates = (
         date(2026, 8, 31),
         date(2026, 9, 1),
@@ -9096,11 +9097,13 @@ insert into ingestion.ingestion_run (
     requested_at, started_at, finished_at
 ) values
     (:market_id, 'baostock', 'daily_bar', 'succeeded', :now, :now, :now),
-    (:indicator_id, 'tushare', 'stock_daily_indicator', 'succeeded', :now, :now, :now)
+    (:indicator_id, 'tushare', 'stock_daily_indicator', 'succeeded', :now, :now, :now),
+    (:st_id, 'tushare', 'regulation_st_snapshot', 'succeeded', :now, :now, :now)
 """),
             {
                 "market_id": market_ingestion_id,
                 "indicator_id": indicator_ingestion_id,
+                "st_id": st_ingestion_id,
                 "now": datetime(2026, 9, 2, 22, 30, tzinfo=UTC),
             },
         )
@@ -9202,6 +9205,12 @@ insert into core.stock_daily_indicator (
                 {"trade_date": day, "ingestion_id": indicator_ingestion_id}
                 for day in trading_dates[:-1]
             ],
+        )
+        connection.execute(
+            text("""insert into regulation.st_day_snapshot
+                (trade_date,symbols,symbol_count,source_code,ingestion_id)
+                values (date '2026-09-02','["SSE:600001"]'::jsonb,1,'tushare',:id)"""),
+            {"id": st_ingestion_id},
         )
 
     summary = RegulationService(

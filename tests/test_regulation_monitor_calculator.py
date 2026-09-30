@@ -1,8 +1,10 @@
 """Calculated close events are independent of official announcement records."""
 
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import date, timedelta
 from decimal import Decimal
+from hashlib import sha256
+from uuid import uuid4
 
 import pytest
 from test_regulation_calculator import _candidate, _daily, _event, _input, _rule
@@ -29,6 +31,7 @@ from market_data_center.domain.regulation import (
     RegulationSegment as Segment,
 )
 from market_data_center.regulation_calculator import calculate_monitor_day
+from market_data_center.regulation_monitor_codec import encode_monitor, monitor_input_hash
 
 START = date(2026, 7, 6)
 DAYS = tuple(
@@ -66,13 +69,30 @@ def source(returns, rules=None, *, days=None, turnovers=None, gem=False):
         trade_date=days[-1],
         next_trade_date=next(day for day in DAYS if day > days[-1]),
         trading_dates=tuple(day for day in DAYS if day <= days[-1]),
-        algorithm_version="regulation-monitor.v1",
+        algorithm_version="regulation-monitor.v2",
     )
 
 
 def checkpoint(src, events=(), **changes):
     previous = max(day for day in src.trading_dates if day < src.trade_date)
     return MonitorState(src.candidates[0].symbol, previous, True, None, None, events, **changes)
+
+
+def test_st_snapshot_correction_changes_monitor_input_identity() -> None:
+    original = source([Decimal("0.1")])
+    first = replace(original, st_watermark=uuid4().hex)
+    corrected = replace(first, st_watermark=uuid4().hex)
+    assert monitor_input_hash(first, (), None) != monitor_input_hash(corrected, (), None)
+
+
+def test_old_monitor_hash_does_not_gain_new_st_field() -> None:
+    old = replace(source([Decimal("0.1")]), algorithm_version="regulation-monitor.v1")
+    payload = asdict(old)
+    payload.pop("st_watermark")
+    expected = sha256(
+        encode_monitor({"source": payload, "states": (), "parent_calculation_id": None}).encode()
+    ).hexdigest()
+    assert monitor_input_hash(old, (), None) == expected
 
 
 def price_event(day, direction=Direction.UP, level=Level.ABNORMAL, kind=Kind.CUMULATIVE_DEVIATION):

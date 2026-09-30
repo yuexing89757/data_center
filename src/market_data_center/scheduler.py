@@ -802,10 +802,20 @@ def run_regulation_daily_calculation_job() -> None:
         )
         try:
             if facts.is_trading_day(trade_date):
+                with create_provider("tushare") as provider:
+                    execution.step(
+                        "collect_regulation_st_snapshot",
+                        1,
+                        lambda: IngestionPipeline(
+                            provider=provider,
+                            persistence=facts,
+                            raw_store=LocalRawStore(settings.raw_data_root),
+                        ).ingest_regulation_st_snapshot(trade_date),
+                    )
                 with create_provider("baostock") as provider:
                     execution.step(
                         "collect_regulation_benchmarks",
-                        1,
+                        2,
                         lambda: RegulationBenchmarkService(
                             IngestionPipeline(
                                 provider=provider,
@@ -817,7 +827,7 @@ def run_regulation_daily_calculation_job() -> None:
                     )
                 execution.step(
                     "calculate_regulation_warnings",
-                    2,
+                    3,
                     lambda: RegulationService(
                         PostgreSQLRegulationPersistence(engine),
                         clock=lambda: datetime.now(UTC),
@@ -825,16 +835,17 @@ def run_regulation_daily_calculation_job() -> None:
                 )
                 execution.step(
                     "calculate_regulation_monitor",
-                    3,
+                    4,
                     lambda: RegulationMonitorService(
                         PostgreSQLRegulationPersistence(engine),
                         clock=lambda: datetime.now(UTC),
                     ).calculate(trade_date),
                 )
             else:
-                execution.step("collect_regulation_benchmarks", 1, lambda: 0)
-                execution.step("calculate_regulation_warnings", 2, lambda: 0)
-                execution.step("calculate_regulation_monitor", 3, lambda: 0)
+                execution.step("collect_regulation_st_snapshot", 1, lambda: 0)
+                execution.step("collect_regulation_benchmarks", 2, lambda: 0)
+                execution.step("calculate_regulation_warnings", 3, lambda: 0)
+                execution.step("calculate_regulation_monitor", 4, lambda: 0)
         except BaseException as error:
             execution.fail(error)
             raise

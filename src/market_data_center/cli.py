@@ -433,6 +433,29 @@ def main() -> None:
         print(dumps(asdict(closing_high_summary), default=str, sort_keys=True))
         return
 
+    if args.dataset == "regulation-st-snapshot":
+        trade_date = _validate_regulation_calculation_date(
+            args, today=datetime.now(SHANGHAI_TIME_ZONE).date()
+        )
+        if not persistence.is_trading_day(trade_date):
+            raise ValueError("ST snapshot requires a trading date")
+        with create_provider("tushare") as provider:
+            st_run = IngestionPipeline(
+                provider=provider, persistence=persistence, raw_store=raw_store
+            ).ingest_regulation_st_snapshot(trade_date)
+        print(
+            dumps(
+                {
+                    "trade_date": trade_date.isoformat(),
+                    "ingestion_id": str(st_run.ingestion_id),
+                    "status": st_run.status.value,
+                    "fetched_rows": st_run.fetched_rows,
+                },
+                sort_keys=True,
+            )
+        )
+        return
+
     if args.dataset == "regulation-calculate":
         trade_date = _validate_regulation_calculation_date(
             args, today=datetime.now(SHANGHAI_TIME_ZONE).date()
@@ -1878,6 +1901,11 @@ def _parser() -> ArgumentParser:
         help="idempotently build one exact-date immutable 120-session closing-high snapshot",
     )
     closing_highs.add_argument("--trade-date", required=True, help="exact YYYY-MM-DD")
+
+    regulation_st = subparsers.add_parser(
+        "regulation-st-snapshot", help="collect one exact trading day's complete Tushare ST set"
+    )
+    regulation_st.add_argument("--trade-date", required=True, help="exact YYYY-MM-DD")
 
     regulation = subparsers.add_parser(
         "regulation-calculate",

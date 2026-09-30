@@ -34,7 +34,7 @@ from market_data_center.domain.regulation import (
 
 _ONE = Decimal(1)
 _HUNDRED = Decimal(100)
-REGULATION_ALGORITHM_VERSION = "regulation-calculator.v2"
+REGULATION_ALGORITHM_VERSION = "regulation-calculator.v3"
 REGULATION_SCENARIO_CONFIG_VERSION = "regulation-scenarios.v1"
 _SCENARIOS = {
     RegulationScenarioCode.INDEX_DOWN_2: Decimal("-0.02"),
@@ -42,7 +42,7 @@ _SCENARIOS = {
     RegulationScenarioCode.INDEX_UP_2: Decimal("0.02"),
 }
 _DISCLAIMER = "本结果仅为公开规则条件测算,不构成价格预测;实际认定及监管措施以交易所公开信息为准。"
-REGULATION_MONITOR_VERSION = "regulation-monitor.v1"
+REGULATION_MONITOR_VERSION = "regulation-monitor.v2"
 
 
 @dataclass(frozen=True, slots=True)

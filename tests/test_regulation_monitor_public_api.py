@@ -273,6 +273,18 @@ def test_confirmed_close_rechecks_next_reference(monkeypatch):
     assert body["items"][0]["rules"][0]["next_day"]["trigger_price"] is None
 
 
+def test_confirmed_close_keeps_conditional_next_day_range_when_st_unknown(monkeypatch):
+    raw = payload()
+    raw.update(trade_date="2026-07-06", next_trade_date="2026-07-07", is_confirmed_close=True)
+    raw["items"][0]["next_day_st_verified"] = False
+    client, _ = setup(monkeypatch, raw)
+    body = client.post(URL, headers=HEADERS, json={**QUERY, "trade_date": "2026-07-06"}).json()
+    stock = body["items"][0]
+    assert stock["rules"][0]["next_day"]["trigger_price"] is not None
+    assert "next_day_st_unverified" in stock["missing_reasons"]
+    assert body["status"] == "PARTIAL"
+
+
 def test_quote_created_during_request_is_not_future(monkeypatch):
     from datetime import timedelta
 

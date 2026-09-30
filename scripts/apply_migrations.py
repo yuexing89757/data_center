@@ -84,6 +84,7 @@ EXPECTED_TABLES = {
     ("regulation", "rule"),
     ("regulation", "rule_result"),
     ("regulation", "status"),
+    ("regulation", "st_day_snapshot"),
     ("regulation", "warning"),
     ("stock_pool", "calculation_quality"),
     ("stock_pool", "member"),

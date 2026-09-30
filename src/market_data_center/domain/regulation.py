@@ -421,6 +421,7 @@ class RegulationCalculationInput:
     capital_watermark: str
     event_watermark: datetime
     reset_trading_dates: tuple[date, ...] = ()
+    st_watermark: str = "none"
 
     def __post_init__(self) -> None:
         if self.next_trade_date <= self.trade_date:
@@ -430,6 +431,7 @@ class RegulationCalculationInput:
             "scenario_config_version",
             "market_watermark",
             "capital_watermark",
+            "st_watermark",
         ):
             _require_nonblank(getattr(self, field_name), field_name.replace("_", " "))
         if not _LOWERCASE_SHA256.fullmatch(self.rule_set_hash):

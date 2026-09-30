@@ -35,6 +35,7 @@ def test_regulation_workflow_collects_benchmarks_before_calculation() -> None:
     definition = workflow_definition(WorkflowCode.REGULATION_DAILY_CALCULATION.value)
 
     assert definition.step_codes == (
+        "collect_regulation_st_snapshot",
         "collect_regulation_benchmarks",
         "calculate_regulation_warnings",
         "calculate_regulation_monitor",
@@ -42,6 +43,8 @@ def test_regulation_workflow_collects_benchmarks_before_calculation() -> None:
 
 
 def test_regulation_cli_requires_one_supported_nonfuture_trade_date() -> None:
+    st_args = _parser().parse_args(["regulation-st-snapshot", "--trade-date", "2026-09-02"])
+    assert st_args.trade_date == "2026-09-02"
     args = _parser().parse_args(["regulation-calculate", "--trade-date", "2026-09-02"])
     assert args.trade_date == "2026-09-02"
     assert _validate_regulation_calculation_date(args, today=date(2026, 9, 2)) == date(2026, 9, 2)
@@ -68,7 +71,8 @@ def test_regulation_worker_migration_adds_only_the_workflow_catalog_value() -> N
 
 
 @pytest.mark.parametrize("trading", [True, False])
-def test_worker_executes_monitor_after_existing_calculation(monkeypatch, trading):
+@pytest.mark.parametrize("st_failure", [True, False])
+def test_worker_executes_monitor_after_existing_calculation(monkeypatch, trading, st_failure):
     from contextlib import nullcontext
     from datetime import datetime
     from types import SimpleNamespace
@@ -88,6 +92,12 @@ def test_worker_executes_monitor_after_existing_calculation(monkeypatch, trading
         return action()
 
     execution.step.side_effect = step
+
+    def collect_st(_):
+        if st_failure:
+            raise RuntimeError("ST source unavailable")
+        actions.append("st_snapshot")
+
     monkeypatch.setattr(
         scheduler,
         "WorkerSettings",
@@ -111,7 +121,11 @@ def test_worker_executes_monitor_after_existing_calculation(monkeypatch, trading
         scheduler, "WorkflowExecutionService", lambda _: SimpleNamespace(start=lambda *a: execution)
     )
     monkeypatch.setattr(scheduler, "create_provider", lambda _: nullcontext(object()))
-    monkeypatch.setattr(scheduler, "IngestionPipeline", lambda **k: object())
+    monkeypatch.setattr(
+        scheduler,
+        "IngestionPipeline",
+        lambda **k: SimpleNamespace(ingest_regulation_st_snapshot=collect_st),
+    )
     monkeypatch.setattr(scheduler, "LocalRawStore", lambda _: object())
     monkeypatch.setattr(scheduler, "PostgreSQLRegulationPersistence", lambda _: object())
     monkeypatch.setattr(
@@ -129,12 +143,21 @@ def test_worker_executes_monitor_after_existing_calculation(monkeypatch, trading
         "RegulationMonitorService",
         lambda *a, **k: SimpleNamespace(calculate=lambda _: actions.append("monitor")),
     )
+    if trading and st_failure:
+        with pytest.raises(RuntimeError, match="ST source unavailable"):
+            scheduler.run_regulation_daily_calculation_job()
+        assert steps == ["collect_regulation_st_snapshot"]
+        assert actions == []
+        execution.fail.assert_called_once()
+        engine.dispose.assert_called_once()
+        return
     scheduler.run_regulation_daily_calculation_job()
     assert steps == [
+        "collect_regulation_st_snapshot",
         "collect_regulation_benchmarks",
         "calculate_regulation_warnings",
         "calculate_regulation_monitor",
     ]
-    assert actions == (["benchmarks", "legacy", "monitor"] if trading else [])
+    assert actions == (["st_snapshot", "benchmarks", "legacy", "monitor"] if trading else [])
     execution.succeed.assert_called_once()
     engine.dispose.assert_called_once()

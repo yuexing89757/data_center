@@ -41,6 +41,7 @@ from market_data_center.domain import (
     TradingDayRecord,
 )
 from market_data_center.domain.entities import CalculatedTradingDay
+from market_data_center.domain.records import RegulationStSnapshotRecord
 from market_data_center.pipeline import BoardIndexIngestionPipeline, IngestionPipeline
 from market_data_center.providers.contracts import ProviderBatch
 from market_data_center.raw_store import LocalRawStore
@@ -431,6 +432,7 @@ class StubPersistence:
             ]
         ] = []
         self.rejected_commits: list[tuple[IngestionRun, RawManifest, Sequence[QualityResult]]] = []
+        self.st_commits: list[tuple[IngestionRun, RawManifest, RegulationStSnapshotRecord]] = []
         self.board_index_commits: list[
             tuple[
                 IngestionRun,
@@ -587,6 +589,54 @@ class StubPersistence:
         quality_results: Sequence[QualityResult],
     ) -> None:
         self.rejected_commits.append((run, manifest, quality_results))
+
+    def commit_regulation_st_snapshot_batch(
+        self, run: IngestionRun, manifest: RawManifest, record: RegulationStSnapshotRecord
+    ) -> None:
+        self.st_commits.append((run, manifest, record))
+
+
+class StubStProvider(StubProvider):
+    source_code = "tushare"
+    fail_st = False
+
+    def fetch_regulation_st_snapshot(
+        self, trade_date: date
+    ) -> ProviderBatch[RegulationStSnapshotRecord]:
+        if self.fail_st:
+            raise RuntimeError("ST source unavailable")
+        return ProviderBatch(
+            raw_rows=[{"ts_code": "600000.SH", "trade_date": "20260728"}],
+            request_params={"trade_date": "20260728"},
+            schema_version="tushare.regulation_st_snapshot.v1",
+            records=[RegulationStSnapshotRecord(trade_date, ("SSE:600000",), "tushare")],
+        )
+
+
+def test_st_snapshot_pipeline_records_raw_and_complete_day(tmp_path: Path) -> None:
+    persistence = StubPersistence()
+    run = _pipeline(tmp_path, StubStProvider(), persistence).ingest_regulation_st_snapshot(
+        date(2026, 7, 28)
+    )
+
+    assert run.status is IngestionStatus.SUCCEEDED
+    assert run.dataset_code is DatasetCode.REGULATION_ST_SNAPSHOT
+    assert len(persistence.st_commits) == 1
+    committed, manifest, record = persistence.st_commits[0]
+    assert committed.ingestion_id == manifest.ingestion_id == run.ingestion_id
+    assert record.symbols == ("SSE:600000",)
+    assert manifest.row_count == 1
+
+
+def test_st_snapshot_failure_does_not_publish_complete_day(tmp_path: Path) -> None:
+    provider = StubStProvider()
+    provider.fail_st = True
+    persistence = StubPersistence()
+    with pytest.raises(RuntimeError, match="ST source unavailable"):
+        _pipeline(tmp_path, provider, persistence).ingest_regulation_st_snapshot(date(2026, 7, 28))
+    assert persistence.st_commits == []
+    assert len(persistence.failed) == 1
+    assert persistence.failed[0].status is IngestionStatus.FAILED
 
 
 def _pipeline(

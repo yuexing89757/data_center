@@ -3,7 +3,7 @@
 - 日期：2026-09-30
 - 状态：已审阅确认（2026-09-30）
 - Issue：#85
-- ADR：ADR-0061（Proposed）
+- ADR：ADR-0061（Accepted）
 
 ## 目标与范围
 
@@ -32,6 +32,10 @@ Persistence 在一个事务中写入该日完整快照及 IngestionRun/RawManife
 不在集合内为非 ST；缺快照或源数据失败为 `INSUFFICIENT_DATA`。非 ST 推断只建立在当日
 完整覆盖上。证券名称继续用于展示，但不参与 ST 判定。快照 `ingestion_id` 进入计算输入身份；
 更正后创建新版本并按交易日顺序重算后继链，旧结果不覆盖。
+监控批次另保存该日 ST 来源水印；名单更正后旧批次及其后继链立即失效，
+不等到新批次发布才发现不一致。Domain 输入不直接携带采集 ID。
+因监管状态计算也复用同一输入装配，其算法版本升为 `regulation-calculator.v3`；
+独立监控升为 `regulation-monitor.v2`，旧批次保持不变。
 
 ## 调度、补采与失败
 

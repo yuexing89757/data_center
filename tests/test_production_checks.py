@@ -90,6 +90,24 @@ def test_regulation_event_ingestion_migration_extends_controlled_catalogs() -> N
     )
 
 
+def test_regulation_st_migrations_keep_private_facts_and_v2_routing() -> None:
+    fact = (MIGRATION_DIR / "20260930000100_create_regulation_st_day_snapshot.sql").read_text(
+        encoding="utf-8"
+    )
+    monitor = (MIGRATION_DIR / "20260930000200_regulation_monitor_st_v2.sql").read_text(
+        encoding="utf-8"
+    )
+    assert "create table regulation.st_day_snapshot" in fact
+    assert "alter table regulation.st_day_snapshot enable row level security" in fact
+    assert (
+        "grant select, insert, update on regulation.st_day_snapshot to market_data_worker" in fact
+    )
+    assert not re.search(r"(?im)^grant .* to (public|anon|authenticated|market_data_api);", fact)
+    assert "regulation-monitor.v2" in monitor
+    assert "regulation.st_day_snapshot target_st" in monitor
+    assert "missing_regulation_st_snapshot" in monitor
+
+
 def test_dragon_tiger_replacement_migration_is_bounded_private_and_read_only() -> None:
     migration = (
         (MIGRATION_DIR / "20260902000300_replace_trading_billboard_with_dragon_tiger.sql")

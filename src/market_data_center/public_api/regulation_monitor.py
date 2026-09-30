@@ -440,6 +440,10 @@ def _project_response(
             stock.missing_reasons = list(published_state.missing_reasons)
             if current.applicability_reason:
                 stock.missing_reasons.append(current.applicability_reason)
+            if record.get("next_day_st_verified") is False and any(
+                rule.next_day.trigger_price is not None for rule in stock.rules
+            ):
+                stock.missing_reasons.append("next_day_st_unverified")
             if published_state.complete:
                 ordinary = [e for e in stock.events if e.level == "ABNORMAL"]
                 stock.calculated_price_abnormal_count_10d_up = sum(

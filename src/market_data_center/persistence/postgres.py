@@ -56,6 +56,7 @@ from market_data_center.domain.records import (
     DailyBarRecord,
     DistributionRecord,
     IngestionEnvelope,
+    RegulationStSnapshotRecord,
     RightsIssueRecord,
     SecurityRecord,
     ShareCapitalRecord,
@@ -1981,6 +1982,62 @@ where board_id = :board_id and trade_date = :trade_date
         PostgreSQLRegulationEventPersistence(self._engine).publish_replay(
             run, quality_results, records
         )
+
+    def commit_regulation_st_snapshot_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest | None,
+        record: RegulationStSnapshotRecord,
+    ) -> None:
+        if (
+            run.status is not IngestionStatus.SUCCEEDED
+            or run.dataset_code is not DatasetCode.REGULATION_ST_SNAPSHOT
+        ):
+            raise ValueError("ST snapshot requires a successful matching ingestion run")
+        if run.provider_code is not ProviderCode.TUSHARE or record.source_code != "tushare":
+            raise ValueError("ST snapshot requires Tushare source")
+        if run.request_params.get("trade_date") not in {
+            record.trade_date.isoformat(),
+            record.trade_date.strftime("%Y%m%d"),
+        }:
+            raise ValueError("ST snapshot date does not match the ingestion run")
+        if manifest is None:
+            if run.replayed_from_raw_id is None:
+                raise ValueError("live ST snapshot requires a Raw manifest")
+        elif manifest.ingestion_id != run.ingestion_id or run.replayed_from_raw_id is not None:
+            raise ValueError("ST snapshot Raw manifest does not match the ingestion run")
+        with self._engine.begin() as connection:
+            trading_day = connection.execute(
+                text("""select is_trading_day from core.trading_calendar
+                    where market='CN_A_SHARE' and trade_date=:trade_date"""),
+                {"trade_date": record.trade_date},
+            ).scalar_one_or_none()
+            if trading_day is not True:
+                raise ValueError("ST snapshot requires a known trading day")
+            self._insert_manifest(connection, manifest)
+            connection.execute(
+                text("""
+                    insert into regulation.st_day_snapshot
+                        (trade_date, symbols, symbol_count, source_code, ingestion_id)
+                    values (
+                        :trade_date, cast(:symbols as jsonb), :symbol_count,
+                        :source_code, :ingestion_id
+                    )
+                    on conflict (trade_date) do update set
+                        symbols = excluded.symbols,
+                        symbol_count = excluded.symbol_count,
+                        ingestion_id = excluded.ingestion_id
+                    where regulation.st_day_snapshot.symbols is distinct from excluded.symbols
+                """),
+                {
+                    "trade_date": record.trade_date,
+                    "symbols": dumps(record.symbols),
+                    "symbol_count": len(record.symbols),
+                    "source_code": record.source_code,
+                    "ingestion_id": run.ingestion_id,
+                },
+            )
+            connection.execute(UPDATE_INGESTION_RUN, self._run_update_parameters(run))
 
     @staticmethod
     def _run_update_parameters(run: IngestionRun) -> dict[str, object]:

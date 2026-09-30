@@ -28,6 +28,10 @@ Tushare 官方 `stock_st` 接口按交易日提供历史 ST 名单，适合保�
    代理全市场响应未稳定返回前，不发起无人值守的大范围补采。历史换手事实与监控补算按独立
    运维步骤执行，不以零填缺。
 7. 不新增公开 ST 接口，不改变既有 FastAPI/PostgREST 契约和普通 Daily Bar 路由。
+8. 适用性输入变更使监管计算算法升为 `regulation-calculator.v3`、独立监控升为
+   `regulation-monitor.v2`；公开监控响应结构版本仍为 `regulation-monitor.v1`。
+9. 监控批次保存 ST 来源水印并在查询链时与现行逐日快照比对；更正即使旧链失效，
+   不在 Domain 记录中直接放入采集 ID。
 
 ## 官方来源
 

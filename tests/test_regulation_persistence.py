@@ -18,6 +18,7 @@ from market_data_center.domain.regulation import (
 )
 from market_data_center.persistence.regulation_postgres import (
     PostgreSQLRegulationPersistence,
+    _watermark,
 )
 
 TRADE_DATE = date(2026, 9, 2)
@@ -108,7 +109,17 @@ def _mapping_result(rows: tuple[dict[str, object], ...]) -> MagicMock:
     return result
 
 
-def test_load_calculation_source_assembles_exact_calendar_returns_and_price_limit() -> None:
+@pytest.mark.parametrize(
+    ("name", "st_symbols", "expected_reason"),
+    [
+        (None, [], None),
+        ("浦发银行", ["SSE:600000"], "st_security_excluded"),
+        ("浦发银行", None, "missing_regulation_st_snapshot"),
+    ],
+)
+def test_load_calculation_source_assembles_exact_calendar_returns_and_price_limit(
+    name, st_symbols, expected_reason
+) -> None:
     engine = MagicMock()
     connection = MagicMock()
     engine.connect.return_value.__enter__.return_value = connection
@@ -125,7 +136,7 @@ def test_load_calculation_source_assembles_exact_calendar_returns_and_price_limi
             "exchange": "SSE",
             "status": "listed",
             "ipo_date": date(1999, 11, 10),
-            "name": "浦发银行",
+            "name": name,
         },
     )
     bars = []
@@ -161,6 +172,7 @@ def test_load_calculation_source_assembles_exact_calendar_returns_and_price_limi
     )
     next_day_result = MagicMock()
     next_day_result.scalar_one.return_value = NEXT_DATE
+    st_ingestion_id = uuid4()
     connection.execute.side_effect = (
         _mapping_result((_rule_row(),)),
         _mapping_result(calendar_rows),
@@ -193,6 +205,9 @@ def test_load_calculation_source_assembles_exact_calendar_returns_and_price_limi
             )
         ),
         _mapping_result(()),
+        _mapping_result(())
+        if st_symbols is None
+        else _mapping_result(({"symbols": st_symbols, "ingestion_id": st_ingestion_id},)),
     )
     persistence = PostgreSQLRegulationPersistence(engine)
 
@@ -209,9 +224,17 @@ def test_load_calculation_source_assembles_exact_calendar_returns_and_price_limi
     assert candidate.segment is RegulationSegment.SSE_MAIN
     assert candidate.daily_returns[-1].stock_return == Decimal("0")
     assert candidate.daily_returns[-1].benchmark_return == Decimal("0")
-    assert candidate.next_day_price_limit is not None
-    assert candidate.next_day_price_limit.upper_limit == Decimal("11.00")
-    assert candidate.next_day_price_limit.lower_limit == Decimal("9.00")
+    assert candidate.applicability_reason == expected_reason
+    if st_symbols is not None:
+        assert source.market_watermark == _watermark(
+            (*bars, *indicators, {"ingestion_id": st_ingestion_id})
+        )
+    if expected_reason is None:
+        assert candidate.next_day_price_limit is not None
+        assert candidate.next_day_price_limit.upper_limit == Decimal("11.00")
+        assert candidate.next_day_price_limit.lower_limit == Decimal("9.00")
+    else:
+        assert candidate.next_day_price_limit is None
 
 
 def test_find_calculation_returns_only_published_run_identity() -> None:

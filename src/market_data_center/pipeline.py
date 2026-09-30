@@ -52,6 +52,7 @@ from market_data_center.domain.records import (
     CapitalRecord,
     DailyBarRecord,
     IngestionEnvelope,
+    RegulationStSnapshotRecord,
     SecurityRecord,
 )
 from market_data_center.domain.shareholder_count import (
@@ -71,6 +72,7 @@ from market_data_center.providers.contracts import (
     ProviderBatch,
     ProviderError,
     ProviderRecord,
+    RegulationStSnapshotProvider,
     ShareholderCountProvider,
 )
 from market_data_center.raw_store import LocalRawStore, StoredRawObject
@@ -88,6 +90,10 @@ class PipelinePersistence(Protocol):
     def create_ingestion_run(self, run: IngestionRun) -> None: ...
 
     def fail_ingestion_run(self, run: IngestionRun) -> None: ...
+
+    def commit_regulation_st_snapshot_batch(
+        self, run: IngestionRun, manifest: RawManifest, record: RegulationStSnapshotRecord
+    ) -> None: ...
 
     def commit_security_batch(
         self,
@@ -247,6 +253,33 @@ class IngestionPipeline:
                 completed = self._completed_run(run, len(batch.raw_rows), len(records), 0)
                 self._persistence.commit_security_batch(
                     completed, manifest, self._envelopes(run.ingestion_id, records)
+                )
+                return completed
+            except _RecordedProviderError:
+                raise
+            except Exception as error:
+                self._record_failure(run, error)
+                raise
+
+    def ingest_regulation_st_snapshot(self, trade_date: date) -> IngestionRun:
+        task_key = f"{self._provider.source_code}:regulation_st_snapshot:{trade_date.isoformat()}"
+        with self._persistence.task_lock(task_key):
+            run = self._start_run(
+                DatasetCode.REGULATION_ST_SNAPSHOT, {"trade_date": trade_date.isoformat()}
+            )
+            try:
+                provider = cast(RegulationStSnapshotProvider, self._provider)
+                batch = provider.fetch_regulation_st_snapshot(trade_date)
+                manifest, records = self._stage_batch(run, batch)
+                if len(records) != 1 or records[0].trade_date != trade_date:
+                    error = ProviderError(
+                        "ST snapshot must contain one record for the requested day"
+                    )
+                    self._record_normalization_failure(run, manifest, len(batch.raw_rows), error)
+                    raise _RecordedProviderError(str(error)) from error
+                completed = self._completed_run(run, len(batch.raw_rows), 1, 0)
+                self._persistence.commit_regulation_st_snapshot_batch(
+                    completed, manifest, records[0]
                 )
                 return completed
             except _RecordedProviderError:

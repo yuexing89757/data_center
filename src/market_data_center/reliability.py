@@ -58,6 +58,7 @@ from market_data_center.domain.records import (
     CapitalRecord,
     DailyBarRecord,
     IngestionEnvelope,
+    RegulationStSnapshotRecord,
     SecurityRecord,
     TradingDayRecord,
 )
@@ -283,6 +284,13 @@ class ReliabilityPersistence(Protocol):
         quality_results: Sequence[QualityResult],
     ) -> None: ...
 
+    def commit_regulation_st_snapshot_batch(
+        self,
+        run: IngestionRun,
+        manifest: RawManifest | None,
+        record: RegulationStSnapshotRecord,
+    ) -> None: ...
+
     def stale_ingestion_run_ids(self, stale_before: datetime) -> Sequence[UUID]: ...
 
     def recover_stale_ingestion_runs(
@@ -448,6 +456,24 @@ class RawReplayService:
         dry_run: bool,
     ) -> ReplaySummary:
         records = normalized.records
+        if source.dataset_code is DatasetCode.REGULATION_ST_SNAPSHOT:
+            if (
+                source.provider_code is not ProviderCode.TUSHARE
+                or len(records) != 1
+                or not isinstance(records[0], RegulationStSnapshotRecord)
+            ):
+                raise ProviderError("ST snapshot replay lineage is invalid")
+            record = records[0]
+            if source.request_params.get("trade_date") not in {
+                record.trade_date.isoformat(),
+                record.trade_date.strftime("%Y%m%d"),
+            }:
+                raise ProviderError("ST snapshot replay lineage is invalid")
+            raw_count = source.manifest.row_count if source.manifest else 0
+            completed = self._completed(run, raw_count, 1, 0)
+            if completed is not None:
+                self._persistence.commit_regulation_st_snapshot_batch(completed, None, record)
+            return self._summary(source, completed, dry_run, raw_count, 1, 0)
         if source.dataset_code is DatasetCode.REGULATION_EVENT:
             if any(not isinstance(record, RegulationEventRecord) for record in records):
                 raise ProviderError("regulation-event replay contains an unexpected record")
