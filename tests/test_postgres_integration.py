@@ -129,6 +129,7 @@ from market_data_center.persistence.today_limit_up_postgres import (
 )
 from market_data_center.quality_audit import audit_daily_bars
 from market_data_center.recovery import (
+    APPLICATION_SCHEMAS,
     backup_application_data,
     capture_database_snapshot,
     restore_application_data,
@@ -7099,24 +7100,63 @@ def test_internal_tables_have_rls_with_worker_only_policies(database_engine: Eng
 
 @pytest.mark.skipif(which("pg_dump") is None, reason="pg_dump is not installed")
 def test_application_backup_restores_to_independent_database(
-    migrated_database_url: str, database_engine: Engine, tmp_path: Path
+    migrated_database_url: str,
+    database_engine: Engine,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _prepare_api_data(database_engine)
     source_snapshot = capture_database_snapshot(migrated_database_url)
     backup_path = tmp_path / "application-data.dump"
 
+    monkeypatch.setenv("PGOPTIONS", "-c role=market_data_backup")
     digest = backup_application_data(migrated_database_url, backup_path)
+    monkeypatch.delenv("PGOPTIONS")
 
     admin_url = environ["TEST_DATABASE_URL"]
     with _temporary_database_url(admin_url) as target_url:
         with psycopg.connect(target_url) as connection:
             apply_migrations(connection, MIGRATIONS)
+            # This newly created disposable database contains migration seed rows.
+            connection.execute(
+                "truncate regulation.rule, billboard.trading_seat_source_identity cascade"
+            )
         restore_application_data(target_url, backup_path)
         restored_snapshot = capture_database_snapshot(target_url)
 
     verify_restored_snapshot(source_snapshot, restored_snapshot)
     assert len(digest) == 64
     assert backup_path.stat().st_size > 0
+
+
+def test_backup_identity_has_only_scoped_read_privileges(database_engine: Engine) -> None:
+    with database_engine.connect() as connection:
+        assert connection.execute(
+            text("""
+            select rolsuper, rolcreaterole, rolcreatedb, rolcanlogin, rolreplication,
+                   rolbypassrls from pg_roles where rolname = 'market_data_backup'
+        """)
+        ).one() == (False, False, False, True, False, True)
+        assert (
+            connection.execute(
+                text("""
+            select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace
+            where n.nspname = any(:schemas) and c.relkind in ('r', 'p')
+              and (not has_table_privilege('market_data_backup', c.oid, 'SELECT')
+                   or has_table_privilege('market_data_backup', c.oid,
+                                          'INSERT,UPDATE,DELETE,TRUNCATE'))
+        """),
+                {"schemas": list(APPLICATION_SCHEMAS)},
+            ).scalar_one()
+            == 0
+        )
+        assert connection.execute(
+            text("""
+            select pg_has_role('market_data_worker', 'market_data_backup', 'MEMBER'),
+                   pg_has_role('market_data_api', 'market_data_backup', 'MEMBER'),
+                   has_schema_privilege('market_data_backup', 'api_v1', 'CREATE')
+        """)
+        ).one() == (False, False, False)
 
 
 def test_daily_bar_quality_audit_reports_coverage_and_traceability(

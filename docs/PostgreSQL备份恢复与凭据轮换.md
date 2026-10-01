@@ -1,12 +1,12 @@
 # PostgreSQL 备份恢复与凭据轮换
 
-本文是 PostgreSQL 的运维运行手册。应用数据备份覆盖 `audit`、`capital`、`classification`、`core`、`derived`、`ingestion`、`metrics`、`operations` 和 `stock_pool` Schema。凭据必须从密钥管理器注入环境变量或数据库主机上的 `.env`，不得把数据库 URL、密码、JWT、API key 或备份内容写入 Git、Issue、PR、CI 日志和操作记录。
+本文是 PostgreSQL 的运维运行手册。应用数据备份覆盖 `audit`、`billboard`、`capital`、`classification`、`convertible_bond`、`core`、`derived`、`ingestion`、`metrics`、`operations`、`realtime`、`regulation`、`stock_pool`、`today_limit_down` 和 `today_limit_up` Schema。凭据必须从密钥管理器注入环境变量或数据库主机上的 `.env`，不得把数据库 URL、密码、JWT、API key 或备份内容写入 Git、Issue、PR、CI 日志和操作记录。
 
 ## 1. 恢复目标
 
 一次备份只有在独立数据库成功恢复并通过以下检查后才算有效：
 
-- `audit`、`core`、`ingestion` 领域表行数与源库一致；
+- `audit`、`core`、`ingestion` 和 `regulation` 领域表行数与源库一致；
 - `supabase_migrations.schema_migrations` 版本一致；
 - `api_v1` 视图集合一致；
 - `core` 事实表不存在指向缺失 `ingestion_run` 的记录；
@@ -17,7 +17,18 @@ RTO 目标为 60 分钟，RPO 目标为 24 小时。上线后根据实际数据�
 
 ## 2. 应用数据备份
 
-仓库工具备份 Market Data Center 的 `audit`、`capital`、`classification`、`core`、`derived`、`ingestion`、`metrics`、`operations` 和 `stock_pool` 数据，不把凭据放入进程参数。备份默认写入已被 Git 忽略的 `backups/`。
+有序迁移 `20261001000100_create_application_backup_role.sql` 定义独立的
+`market_data_backup` 身份，仅授予当前应用表、序列和迁移版本的 SELECT 以及 schema USAGE。
+该角色的 BYPASSRLS 用于完整一致性导出，不具有写入、建库、建角色、复制或超级用户权限；
+不授予 Worker/API 角色成员关系，也不更改现有 RLS 或公共读权限。
+密码通过受控服务器配置单独设置；使用本机连接和 root 专用 0600 配置注入
+`SOURCE_DATABASE_URL`，不得复用 Worker 凭据或打印连接串。
+新增领域或表后必须在相应有序迁移中补齐备份读取授权；不授予所有未来对象的默认权限。
+
+上线前先在独立 PostgreSQL 实例验证迁移和完整备份恢复，再通过受保护 production
+workflow 应用迁移；禁止手工执行角色或 grants DDL。
+
+仓库工具备份 Market Data Center 的 `audit`、`billboard`、`capital`、`classification`、`convertible_bond`、`core`、`derived`、`ingestion`、`metrics`、`operations`、`realtime`、`regulation`、`stock_pool`、`today_limit_down` 和 `today_limit_up` 数据，不把凭据放入进程参数。备份默认写入已被 Git 忽略的 `backups/`。
 
 ```bash
 export SOURCE_DATABASE_URL='从密钥管理器注入'
@@ -60,6 +71,11 @@ export SOURCE_DATABASE_URL='从密钥管理器注入的源库只读连接'
 uv run python scripts/backup_restore.py verify
 unset SOURCE_DATABASE_URL TARGET_DATABASE_URL
 ```
+
+迁移会写入监管规则种子数据。仅在已核实为本次新建、无业务数据的隔离恢复目标中，
+恢复前清空 `regulation.rule` 和 `billboard.trading_seat_source_identity` 及其空依赖表，
+再恢复 dump，保留源库的规则标识和引用。不得在源库或现有业务数据库执行此步骤；
+恢复工具不会自动清空目标数据。
 
 然后执行数据库集成测试和 [PostgREST 权限验证](PostgREST-api_v1权限验证.md)。原始文件恢复到隔离目录，比较文件数量、相对路径和 SHA-256；不要把原始行情文件提交到仓库。
 
