@@ -587,7 +587,7 @@ allowlist-only 服务使用 Tushare `index_daily` 采集三个指数（2026-10-0
 
 - 恰好请求三个允许的标准指数 symbol；
 - `security_type=index`；
-- trade_date 在明确请求的缺口区间内；
+- 每个缺失交易日单独请求，trade_date 必须等于请求日，不跨过已有有效日期；
 - OHLC和previous_close为正，volume/amount保持来源单位转换；
 - 单个指数缺失不得用其他指数替代；
 - Raw和manifest使用 `tushare.index_daily.v1`；历史 BaoStock Raw 重放保持兼容。

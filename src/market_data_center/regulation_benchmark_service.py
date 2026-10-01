@@ -41,17 +41,15 @@ class RegulationBenchmarkService:
     def collect(self, trade_date: date) -> RegulationBenchmarkCollectionSummary:
         gaps = self._persistence.benchmark_gaps(trade_date)
         for symbol in REGULATION_BENCHMARK_SYMBOLS:
-            missing = gaps[symbol]
-            if not missing:
-                continue
-            try:
-                run = self._pipeline.ingest_daily_bars(symbol, min(missing), max(missing))
-                if run.status is not IngestionStatus.SUCCEEDED:
-                    getLogger(__name__).warning("Benchmark collection incomplete: %s", symbol)
-            except ProviderError as error:
-                getLogger(__name__).warning(
-                    "Benchmark collection failed: %s (%s)", symbol, type(error).__name__
-                )
+            for day in sorted(gaps[symbol]):
+                try:
+                    run = self._pipeline.ingest_daily_bars(symbol, day, day)
+                    if run.status is not IngestionStatus.SUCCEEDED:
+                        getLogger(__name__).warning("Benchmark collection incomplete: %s", symbol)
+                except ProviderError as error:
+                    getLogger(__name__).warning(
+                        "Benchmark collection failed: %s (%s)", symbol, type(error).__name__
+                    )
         remaining = self._persistence.benchmark_gaps(trade_date)
         missing_symbols = tuple(
             symbol for symbol in REGULATION_BENCHMARK_SYMBOLS if remaining[symbol]

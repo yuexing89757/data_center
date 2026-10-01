@@ -34,7 +34,7 @@ class GapPersistence:
         return {symbol: (date(2026, 8, 11), trade_date) for symbol in REGULATION_BENCHMARK_SYMBOLS}
 
 
-def test_benchmark_collection_requests_exact_three_official_indices() -> None:
+def test_benchmark_collection_requests_only_missing_dates_for_three_official_indices() -> None:
     pipeline = FakePipeline()
 
     summary = RegulationBenchmarkService(pipeline, GapPersistence(pipeline)).collect(TRADE_DATE)
@@ -45,9 +45,12 @@ def test_benchmark_collection_requests_exact_three_official_indices() -> None:
         "SZSE:399102",
     )
     assert pipeline.calls == [
-        ("SSE:000002", date(2026, 8, 11), TRADE_DATE),
-        ("SZSE:399107", date(2026, 8, 11), TRADE_DATE),
-        ("SZSE:399102", date(2026, 8, 11), TRADE_DATE),
+        ("SSE:000002", date(2026, 8, 11), date(2026, 8, 11)),
+        ("SSE:000002", TRADE_DATE, TRADE_DATE),
+        ("SZSE:399107", date(2026, 8, 11), date(2026, 8, 11)),
+        ("SZSE:399107", TRADE_DATE, TRADE_DATE),
+        ("SZSE:399102", date(2026, 8, 11), date(2026, 8, 11)),
+        ("SZSE:399102", TRADE_DATE, TRADE_DATE),
     ]
     assert summary.expected_count == 3
     assert summary.accepted_count == 3
