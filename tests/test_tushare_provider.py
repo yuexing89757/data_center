@@ -290,6 +290,120 @@ def test_raw_replay_preserves_daily_bar_normalization() -> None:
     assert records[1].amount == Decimal("456789.000")
 
 
+@pytest.mark.parametrize(
+    "symbol,ts_code",
+    [("SSE:000002", "000002.SH"), ("SZSE:399107", "399107.SZ"), ("SZSE:399102", "399102.SZ")],
+)
+def test_regulation_index_daily_uses_exact_index_and_replays_units(symbol, ts_code):
+    class IndexClient(FakeClient):
+        def query(self, api_name, *, params, fields):
+            assert api_name == "index_daily"
+            assert params == {"ts_code": ts_code, "start_date": "20260930", "end_date": "20260930"}
+            return (
+                {
+                    "ts_code": ts_code,
+                    "trade_date": "20260930",
+                    "open": "100",
+                    "high": "102",
+                    "low": "99",
+                    "close": "101",
+                    "pre_close": "100",
+                    "vol": "12.34",
+                    "amount": "56.789",
+                },
+            )
+
+    batch = TushareProvider(IndexClient()).fetch_daily_bars(
+        symbol, date(2026, 9, 30), date(2026, 9, 30)
+    )
+    record = batch.records[0]
+    assert record.symbol == symbol
+    assert record.close == Decimal("101")
+    assert record.previous_close == Decimal("100")
+    assert record.volume == 1234
+    assert record.amount == Decimal("56789")
+    assert record.source_code == "tushare"
+    assert batch.schema_version == "tushare.index_daily.v1"
+    assert normalize_tushare_raw(
+        DatasetCode.DAILY_BAR, batch.schema_version, batch.raw_rows, batch.request_params
+    ) == tuple(batch.records)
+    assert normalize_tushare_raw(
+        DatasetCode.DAILY_BAR,
+        batch.schema_version,
+        batch.raw_rows,
+        {"source_symbol": symbol, "start_date": "2026-09-30", "end_date": "2026-09-30"},
+    ) == tuple(batch.records)
+
+
+@pytest.mark.parametrize("mutation", ["empty", "wrong_symbol", "wrong_date", "duplicate"])
+def test_regulation_index_rejects_invalid_response_and_raw_replay(mutation):
+    row = {
+        "ts_code": "000002.SH",
+        "trade_date": "20260930",
+        "open": "100",
+        "high": "102",
+        "low": "99",
+        "close": "101",
+        "pre_close": "100",
+        "vol": "12.34",
+        "amount": "56.789",
+    }
+    if mutation == "wrong_symbol":
+        row["ts_code"] = "000001.SH"
+    if mutation == "wrong_date":
+        row["trade_date"] = "20260929"
+    rows = () if mutation == "empty" else (row, row) if mutation == "duplicate" else (row,)
+
+    class IndexClient(FakeClient):
+        def query(self, api_name, *, params, fields):
+            return rows
+
+    batch = TushareProvider(IndexClient()).fetch_daily_bars(
+        "SSE:000002", date(2026, 9, 30), date(2026, 9, 30)
+    )
+    with pytest.raises(ProviderError):
+        _ = batch.records
+    with pytest.raises(ProviderError):
+        normalize_tushare_raw(
+            DatasetCode.DAILY_BAR, batch.schema_version, batch.raw_rows, batch.request_params
+        )
+
+
+def test_regulation_index_preserves_missing_values_and_source_error():
+    class IndexClient(FakeClient):
+        def query(self, api_name, *, params, fields):
+            return (
+                {
+                    "ts_code": "399102.SZ",
+                    "trade_date": "20260930",
+                    "open": None,
+                    "high": None,
+                    "low": None,
+                    "close": None,
+                    "pre_close": None,
+                    "vol": None,
+                    "amount": None,
+                },
+            )
+
+    record = (
+        TushareProvider(IndexClient())
+        .fetch_daily_bars("SZSE:399102", date(2026, 9, 30), date(2026, 9, 30))
+        .records[0]
+    )
+    assert record.close is None and record.previous_close is None
+    assert record.volume is None and record.amount is None
+
+    class FailedClient(FakeClient):
+        def query(self, api_name, *, params, fields):
+            raise TimeoutError("upstream unavailable")
+
+    with pytest.raises(ProviderError):
+        TushareProvider(FailedClient()).fetch_daily_bars(
+            "SZSE:399102", date(2026, 9, 30), date(2026, 9, 30)
+        )
+
+
 def test_daily_indicator_normalizes_units_status_and_raw_replay() -> None:
     provider = TushareProvider(FakeClient())
     batch = provider.fetch_stock_daily_indicators(

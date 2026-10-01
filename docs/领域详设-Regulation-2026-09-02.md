@@ -141,6 +141,12 @@ cn-a-share-regulation-2026-07-06.v1
 
 ### 4.3 基准指数
 
+2026-10-01 来源替代（ADR-0048 已批准澄清，Issue #69）：三个固定基准后续缺口采集使用
+Tushare `index_daily`，标准 symbol 在适配器内映射至 `000002.SH`、`399107.SZ`、`399102.SZ`。
+Raw 使用 `tushare.index_daily.v1`，校验身份、日期范围、重复日期和空响应；与在线采集共用
+标准化逻辑，手转股、千元转元使用 Decimal。旧 BaoStock 事实与 Raw 不变；普通股票仍走
+remote pytdx only。来源切换不改变计算版本或起算边界，不新增数据库结构或公开接口。
+
 2026-09-22 采集修复：Worker 先检查截至目标日的30个实际交易日，只对缺失/无效前收盘价的
 白名单指数补采缺口所在的有界区间，随后重新查询数据库覆盖；完整指数不发起网络请求。
 个别来源失败或历史缺口保留在 `missing_symbols` 和 Operations partial 中，其他板块继续计算，
@@ -574,17 +580,17 @@ Raw 保留来源响应字段、文档 URL、来源发布时间、抓取页游标
 
 ## 10. 基准指数日线采集
 
-新增 allowlist-only 服务，使用 BaoStock 的 Daily Bar 能力采集三个指数。每个交易日单独创建
+allowlist-only 服务使用 Tushare `index_daily` 采集三个指数（2026-10-01 起来源替代）。每个指数单独创建
 指数 ingestion，与普通股票 pytdx ingestion 分离。
 
 完整性要求：
 
 - 恰好请求三个允许的标准指数 symbol；
 - `security_type=index`；
-- trade_date 等于请求日；
+- trade_date 在明确请求的缺口区间内；
 - OHLC和previous_close为正，volume/amount保持来源单位转换；
 - 单个指数缺失不得用其他指数替代；
-- Raw和manifest遵循现有 BaoStock Daily Bar 契约。
+- Raw和manifest使用 `tushare.index_daily.v1`；历史 BaoStock Raw 重放保持兼容。
 
 若某指数缺失，仅其对应 segment 标记不完整，其他 segment 继续计算。
 
@@ -594,19 +600,19 @@ Raw 保留来源响应字段、文档 URL、来源发布时间、抓取页游标
 
 Workflow code：`regulation_daily_calculation`
 Job ID：`regulation-daily-calculation`
-触发：周一至周五22:00，`Asia/Shanghai`，默认关闭。
+当前 Worker 代码目录触发：周一至周五22:30，`Asia/Shanghai`，默认关闭。
+22:00 是早期目标，尚未对应当前调度实现；本次不调整执行时间。
 
 步骤：
 
 ```text
+collect_regulation_st_snapshot
 collect_regulation_benchmarks
-collect_sse_regulation_events
-collect_szse_regulation_events
-validate_regulation_dependencies
-calculate_regulation_status
-publish_regulation_results
+calculate_regulation_warnings
+calculate_regulation_monitor
 ```
 
+当前日终目录不含正式公告采集步骤，公告仍由既有受控采集/重放路径入库，不宣称已自动采集。
 每个来源采集步骤创建自己的 IngestionRun。计算服务在一个可重复读输入快照中确定规则、行情、
 Capital、每日指标和事件水位，离开事务后调用纯 Calculator，再在单个写事务中发布一个
 CalculationRun 的 status/rule_result/warning。不得把两个 Provider 的部分记录合并成一个成功来源批次。
@@ -808,7 +814,7 @@ FastAPI 层接受六位 `code`，经 Security 事实解析为唯一股票 `symbo
 - Decimal不经过float；
 - Raw先于标准化、manifest校验和离线重放；
 - 相同事件幂等、内容修订触发新计算；
-- BaoStock三个指数白名单及普通股票路由不变；
+- Tushare三个指数白名单、来源错误/缺失/单位/Raw重放及普通股票路由不变；
 - segment级和symbol级partial语义；
 - 相同input_hash幂等，不混合calculation_id。
 

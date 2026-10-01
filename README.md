@@ -2,6 +2,9 @@
 
 A phase-one A-share daily market data pipeline using Python 3.12 and PostgreSQL. Security and calendar use BaoStock/AKShare routing; pytdx quote and Daily Bar reads share one capability-aware endpoint pool maintained by the Worker.
 
+The three Regulation benchmark indices use Tushare `index_daily` (ADR-0048 clarification,
+Issue #69); this does not change ordinary stock routing or replace existing historical Raw.
+
 ## Minimal Linux production release
 
 Build the committed Linux source package with

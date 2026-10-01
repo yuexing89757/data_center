@@ -76,6 +76,7 @@ DAILY_BAR_FIELDS = (
     "amount",
 )
 REGULATION_ST_FIELDS = ("ts_code", "name", "trade_date", "type", "type_name")
+REGULATION_INDEX_CODES = frozenset(("000002.SH", "399107.SZ", "399102.SZ"))
 STOCK_DAILY_INDICATOR_FIELDS = (
     "ts_code",
     "trade_date",
@@ -314,10 +315,12 @@ class TushareProvider(AbstractContextManager["TushareProvider"]):
     ) -> ProviderBatch[DailyBarRecord]:
         _ensure_date_range(start_date, end_date)
         ts_code = _source_symbol(source_symbol)
+        is_index = ts_code in REGULATION_INDEX_CODES
+        api_name = "index_daily" if is_index else "daily"
         result: Sequence[Mapping[str, object]] = _provider_call(
-            "daily",
+            api_name,
             lambda: self._client.query(
-                "daily",
+                api_name,
                 params={
                     "ts_code": ts_code,
                     "start_date": start_date.strftime("%Y%m%d"),
@@ -326,18 +329,23 @@ class TushareProvider(AbstractContextManager["TushareProvider"]):
                 fields=DAILY_BAR_FIELDS,
             ),
         )
-        rows = _rows(result, DAILY_BAR_FIELDS, "daily")
+        rows = _rows(result, DAILY_BAR_FIELDS, api_name)
         rows.sort(key=lambda row: row["trade_date"])
+        request_params = {
+            "source_symbol": ts_code,
+            "start_date": start_date.strftime("%Y%m%d"),
+            "end_date": end_date.strftime("%Y%m%d"),
+            "adjust": "none",
+        }
         return ProviderBatch(
             raw_rows=rows,
-            request_params={
-                "source_symbol": ts_code,
-                "start_date": start_date.strftime("%Y%m%d"),
-                "end_date": end_date.strftime("%Y%m%d"),
-                "adjust": "none",
-            },
-            schema_version="tushare.daily_bar.v1",
-            record_factory=lambda: [_map_daily_bar(row) for row in rows],
+            request_params=request_params,
+            schema_version="tushare.index_daily.v1" if is_index else "tushare.daily_bar.v1",
+            record_factory=lambda: (
+                _index_daily_records(rows, request_params)
+                if is_index
+                else [_map_daily_bar(row) for row in rows]
+            ),
         )
 
     def fetch_capital(self, source_symbol: str) -> ProviderBatch[CapitalRecord]:
@@ -573,6 +581,8 @@ def normalize_tushare_raw(
     raw_rows: Sequence[Mapping[str, str]],
     request_params: Mapping[str, object],
 ) -> tuple[ProviderRecord, ...]:
+    if dataset_code is DatasetCode.DAILY_BAR and schema_version == "tushare.index_daily.v1":
+        return tuple(_index_daily_records(raw_rows, request_params))
     expected = {
         DatasetCode.SECURITY: "tushare.security.v1",
         DatasetCode.TRADING_CALENDAR: "tushare.trading_calendar.v1",
@@ -734,6 +744,29 @@ def _calendar_records(
         )
         for day in expected_dates
     ]
+
+
+def _index_daily_records(
+    rows: Sequence[Mapping[str, str]], request_params: Mapping[str, object]
+) -> list[DailyBarRecord]:
+    requested_symbol = request_params.get("source_symbol")
+    if not isinstance(requested_symbol, str):
+        raise ProviderError("Tushare index_daily request source_symbol is missing")
+    source_symbol = _source_symbol(requested_symbol)
+    if source_symbol not in REGULATION_INDEX_CODES or not rows:
+        raise ProviderError("Tushare index_daily requires one allowlisted nonempty index batch")
+    start = _request_date(request_params, "start_date")
+    end = _request_date(request_params, "end_date")
+    _ensure_date_range(start, end)
+    dates: set[date] = set()
+    for row in rows:
+        trade_date = _parse_date(row["trade_date"])
+        if row["ts_code"] != source_symbol or not start <= trade_date <= end:
+            raise ProviderError("Tushare index_daily row identity or date does not match request")
+        if trade_date in dates:
+            raise ProviderError("Tushare index_daily contains duplicate dates")
+        dates.add(trade_date)
+    return [_map_daily_bar(row) for row in sorted(rows, key=lambda row: row["trade_date"])]
 
 
 def _map_daily_bar(row: Mapping[str, str]) -> DailyBarRecord:

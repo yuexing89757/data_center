@@ -83,7 +83,7 @@ def test_worker_executes_monitor_after_existing_calculation(monkeypatch, trading
 
     from market_data_center import scheduler
 
-    actions, steps = [], []
+    actions, steps, sources = [], [], []
     engine = MagicMock()
     execution = MagicMock()
 
@@ -120,7 +120,12 @@ def test_worker_executes_monitor_after_existing_calculation(monkeypatch, trading
     monkeypatch.setattr(
         scheduler, "WorkflowExecutionService", lambda _: SimpleNamespace(start=lambda *a: execution)
     )
-    monkeypatch.setattr(scheduler, "create_provider", lambda _: nullcontext(object()))
+
+    def provider(source):
+        sources.append(source)
+        return nullcontext(object())
+
+    monkeypatch.setattr(scheduler, "create_provider", provider)
     monkeypatch.setattr(
         scheduler,
         "IngestionPipeline",
@@ -159,5 +164,6 @@ def test_worker_executes_monitor_after_existing_calculation(monkeypatch, trading
         "calculate_regulation_monitor",
     ]
     assert actions == (["st_snapshot", "benchmarks", "legacy", "monitor"] if trading else [])
+    assert sources == (["tushare", "tushare"] if trading else [])
     execution.succeed.assert_called_once()
     engine.dispose.assert_called_once()

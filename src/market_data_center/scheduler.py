@@ -812,7 +812,7 @@ def run_regulation_daily_calculation_job() -> None:
                             raw_store=LocalRawStore(settings.raw_data_root),
                         ).ingest_regulation_st_snapshot(trade_date),
                     )
-                with create_provider("baostock") as provider:
+                with create_provider("tushare") as provider:
                     execution.step(
                         "collect_regulation_benchmarks",
                         2,

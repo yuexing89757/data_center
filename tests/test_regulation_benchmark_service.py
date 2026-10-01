@@ -45,9 +45,9 @@ def test_benchmark_collection_requests_exact_three_official_indices() -> None:
         "SZSE:399102",
     )
     assert pipeline.calls == [
-        ("sh.000002", date(2026, 8, 11), TRADE_DATE),
-        ("sz.399107", date(2026, 8, 11), TRADE_DATE),
-        ("sz.399102", date(2026, 8, 11), TRADE_DATE),
+        ("SSE:000002", date(2026, 8, 11), TRADE_DATE),
+        ("SZSE:399107", date(2026, 8, 11), TRADE_DATE),
+        ("SZSE:399102", date(2026, 8, 11), TRADE_DATE),
     ]
     assert summary.expected_count == 3
     assert summary.accepted_count == 3

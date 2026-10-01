@@ -14,12 +14,6 @@ REGULATION_BENCHMARK_SYMBOLS = (
     "SZSE:399102",
 )
 
-_SOURCE_SYMBOLS = {
-    "SSE:000002": "sh.000002",
-    "SZSE:399107": "sz.399107",
-    "SZSE:399102": "sz.399102",
-}
-
 
 class DailyBarPipeline(Protocol):
     def ingest_daily_bars(
@@ -51,9 +45,7 @@ class RegulationBenchmarkService:
             if not missing:
                 continue
             try:
-                run = self._pipeline.ingest_daily_bars(
-                    _SOURCE_SYMBOLS[symbol], min(missing), max(missing)
-                )
+                run = self._pipeline.ingest_daily_bars(symbol, min(missing), max(missing))
                 if run.status is not IngestionStatus.SUCCEEDED:
                     getLogger(__name__).warning("Benchmark collection incomplete: %s", symbol)
             except ProviderError as error:
