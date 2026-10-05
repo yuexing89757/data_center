@@ -7,11 +7,11 @@ from contextlib import AbstractContextManager
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 from functools import partial
+from http.client import HTTPConnection, HTTPException, HTTPSConnection
 from time import sleep
 from types import TracebackType
 from typing import Protocol, Self
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.parse import SplitResult, urlsplit
 
 from pydantic import ValidationError
 
@@ -166,8 +166,24 @@ class TushareClient(Protocol):
     ) -> Sequence[Mapping[str, object]]: ...
 
 
+def _open_http_connection(parts: SplitResult, timeout_seconds: float) -> HTTPConnection:
+    host = parts.hostname or ""
+    if not host:
+        raise ProviderError(f"Tushare endpoint has no host: {parts.geturl()}")
+    if parts.scheme == "https":
+        return HTTPSConnection(host, parts.port or 443, timeout=timeout_seconds)
+    if parts.scheme == "http":
+        return HTTPConnection(host, parts.port or 80, timeout=timeout_seconds)
+    raise ProviderError(f"unsupported Tushare endpoint scheme: {parts.scheme}")
+
+
 class TushareHttpClient:
-    """Small client for Tushare's documented JSON API."""
+    """Small client for Tushare's documented JSON API.
+
+    Requests reuse one keep-alive HTTP(S) connection: some deployment networks
+    drop a large share of new TCP handshakes, which made one-request-per-socket
+    crawls take tens of seconds per call.
+    """
 
     def __init__(
         self,
@@ -181,6 +197,7 @@ class TushareHttpClient:
         self._token = token.strip()
         self._endpoint = endpoint
         self._timeout_seconds = timeout_seconds
+        self._connection: HTTPConnection | None = None
 
     def query(
         self, api_name: str, *, params: Mapping[str, str], fields: Sequence[str]
@@ -193,16 +210,12 @@ class TushareHttpClient:
                 "fields": ",".join(fields),
             }
         ).encode("utf-8")
-        request = Request(
-            self._endpoint,
-            data=payload,
-            headers={"Content-Type": "application/json", "User-Agent": "market-data-center/0.1"},
-            method="POST",
-        )
         try:
-            with urlopen(request, timeout=self._timeout_seconds) as response:
-                document = json.loads(response.read(), parse_float=Decimal)
-        except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as error:
+            body = self._post(payload)
+            document = json.loads(body, parse_float=Decimal)
+        except ProviderError:
+            raise
+        except (HTTPException, OSError, TimeoutError, json.JSONDecodeError) as error:
             raise ProviderError(f"Tushare {api_name} request failed") from error
         if not isinstance(document, Mapping):
             raise ProviderError(f"Tushare {api_name} returned an invalid response")
@@ -229,6 +242,44 @@ class TushareHttpClient:
                 raise ProviderError(f"Tushare {api_name} returned a malformed row")
             rows.append(dict(zip(response_fields, item, strict=True)))
         return rows
+
+    def close(self) -> None:
+        if self._connection is not None:
+            self._connection.close()
+            self._connection = None
+
+    def _post(self, payload: bytes) -> bytes:
+        parts = urlsplit(self._endpoint)
+        for attempt in range(2):
+            if self._connection is None:
+                self._connection = _open_http_connection(parts, self._timeout_seconds)
+            try:
+                self._connection.request(
+                    "POST",
+                    parts.path or "/",
+                    body=payload,
+                    headers={
+                        "Content-Type": "application/json",
+                        "User-Agent": "market-data-center/0.1",
+                    },
+                )
+                response = self._connection.getresponse()
+                body = response.read()
+                if response.status != 200:
+                    raise ProviderError(
+                        f"Tushare HTTP status {response.status} for {self._endpoint}"
+                    )
+                return body
+            except ProviderError:
+                self.close()
+                raise
+            except (HTTPException, OSError):
+                # A kept-alive socket can go stale between requests; retry once
+                # on a fresh connection before surfacing the failure.
+                self.close()
+                if attempt:
+                    raise
+        raise AssertionError("unreachable retry loop")
 
 
 class TushareProvider(AbstractContextManager["TushareProvider"]):
@@ -275,6 +326,10 @@ class TushareProvider(AbstractContextManager["TushareProvider"]):
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
+        client = self._client
+        close = getattr(client, "close", None)
+        if callable(close):
+            close()
         return None
 
     def source_symbol(self, symbol: str) -> str:
