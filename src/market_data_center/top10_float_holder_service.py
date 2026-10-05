@@ -6,7 +6,6 @@ from datetime import date, timedelta
 from typing import Protocol
 from uuid import uuid4
 
-from market_data_center.providers import ProviderError
 from market_data_center.providers.tushare import TOP10_FLOAT_HOLDERS_RESPONSE_LIMIT
 from market_data_center.top10_float_holder_batch import (
     PreparedTop10FloatHolderBatch,
@@ -35,7 +34,11 @@ def recent_report_periods(as_of: date, count: int = 8) -> tuple[str, ...]:
 
 class Top10FloatHolderPipeline(Protocol):
     def prepare_top10_float_holder_request(
-        self, announcement_date: date, *, period: str | None = None
+        self,
+        announcement_date: date,
+        *,
+        period: str | None = None,
+        symbol: str | None = None,
     ) -> PreparedTop10FloatHolderBatch: ...
 
 
@@ -50,6 +53,8 @@ class Top10FloatHolderPersistence(Protocol):
         *,
         error_type: str,
     ) -> None: ...
+
+    def top10_float_holder_split_symbols(self) -> tuple[str, ...]: ...
 
 
 class Top10FloatHolderService:
@@ -91,15 +96,23 @@ class Top10FloatHolderService:
             return 0
 
         batches[-1] = self._superseded(batch)
+        superseded = 1
         for period in recent_report_periods(day):
             split = self._pipeline.prepare_top10_float_holder_request(day, period=period)
             batches.append(split)
-            if split.run.fetched_rows >= TOP10_FLOAT_HOLDERS_RESPONSE_LIMIT:
-                raise ProviderError(
-                    "Tushare top10 float-holder split request remains truncated: "
-                    f"{day} period {period}"
+            if split.run.fetched_rows < TOP10_FLOAT_HOLDERS_RESPONSE_LIMIT:
+                continue
+            # Peak disclosure days exceed the limit even within one report
+            # period: supersede the period request and re-read it per symbol.
+            batches[-1] = self._superseded(split)
+            superseded += 1
+            for symbol in self._persistence.top10_float_holder_split_symbols():
+                batches.append(
+                    self._pipeline.prepare_top10_float_holder_request(
+                        day, period=period, symbol=symbol
+                    )
                 )
-        return 1
+        return superseded
 
     @staticmethod
     def _superseded(batch: PreparedTop10FloatHolderBatch) -> PreparedTop10FloatHolderBatch:

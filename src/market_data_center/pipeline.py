@@ -569,13 +569,17 @@ class IngestionPipeline:
         announcement_date: date,
         *,
         period: str | None = None,
+        symbol: str | None = None,
     ) -> PreparedTop10FloatHolderBatch:
         """Capture and validate one actual Tushare request without publishing facts."""
         params: dict[str, object] = {
             "ann_date": announcement_date.isoformat(),
             "period": period,
+            "source_symbol": symbol,
         }
         target = period or "all"
+        if symbol is not None:
+            target = f"{target}:{symbol}"
         task_key = f"{self._provider.source_code}:top10_float_holder:{announcement_date}:{target}"
         with self._persistence.task_lock(task_key):
             run = self._start_run(DatasetCode.TOP10_FLOAT_HOLDER, params)
@@ -583,7 +587,9 @@ class IngestionPipeline:
             fetched_rows = 0
             try:
                 provider = cast(Top10FloatHoldersProvider, self._provider)
-                batch = provider.fetch_top10_float_holders(announcement_date, period=period)
+                batch = provider.fetch_top10_float_holders(
+                    announcement_date, period=period, symbol=symbol
+                )
                 fetched_rows = len(batch.raw_rows)
                 manifest, normalized = self._stage_batch(run, batch)
                 if any(not isinstance(record, Top10FloatHolderRecord) for record in normalized):

@@ -30,6 +30,7 @@ def _batch(
     fetched_rows: int,
     *,
     period: str | None = None,
+    symbol: str | None = None,
 ) -> PreparedTop10FloatHolderBatch:
     ingestion_id = uuid4()
     run = IngestionRun(
@@ -43,6 +44,7 @@ def _batch(
         request_params={
             "ann_date": announcement_date.strftime("%Y%m%d"),
             "period": period,
+            "source_symbol": symbol,
         },
         fetched_rows=fetched_rows,
         accepted_rows=fetched_rows,
@@ -50,7 +52,7 @@ def _batch(
     manifest = RawManifest(
         raw_id=uuid4(),
         ingestion_id=ingestion_id,
-        object_path=f"tushare/top10_float_holder/{announcement_date}/{ingestion_id}.jsonl",
+        object_path=(f"tushare/top10_float_holder/{announcement_date}/{ingestion_id}.jsonl"),
         file_format=RawFileFormat.JSONL,
         content_sha256="0" * 64,
         byte_size=fetched_rows,
@@ -60,7 +62,7 @@ def _batch(
     records: tuple[IngestionEnvelope[Top10FloatHolderRecord], ...] = ()
     if fetched_rows and fetched_rows < 6_000:
         record = Top10FloatHolderRecord(
-            symbol="SSE:600000",
+            symbol=symbol or "SSE:600000",
             end_date=date(2026, 6, 30),
             announcement_date=announcement_date,
             holder_rank=1,
@@ -79,24 +81,29 @@ def _batch(
 class FakePipeline:
     def __init__(
         self,
-        outcomes: dict[tuple[date, str | None], int | Exception] | None = None,
+        outcomes: dict[tuple[date, str | None, str | None], int | Exception] | None = None,
     ) -> None:
         self.outcomes = outcomes or {}
-        self.calls: list[tuple[date, str | None]] = []
+        self.calls: list[tuple[date, str | None, str | None]] = []
 
     def prepare_top10_float_holder_request(
-        self, announcement_date: date, *, period: str | None = None
+        self,
+        announcement_date: date,
+        *,
+        period: str | None = None,
+        symbol: str | None = None,
     ) -> PreparedTop10FloatHolderBatch:
-        key = (announcement_date, period)
+        key = (announcement_date, period, symbol)
         self.calls.append(key)
         outcome = self.outcomes.get(key, 1)
         if isinstance(outcome, Exception):
             raise outcome
-        return _batch(announcement_date, outcome, period=period)
+        return _batch(announcement_date, outcome, period=period, symbol=symbol)
 
 
 class FakePersistence:
-    def __init__(self) -> None:
+    def __init__(self, split_symbols: tuple[str, ...] = ("SSE:600000", "SZSE:000001")) -> None:
+        self.split_symbols = split_symbols
         self.commits: list[tuple[PreparedTop10FloatHolderBatch, ...]] = []
         self.aborts: list[tuple[tuple[PreparedTop10FloatHolderBatch, ...], str]] = []
 
@@ -112,6 +119,9 @@ class FakePersistence:
         error_type: str,
     ) -> None:
         self.aborts.append((batches, error_type))
+
+    def top10_float_holder_split_symbols(self) -> tuple[str, ...]:
+        return self.split_symbols
 
 
 def _service(pipeline: FakePipeline, persistence: FakePersistence) -> Top10FloatHolderService:
@@ -150,13 +160,13 @@ def test_weekly_sync_covers_nine_day_rolling_window() -> None:
 
 def test_limit_sized_day_supersedes_full_day_request_and_splits_by_period() -> None:
     day = date(2026, 10, 5)
-    pipeline = FakePipeline({(day, None): 6_000})
+    pipeline = FakePipeline({(day, None, None): 6_000})
     persistence = FakePersistence()
 
     summary = _service(pipeline, persistence).sync_range(day, day)
 
     full_day, *splits = pipeline.calls
-    assert full_day == (day, None)
+    assert full_day == (day, None, None)
     assert [call[1] for call in splits] == list(recent_report_periods(day))
     assert summary.superseded_request_count == 1
 
@@ -169,34 +179,45 @@ def test_limit_sized_day_supersedes_full_day_request_and_splits_by_period() -> N
     assert sum(len(batch.records) for batch in committed) == len(recent_report_periods(day))
 
 
-def test_limit_sized_split_request_fails_explicitly_and_aborts_prepared_batches() -> None:
-    day = date(2026, 10, 5)
+def test_limit_sized_period_split_supersedes_and_re_reads_per_symbol() -> None:
+    # Peak disclosure days stay truncated even within one report period, so the
+    # period request is superseded and the day is re-read symbol by symbol.
+    day = date(2026, 8, 28)
     truncated_period = recent_report_periods(day)[0]
     pipeline = FakePipeline(
         {
-            (day, None): 6_000,
-            (day, truncated_period): 6_000,
+            (day, None, None): 6_000,
+            (day, truncated_period, None): 6_000,
         }
     )
-    persistence = FakePersistence()
+    persistence = FakePersistence(("SSE:600000", "SZSE:000001"))
 
-    with pytest.raises(ProviderError, match="remains truncated"):
-        _service(pipeline, persistence).sync_range(day, day)
+    summary = _service(pipeline, persistence).sync_range(day, day)
 
-    aborted, error_type = persistence.aborts[0]
-    assert [batch.run.request_params["period"] for batch in aborted] == [
-        None,
-        truncated_period,
+    calls = pipeline.calls
+    assert calls[0] == (day, None, None)
+    assert calls[1] == (day, truncated_period, None)
+    assert calls[2:4] == [
+        (day, truncated_period, "SSE:600000"),
+        (day, truncated_period, "SZSE:000001"),
     ]
-    assert aborted[0].records == ()
-    assert error_type == "ProviderError"
-    assert persistence.commits == []
+    assert calls[4:] == [(day, period, None) for period in recent_report_periods(day)[1:]]
+    assert summary.superseded_request_count == 2
+
+    committed = persistence.commits[0]
+    superseded = [batch for batch in committed if batch.records == ()]
+    assert all(
+        batch.quality_results[-1].rule_code == "top10_float_holder.response_split"
+        for batch in superseded
+    )
+    per_symbol_records = sum(len(batch.records) for batch in committed[2:4])
+    assert per_symbol_records == 2
 
 
 def test_provider_failure_mid_window_aborts_every_prepared_request() -> None:
     start = date(2026, 10, 3)
     end = date(2026, 10, 5)
-    pipeline = FakePipeline({(end, None): ProviderError("unavailable")})
+    pipeline = FakePipeline({(end, None, None): ProviderError("unavailable")})
     persistence = FakePersistence()
 
     with pytest.raises(ProviderError, match="unavailable"):
@@ -226,12 +247,18 @@ def test_superseded_probe_preserves_rejected_source_row_accounting() -> None:
 
     class PartialProbePipeline(FakePipeline):
         def prepare_top10_float_holder_request(
-            self, announcement_date: date, *, period: str | None = None
+            self,
+            announcement_date: date,
+            *,
+            period: str | None = None,
+            symbol: str | None = None,
         ) -> PreparedTop10FloatHolderBatch:
-            if (announcement_date, period) == (day, None):
-                self.calls.append((announcement_date, period))
+            if (announcement_date, period, symbol) == (day, None, None):
+                self.calls.append((announcement_date, period, symbol))
                 return probe
-            return super().prepare_top10_float_holder_request(announcement_date, period=period)
+            return super().prepare_top10_float_holder_request(
+                announcement_date, period=period, symbol=symbol
+            )
 
     persistence = FakePersistence()
     summary = Top10FloatHolderService(PartialProbePipeline(), persistence).sync_range(day, day)

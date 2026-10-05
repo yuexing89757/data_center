@@ -830,7 +830,7 @@ def test_top10_float_holders_derive_rank_by_amount_and_replay_raw() -> None:
             "holder_type",
         ),
     )
-    assert batch.request_params == {"ann_date": "20260828", "period": None}
+    assert batch.request_params == {"ann_date": "20260828", "period": None, "source_symbol": None}
     assert batch.schema_version == "tushare.top10_float_holder.v1"
 
     sse_records = [record for record in batch.records if record.symbol == "SSE:600000"]
@@ -868,6 +868,25 @@ def test_top10_float_holders_period_narrows_request_and_is_validated() -> None:
     with pytest.raises(ProviderError, match="invalid Tushare period"):
         provider.fetch_top10_float_holders(date(2026, 8, 28), period="2026-06-30")
     assert len(client.calls) == 1
+
+
+def test_top10_float_holders_symbol_narrows_request_to_one_security() -> None:
+    client = Top10FloatHolderClient(TOP10_FLOAT_HOLDER_ROWS)
+
+    batch = TushareProvider(client).fetch_top10_float_holders(
+        date(2026, 8, 28), period="20260630", symbol="SZSE:000001"
+    )
+
+    assert client.calls[0][1] == {
+        "ann_date": "20260828",
+        "period": "20260630",
+        "ts_code": "000001.SZ",
+    }
+    assert batch.request_params == {
+        "ann_date": "20260828",
+        "period": "20260630",
+        "source_symbol": "000001.SZ",
+    }
 
 
 def test_top10_float_holders_rank_every_row_and_quarantine_beyond_ten() -> None:

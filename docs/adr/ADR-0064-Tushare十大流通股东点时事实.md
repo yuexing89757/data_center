@@ -47,8 +47,9 @@ Tushare `top10_floatholders` 接口按公告日全市场返回该事实（经兼
    `failed`，不发布部分事实。
 6. 恰好 6000 行的响应视为可能截断：该全日请求作废（保留 Raw 与 INFO 质量
    `top10_float_holder.response_split`，`accepted_rows` 置 0），改按公告日前最近的
-   8 个季度末报告期逐期拆分请求；单个拆分请求仍满额时硬失败，显式暴露截断而不是
-   静默丢弃。合法空响应是成功，不伪造事实。
+   8 个季度末报告期逐期拆分请求；单个拆分请求仍满额时（半年报披露峰值日单期即可
+   超过全市场单次上限）再次作废并按 `core.security` 沪深股票全集逐证券重读该期。
+   合法空响应是成功，不伪造事实；逐证券单请求不可能触达行数上限。
 7. 每周六 08:00 Asia/Shanghai 在 Worker 内运行滚动 9 日公告窗口（覆盖上一整周并留
    两侧余量）。`TOP10_FLOAT_HOLDERS_WEEKLY_ENABLED` 默认关闭，首次生产窗口探测通过后
    显式启用。手动补采走 `market-data-center top10-float-holders` CLI（Workflow

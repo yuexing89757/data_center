@@ -156,7 +156,11 @@ class Top10FloatHoldersProvider(Protocol):
     source_code: str
 
     def fetch_top10_float_holders(
-        self, announcement_date: date, *, period: str | None = None
+        self,
+        announcement_date: date,
+        *,
+        period: str | None = None,
+        symbol: str | None = None,
     ) -> "ProviderBatch[Top10FloatHolderRecord]": ...
 
 

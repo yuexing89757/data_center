@@ -525,14 +525,22 @@ class TushareProvider(AbstractContextManager["TushareProvider"]):
         )
 
     def fetch_top10_float_holders(
-        self, announcement_date: date, *, period: str | None = None
+        self,
+        announcement_date: date,
+        *,
+        period: str | None = None,
+        symbol: str | None = None,
     ) -> ProviderBatch[Top10FloatHolderRecord]:
-        """Read one announcement day market-wide; period narrows split requests."""
+        """Read one announcement day market-wide; period/symbol narrow splits."""
         params: dict[str, str] = {"ann_date": announcement_date.strftime("%Y%m%d")}
         if period is not None:
             if not re.fullmatch(r"[0-9]{8}", period):
                 raise ProviderError(f"invalid Tushare period: {period}")
             params["period"] = period
+        ts_code: str | None = None
+        if symbol is not None:
+            ts_code = self.source_symbol(symbol)
+            params["ts_code"] = ts_code
         if self._shareholder_count_request_started:
             self._sleeper(self._shareholder_count_request_interval_seconds)
         self._shareholder_count_request_started = True
@@ -558,6 +566,7 @@ class TushareProvider(AbstractContextManager["TushareProvider"]):
             request_params={
                 "ann_date": params["ann_date"],
                 "period": period,
+                "source_symbol": ts_code,
             },
             schema_version="tushare.top10_float_holder.v1",
             record_factory=lambda: _top10_float_holder_records(rows),

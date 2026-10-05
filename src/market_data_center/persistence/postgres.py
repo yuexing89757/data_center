@@ -1671,6 +1671,18 @@ where market = 'CN_A_SHARE'
                 [self._run_update_parameters(run) for run in failed_runs],
             )
 
+    def top10_float_holder_split_symbols(self) -> tuple[str, ...]:
+        """Deterministic SSE/SZSE stock universe for per-symbol overflow splits."""
+        statement = text("""
+select symbol
+from core.security
+where security_type = 'stock'
+  and exchange in ('SSE', 'SZSE')
+order by symbol
+""")
+        with self._engine.connect() as connection:
+            return tuple(cast(str, row) for row in connection.execute(statement).scalars().all())
+
     def commit_capital_batch(
         self,
         run: IngestionRun,
