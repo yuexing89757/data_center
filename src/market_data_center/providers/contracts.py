@@ -28,6 +28,7 @@ from market_data_center.domain.shareholder_count import ShareholderCountRecord
 from market_data_center.domain.stock_daily_indicator import StockDailyIndicatorSnapshotRecord
 from market_data_center.domain.today_limit_down import LimitDownSourceRecord
 from market_data_center.domain.today_limit_up import LimitUpSourceRecord
+from market_data_center.domain.top10_float_holder import Top10FloatHolderRecord
 
 type ProviderRecord = (
     CallAuctionIndicativeDetailRecord
@@ -40,6 +41,7 @@ type ProviderRecord = (
     | StockDailyIndicatorSnapshotRecord
     | DeductedProfitRecord
     | ShareholderCountRecord
+    | Top10FloatHolderRecord
     | FiveLevelQuoteSnapshotRecord
     | ConvertibleBondRecord
     | LimitUpSourceRecord
@@ -148,6 +150,14 @@ class ShareholderCountProvider(Protocol):
     def fetch_shareholder_counts(
         self, source_symbol: str | None, start_date: date, end_date: date
     ) -> "ProviderBatch[ShareholderCountRecord]": ...
+
+
+class Top10FloatHoldersProvider(Protocol):
+    source_code: str
+
+    def fetch_top10_float_holders(
+        self, announcement_date: date, *, period: str | None = None
+    ) -> "ProviderBatch[Top10FloatHolderRecord]": ...
 
 
 class ConvertibleBondProvider(Protocol):

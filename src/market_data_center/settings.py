@@ -50,6 +50,8 @@ class SchedulerSettings(BaseSettings):
     dragon_tiger_seat_profile_enabled: bool = False
     # Opt-in until benchmark coverage and the ordered migration are deployed.
     regulation_daily_enabled: bool = False
+    # Opt-in until the Tushare relay endpoint and ordered migration are deployed.
+    top10_float_holders_weekly_enabled: bool = False
 
 
 class PytdxPoolSettings(BaseSettings):

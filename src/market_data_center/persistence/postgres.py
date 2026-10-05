@@ -64,8 +64,10 @@ from market_data_center.domain.records import (
 from market_data_center.domain.regulation import RegulationEventRecord
 from market_data_center.domain.shareholder_count import ShareholderCountRecord
 from market_data_center.domain.stock_daily_indicator import StockDailyIndicatorSnapshotRecord
+from market_data_center.domain.top10_float_holder import Top10FloatHolderRecord
 from market_data_center.shareholder_count_batch import PreparedShareholderCountBatch
 from market_data_center.shareholder_count_service import ShareholderCountBackfillTarget
+from market_data_center.top10_float_holder_batch import PreparedTop10FloatHolderBatch
 
 TASK_LOCK_HEARTBEAT_SECONDS = 30
 
@@ -353,6 +355,19 @@ insert into core.shareholder_count (
     :revision_key, :source_code, :ingestion_id
 )
 on conflict (symbol, statistics_date, revision_key) do nothing
+""")
+
+INSERT_TOP10_FLOAT_HOLDER = text("""
+insert into core.top10_float_holder (
+    symbol, end_date, announcement_date, holder_rank, holder_name,
+    hold_amount, hold_ratio, hold_float_ratio, hold_change, holder_type,
+    source_code, ingestion_id
+) values (
+    :symbol, :end_date, :announcement_date, :holder_rank, :holder_name,
+    :hold_amount, :hold_ratio, :hold_float_ratio, :hold_change, :holder_type,
+    :source_code, :ingestion_id
+)
+on conflict (symbol, end_date, announcement_date, holder_rank) do nothing
 """)
 
 UPSERT_SHARE_CAPITAL = text("""
@@ -1582,6 +1597,80 @@ where market = 'CN_A_SHARE'
                 [self._run_update_parameters(run) for run in failed_runs],
             )
 
+    def commit_top10_float_holder_batches(
+        self, batches: Sequence[PreparedTop10FloatHolderBatch]
+    ) -> None:
+        """Atomically publish validated facts while retaining request-level lineage."""
+        if not batches:
+            return
+        self._preflight_top10_float_holder_batches(batches)
+        manifests = [batch.manifest for batch in batches if batch.manifest is not None]
+        quality_results = [result for batch in batches for result in batch.quality_results]
+        records = [record for batch in batches for record in batch.records]
+        with self._engine.begin() as connection:
+            if manifests:
+                connection.execute(
+                    INSERT_RAW_MANIFEST,
+                    [self._manifest_parameters(manifest) for manifest in manifests],
+                )
+            if quality_results:
+                connection.execute(INSERT_QUALITY_RESULT, self._quality_parameters(quality_results))
+            if records:
+                connection.execute(
+                    INSERT_TOP10_FLOAT_HOLDER,
+                    self._top10_float_holder_envelope_parameters(records),
+                )
+            connection.execute(
+                UPDATE_INGESTION_RUN,
+                [self._run_update_parameters(batch.run) for batch in batches],
+            )
+
+    def abort_top10_float_holder_batches(
+        self,
+        batches: Sequence[PreparedTop10FloatHolderBatch],
+        *,
+        error_type: str,
+    ) -> None:
+        """Retain prepared Raw objects and fail all runs without publishing facts."""
+        if not batches:
+            return
+        self._preflight_top10_float_holder_batches(batches)
+        failed_runs = [
+            replace(
+                batch.run,
+                status=IngestionStatus.FAILED,
+                accepted_rows=0,
+                rejected_rows=batch.run.fetched_rows,
+                error_summary=f"{error_type}: top10 float-holder batch aborted",
+            )
+            for batch in batches
+        ]
+        quality_results = [
+            QualityResult(
+                quality_result_id=uuid4(),
+                ingestion_id=run.ingestion_id,
+                dataset_code=DatasetCode.TOP10_FLOAT_HOLDER,
+                rule_code="top10_float_holder.batch_aborted",
+                severity=QualitySeverity.ERROR,
+                status=QualityStatus.FAILED,
+                message="Top10 float-holder aggregate publication was aborted",
+                details={"error_type": error_type},
+            )
+            for run in failed_runs
+        ]
+        manifests = [batch.manifest for batch in batches if batch.manifest is not None]
+        with self._engine.begin() as connection:
+            if manifests:
+                connection.execute(
+                    INSERT_RAW_MANIFEST,
+                    [self._manifest_parameters(manifest) for manifest in manifests],
+                )
+            connection.execute(INSERT_QUALITY_RESULT, self._quality_parameters(quality_results))
+            connection.execute(
+                UPDATE_INGESTION_RUN,
+                [self._run_update_parameters(run) for run in failed_runs],
+            )
+
     def commit_capital_batch(
         self,
         run: IngestionRun,
@@ -2118,6 +2207,64 @@ where board_id = :board_id and trade_date = :trade_date
         ]
 
     @classmethod
+    def _preflight_top10_float_holder_batches(
+        cls, batches: Sequence[PreparedTop10FloatHolderBatch]
+    ) -> None:
+        run_ids = [batch.run.ingestion_id for batch in batches]
+        if len(run_ids) != len(set(run_ids)):
+            raise ValueError("Top10 float-holder commit contains duplicate ingestion IDs")
+        natural_keys: set[tuple[str, date, date, int]] = set()
+        for batch in batches:
+            run = batch.run
+            if run.dataset_code is not DatasetCode.TOP10_FLOAT_HOLDER:
+                raise ValueError("Top10 float-holder batch has an unexpected dataset")
+            if run.provider_code is not ProviderCode.TUSHARE:
+                raise ValueError("Top10 float-holder batch has an unexpected provider")
+            if batch.manifest is None:
+                if run.replayed_from_raw_id is None:
+                    raise ValueError("Live top10 float-holder batch requires a Raw manifest")
+            else:
+                if batch.manifest.ingestion_id != run.ingestion_id:
+                    raise ValueError("Raw manifest does not match its top10 float-holder run")
+                if run.replayed_from_raw_id is not None:
+                    raise ValueError("Top10 float-holder replay must not copy a Raw manifest")
+            cls._ensure_envelope_ids(batch.records, run.ingestion_id)
+            if any(result.ingestion_id != run.ingestion_id for result in batch.quality_results):
+                raise ValueError("Quality result does not match its top10 float-holder run")
+            for envelope in batch.records:
+                key = (
+                    envelope.record.symbol,
+                    envelope.record.end_date,
+                    envelope.record.announcement_date,
+                    envelope.record.holder_rank,
+                )
+                if key in natural_keys:
+                    raise ValueError("Top10 float-holder commit contains duplicate natural keys")
+                natural_keys.add(key)
+
+    @staticmethod
+    def _top10_float_holder_envelope_parameters(
+        records: Iterable[IngestionEnvelope[Top10FloatHolderRecord]],
+    ) -> list[dict[str, object]]:
+        return [
+            {
+                "symbol": envelope.record.symbol,
+                "end_date": envelope.record.end_date,
+                "announcement_date": envelope.record.announcement_date,
+                "holder_rank": envelope.record.holder_rank,
+                "holder_name": envelope.record.holder_name,
+                "hold_amount": envelope.record.hold_amount,
+                "hold_ratio": envelope.record.hold_ratio,
+                "hold_float_ratio": envelope.record.hold_float_ratio,
+                "hold_change": envelope.record.hold_change,
+                "holder_type": envelope.record.holder_type,
+                "source_code": envelope.record.source_code,
+                "ingestion_id": envelope.ingestion_id,
+            }
+            for envelope in records
+        ]
+
+    @classmethod
     def _insert_manifest(cls, connection: Connection, manifest: RawManifest | None) -> None:
         if manifest is not None:
             connection.execute(INSERT_RAW_MANIFEST, cls._manifest_parameters(manifest))
@@ -2593,6 +2740,7 @@ where board_id = :board_id and trade_date = :trade_date
         | StockDailyIndicatorSnapshotRecord
         | DeductedProfitRecord
         | ShareholderCountRecord
+        | Top10FloatHolderRecord
         | ConvertibleBondRecord
     ](records: Iterable[IngestionEnvelope[RecordT]], ingestion_id: UUID) -> None:
         if any(envelope.ingestion_id != ingestion_id for envelope in records):

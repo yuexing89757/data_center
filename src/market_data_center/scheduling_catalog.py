@@ -9,6 +9,7 @@ STOCK_DAILY_INDICATOR_JOB_ID = "stock-daily-indicators-daily"
 STALE_RUN_RECOVERY_JOB_ID = "recover-stale-ingestion-runs"
 DEDUCTED_PROFIT_JOB_ID = "deducted-profit-daily"
 SHAREHOLDER_COUNT_DAILY_JOB_ID = "shareholder-count-daily"
+TOP10_FLOAT_HOLDERS_WEEKLY_JOB_ID = "top10-float-holders-weekly"
 STOCK_POOL_JOB_ID = "mainboard-price-limit-stock-pools-daily"
 EOD_QUOTE_SNAPSHOT_JOB_ID = "eod-quote-snapshot-daily"
 CALL_AUCTION_MARKET_SERIES_JOB_ID = "call-auction-market-series"
@@ -90,6 +91,12 @@ WORKFLOW_DEFINITIONS = (
         "股东人数每日增量同步",
         "按滚动三十日公告窗口同步股东人数点时事实。",
         ("shareholder_count_daily",),
+    ),
+    WorkflowDefinition(
+        "top10_float_holders_weekly",
+        "前十大流通股东每周增量同步",
+        "每周六按滚动公告窗口同步 Tushare 前十大流通股东点时事实。",
+        ("collect_top10_float_holders",),
     ),
     WorkflowDefinition(
         "shareholder_count_backfill",
@@ -282,6 +289,21 @@ def job_definitions(settings: SchedulerSettings) -> tuple[JobDefinition, ...]:
             timeout,
             "失败保持显式缺口; 下一日窗口重扫或手工命令重试",
             hour=21,
+            minute=0,
+        ),
+        JobDefinition(
+            TOP10_FLOAT_HOLDERS_WEEKLY_JOB_ID,
+            "前十大流通股东每周增量同步",
+            "每周六按滚动九日公告窗口同步 Tushare 前十大流通股东点时事实。",
+            "top10_float_holders_weekly",
+            "cron",
+            "每周六 08:00",
+            timezone,
+            settings.top10_float_holders_weekly_enabled,
+            timeout,
+            "失败保持显式缺口; 下一周六窗口重扫或手工命令重试",
+            day_of_week="sat",
+            hour=8,
             minute=0,
         ),
         JobDefinition(

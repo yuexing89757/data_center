@@ -88,6 +88,22 @@ benchmark collection verifies and fills its 30-trading-session input window. The
 singleton database lock uses autocommit and a 30-second heartbeat; loss stops scheduling.
 See [recovery notes](docs/Raw重放与运行恢复.md) before any authorized production replay.
 
+Top-10 float-holder facts (ADR-0064, migration `20261005000100`) are append-only rows in
+`core.top10_float_holder`, keyed by `(symbol, end_date, announcement_date, holder_rank)` with
+ranks derived per announcement group by descending share amount. A response hitting the
+6000-row provider limit is superseded by per-report-period split requests (most recent 8
+quarter ends); a still-truncated split fails explicitly. The weekly job
+`top10-float-holders-weekly` runs Saturdays 08:00 Asia/Shanghai over a rolling 9-day
+announcement window and stays opt-in via `TOP10_FLOAT_HOLDERS_WEEKLY_ENABLED` (default
+false). Manual catch-up:
+
+```bash
+uv run market-data-center top10-float-holders --start-date 2026-09-26 --end-date 2026-10-04
+```
+
+No `api_v1` view or RPC ships in the first phase; the public read contract is deferred until
+consumer analytics needs are settled.
+
 Build one exact-date same-day limit-up snapshot manually (never falls back to an older date):
 
 ```bash

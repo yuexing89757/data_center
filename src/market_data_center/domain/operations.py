@@ -38,6 +38,7 @@ class WorkflowCode(StrEnum):
     BOARD_INDEX_DAILY_BAR = "board_index_daily_bar"
     SHAREHOLDER_COUNT_DAILY = "shareholder_count_daily"
     SHAREHOLDER_COUNT_BACKFILL = "shareholder_count_backfill"
+    TOP10_FLOAT_HOLDERS_WEEKLY = "top10_float_holders_weekly"
     SECURITY_BSE_DAILY = "security_bse_daily"
     DRAGON_TIGER_DAILY = "dragon_tiger_daily"
     DRAGON_TIGER_SEAT_PROFILE = "dragon_tiger_seat_profile"

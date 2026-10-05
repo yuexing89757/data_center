@@ -13,6 +13,7 @@ from market_data_center.domain import (
     SecurityStatus,
     ShareholderCountRecord,
     StockDailyIndicatorSnapshotRecord,
+    Top10FloatHolderRecord,
     TradeStatus,
 )
 from market_data_center.domain.ingestion import DatasetCode
@@ -555,6 +556,32 @@ def test_shareholder_count_maps_bse_request_and_raw_replay() -> None:
     assert replayed == batch.records
 
 
+def test_shareholder_count_accepts_relay_float_serialized_counts() -> None:
+    # The relay endpoint (TUSHARE_ENDPOINT) serializes JSON integers as floats.
+    class FloatCountClient(FakeClient):
+        def query(
+            self, api_name: str, *, params: Mapping[str, str], fields: Sequence[str]
+        ) -> Sequence[Mapping[str, object]]:
+            if api_name == "stk_holdernumber":
+                return (
+                    {
+                        "ts_code": "600000.SH",
+                        "ann_date": "20260828",
+                        "end_date": "20260630",
+                        "holder_num": 163327.0,
+                    },
+                )
+            return super().query(api_name, params=params, fields=fields)
+
+    batch = TushareProvider(FloatCountClient()).fetch_shareholder_counts(
+        "SSE:600000", date(2026, 8, 1), date(2026, 8, 28)
+    )
+
+    assert batch.raw_rows[0]["holder_num"] == "163327.0"
+    assert batch.records[0].shareholder_count == 163327
+    assert batch.records[0].revision_key  # derived from the integer count
+
+
 def test_shareholder_count_all_market_request_can_succeed_empty() -> None:
     class EmptyClient(FakeClient):
         def query(
@@ -728,5 +755,174 @@ def test_only_shareholder_count_requests_are_paced() -> None:
 
     provider.fetch_shareholder_counts(None, date(2026, 8, 1), date(2026, 8, 24))
     provider.fetch_shareholder_counts(None, date(2026, 8, 1), date(2026, 8, 24))
+
+    assert sleeps == [pytest.approx(1 / 3)]
+
+
+TOP10_FLOAT_HOLDER_ROWS: tuple[dict[str, object], ...] = (
+    {
+        "ts_code": "600000.SH",
+        "ann_date": "20260828",
+        "end_date": "20260630",
+        "holder_name": "上海国鑫投资发展有限公司",
+        "hold_amount": 945568990.0,
+        "hold_ratio": 2.839,
+        "hold_float_ratio": 2.839,
+        "hold_change": 0.0,
+        "holder_type": "投资公司",
+    },
+    {
+        "ts_code": "600000.SH",
+        "ann_date": "20260828",
+        "end_date": "20260630",
+        "holder_name": "上海国际集团有限公司",
+        "hold_amount": 7086834641.0,
+        "hold_ratio": 21.2781,
+        "hold_float_ratio": 21.2781,
+        "hold_change": 0.0,
+        "holder_type": "一般企业",
+    },
+    {
+        "ts_code": "000001.SZ",
+        "ann_date": "20260828",
+        "end_date": "20260630",
+        "holder_name": "中国平安人寿保险股份有限公司",
+        "hold_amount": 1826800000.0,
+        "hold_ratio": None,
+        "hold_float_ratio": None,
+        "hold_change": None,
+        "holder_type": None,
+    },
+)
+
+
+class Top10FloatHolderClient(FakeClient):
+    def __init__(self, rows: Sequence[Mapping[str, object]]) -> None:
+        super().__init__()
+        self._rows = rows
+
+    def query(
+        self, api_name: str, *, params: Mapping[str, str], fields: Sequence[str]
+    ) -> Sequence[Mapping[str, object]]:
+        if api_name == "top10_floatholders":
+            self.calls.append((api_name, params, fields))
+            return self._rows
+        return super().query(api_name, params=params, fields=fields)
+
+
+def test_top10_float_holders_derive_rank_by_amount_and_replay_raw() -> None:
+    client = Top10FloatHolderClient(TOP10_FLOAT_HOLDER_ROWS)
+
+    batch = TushareProvider(client).fetch_top10_float_holders(date(2026, 8, 28))
+
+    assert client.calls[0] == (
+        "top10_floatholders",
+        {"ann_date": "20260828"},
+        (
+            "ts_code",
+            "ann_date",
+            "end_date",
+            "holder_name",
+            "hold_amount",
+            "hold_ratio",
+            "hold_float_ratio",
+            "hold_change",
+            "holder_type",
+        ),
+    )
+    assert batch.request_params == {"ann_date": "20260828", "period": None}
+    assert batch.schema_version == "tushare.top10_float_holder.v1"
+
+    sse_records = [record for record in batch.records if record.symbol == "SSE:600000"]
+    assert [record.holder_rank for record in sse_records] == [1, 2]
+    assert sse_records[0].holder_name == "上海国际集团有限公司"
+    assert sse_records[0].hold_amount == 7_086_834_641
+    assert sse_records[0].hold_ratio == Decimal("21.2781")
+    assert sse_records[0].hold_change == 0
+    assert sse_records[0].holder_type == "一般企业"
+
+    szse_record = batch.records[0]
+    assert szse_record.symbol == "SZSE:000001"
+    assert szse_record.hold_ratio is None
+    assert szse_record.hold_change is None
+    assert szse_record.holder_type is None
+
+    replayed = normalize_tushare_raw(
+        DatasetCode.TOP10_FLOAT_HOLDER,
+        batch.schema_version,
+        batch.raw_rows,
+        batch.request_params,
+    )
+    assert isinstance(replayed[0], Top10FloatHolderRecord)
+    assert replayed == batch.records
+
+
+def test_top10_float_holders_period_narrows_request_and_is_validated() -> None:
+    client = Top10FloatHolderClient(TOP10_FLOAT_HOLDER_ROWS)
+    provider = TushareProvider(client)
+
+    provider.fetch_top10_float_holders(date(2026, 8, 28), period="20260630")
+
+    assert client.calls[0][1] == {"ann_date": "20260828", "period": "20260630"}
+
+    with pytest.raises(ProviderError, match="invalid Tushare period"):
+        provider.fetch_top10_float_holders(date(2026, 8, 28), period="2026-06-30")
+    assert len(client.calls) == 1
+
+
+def test_top10_float_holders_rejects_more_than_ten_rows_per_group() -> None:
+    row = dict(TOP10_FLOAT_HOLDER_ROWS[0])
+    rows = tuple(
+        {**row, "holder_name": f"股东{index}", "hold_amount": float(1000 - index)}
+        for index in range(11)
+    )
+    batch = TushareProvider(Top10FloatHolderClient(rows)).fetch_top10_float_holders(
+        date(2026, 8, 28)
+    )
+
+    with pytest.raises(ProviderError, match="more than 10 rows"):
+        _ = batch.records
+
+
+@pytest.mark.parametrize("missing_amount", [None, "", " "])
+def test_top10_float_holders_keep_missing_amounts_in_raw_without_records(
+    missing_amount: object,
+) -> None:
+    rows = (dict(TOP10_FLOAT_HOLDER_ROWS[0], hold_amount=missing_amount),)
+    batch = TushareProvider(Top10FloatHolderClient(rows)).fetch_top10_float_holders(
+        date(2026, 8, 28)
+    )
+
+    assert len(batch.raw_rows) == 1
+    assert batch.records == ()
+    replayed = normalize_tushare_raw(
+        DatasetCode.TOP10_FLOAT_HOLDER,
+        batch.schema_version,
+        batch.raw_rows,
+        batch.request_params,
+    )
+    assert replayed == batch.records
+
+
+def test_top10_float_holders_reject_fractional_share_amounts() -> None:
+    rows = (dict(TOP10_FLOAT_HOLDER_ROWS[0], hold_amount="945568990.45"),)
+    batch = TushareProvider(Top10FloatHolderClient(rows)).fetch_top10_float_holders(
+        date(2026, 8, 28)
+    )
+
+    with pytest.raises(ProviderError, match="invalid Tushare hold_amount"):
+        _ = batch.records
+
+
+def test_top10_float_holders_share_the_shareholder_request_pacer() -> None:
+    sleeps: list[float] = []
+    provider = TushareProvider(
+        Top10FloatHolderClient(TOP10_FLOAT_HOLDER_ROWS),
+        shareholder_count_request_interval_seconds=1 / 3,
+        sleeper=sleeps.append,
+    )
+
+    provider.fetch_top10_float_holders(date(2026, 8, 28))
+    provider.fetch_top10_float_holders(date(2026, 8, 27))
 
     assert sleeps == [pytest.approx(1 / 3)]

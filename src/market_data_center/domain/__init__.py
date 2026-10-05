@@ -185,6 +185,12 @@ from market_data_center.domain.stock_pool import (
     StockPoolMember,
     StockPoolSnapshot,
 )
+from market_data_center.domain.top10_float_holder import (
+    Top10FloatHolderRecord,
+    Top10FloatHolderValidation,
+    partition_top10_float_holders,
+    validate_top10_float_holders,
+)
 from market_data_center.domain.validation import (
     ValidationFinding,
     ValidationRule,
@@ -315,6 +321,8 @@ __all__ = [
     "StockPoolDefinition",
     "StockPoolMember",
     "StockPoolSnapshot",
+    "Top10FloatHolderRecord",
+    "Top10FloatHolderValidation",
     "TradeStatus",
     "TradingDayRecord",
     "TradingSeat",
@@ -332,6 +340,7 @@ __all__ = [
     "deducted_profit_revision_key",
     "dragon_tiger_content_hash",
     "dragon_tiger_natural_key",
+    "partition_top10_float_holders",
     "realtime_quote_natural_key",
     "realtime_quote_natural_key_json",
     "regulation_event_natural_key",
@@ -351,4 +360,5 @@ __all__ = [
     "validate_regulation_rules",
     "validate_shareholder_counts",
     "validate_stock_daily_indicators",
+    "validate_top10_float_holders",
 ]

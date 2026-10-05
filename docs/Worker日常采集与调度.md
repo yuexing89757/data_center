@@ -114,6 +114,17 @@ uv run market-data-center shareholder-count-daily --as-of-date 2026-08-24 --prov
 uv run market-data-center shareholder-count-backfill --cutoff-date 2026-08-24 --yes --provider tushare
 ```
 
+十大流通股东增量任务登记为每周六 08:00 运行，逐日读取截至当天最近 9 个自然日的
+Tushare 公告窗口（ADR-0064）；`TOP10_FLOAT_HOLDERS_WEEKLY_ENABLED=false` 为默认值，
+只有运维显式启用后 Worker 才注册该任务。名次由 adapter 在
+`(symbol, end_date, announcement_date)` 组内按持股数降序确定性派生；接口单日全市场
+命中 6000 行上限时作废该请求并按公告日前最近 8 个季度末逐期拆分，单个拆分仍满额则
+显式失败。事实追加写入 `core.top10_float_holder`，重复自然键不覆盖不重复。手动补采：
+
+```bash
+uv run market-data-center top10-float-holders --start-date 2026-09-26 --end-date 2026-10-04
+```
+
 周一至周五 21:00 构建沪深主板昨日涨停与昨日跌停两份不可变股票池。触发时间不是依赖
 完成的证明：任务还会检查 basis 当日 `daily_market`、`stock_daily_indicator` WorkflowRun
 均成功，并校验精确交易日、日 K、每日指标和 lineage；缺失时失败且不回退旧快照。
@@ -164,6 +175,7 @@ SECURITY_BSE_ENABLED=false
 DRAGON_TIGER_ENABLED=false
 BOARD_INDEX_DAILY_BAR_ENABLED=true
 SHAREHOLDER_COUNT_DAILY_ENABLED=false
+TOP10_FLOAT_HOLDERS_WEEKLY_ENABLED=false
 ```
 
 ### 竞价序列诊断与保留

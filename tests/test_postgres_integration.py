@@ -74,6 +74,7 @@ from market_data_center.domain import (
     SecurityType,
     ShareCapitalRecord,
     StockDailyIndicatorSnapshotRecord,
+    Top10FloatHolderRecord,
     TradeStatus,
     deducted_profit_revision_key,
 )
@@ -136,6 +137,7 @@ from market_data_center.recovery import (
     verify_restored_snapshot,
 )
 from market_data_center.regulation_service import RegulationService
+from market_data_center.top10_float_holder_batch import PreparedTop10FloatHolderBatch
 
 pytestmark = pytest.mark.integration
 
@@ -7022,6 +7024,8 @@ def test_worker_has_only_ingestion_permissions(
         ("core", "stock_daily_indicator", "INSERT"),
         ("core", "stock_daily_indicator", "SELECT"),
         ("core", "stock_daily_indicator", "UPDATE"),
+        ("core", "top10_float_holder", "INSERT"),
+        ("core", "top10_float_holder", "SELECT"),
         ("core", "trading_calendar", "INSERT"),
         ("core", "trading_calendar", "SELECT"),
         ("core", "trading_calendar", "UPDATE"),
@@ -7067,6 +7071,7 @@ def test_internal_tables_have_rls_with_worker_only_policies(database_engine: Eng
         ("core", "security_name_history"),
         ("core", "shareholder_count"),
         ("core", "stock_daily_indicator"),
+        ("core", "top10_float_holder"),
         ("core", "trading_calendar"),
         ("ingestion", "ingestion_run"),
         ("ingestion", "raw_manifest"),
@@ -7096,6 +7101,119 @@ def test_internal_tables_have_rls_with_worker_only_policies(database_engine: Eng
     assert rls_tables == expected_tables
     assert {(cast(str, row[0]), cast(str, row[1])) for row in policies} == expected_tables
     assert all(row[2] == ["market_data_worker"] for row in policies)
+
+
+def test_top10_float_holder_commits_are_idempotent_and_constraints_hold(
+    database_engine: Engine,
+) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    _commit_security_prerequisite(persistence)
+
+    def _holder(rank: int, name: str) -> Top10FloatHolderRecord:
+        return Top10FloatHolderRecord(
+            symbol=SYMBOL,
+            end_date=date(2026, 6, 30),
+            announcement_date=date(2026, 8, 28),
+            holder_rank=rank,
+            holder_name=name,
+            hold_amount=7_086_834_641 // rank,
+            hold_ratio=Decimal("21.2781"),
+            hold_float_ratio=Decimal("21.2781"),
+            hold_change=None,
+            holder_type="一般企业",
+            source_code="tushare",
+        )
+
+    holders = (
+        _holder(1, "上海国际集团有限公司"),
+        _holder(2, "中国证券金融股份有限公司"),
+    )
+    first_run = _running_run(DatasetCode.TOP10_FLOAT_HOLDER, ProviderCode.TUSHARE)
+    persistence.create_ingestion_run(first_run)
+    persistence.commit_top10_float_holder_batches(
+        (
+            PreparedTop10FloatHolderBatch(
+                run=_completed_run(first_run, len(holders)),
+                manifest=_manifest(
+                    first_run.ingestion_id, "top10-holder-first", len(holders), provider="tushare"
+                ),
+                records=tuple(
+                    IngestionEnvelope(first_run.ingestion_id, holder) for holder in holders
+                ),
+            ),
+        )
+    )
+
+    assert _scalar(database_engine, "select count(*) from core.top10_float_holder") == 2
+    assert (
+        _scalar(
+            database_engine,
+            "select count(*) from ingestion.raw_manifest where ingestion_id = :run",
+            {"run": first_run.ingestion_id},
+        )
+        == 1
+    )
+
+    # A later run repeating the same natural keys must not duplicate facts;
+    # the earlier ingestion lineage stays attached to the surviving rows.
+    second_run = _running_run(DatasetCode.TOP10_FLOAT_HOLDER, ProviderCode.TUSHARE)
+    persistence.create_ingestion_run(second_run)
+    persistence.commit_top10_float_holder_batches(
+        (
+            PreparedTop10FloatHolderBatch(
+                run=_completed_run(second_run, len(holders)),
+                manifest=_manifest(
+                    second_run.ingestion_id, "top10-holder-second", len(holders), provider="tushare"
+                ),
+                records=tuple(
+                    IngestionEnvelope(second_run.ingestion_id, holder) for holder in holders
+                ),
+            ),
+        )
+    )
+
+    assert _scalar(database_engine, "select count(*) from core.top10_float_holder") == 2
+    assert (
+        _scalar(
+            database_engine,
+            "select count(*) from core.top10_float_holder where ingestion_id = :run",
+            {"run": first_run.ingestion_id},
+        )
+        == 2
+    )
+
+    # Hard invariants hold at the database boundary, not only inside the pipeline.
+    insert_holder = text(
+        """
+        insert into core.top10_float_holder (
+            symbol, end_date, announcement_date, holder_rank, holder_name,
+            hold_amount, source_code, ingestion_id
+        ) values (
+            :symbol, :end_date, :announcement_date, :rank, :name, :amount, 'tushare', :run
+        )
+        """
+    )
+    base_parameters = {
+        "symbol": SYMBOL,
+        "end_date": date(2026, 6, 30),
+        "announcement_date": date(2026, 8, 28),
+        "name": "越界股东",
+        "amount": 100,
+        "run": second_run.ingestion_id,
+    }
+    for violating in ({"rank": 11}, {"rank": 3, "amount": 0}, {"rank": 3, "name": "  "}):
+        with (
+            pytest.raises(IntegrityError) as captured,
+            database_engine.begin() as connection,
+        ):
+            connection.execute(insert_holder, {**base_parameters, **violating})
+        assert isinstance(captured.value.orig, CheckViolation)
+
+    with pytest.raises(IntegrityError), database_engine.begin() as connection:
+        connection.execute(
+            insert_holder,
+            {**base_parameters, "rank": 3, "end_date": date(2026, 8, 29)},
+        )
 
 
 @pytest.mark.skipif(which("pg_dump") is None, reason="pg_dump is not installed")
