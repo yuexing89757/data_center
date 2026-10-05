@@ -870,7 +870,12 @@ def test_top10_float_holders_period_narrows_request_and_is_validated() -> None:
     assert len(client.calls) == 1
 
 
-def test_top10_float_holders_rejects_more_than_ten_rows_per_group() -> None:
+def test_top10_float_holders_rank_every_row_and_quarantine_beyond_ten() -> None:
+    # The source lists duplicate entities (full and short names) so one group can
+    # carry more than ten rows: rank all of them faithfully, then let domain
+    # validation quarantine ranks beyond ten instead of failing the request.
+    from market_data_center.domain.top10_float_holder import partition_top10_float_holders
+
     row = dict(TOP10_FLOAT_HOLDER_ROWS[0])
     rows = tuple(
         {**row, "holder_name": f"股东{index}", "hold_amount": float(1000 - index)}
@@ -880,8 +885,20 @@ def test_top10_float_holders_rejects_more_than_ten_rows_per_group() -> None:
         date(2026, 8, 28)
     )
 
-    with pytest.raises(ProviderError, match="more than 10 rows"):
-        _ = batch.records
+    assert [record.holder_rank for record in batch.records] == list(range(1, 12))
+
+    result = partition_top10_float_holders(batch.records, known_symbols={"SSE:600000"})
+    assert [record.holder_rank for record in result.accepted] == list(range(1, 11))
+    assert [record.holder_rank for record, _ in result.rejected] == [11]
+    assert "rank" in result.rejected[0][1]
+
+    replayed = normalize_tushare_raw(
+        DatasetCode.TOP10_FLOAT_HOLDER,
+        batch.schema_version,
+        batch.raw_rows,
+        batch.request_params,
+    )
+    assert replayed == batch.records
 
 
 @pytest.mark.parametrize("missing_amount", [None, "", " "])

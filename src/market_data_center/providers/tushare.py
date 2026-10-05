@@ -1041,7 +1041,13 @@ def _shareholder_count_records(
 def _top10_float_holder_records(
     rows: Sequence[Mapping[str, str]],
 ) -> list[Top10FloatHolderRecord]:
-    """Map source rows; holder rank is derived per (symbol, end_date, ann_date) group."""
+    """Map source rows; holder rank is derived per (symbol, end_date, ann_date) group.
+
+    The source can list more than ten rows for one announcement group (duplicate
+    entities under short and full names). Rank every row faithfully by descending
+    amount; domain validation quarantines ranks beyond ten instead of failing
+    the whole request.
+    """
     records: list[Top10FloatHolderRecord] = []
     groups: dict[tuple[str, str, str], list[Mapping[str, str]]] = {}
     for row in rows:
@@ -1060,10 +1066,6 @@ def _top10_float_holder_records(
                 row["holder_name"],
             ),
         )
-        if len(ordered) > 10:
-            raise ProviderError(
-                f"Tushare top10_floatholders returned more than 10 rows for {ts_code}"
-            )
         for rank, row in enumerate(ordered, start=1):
             records.append(
                 Top10FloatHolderRecord(

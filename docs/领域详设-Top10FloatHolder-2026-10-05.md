@@ -73,8 +73,10 @@ Tushare `top10_floatholders`（经 `TUSHARE_ENDPOINT` 配置的兼容端点）�
 | `holder_type` | `holder_type` |
 
 来源无名次字段。adapter 在 `(ts_code, end_date, ann_date)` 组内按 `hold_amount` 降序、
-`holder_name` 升序确定性派生 `holder_rank` 1..10；组内超过 10 行抛 ProviderError 硬失败。
-该推导只依赖 Raw 行，重放结果一致。
+`holder_name` 升序确定性派生 `holder_rank`。来源可能对同一组返回超过 10 行（同一实体
+以全称与简称重复列示）：每行都派生名次（1..N），rank > 10 由领域校验隔离为
+`top10_float_holder.invalid_record` 质量拒绝（ERROR/FAILED、计入拒绝行数、批次
+partial），不静默丢弃也不使请求失败。该推导只依赖 Raw 行，重放结果一致。
 
 `hold_amount` 是整股数，来源以 JSON float 表示（`945568990.0`）：解析接受整数值的 float
 序列化，拒绝真正的小数部分（如 `.45`）。`hold_amount` 为 NULL/空白时该行完整保留在

@@ -32,7 +32,9 @@ Tushare `top10_floatholders` 接口按公告日全市场返回该事实（经兼
    `ingestion_id` 与 `first_observed_at`，不执行更新。
 3. 来源无名次字段，`holder_rank` 由 adapter 在
    `(symbol, end_date, announcement_date)` 组内按 `hold_amount` 降序、`holder_name`
-   升序确定性派生为 1..10。组内超过 10 行视为来源异常，硬失败；该推导在 Raw 重放时
+   升序确定性派生。来源可能对同一公告组返回超过 10 行（同一实体以全称与简称
+   重复列示等冗余）：每行都忠实派生名次，第 11 名及以后由领域校验隔离为质量拒绝
+   （ERROR 留痕、计入拒绝行数），不静默丢弃也不使整批失败；该推导在 Raw 重放时
    产生一致结果。
 4. `hold_amount` 语义为整股数。来源 JSON float 序列化（如 `945568990.0`）解析为整数：
    接受 `.0` 尾缀，拒绝真正的小数部分。`hold_amount` 为空的行表示来源没有可发布
