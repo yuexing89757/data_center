@@ -12,6 +12,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import Connection, Engine, RowMapping, bindparam, text
 
+from market_data_center.board_moneyflow_batch import PreparedBoardMoneyflowBatch
 from market_data_center.daily_bar_batch import PreparedDailyBarBatch
 from market_data_center.domain.board_index import (
     BoardIndexConstituentSnapshotRecord,
@@ -19,6 +20,7 @@ from market_data_center.domain.board_index import (
     BoardIndexProviderRecord,
     BoardIndexRecord,
 )
+from market_data_center.domain.board_moneyflow import BoardMoneyflowRecord
 from market_data_center.domain.classification import (
     ClassificationCatalogSnapshotRecord,
     ClassificationMemberSnapshotRecord,
@@ -359,15 +361,27 @@ on conflict (symbol, statistics_date, revision_key) do nothing
 
 INSERT_TOP10_FLOAT_HOLDER = text("""
 insert into core.top10_float_holder (
-    symbol, end_date, announcement_date, holder_rank, holder_name,
-    hold_amount, hold_ratio, hold_float_ratio, hold_change, holder_type,
-    source_code, ingestion_id
+    symbol, end_date, announcement_date, holder_rank, holder_name, hold_amount,
+    hold_ratio, hold_float_ratio, hold_change, holder_type, source_code, ingestion_id
 ) values (
-    :symbol, :end_date, :announcement_date, :holder_rank, :holder_name,
-    :hold_amount, :hold_ratio, :hold_float_ratio, :hold_change, :holder_type,
-    :source_code, :ingestion_id
+    :symbol, :end_date, :announcement_date, :holder_rank, :holder_name, :hold_amount,
+    :hold_ratio, :hold_float_ratio, :hold_change, :holder_type, :source_code, :ingestion_id
 )
 on conflict (symbol, end_date, announcement_date, holder_rank) do nothing
+""")
+INSERT_BOARD_MONEYFLOW = text("""
+insert into core.board_moneyflow (
+    trade_date, board_code, board_type, name, pct_change, close, net_amount,
+    net_amount_rate, extra_large_amount, extra_large_rate, large_amount, large_rate,
+    medium_amount, medium_rate, small_amount, small_rate, top_small_buy_stock, rank,
+    source_code, ingestion_id
+) values (
+    :trade_date, :board_code, :board_type, :name, :pct_change, :close, :net_amount,
+    :net_amount_rate, :extra_large_amount, :extra_large_rate, :large_amount, :large_rate,
+    :medium_amount, :medium_rate, :small_amount, :small_rate, :top_small_buy_stock,
+    :rank, :source_code, :ingestion_id
+)
+on conflict (trade_date, board_code) do nothing
 """)
 
 UPSERT_SHARE_CAPITAL = text("""
@@ -1683,6 +1697,80 @@ order by symbol
         with self._engine.connect() as connection:
             return tuple(cast(str, row) for row in connection.execute(statement).scalars().all())
 
+    def commit_board_moneyflow_batches(
+        self, batches: Sequence[PreparedBoardMoneyflowBatch]
+    ) -> None:
+        """Atomically publish validated facts while retaining request-level lineage."""
+        if not batches:
+            return
+        self._preflight_board_moneyflow_batches(batches)
+        manifests = [batch.manifest for batch in batches if batch.manifest is not None]
+        quality_results = [result for batch in batches for result in batch.quality_results]
+        records = [record for batch in batches for record in batch.records]
+        with self._engine.begin() as connection:
+            if manifests:
+                connection.execute(
+                    INSERT_RAW_MANIFEST,
+                    [self._manifest_parameters(manifest) for manifest in manifests],
+                )
+            if quality_results:
+                connection.execute(INSERT_QUALITY_RESULT, self._quality_parameters(quality_results))
+            if records:
+                connection.execute(
+                    INSERT_BOARD_MONEYFLOW,
+                    self._board_moneyflow_envelope_parameters(records),
+                )
+            connection.execute(
+                UPDATE_INGESTION_RUN,
+                [self._run_update_parameters(batch.run) for batch in batches],
+            )
+
+    def abort_board_moneyflow_batches(
+        self,
+        batches: Sequence[PreparedBoardMoneyflowBatch],
+        *,
+        error_type: str,
+    ) -> None:
+        """Retain prepared Raw objects and fail all runs without publishing facts."""
+        if not batches:
+            return
+        self._preflight_board_moneyflow_batches(batches)
+        failed_runs = [
+            replace(
+                batch.run,
+                status=IngestionStatus.FAILED,
+                accepted_rows=0,
+                rejected_rows=batch.run.fetched_rows,
+                error_summary=f"{error_type}: board money-flow batch aborted",
+            )
+            for batch in batches
+        ]
+        quality_results = [
+            QualityResult(
+                quality_result_id=uuid4(),
+                ingestion_id=run.ingestion_id,
+                dataset_code=DatasetCode.BOARD_MONEYFLOW,
+                rule_code="board_moneyflow.batch_aborted",
+                severity=QualitySeverity.ERROR,
+                status=QualityStatus.FAILED,
+                message="Board money-flow aggregate publication was aborted",
+                details={"error_type": error_type},
+            )
+            for run in failed_runs
+        ]
+        manifests = [batch.manifest for batch in batches if batch.manifest is not None]
+        with self._engine.begin() as connection:
+            if manifests:
+                connection.execute(
+                    INSERT_RAW_MANIFEST,
+                    [self._manifest_parameters(manifest) for manifest in manifests],
+                )
+            connection.execute(INSERT_QUALITY_RESULT, self._quality_parameters(quality_results))
+            connection.execute(
+                UPDATE_INGESTION_RUN,
+                [self._run_update_parameters(run) for run in failed_runs],
+            )
+
     def commit_capital_batch(
         self,
         run: IngestionRun,
@@ -2277,6 +2365,67 @@ where board_id = :board_id and trade_date = :trade_date
         ]
 
     @classmethod
+    def _preflight_board_moneyflow_batches(
+        cls, batches: Sequence[PreparedBoardMoneyflowBatch]
+    ) -> None:
+        run_ids = [batch.run.ingestion_id for batch in batches]
+        if len(run_ids) != len(set(run_ids)):
+            raise ValueError("Board money-flow commit contains duplicate ingestion IDs")
+        natural_keys: set[tuple[date, str]] = set()
+        for batch in batches:
+            run = batch.run
+            if run.dataset_code is not DatasetCode.BOARD_MONEYFLOW:
+                raise ValueError("Board money-flow batch has an unexpected dataset")
+            if run.provider_code is not ProviderCode.TUSHARE:
+                raise ValueError("Board money-flow batch has an unexpected provider")
+            if batch.manifest is None:
+                if run.replayed_from_raw_id is None:
+                    raise ValueError("Live board money-flow batch requires a Raw manifest")
+            else:
+                if batch.manifest.ingestion_id != run.ingestion_id:
+                    raise ValueError("Raw manifest does not match its board money-flow run")
+                if run.replayed_from_raw_id is not None:
+                    raise ValueError("Board money-flow replay must not copy a Raw manifest")
+            cls._ensure_envelope_ids(batch.records, run.ingestion_id)
+            if any(result.ingestion_id != run.ingestion_id for result in batch.quality_results):
+                raise ValueError("Quality result does not match its board money-flow run")
+            for envelope in batch.records:
+                key = (envelope.record.trade_date, envelope.record.board_code)
+                if key in natural_keys:
+                    raise ValueError("Board money-flow commit contains duplicate natural keys")
+                natural_keys.add(key)
+
+    @staticmethod
+    def _board_moneyflow_envelope_parameters(
+        records: Iterable[IngestionEnvelope[BoardMoneyflowRecord]],
+    ) -> list[dict[str, object]]:
+        return [
+            {
+                "trade_date": envelope.record.trade_date,
+                "board_code": envelope.record.board_code,
+                "board_type": envelope.record.board_type.value,
+                "name": envelope.record.name,
+                "pct_change": envelope.record.pct_change,
+                "close": envelope.record.close,
+                "net_amount": envelope.record.net_amount,
+                "net_amount_rate": envelope.record.net_amount_rate,
+                "extra_large_amount": envelope.record.extra_large_amount,
+                "extra_large_rate": envelope.record.extra_large_rate,
+                "large_amount": envelope.record.large_amount,
+                "large_rate": envelope.record.large_rate,
+                "medium_amount": envelope.record.medium_amount,
+                "medium_rate": envelope.record.medium_rate,
+                "small_amount": envelope.record.small_amount,
+                "small_rate": envelope.record.small_rate,
+                "top_small_buy_stock": envelope.record.top_small_buy_stock,
+                "rank": envelope.record.rank,
+                "source_code": envelope.record.source_code,
+                "ingestion_id": envelope.ingestion_id,
+            }
+            for envelope in records
+        ]
+
+    @classmethod
     def _insert_manifest(cls, connection: Connection, manifest: RawManifest | None) -> None:
         if manifest is not None:
             connection.execute(INSERT_RAW_MANIFEST, cls._manifest_parameters(manifest))
@@ -2753,6 +2902,7 @@ where board_id = :board_id and trade_date = :trade_date
         | DeductedProfitRecord
         | ShareholderCountRecord
         | Top10FloatHolderRecord
+        | BoardMoneyflowRecord
         | ConvertibleBondRecord
     ](records: Iterable[IngestionEnvelope[RecordT]], ingestion_id: UUID) -> None:
         if any(envelope.ingestion_id != ingestion_id for envelope in records):

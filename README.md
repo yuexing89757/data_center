@@ -104,6 +104,16 @@ uv run market-data-center top10-float-holders --start-date 2026-09-26 --end-date
 No `api_v1` view or RPC ships in the first phase; the public read contract is deferred until
 consumer analytics needs are settled.
 
+Eastmoney board money-flow facts (ADR-0065, migration `20261006000100`) are append-only rows
+in `core.board_moneyflow`, keyed by `(trade_date, board_code)` with `DC:BK0145`-style codes,
+covering concept/industry/region boards (~1000 rows per trading day, one request). The daily
+job `board-moneyflow-daily` runs weekdays 17:00 Asia/Shanghai over a rolling 5-day window and
+stays opt-in via `BOARD_MONEYFLOW_DAILY_ENABLED`. Manual catch-up:
+
+```bash
+uv run market-data-center board-moneyflow --start-date 2026-07-06 --end-date 2026-10-05
+```
+
 Build one exact-date same-day limit-up snapshot manually (never falls back to an older date):
 
 ```bash

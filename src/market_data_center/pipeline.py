@@ -7,6 +7,10 @@ from datetime import UTC, date, datetime
 from typing import Protocol, cast
 from uuid import UUID, uuid4
 
+from market_data_center.board_moneyflow_batch import (
+    PreparedBoardMoneyflowBatch,
+    board_moneyflow_rejection_quality_results,
+)
 from market_data_center.daily_bar_batch import PreparedDailyBarBatch
 from market_data_center.domain.board_index import (
     BoardIndexConstituentSnapshotRecord,
@@ -16,6 +20,10 @@ from market_data_center.domain.board_index import (
     BoardIndexRecord,
     validate_board_index_constituent_snapshot,
     validate_board_index_daily_bars,
+)
+from market_data_center.domain.board_moneyflow import (
+    BoardMoneyflowRecord,
+    partition_board_moneyflows,
 )
 from market_data_center.domain.calendar import calculate_trading_day_links
 from market_data_center.domain.capital import validate_capital
@@ -70,6 +78,7 @@ from market_data_center.domain.top10_float_holder import (
 from market_data_center.domain.validation import validate_daily_bars
 from market_data_center.providers.contracts import (
     BoardIndexProvider,
+    BoardMoneyflowProvider,
     ConvertibleBondProvider,
     DeductedProfitProvider,
     MarketDataProvider,
@@ -158,6 +167,17 @@ class PipelinePersistence(Protocol):
     def abort_top10_float_holder_batches(
         self,
         batches: Sequence[PreparedTop10FloatHolderBatch],
+        *,
+        error_type: str,
+    ) -> None: ...
+
+    def commit_board_moneyflow_batches(
+        self, batches: Sequence[PreparedBoardMoneyflowBatch]
+    ) -> None: ...
+
+    def abort_board_moneyflow_batches(
+        self,
+        batches: Sequence[PreparedBoardMoneyflowBatch],
         *,
         error_type: str,
     ) -> None: ...
@@ -633,6 +653,55 @@ class IngestionPipeline:
                     )
                 raise
 
+    def prepare_board_moneyflow_request(self, trade_date: date) -> PreparedBoardMoneyflowBatch:
+        """Capture and validate one trading day without publishing facts."""
+        params: dict[str, object] = {"trade_date": trade_date.isoformat()}
+        task_key = f"{self._provider.source_code}:board_moneyflow:{trade_date}"
+        with self._persistence.task_lock(task_key):
+            run = self._start_run(DatasetCode.BOARD_MONEYFLOW, params)
+            manifest: RawManifest | None = None
+            fetched_rows = 0
+            try:
+                provider = cast(BoardMoneyflowProvider, self._provider)
+                batch = provider.fetch_board_moneyflows(trade_date)
+                fetched_rows = len(batch.raw_rows)
+                manifest, normalized = self._stage_batch(run, batch)
+                if any(not isinstance(record, BoardMoneyflowRecord) for record in normalized):
+                    raise ProviderError(
+                        "board money-flow request normalized to an unexpected record"
+                    )
+                validation = partition_board_moneyflows(tuple(normalized))
+                rejected_rows = fetched_rows - len(normalized) + len(validation.rejected)
+                quality_results = board_moneyflow_rejection_quality_results(
+                    validation.rejected,
+                    ingestion_id=run.ingestion_id,
+                    uuid_factory=self._uuid_factory,
+                )
+                completed = self._completed_run(
+                    run, fetched_rows, len(validation.accepted), rejected_rows
+                )
+                return PreparedBoardMoneyflowBatch(
+                    run=completed,
+                    manifest=manifest,
+                    records=tuple(self._envelopes(run.ingestion_id, validation.accepted)),
+                    quality_results=quality_results,
+                )
+            except _RecordedProviderError:
+                raise
+            except Exception as error:
+                if manifest is None:
+                    self._record_failure(run, error)
+                else:
+                    prepared = PreparedBoardMoneyflowBatch(
+                        run=self._completed_run(run, fetched_rows, fetched_rows, 0),
+                        manifest=manifest,
+                        records=(),
+                    )
+                    self._persistence.abort_board_moneyflow_batches(
+                        (prepared,), error_type=type(error).__name__
+                    )
+                raise
+
     def ingest_convertible_bonds(self) -> IngestionRun:
         params: dict[str, object] = {}
         with self._persistence.task_lock(f"{self._provider.source_code}:convertible_bond"):
@@ -1069,6 +1138,7 @@ class IngestionPipeline:
         | DeductedProfitRecord
         | ShareholderCountRecord
         | Top10FloatHolderRecord
+        | BoardMoneyflowRecord
         | ConvertibleBondRecord
     ](ingestion_id: UUID, records: Sequence[RecordT]) -> tuple[IngestionEnvelope[RecordT], ...]:
         return tuple(IngestionEnvelope(ingestion_id, record) for record in records)

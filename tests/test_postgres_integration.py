@@ -18,6 +18,7 @@ from psycopg.errors import CheckViolation, InsufficientPrivilege
 from sqlalchemy import Connection, Engine, create_engine, text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
+from market_data_center.board_moneyflow_batch import PreparedBoardMoneyflowBatch
 from market_data_center.call_auction_market_series_writer import (
     CapturedAttempt,
     CapturedRound,
@@ -31,6 +32,8 @@ from market_data_center.domain import (
     BoardIndexRecord,
     BoardIndexStatus,
     BoardIndexType,
+    BoardMoneyflowRecord,
+    BoardMoneyflowType,
     CalculatedTradingDay,
     CallAuctionMarketSnapshotRecord,
     CapitalRecord,
@@ -7026,6 +7029,8 @@ def test_worker_has_only_ingestion_permissions(
         ("core", "stock_daily_indicator", "UPDATE"),
         ("core", "top10_float_holder", "INSERT"),
         ("core", "top10_float_holder", "SELECT"),
+        ("core", "board_moneyflow", "INSERT"),
+        ("core", "board_moneyflow", "SELECT"),
         ("core", "trading_calendar", "INSERT"),
         ("core", "trading_calendar", "SELECT"),
         ("core", "trading_calendar", "UPDATE"),
@@ -7072,6 +7077,7 @@ def test_internal_tables_have_rls_with_worker_only_policies(database_engine: Eng
         ("core", "shareholder_count"),
         ("core", "stock_daily_indicator"),
         ("core", "top10_float_holder"),
+        ("core", "board_moneyflow"),
         ("core", "trading_calendar"),
         ("ingestion", "ingestion_run"),
         ("ingestion", "raw_manifest"),
@@ -7213,6 +7219,109 @@ def test_top10_float_holder_commits_are_idempotent_and_constraints_hold(
         connection.execute(
             insert_holder,
             {**base_parameters, "rank": 3, "end_date": date(2026, 8, 29)},
+        )
+
+
+def test_board_moneyflow_commits_are_idempotent_and_constraints_hold(
+    database_engine: Engine,
+) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+
+    def _flow(board_code: str, board_type: BoardMoneyflowType, name: str) -> BoardMoneyflowRecord:
+        return BoardMoneyflowRecord(
+            board_code=board_code,
+            trade_date=date(2026, 9, 30),
+            board_type=board_type,
+            name=name,
+            pct_change=Decimal("0.23"),
+            close=Decimal("22111.86"),
+            net_amount=Decimal("-726583552.00"),
+            net_amount_rate=Decimal("-0.56"),
+            extra_large_amount=Decimal("-415738368.00"),
+            extra_large_rate=Decimal("-0.32"),
+            large_amount=None,
+            large_rate=None,
+            medium_amount=None,
+            medium_rate=None,
+            small_amount=Decimal("507232000.00"),
+            small_rate=Decimal("0.39"),
+            top_small_buy_stock="剑桥科技",
+            rank=27,
+            source_code="tushare",
+        )
+
+    flows = (_flow("DC:BK0145", BoardMoneyflowType.REGION, "上海板块"),)
+    first_run = _running_run(DatasetCode.BOARD_MONEYFLOW, ProviderCode.TUSHARE)
+    persistence.create_ingestion_run(first_run)
+    persistence.commit_board_moneyflow_batches(
+        (
+            PreparedBoardMoneyflowBatch(
+                run=_completed_run(first_run, 1),
+                manifest=_manifest(
+                    first_run.ingestion_id, "board-moneyflow", 1, provider="tushare"
+                ),
+                records=tuple(IngestionEnvelope(first_run.ingestion_id, flow) for flow in flows),
+            ),
+        )
+    )
+
+    assert _scalar(database_engine, "select count(*) from core.board_moneyflow") == 1
+
+    second_run = _running_run(DatasetCode.BOARD_MONEYFLOW, ProviderCode.TUSHARE)
+    persistence.create_ingestion_run(second_run)
+    persistence.commit_board_moneyflow_batches(
+        (
+            PreparedBoardMoneyflowBatch(
+                run=_completed_run(second_run, 1),
+                manifest=_manifest(
+                    second_run.ingestion_id, "board-moneyflow-2", 1, provider="tushare"
+                ),
+                records=tuple(IngestionEnvelope(second_run.ingestion_id, flow) for flow in flows),
+            ),
+        )
+    )
+
+    assert _scalar(database_engine, "select count(*) from core.board_moneyflow") == 1
+    assert (
+        _scalar(
+            database_engine,
+            "select count(*) from core.board_moneyflow where ingestion_id = :run",
+            {"run": first_run.ingestion_id},
+        )
+        == 1
+    )
+
+    insert_flow = text(
+        """
+        insert into core.board_moneyflow (
+            trade_date, board_code, board_type, name, pct_change, net_amount,
+            source_code, ingestion_id
+        ) values (
+            :trade_date, :board_code, :board_type, :name, :pct_change, :net_amount,
+            'tushare', :run
+        )
+        """
+    )
+    base_parameters = {
+        "trade_date": date(2026, 9, 30),
+        "board_type": "industry",
+        "name": "银行",
+        "pct_change": 0.51,
+        "net_amount": 1000.0,
+        "run": second_run.ingestion_id,
+    }
+    for violating in ({"board_code": "BK0475.DC"}, {"board_code": "DC:BK0475", "name": "  "}):
+        with (
+            pytest.raises(IntegrityError) as captured,
+            database_engine.begin() as connection,
+        ):
+            connection.execute(insert_flow, {**base_parameters, **violating})
+        assert isinstance(captured.value.orig, CheckViolation)
+
+    with pytest.raises(IntegrityError), database_engine.begin() as connection:
+        connection.execute(
+            insert_flow,
+            {**base_parameters, "board_code": "DC:BK0475", "board_type": "theme"},
         )
 
 

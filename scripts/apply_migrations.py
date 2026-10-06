@@ -58,6 +58,7 @@ EXPECTED_TABLES = {
     ("core", "shareholder_count"),
     ("core", "stock_daily_indicator"),
     ("core", "top10_float_holder"),
+    ("core", "board_moneyflow"),
     ("core", "trading_calendar"),
     ("derived", "adjusted_daily_bar"),
     ("derived", "calculation_run"),

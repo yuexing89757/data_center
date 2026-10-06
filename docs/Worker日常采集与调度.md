@@ -125,6 +125,16 @@ Tushare 公告窗口（ADR-0064）；`TOP10_FLOAT_HOLDERS_WEEKLY_ENABLED=false` 
 uv run market-data-center top10-float-holders --start-date 2026-09-26 --end-date 2026-10-04
 ```
 
+东财板块资金流增量任务登记为工作日 17:00 运行，逐日读取截至当天最近 5 个自然日的
+Tushare `moneyflow_ind_dc` 公告窗口（ADR-0065）；`BOARD_MONEYFLOW_DAILY_ENABLED=false`
+为默认值，只有运维显式启用后 Worker 才注册该任务。板块代码标准化为 `DC:BK0145` 风格，
+概念/行业/地域全量约千行/日，单请求即可完整读取；事实追加写入 `core.board_moneyflow`，
+重复自然键不覆盖不重复。手动补采：
+
+```bash
+uv run market-data-center board-moneyflow --start-date 2026-07-06 --end-date 2026-10-05
+```
+
 周一至周五 21:00 构建沪深主板昨日涨停与昨日跌停两份不可变股票池。触发时间不是依赖
 完成的证明：任务还会检查 basis 当日 `daily_market`、`stock_daily_indicator` WorkflowRun
 均成功，并校验精确交易日、日 K、每日指标和 lineage；缺失时失败且不回退旧快照。
@@ -176,6 +186,7 @@ DRAGON_TIGER_ENABLED=false
 BOARD_INDEX_DAILY_BAR_ENABLED=true
 SHAREHOLDER_COUNT_DAILY_ENABLED=false
 TOP10_FLOAT_HOLDERS_WEEKLY_ENABLED=false
+BOARD_MONEYFLOW_DAILY_ENABLED=false
 ```
 
 ### 竞价序列诊断与保留

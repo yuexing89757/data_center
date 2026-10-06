@@ -18,7 +18,11 @@ from market_data_center.domain import (
 )
 from market_data_center.domain.ingestion import DatasetCode
 from market_data_center.providers import ProviderError, ProviderRequestUnavailable, TushareProvider
-from market_data_center.providers.tushare import TushareBseSecurityProvider, normalize_tushare_raw
+from market_data_center.providers.tushare import (
+    MONEYFLOW_IND_DC_FIELDS,
+    TushareBseSecurityProvider,
+    normalize_tushare_raw,
+)
 
 
 class FakeClient:
@@ -962,3 +966,122 @@ def test_top10_float_holders_share_the_shareholder_request_pacer() -> None:
     provider.fetch_top10_float_holders(date(2026, 8, 27))
 
     assert sleeps == [pytest.approx(1 / 3)]
+
+
+MONEYFLOW_IND_DC_ROWS: tuple[dict[str, object], ...] = (
+    {
+        "trade_date": "20260930",
+        "content_type": "地域",
+        "ts_code": "BK0145.DC",
+        "name": "上海板块",
+        "pct_change": 0.23,
+        "close": 22111.86,
+        "net_amount": -726583552.0,
+        "net_amount_rate": -0.56,
+        "buy_elg_amount": -415738368.0,
+        "buy_elg_amount_rate": -0.32,
+        "buy_lg_amount": -310845184.0,
+        "buy_lg_amount_rate": -0.24,
+        "buy_md_amount": 195981312.0,
+        "buy_md_amount_rate": 0.15,
+        "buy_sm_amount": 507232000.0,
+        "buy_sm_amount_rate": 0.39,
+        "buy_sm_amount_stock": "剑桥科技",
+        "rank": 27.0,
+    },
+    {
+        "trade_date": "20260930",
+        "content_type": "行业",
+        "ts_code": "BK0475.DC",
+        "name": "银行",
+        "pct_change": 0.51,
+        "close": None,
+        "net_amount": None,
+        "net_amount_rate": None,
+        "buy_elg_amount": None,
+        "buy_elg_amount_rate": None,
+        "buy_lg_amount": None,
+        "buy_lg_amount_rate": None,
+        "buy_md_amount": None,
+        "buy_md_amount_rate": None,
+        "buy_sm_amount": None,
+        "buy_sm_amount_rate": None,
+        "buy_sm_amount_stock": None,
+        "rank": None,
+    },
+)
+
+
+class MoneyflowIndDcClient(FakeClient):
+    def __init__(self, rows: Sequence[Mapping[str, object]]) -> None:
+        super().__init__()
+        self._rows = rows
+
+    def query(
+        self, api_name: str, *, params: Mapping[str, str], fields: Sequence[str]
+    ) -> Sequence[Mapping[str, object]]:
+        if api_name == "moneyflow_ind_dc":
+            self.calls.append((api_name, params, fields))
+            return self._rows
+        return super().query(api_name, params=params, fields=fields)
+
+
+def test_board_moneyflows_map_source_fields_and_replay_raw() -> None:
+    from market_data_center.domain import BoardMoneyflowRecord, BoardMoneyflowType
+
+    client = MoneyflowIndDcClient(MONEYFLOW_IND_DC_ROWS)
+
+    batch = TushareProvider(client).fetch_board_moneyflows(date(2026, 9, 30))
+
+    assert client.calls[0] == (
+        "moneyflow_ind_dc",
+        {"trade_date": "20260930"},
+        MONEYFLOW_IND_DC_FIELDS,
+    )
+    assert batch.request_params == {"trade_date": "20260930"}
+    assert batch.schema_version == "tushare.board_moneyflow.v1"
+
+    assert len(batch.records) == 1
+    record = batch.records[0]
+    assert record.board_code == "DC:BK0145"
+    assert record.board_type is BoardMoneyflowType.REGION
+    assert record.name == "上海板块"
+    assert record.pct_change == Decimal("0.23")
+    assert record.close == Decimal("22111.86")
+    assert record.net_amount == Decimal("-726583552.0")
+    assert record.extra_large_amount == Decimal("-415738368.0")
+    assert record.small_rate == Decimal("0.39")
+    assert record.top_small_buy_stock == "剑桥科技"
+    assert record.rank == 27
+
+    replayed = normalize_tushare_raw(
+        DatasetCode.BOARD_MONEYFLOW,
+        batch.schema_version,
+        batch.raw_rows,
+        batch.request_params,
+    )
+    assert isinstance(replayed[0], BoardMoneyflowRecord)
+    assert replayed == batch.records
+
+
+def test_board_moneyflows_skip_blank_net_amount_rows() -> None:
+    client = MoneyflowIndDcClient(MONEYFLOW_IND_DC_ROWS)
+
+    batch = TushareProvider(client).fetch_board_moneyflows(date(2026, 9, 30))
+
+    assert len(batch.raw_rows) == 2
+    assert [record.board_code for record in batch.records] == ["DC:BK0145"]
+
+
+def test_board_moneyflows_reject_unknown_content_type_and_row_date() -> None:
+    unknown = MoneyflowIndDcClient(({**MONEYFLOW_IND_DC_ROWS[0], "content_type": "主题"},))
+    with pytest.raises(ProviderError, match="content_type"):
+        _ = TushareProvider(unknown).fetch_board_moneyflows(date(2026, 9, 30)).records
+
+    wrong_day = MoneyflowIndDcClient(({**MONEYFLOW_IND_DC_ROWS[0], "trade_date": "20260929"},))
+    with pytest.raises(ProviderError, match="does not match"):
+        _ = TushareProvider(wrong_day).fetch_board_moneyflows(date(2026, 9, 30)).records
+
+    bad_code = MoneyflowIndDcClient(({**MONEYFLOW_IND_DC_ROWS[0], "ts_code": "883423.THS"},))
+    with pytest.raises(ProviderError, match="board code"):
+        _ = TushareProvider(bad_code).fetch_board_moneyflows(date(2026, 9, 30)).records

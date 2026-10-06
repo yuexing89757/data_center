@@ -8,6 +8,7 @@ from typing import Protocol, Self
 
 from market_data_center.domain.auction_indicative import CallAuctionIndicativeDetailRecord
 from market_data_center.domain.board_index import BoardIndexProviderRecord
+from market_data_center.domain.board_moneyflow import BoardMoneyflowRecord
 from market_data_center.domain.classification import ClassificationRecord
 from market_data_center.domain.convertible_bond import ConvertibleBondRecord
 from market_data_center.domain.deducted_profit import DeductedProfitRecord
@@ -42,6 +43,7 @@ type ProviderRecord = (
     | DeductedProfitRecord
     | ShareholderCountRecord
     | Top10FloatHolderRecord
+    | BoardMoneyflowRecord
     | FiveLevelQuoteSnapshotRecord
     | ConvertibleBondRecord
     | LimitUpSourceRecord
@@ -162,6 +164,14 @@ class Top10FloatHoldersProvider(Protocol):
         period: str | None = None,
         symbol: str | None = None,
     ) -> "ProviderBatch[Top10FloatHolderRecord]": ...
+
+
+class BoardMoneyflowProvider(Protocol):
+    """Dedicated capability boundary for Eastmoney board money-flow facts."""
+
+    source_code: str
+
+    def fetch_board_moneyflows(self, trade_date: date) -> "ProviderBatch[BoardMoneyflowRecord]": ...
 
 
 class ConvertibleBondProvider(Protocol):

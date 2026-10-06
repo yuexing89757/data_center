@@ -15,6 +15,10 @@ from urllib.parse import SplitResult, urlsplit
 
 from pydantic import ValidationError
 
+from market_data_center.domain.board_moneyflow import (
+    BoardMoneyflowRecord,
+    BoardMoneyflowType,
+)
 from market_data_center.domain.classification import ClassificationRecord
 from market_data_center.domain.convertible_bond import (
     ConvertibleBondBasicRecord,
@@ -124,6 +128,27 @@ TOP10_FLOAT_HOLDERS_FIELDS = (
     "holder_type",
 )
 TOP10_FLOAT_HOLDERS_RESPONSE_LIMIT = 6_000
+MONEYFLOW_IND_DC_FIELDS = (
+    "trade_date",
+    "content_type",
+    "ts_code",
+    "name",
+    "pct_change",
+    "close",
+    "net_amount",
+    "net_amount_rate",
+    "buy_elg_amount",
+    "buy_elg_amount_rate",
+    "buy_lg_amount",
+    "buy_lg_amount_rate",
+    "buy_md_amount",
+    "buy_md_amount_rate",
+    "buy_sm_amount",
+    "buy_sm_amount_rate",
+    "buy_sm_amount_stock",
+    "rank",
+)
+MONEYFLOW_IND_DC_RESPONSE_LIMIT = 6_000
 CB_BASIC_FIELDS = (
     "ts_code",
     "bond_id",
@@ -627,6 +652,29 @@ class TushareProvider(AbstractContextManager["TushareProvider"]):
             record_factory=lambda: _top10_float_holder_records(rows),
         )
 
+    def fetch_board_moneyflows(self, trade_date: date) -> ProviderBatch[BoardMoneyflowRecord]:
+        """Read one trading day of Eastmoney concept/industry/region board flows."""
+        params = {"trade_date": trade_date.strftime("%Y%m%d")}
+        if self._shareholder_count_request_started:
+            self._sleeper(self._shareholder_count_request_interval_seconds)
+        self._shareholder_count_request_started = True
+        result: Sequence[Mapping[str, object]] = _provider_call(
+            "moneyflow_ind_dc",
+            lambda: self._client.query(
+                "moneyflow_ind_dc",
+                params=params,
+                fields=MONEYFLOW_IND_DC_FIELDS,
+            ),
+        )
+        rows = _rows(result, MONEYFLOW_IND_DC_FIELDS, "moneyflow_ind_dc")
+        rows.sort(key=lambda row: (row["ts_code"], row["trade_date"]))
+        return ProviderBatch(
+            raw_rows=rows,
+            request_params={"trade_date": params["trade_date"]},
+            schema_version="tushare.board_moneyflow.v1",
+            record_factory=lambda: _board_moneyflow_records(rows, trade_date),
+        )
+
     def fetch_convertible_bonds(self) -> ProviderBatch[ConvertibleBondRecord]:
         result = _provider_call(
             "cb_basic",
@@ -709,6 +757,7 @@ def normalize_tushare_raw(
         DatasetCode.DEDUCTED_PROFIT: "tushare.deducted_profit.v1",
         DatasetCode.SHAREHOLDER_COUNT: "tushare.shareholder_count.v1",
         DatasetCode.TOP10_FLOAT_HOLDER: "tushare.top10_float_holder.v1",
+        DatasetCode.BOARD_MONEYFLOW: "tushare.board_moneyflow.v1",
         DatasetCode.CONVERTIBLE_BOND: "tushare.convertible_bond.v1",
         DatasetCode.CONVERTIBLE_BOND_DAILY_BAR: "tushare.convertible_bond_daily_bar.v1",
     }.get(dataset_code)
@@ -760,6 +809,9 @@ def normalize_tushare_raw(
         )
     if dataset_code is DatasetCode.TOP10_FLOAT_HOLDER:
         return tuple(_top10_float_holder_records(raw_rows))
+    if dataset_code is DatasetCode.BOARD_MONEYFLOW:
+        trade_date = _request_date(request_params, "trade_date")
+        return tuple(_board_moneyflow_records(raw_rows, trade_date))
     if dataset_code is DatasetCode.CONVERTIBLE_BOND:
         return tuple(_map_cb_basic(row) for row in raw_rows)
     if dataset_code is DatasetCode.CONVERTIBLE_BOND_DAILY_BAR:
@@ -1147,6 +1199,62 @@ def _top10_float_holder_records(
                 )
             )
     return records
+
+
+_BOARD_MONEYFLOW_TYPES = {
+    "概念": BoardMoneyflowType.CONCEPT,
+    "行业": BoardMoneyflowType.INDUSTRY,
+    "地域": BoardMoneyflowType.REGION,
+}
+
+
+def _board_moneyflow_records(
+    rows: Sequence[Mapping[str, str]], trade_date: date
+) -> list[BoardMoneyflowRecord]:
+    """Map one day of Eastmoney board flows; blank core facts stay in Raw only."""
+    records: list[BoardMoneyflowRecord] = []
+    for row in rows:
+        if _parse_date(row["trade_date"]) != trade_date:
+            raise ProviderError("Tushare moneyflow_ind_dc row date does not match request")
+        pct_change = _decimal(row["pct_change"])
+        net_amount = _decimal(row["net_amount"])
+        if pct_change is None or net_amount is None:
+            # Blank core facts mean the source has no publishable flow row.
+            continue
+        board_type = _BOARD_MONEYFLOW_TYPES.get(row["content_type"].strip())
+        if board_type is None:
+            raise ProviderError(f"unknown moneyflow_ind_dc content_type: {row['content_type']}")
+        records.append(
+            BoardMoneyflowRecord(
+                board_code=_board_moneyflow_code(row["ts_code"]),
+                trade_date=trade_date,
+                board_type=board_type,
+                name=row["name"].strip(),
+                pct_change=pct_change,
+                close=_decimal(row["close"]),
+                net_amount=net_amount,
+                net_amount_rate=_decimal(row["net_amount_rate"]),
+                extra_large_amount=_decimal(row["buy_elg_amount"]),
+                extra_large_rate=_decimal(row["buy_elg_amount_rate"]),
+                large_amount=_decimal(row["buy_lg_amount"]),
+                large_rate=_decimal(row["buy_lg_amount_rate"]),
+                medium_amount=_decimal(row["buy_md_amount"]),
+                medium_rate=_decimal(row["buy_md_amount_rate"]),
+                small_amount=_decimal(row["buy_sm_amount"]),
+                small_rate=_decimal(row["buy_sm_amount_rate"]),
+                top_small_buy_stock=(row["buy_sm_amount_stock"].strip() or None),
+                rank=_optional_int(row["rank"]),
+                source_code="tushare",
+            )
+        )
+    return records
+
+
+def _board_moneyflow_code(ts_code: str) -> str:
+    candidate = ts_code.strip().upper()
+    if not candidate.endswith(".DC"):
+        raise ProviderError(f"unexpected moneyflow_ind_dc board code: {ts_code}")
+    return f"DC:{candidate[:-3]}"
 
 
 def _source_symbol(value: str) -> str:

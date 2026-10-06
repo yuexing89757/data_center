@@ -52,6 +52,8 @@ class SchedulerSettings(BaseSettings):
     regulation_daily_enabled: bool = False
     # Opt-in until the Tushare relay endpoint and ordered migration are deployed.
     top10_float_holders_weekly_enabled: bool = False
+    # Opt-in until the ordered board money-flow migration is deployed.
+    board_moneyflow_daily_enabled: bool = False
 
 
 class PytdxPoolSettings(BaseSettings):
