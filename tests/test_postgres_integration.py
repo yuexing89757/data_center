@@ -182,11 +182,12 @@ def test_regulation_schema_catalog_constraints_and_private_grants(
         assert catalog == [
             ("GEM", 8, date(2026, 7, 6), 1),
             ("SSE_MAIN", 9, date(2026, 7, 6), 1),
+            ("STAR", 9, date(2026, 7, 6), 1),
             ("SZSE_MAIN", 9, date(2026, 7, 6), 1),
         ]
         assert connection.execute(
             text(
-                "select count(distinct rule_set_version) = 1 and count(*) = 26 from regulation.rule"
+                "select count(distinct rule_set_version) = 1 and count(*) = 35 from regulation.rule"
             )
         ).scalar_one()
 

@@ -6,6 +6,17 @@
 -- rule to share one version; the changed rule-set contents are distinguished
 -- by rule_set_hash recorded on each calculation run.
 
+-- Converge the interim production patch before seeding: the patch rewrote
+-- every rule_set_version to an untracked ".v2" and inserted eight STAR rules
+-- that copied the GEM thresholds (+/-30, count 3, no turnover rule). Collapse
+-- the versions back to the governed ".v1" and drop the patch rows before the
+-- official seed below (no rule_result ever referenced them).
+update regulation.rule
+set rule_set_version = 'cn-a-share-regulation-2026-07-06.v1'
+where rule_set_version = 'cn-a-share-regulation-2026-07-06.v2';
+
+delete from regulation.rule where segment = 'STAR';
+
 alter table regulation.rule drop constraint regulation_rule_exchange_segment_check;
 alter table regulation.rule add constraint regulation_rule_exchange_segment_check check (
     (exchange = 'SSE' and segment in ('SSE_MAIN', 'STAR'))
