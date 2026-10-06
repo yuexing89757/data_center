@@ -291,6 +291,11 @@ class TushareHttpClient:
                 response = self._connection.getresponse()
                 body = response.read()
                 if response.status != 200:
+                    if response.status >= 500 and not attempt:
+                        # Relay gateways throw transient 502/503/504 blips;
+                        # one retry on a fresh connection keeps long crawls alive.
+                        self.close()
+                        continue
                     raise ProviderError(
                         f"Tushare HTTP status {response.status} for {self._endpoint}"
                     )

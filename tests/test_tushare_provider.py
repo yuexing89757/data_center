@@ -1,6 +1,7 @@
 from collections.abc import Mapping, Sequence
 from datetime import date
 from decimal import Decimal
+from json import dumps as json_dumps
 from pathlib import Path
 
 import pytest
@@ -1085,3 +1086,70 @@ def test_board_moneyflows_reject_unknown_content_type_and_row_date() -> None:
     bad_code = MoneyflowIndDcClient(({**MONEYFLOW_IND_DC_ROWS[0], "ts_code": "883423.THS"},))
     with pytest.raises(ProviderError, match="board code"):
         _ = TushareProvider(bad_code).fetch_board_moneyflows(date(2026, 9, 30)).records
+
+
+class _FakeHttpResponse:
+    def __init__(self, status: int, body: bytes) -> None:
+        self.status = status
+        self._body = body
+
+    def read(self) -> bytes:
+        return self._body
+
+
+class _FakeHttpConnection:
+    def __init__(self, statuses: list[int], body: bytes) -> None:
+        self._statuses = statuses
+        self._body = body
+        self.requests = 0
+        self.closed = False
+
+    def request(self, method: str, path: str, *, body: bytes, headers: dict[str, str]) -> None:
+        self.requests += 1
+
+    def getresponse(self) -> _FakeHttpResponse:
+        status = self._statuses.pop(0) if self._statuses else 200
+        return _FakeHttpResponse(status, self._body)
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def test_tushare_client_retries_transient_5xx_once_on_fresh_connection(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    from market_data_center.providers import tushare as tushare_module
+
+    document = json_dumps(
+        {"code": 0, "data": {"fields": ["ts_code"], "items": [["600000.SH"]]}}
+    ).encode()
+    connection = _FakeHttpConnection([502], document)
+    monkeypatch.setattr(
+        tushare_module,
+        "_open_http_connection",
+        lambda parts, timeout: connection,
+    )
+    client = tushare_module.TushareHttpClient("secret-token")
+
+    rows = client.query("top10_floatholders", params={}, fields=("ts_code",))
+
+    assert rows == [{"ts_code": "600000.SH"}]
+    assert connection.requests == 2
+
+
+def test_tushare_client_fails_after_two_consecutive_5xx(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    from market_data_center.providers import tushare as tushare_module
+
+    connection = _FakeHttpConnection([502, 503], b"")
+    monkeypatch.setattr(
+        tushare_module,
+        "_open_http_connection",
+        lambda parts, timeout: connection,
+    )
+    client = tushare_module.TushareHttpClient("secret-token")
+
+    with pytest.raises(ProviderError, match="HTTP status 503"):
+        client.query("top10_floatholders", params={}, fields=("ts_code",))
+    assert connection.requests == 2
