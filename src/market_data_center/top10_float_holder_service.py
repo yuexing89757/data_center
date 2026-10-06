@@ -56,6 +56,8 @@ class Top10FloatHolderPersistence(Protocol):
 
     def top10_float_holder_split_symbols(self) -> tuple[str, ...]: ...
 
+    def top10_float_holder_completed_days(self, start_date: date, end_date: date) -> set[date]: ...
+
 
 class Top10FloatHolderService:
     def __init__(
@@ -71,23 +73,34 @@ class Top10FloatHolderService:
         return self.sync_range(as_of - timedelta(days=WEEKLY_WINDOW_DAYS - 1), as_of)
 
     def sync_range(self, start_date: date, end_date: date) -> Top10FloatHolderSyncSummary:
+        """Publish each announcement day in its own transaction, resumably.
+
+        Days already present in ``core.top10_float_holder`` are skipped so a
+        rerun after a mid-window failure only fetches the missing days.
+        """
         if end_date < start_date:
             raise ValueError("end_date must not precede start_date")
+        completed = self._persistence.top10_float_holder_completed_days(start_date, end_date)
         batches: list[PreparedTop10FloatHolderBatch] = []
         superseded_request_count = 0
-        try:
-            day = start_date
-            while day <= end_date:
-                superseded_request_count += self._collect_day(day, batches)
-                day += timedelta(days=1)
-        except Exception as error:
-            if batches:
-                self._persistence.abort_top10_float_holder_batches(
-                    tuple(batches), error_type=type(error).__name__
-                )
-            raise
-        self._persistence.commit_top10_float_holder_batches(tuple(batches))
-        return self._summary(start_date, end_date, batches, superseded_request_count)
+        announcement_days = 0
+        day = start_date
+        while day <= end_date:
+            if day not in completed:
+                day_batches: list[PreparedTop10FloatHolderBatch] = []
+                try:
+                    superseded_request_count += self._collect_day(day, day_batches)
+                except Exception as error:
+                    if day_batches:
+                        self._persistence.abort_top10_float_holder_batches(
+                            tuple(day_batches), error_type=type(error).__name__
+                        )
+                    raise
+                self._persistence.commit_top10_float_holder_batches(tuple(day_batches))
+                batches.extend(day_batches)
+                announcement_days += 1
+            day += timedelta(days=1)
+        return self._summary(batches, superseded_request_count, announcement_days)
 
     def _collect_day(self, day: date, batches: list[PreparedTop10FloatHolderBatch]) -> int:
         batch = self._pipeline.prepare_top10_float_holder_request(day)
@@ -130,10 +143,9 @@ class Top10FloatHolderService:
 
     @staticmethod
     def _summary(
-        start_date: date,
-        end_date: date,
         batches: Sequence[PreparedTop10FloatHolderBatch],
         superseded_request_count: int,
+        announcement_days: int,
     ) -> Top10FloatHolderSyncSummary:
         return Top10FloatHolderSyncSummary(
             request_count=len(batches),
@@ -141,5 +153,5 @@ class Top10FloatHolderService:
             accepted_rows=sum(len(batch.records) for batch in batches),
             superseded_request_count=superseded_request_count,
             rejected_rows=sum(batch.run.rejected_rows for batch in batches),
-            announcement_days=(end_date - start_date).days + 1,
+            announcement_days=announcement_days,
         )

@@ -90,15 +90,16 @@ Tushare `moneyflow_ind_dc`（经 `TUSHARE_ENDPOINT` 配置的兼容端点）按 
 
 ## 4. 采集应用服务
 
-每日同步以执行日及此前 4 个自然日（共 5 日）为窗口逐日请求，使盘后修正可见。手动
+每日同步以执行日及此前 4 个自然日（共 5 日）为窗口逐日请求，已入库的交易日自动跳过，
+为漏采日留出补抓余量。手动
 补采 `market-data-center board-moneyflow --start-date --end-date` 使用同一
 `sync_range`，默认窗口为当日回溯 5 日；`--end-date` 不得早于 `--start-date`，也不得
 晚于当前上海自然日。
 
-每个真实请求分别创建 IngestionRun 和 Raw manifest；窗口内全部请求准备完成后在一个
-数据库事务中发布 manifests、质量结果、全部事实并终结运行。任一请求失败时已准备批次
-统一置 `failed`、登记 Raw 与 `board_moneyflow.batch_aborted`（ERROR/FAILED）但不写
-Core。汇总（`BoardMoneyflowSyncSummary`）校验计数非负、
+每个真实请求分别创建 IngestionRun 和 Raw manifest；发布按交易日分批提交：该天请求在
+一个数据库事务中发布 manifests、质量结果、该天事实并终结运行，此前已提交的天保留。
+`sync_range` 开始时查询 `core.board_moneyflow` 已存在的交易日并跳过，失败后重跑只补
+缺口（断点续传）。汇总（`BoardMoneyflowSyncSummary`）校验计数非负、
 `accepted + rejected <= fetched`。
 
 ## 5. 调度与开关
@@ -153,9 +154,9 @@ SELECT/INSERT；持久化对主键冲突 `ON CONFLICT DO NOTHING`，追加而不
 ## 8. 质量与测试
 
 测试覆盖领域不变量与冲突对隔离、来源字段/类型/空值映射与 Raw 重放一致、未知类型/
-日期不匹配/非法代码硬失败、每周窗口与手动 CLI、多请求单事务发布、自然键/manifest/
-信封预检、abort 不发布事实、Scheduler/Operations、数据库约束/RLS/最小授权清单与
-追加幂等（重复批次不重复不覆盖）。
+日期不匹配/非法代码硬失败、每周窗口与手动 CLI、按天单事务发布与断点续传、自然键/
+manifest/信封预检、abort 不发布事实、Scheduler/Operations、数据库约束/RLS/最小授权清单
+与追加幂等（重复批次不重复不覆盖）。
 
 实施不执行生产 migration、生产采集或凭据变更。PostgreSQL integration 只使用隔离的
 `TEST_DATABASE_URL`。

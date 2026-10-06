@@ -102,8 +102,13 @@ class FakePipeline:
 
 
 class FakePersistence:
-    def __init__(self, split_symbols: tuple[str, ...] = ("SSE:600000", "SZSE:000001")) -> None:
+    def __init__(
+        self,
+        split_symbols: tuple[str, ...] = ("SSE:600000", "SZSE:000001"),
+        completed_days: set[date] | None = None,
+    ) -> None:
         self.split_symbols = split_symbols
+        self.completed_days = completed_days or set()
         self.commits: list[tuple[PreparedTop10FloatHolderBatch, ...]] = []
         self.aborts: list[tuple[tuple[PreparedTop10FloatHolderBatch, ...], str]] = []
 
@@ -122,6 +127,9 @@ class FakePersistence:
 
     def top10_float_holder_split_symbols(self) -> tuple[str, ...]:
         return self.split_symbols
+
+    def top10_float_holder_completed_days(self, start_date: date, end_date: date) -> set[date]:
+        return {day for day in self.completed_days if start_date <= day <= end_date}
 
 
 def _service(pipeline: FakePipeline, persistence: FakePersistence) -> Top10FloatHolderService:
@@ -154,7 +162,8 @@ def test_weekly_sync_covers_nine_day_rolling_window() -> None:
     assert summary.request_count == 9
     assert summary.announcement_days == 9
     assert summary.superseded_request_count == 0
-    assert len(persistence.commits) == 1
+    # Each announcement day is published in its own transaction.
+    assert len(persistence.commits) == 9
     assert persistence.aborts == []
 
 
@@ -214,7 +223,7 @@ def test_limit_sized_period_split_supersedes_and_re_reads_per_symbol() -> None:
     assert per_symbol_records == 2
 
 
-def test_provider_failure_mid_window_aborts_every_prepared_request() -> None:
+def test_provider_failure_mid_window_keeps_committed_days() -> None:
     start = date(2026, 10, 3)
     end = date(2026, 10, 5)
     pipeline = FakePipeline({(end, None, None): ProviderError("unavailable")})
@@ -223,14 +232,48 @@ def test_provider_failure_mid_window_aborts_every_prepared_request() -> None:
     with pytest.raises(ProviderError, match="unavailable"):
         _service(pipeline, persistence).sync_range(start, end)
 
-    aborted, error_type = persistence.aborts[0]
-    assert len(aborted) == 2
-    assert [batch.run.request_params["ann_date"] for batch in aborted] == [
+    # Earlier days were already committed; the failing day prepared nothing.
+    assert [batches[0].run.request_params["ann_date"] for batches in persistence.commits] == [
         "20261003",
         "20261004",
     ]
+    assert persistence.aborts == []
+
+
+def test_partially_prepared_day_aborts_only_that_day() -> None:
+    day = date(2026, 10, 5)
+    truncated_period = recent_report_periods(day)[0]
+    pipeline = FakePipeline(
+        {
+            (day, None, None): 6_000,
+            (day, truncated_period, None): ProviderError("unavailable"),
+        }
+    )
+    persistence = FakePersistence()
+
+    with pytest.raises(ProviderError, match="unavailable"):
+        _service(pipeline, persistence).sync_range(day, day)
+
+    # The superseded full-day probe was prepared before the failure and is aborted.
+    aborted, error_type = persistence.aborts[0]
+    assert len(aborted) == 1
+    assert aborted[0].run.request_params["ann_date"] == "20261005"
     assert error_type == "ProviderError"
     assert persistence.commits == []
+
+
+def test_sync_range_skips_already_published_days() -> None:
+    start = date(2026, 10, 3)
+    end = date(2026, 10, 5)
+    pipeline = FakePipeline()
+    persistence = FakePersistence(completed_days={date(2026, 10, 3), date(2026, 10, 4)})
+
+    summary = _service(pipeline, persistence).sync_range(start, end)
+
+    assert [call[0] for call in pipeline.calls] == [end]
+    assert summary.request_count == 1
+    assert summary.announcement_days == 1
+    assert len(persistence.commits) == 1
 
 
 def test_superseded_probe_preserves_rejected_source_row_accounting() -> None:

@@ -7187,6 +7187,12 @@ def test_top10_float_holder_commits_are_idempotent_and_constraints_hold(
         )
         == 2
     )
+    assert persistence.top10_float_holder_completed_days(date(2026, 8, 1), date(2026, 8, 31)) == {
+        date(2026, 8, 28)
+    }
+    assert (
+        persistence.top10_float_holder_completed_days(date(2026, 9, 1), date(2026, 9, 30)) == set()
+    )
 
     # Hard invariants hold at the database boundary, not only inside the pipeline.
     insert_holder = text(
@@ -7290,6 +7296,10 @@ def test_board_moneyflow_commits_are_idempotent_and_constraints_hold(
         )
         == 1
     )
+    assert persistence.board_moneyflow_completed_days(date(2026, 9, 28), date(2026, 9, 30)) == {
+        date(2026, 9, 30)
+    }
+    assert persistence.board_moneyflow_completed_days(date(2026, 10, 1), date(2026, 10, 9)) == set()
 
     insert_flow = text(
         """

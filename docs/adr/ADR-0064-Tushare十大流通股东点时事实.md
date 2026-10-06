@@ -42,9 +42,10 @@ Tushare `top10_floatholders` 接口按公告日全市场返回该事实（经兼
    早于报告截止日、负比例、空白名称、未知证券、批内名次或名称冲突均为硬错误，冲突对
    整体隔离进入质量拒绝，不静默择一。
 5. 每个实际 Tushare 请求产生一个 IngestionRun、一个不可变 Raw 对象和一个 manifest。
-   一次同步窗口（每日一请求）内全部请求完成后，在一个数据库事务中登记 manifests、
-   质量结果、发布全部事实并终结运行；任一请求失败时中止并标记全部已准备批次
-   `failed`，不发布部分事实。
+   发布按公告日分批提交：同一天的全部请求（含拆分与逐证券请求）在一个数据库事务中
+   登记 manifests、质量结果、发布该天事实并终结运行；某天请求失败时该天已准备批次
+   中止并标记 `failed`，不发布该天部分事实，此前已提交的天保留。同步开始时查询
+   `core.top10_float_holder` 中已存在的公告日并跳过，失败后重跑只补缺口（断点续传）。
 6. 恰好 6000 行的响应视为可能截断：该全日请求作废（保留 Raw 与 INFO 质量
    `top10_float_holder.response_split`，`accepted_rows` 置 0），改按公告日前最近的
    8 个季度末报告期逐期拆分请求；单个拆分请求仍满额时（半年报披露峰值日单期即可
@@ -77,8 +78,8 @@ Tushare `top10_floatholders` 接口按公告日全市场返回该事实（经兼
 ## 验收
 
 - Domain 校验/分区、Tushare adapter（名次派生、float 股数解析、period 参数校验、
-  Raw 重放）、Service（窗口、拆分、中止语义）、批量持久化（单事务、自然键预检、
-  abort 不发布事实）均有聚焦测试。
+  Raw 重放）、Service（窗口、拆分、按天提交与中止语义、断点续传）、批量持久化
+  （单天单事务、自然键预检、abort 不发布事实）均有聚焦测试。
 - PostgreSQL 集成测试覆盖 migration、约束（名次、正持股、日期序、非空名称）、
   追加幂等（重复批次不重复不覆盖）、Worker 最小授权与 RLS 清单。
 - 不改变 `contracts/postgrest-openapi-v1.json`、`contracts/agent-tools-v1.json`、

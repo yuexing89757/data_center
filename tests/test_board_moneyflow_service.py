@@ -94,7 +94,8 @@ class FakePipeline:
 
 
 class FakePersistence:
-    def __init__(self) -> None:
+    def __init__(self, completed_days: set[date] | None = None) -> None:
+        self.completed_days = completed_days or set()
         self.commits: list[tuple[PreparedBoardMoneyflowBatch, ...]] = []
         self.aborts: list[tuple[tuple[PreparedBoardMoneyflowBatch, ...], str]] = []
 
@@ -111,6 +112,9 @@ class FakePersistence:
     ) -> None:
         self.aborts.append((batches, error_type))
 
+    def board_moneyflow_completed_days(self, start_date: date, end_date: date) -> set[date]:
+        return {day for day in self.completed_days if start_date <= day <= end_date}
+
 
 def test_daily_sync_covers_five_day_rolling_window() -> None:
     pipeline = FakePipeline()
@@ -121,11 +125,12 @@ def test_daily_sync_covers_five_day_rolling_window() -> None:
     assert pipeline.calls == [date(2026, 10, 2) + timedelta(days=offset) for offset in range(5)]
     assert summary.request_count == 5
     assert summary.trade_days == 5
-    assert len(persistence.commits) == 1
+    # Each trade day is published in its own transaction.
+    assert len(persistence.commits) == 5
     assert persistence.aborts == []
 
 
-def test_range_sync_prepares_each_day_and_commits_once() -> None:
+def test_range_sync_commits_each_day_separately() -> None:
     pipeline = FakePipeline()
     persistence = FakePersistence()
 
@@ -137,10 +142,15 @@ def test_range_sync_prepares_each_day_and_commits_once() -> None:
     assert summary.request_count == 3
     assert summary.fetched_rows == 3
     assert summary.accepted_rows == 3
-    assert len(persistence.commits) == 1
+    assert len(persistence.commits) == 3
+    assert [batches[0].run.request_params["trade_date"] for batches in persistence.commits] == [
+        "2026-09-28",
+        "2026-09-29",
+        "2026-09-30",
+    ]
 
 
-def test_provider_failure_mid_range_aborts_prepared_days() -> None:
+def test_provider_failure_mid_range_keeps_committed_days() -> None:
     pipeline = FakePipeline({date(2026, 9, 30): ProviderError("unavailable")})
     persistence = FakePersistence()
 
@@ -149,13 +159,26 @@ def test_provider_failure_mid_range_aborts_prepared_days() -> None:
             date(2026, 9, 28), date(2026, 9, 30)
         )
 
-    aborted, error_type = persistence.aborts[0]
-    assert [batch.run.request_params["trade_date"] for batch in aborted] == [
+    # Earlier days were already committed; the failing day prepared nothing.
+    assert [batches[0].run.request_params["trade_date"] for batches in persistence.commits] == [
         "2026-09-28",
         "2026-09-29",
     ]
-    assert error_type == "ProviderError"
-    assert persistence.commits == []
+    assert persistence.aborts == []
+
+
+def test_sync_range_skips_already_published_days() -> None:
+    pipeline = FakePipeline()
+    persistence = FakePersistence(completed_days={date(2026, 9, 28), date(2026, 9, 29)})
+
+    summary = BoardMoneyflowService(pipeline, persistence).sync_range(
+        date(2026, 9, 28), date(2026, 9, 30)
+    )
+
+    assert pipeline.calls == [date(2026, 9, 30)]
+    assert summary.request_count == 1
+    assert summary.trade_days == 1
+    assert len(persistence.commits) == 1
 
 
 def test_reversed_range_is_rejected_before_requests() -> None:

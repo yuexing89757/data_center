@@ -1697,6 +1697,36 @@ order by symbol
         with self._engine.connect() as connection:
             return tuple(cast(str, row) for row in connection.execute(statement).scalars().all())
 
+    def top10_float_holder_completed_days(self, start_date: date, end_date: date) -> set[date]:
+        """Announcement days already published, for resumable range syncs."""
+        statement = text("""
+select distinct announcement_date
+from core.top10_float_holder
+where announcement_date between :start_date and :end_date
+""")
+        with self._engine.connect() as connection:
+            return {
+                cast(date, row)
+                for row in connection.execute(
+                    statement, {"start_date": start_date, "end_date": end_date}
+                ).scalars()
+            }
+
+    def board_moneyflow_completed_days(self, start_date: date, end_date: date) -> set[date]:
+        """Trade days already published, for resumable range syncs."""
+        statement = text("""
+select distinct trade_date
+from core.board_moneyflow
+where trade_date between :start_date and :end_date
+""")
+        with self._engine.connect() as connection:
+            return {
+                cast(date, row)
+                for row in connection.execute(
+                    statement, {"start_date": start_date, "end_date": end_date}
+                ).scalars()
+            }
+
     def commit_board_moneyflow_batches(
         self, batches: Sequence[PreparedBoardMoneyflowBatch]
     ) -> None:

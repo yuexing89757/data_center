@@ -96,7 +96,7 @@ Raw，不生成 Core 记录，不使批次失败。`hold_ratio`/`hold_float_rati
 ```
 
 峰值日的三级拆分会放大请求量（最多约 1 + 8 + 全市场逐证券），但避免了单请求静默
-丢行；逐证券批次与其它请求同批单事务发布。
+丢行；逐证券批次与该天其它请求同天单事务发布。
 
 `period` 参数必须是 8 位日期字符串，否则请求前拒绝。合法空响应成功并产生零记录。权限、
 限流、字段缺失和无法证明完整性都抛出可诊断但不含秘密的 ProviderError。请求节奏复用
@@ -109,10 +109,11 @@ Raw，不生成 Core 记录，不使批次失败。`hold_ratio`/`hold_float_rati
 --end-date` 使用同一 `sync_range`，默认窗口为当日回溯 9 日；`--end-date` 不得早于
 `--start-date`。
 
-每个真实请求分别创建 IngestionRun 和 Raw manifest；全部请求准备完成后在一个数据库事务
-中发布 manifests、质量结果、全部事实并终结运行。任一请求失败（含拆分后仍截断）时，
-已准备批次统一置 `failed`、登记 Raw 与 `top10_float_holder.batch_aborted`（ERROR/
-FAILED）但不写 Core。
+每个真实请求分别创建 IngestionRun 和 Raw manifest；发布按公告日分批提交：同一天的全部
+请求在一个数据库事务中发布 manifests、质量结果、该天事实并终结运行，此前已提交的天
+保留。某天请求失败（含拆分后仍截断）时，该天已准备批次统一置 `failed`、登记 Raw 与
+`top10_float_holder.batch_aborted`（ERROR/FAILED）但不写 Core。`sync_range` 开始时查询
+`core.top10_float_holder` 已存在的公告日并跳过，失败后重跑只补缺口（断点续传）。
 
 满额作废的全日请求保留 Raw 与 INFO `top10_float_holder.response_split`，`accepted_rows`
 置 0；其 `fetched_rows`/`rejected_rows` 照实进入汇总。汇总（`Top10FloatHolderSyncSummary`）
@@ -168,8 +169,9 @@ first_observed_at timestamptz
 ## 8. 质量与测试
 
 测试覆盖领域不变量与冲突对隔离、名次派生与 Raw 重放一致、float 股数解析（`.0` 接受、
-真小数拒绝）、来源空值 Raw 保留、period 校验、6000 行拆分与拆分仍满额失败、多请求单事务
-发布、批内自然键/manifest/信封预检、abort 不发布事实、每周窗口与手动 CLI、Scheduler/
+真小数拒绝）、来源空值 Raw 保留、period 校验、6000 行拆分与拆分仍满额失败、按天单事务
+发布与断点续传、失败天中止而已提交天保留、批内自然键/manifest/
+信封预检、abort 不发布事实、每周窗口与手动 CLI、Scheduler/
 Operations、数据库约束/RLS/最小授权清单与追加幂等（重复批次不重复不覆盖）。
 
 实施不执行生产 migration、生产采集或凭据变更。PostgreSQL integration 只使用隔离的
