@@ -13,6 +13,7 @@ MAINBOARD_LIMIT_DOWN_POOL = "CN_A_PREVIOUS_DAY_MAINBOARD_LIMIT_DOWN"
 PRICE_LIMIT_ALGORITHM_VERSION = "1.0.0"
 PRICE_LIMIT_RULE_VERSION = "CN_MAINBOARD_2026_07_06"
 GEM_PRICE_LIMIT_RULE_VERSION = "CN_GEM_2026_07_06"
+STAR_PRICE_LIMIT_RULE_VERSION = "CN_STAR_2026_07_06"
 PRICE_LIMIT_RULE_EFFECTIVE_FROM = date(2026, 7, 6)
 
 
@@ -63,6 +64,17 @@ PRICE_LIMIT_RULES = (
         GEM_PRICE_LIMIT_RULE_VERSION,
         Exchange.SZSE,
         "gem",
+        PRICE_LIMIT_RULE_EFFECTIVE_FROM,
+        None,
+        Decimal("0.20"),
+        Decimal("0.20"),
+        Decimal("0.01"),
+        5,
+    ),
+    PriceLimitRule(
+        STAR_PRICE_LIMIT_RULE_VERSION,
+        Exchange.SSE,
+        "star",
         PRICE_LIMIT_RULE_EFFECTIVE_FROM,
         None,
         Decimal("0.20"),

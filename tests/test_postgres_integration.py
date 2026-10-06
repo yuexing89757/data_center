@@ -9362,7 +9362,9 @@ def test_regulation_service_publishes_calculation_in_disposable_database(
     )
     symbols = (
         ("SSE:600000", "600000", "stock", "Regulation Test"),
+        ("SSE:688167", "688167", "stock", "Regulation STAR Test"),
         ("SSE:000002", "000002", "index", "SSE A Share Index"),
+        ("SSE:000688", "000688", "index", "SSE STAR 50 Index"),
         ("SZSE:399107", "399107", "index", "SZSE A Share Index"),
         ("SZSE:399102", "399102", "index", "GEM Composite Index"),
     )
@@ -9474,12 +9476,17 @@ insert into core.stock_daily_indicator (
     symbol, trade_date, market, close, turnover_rate_pct,
     price_limit_status, source_code, ingestion_id
 ) values (
-    'SSE:600000', :trade_date, 'CN_A_SHARE', 10, 1,
+    :symbol, :trade_date, 'CN_A_SHARE', 10, 1,
     'flat', 'tushare', :ingestion_id
 )
 """),
             [
-                {"trade_date": day, "ingestion_id": indicator_ingestion_id}
+                {
+                    "symbol": symbol,
+                    "trade_date": day,
+                    "ingestion_id": indicator_ingestion_id,
+                }
+                for symbol in ("SSE:600000", "SSE:688167")
                 for day in trading_dates[:-1]
             ],
         )
@@ -9496,22 +9503,31 @@ insert into core.stock_daily_indicator (
     ).calculate(date(2026, 9, 2))
 
     assert summary.status.value == "PARTIAL"
-    assert summary.coverage.expected_count == 1
-    assert summary.coverage.incomplete_count == 1
+    assert summary.coverage.expected_count == 2
+    assert summary.coverage.incomplete_count == 2
     with database_engine.connect() as connection:
         assert (
             connection.execute(
                 text("select count(*) from regulation.status where calculation_id=:id"),
                 {"id": summary.calculation_id},
             ).scalar_one()
-            == 1
+            == 2
         )
+        star_row = connection.execute(
+            text("""
+select segment, benchmark_symbol from regulation.status
+where calculation_id=:id and symbol='SSE:688167'
+"""),
+            {"id": summary.calculation_id},
+        ).one()
+        assert star_row.segment == "STAR"
+        assert star_row.benchmark_symbol == "SSE:000688"
         assert (
             connection.execute(
                 text("select count(*) from regulation.rule_result where calculation_id=:id"),
                 {"id": summary.calculation_id},
             ).scalar_one()
-            == 9
+            == 18
         )
         assert (
             connection.execute(
@@ -9569,6 +9585,7 @@ values ('SSE:000002',:day,'CN_A_SHARE',100,100,100,100,:previous,1,100,'trading'
         )
     gaps = PostgreSQLRegulationPersistence(database_engine).benchmark_gaps(days[-1])
     assert gaps["SSE:000002"] == days[-30:-1]
+    assert gaps["SSE:000688"] == days[-30:]
     assert gaps["SZSE:399107"] == days[-30:]
     assert gaps["SZSE:399102"] == days[-30:]
     with pytest.raises(ValueError, match="calendar"):

@@ -18,7 +18,12 @@ from market_data_center.providers.tencent_quote import (
     _source_timestamp,
 )
 
-BENCHMARKS = {"SSE:000002": "sh000002", "SZSE:399107": "sz399107", "SZSE:399102": "sz399102"}
+BENCHMARKS = {
+    "SSE:000002": "sh000002",
+    "SSE:000688": "sh000688",
+    "SZSE:399107": "sz399107",
+    "SZSE:399102": "sz399102",
+}
 
 
 @dataclass(frozen=True, slots=True)

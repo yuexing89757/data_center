@@ -82,7 +82,7 @@ DAILY_BAR_FIELDS = (
     "amount",
 )
 REGULATION_ST_FIELDS = ("ts_code", "name", "trade_date", "type", "type_name")
-REGULATION_INDEX_CODES = frozenset(("000002.SH", "399107.SZ", "399102.SZ"))
+REGULATION_INDEX_CODES = frozenset(("000002.SH", "000688.SH", "399107.SZ", "399102.SZ"))
 STOCK_DAILY_INDICATOR_FIELDS = (
     "ts_code",
     "trade_date",

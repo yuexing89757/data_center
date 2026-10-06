@@ -11,6 +11,7 @@ from market_data_center.domain.ingestion import DatasetCode
 from market_data_center.domain.regulation import (
     RegulationDirection,
     RegulationRuleLevel,
+    RegulationSegment,
 )
 from market_data_center.providers.contracts import ProviderError
 from market_data_center.providers.sse_regulation import (
@@ -72,9 +73,29 @@ def test_sse_provider_normalizes_explicit_official_reason() -> None:
     assert len(batch.raw_rows) == 1
     [event] = batch.records
     assert event.symbol == "SSE:600000"
+    assert event.segment is RegulationSegment.SSE_MAIN
     assert event.event_level is RegulationRuleLevel.ABNORMAL
     assert event.direction is RegulationDirection.UP
     assert event.explicit_rule_codes == ("SSE_MAIN_ABNORMAL_3D_DEV_UP",)
+
+
+def test_sse_provider_classifies_star_disclosures_with_star_rule_codes() -> None:
+    batch = _provider({1: _page([_row(secCode="688167", secAbbr="磐石科技")])}).fetch_events(
+        FROM, TO
+    )
+
+    [event] = batch.records
+    assert event.symbol == "SSE:688167"
+    assert event.segment is RegulationSegment.STAR
+    assert event.explicit_rule_codes == ("STAR_ABNORMAL_3D_DEV_UP",)
+
+    replayed = normalize_sse_regulation_raw(
+        DatasetCode.REGULATION_EVENT,
+        batch.schema_version,
+        batch.raw_rows,
+        batch.request_params,
+    )
+    assert replayed == batch.records
 
 
 def test_sse_raw_replay_reproduces_the_live_event() -> None:
@@ -151,7 +172,7 @@ def test_sse_provider_wraps_transport_timeout() -> None:
     [
         _row(tradeDate="bad"),
         _row(tradeDate="20260919"),
-        _row(secCode="688001"),
+        _row(secCode="900001"),
     ],
 )
 def test_sse_provider_preserves_invalid_or_out_of_scope_rows_only_in_raw(

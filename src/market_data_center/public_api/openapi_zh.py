@@ -20,7 +20,7 @@ FIELD_DESCRIPTIONS_ZH = {
     "incomplete_count": "输入不完整的证券数。",
     "not_applicable_count": "不适用当前规则的证券数。",
     "next_cursor": "下一页游标；没有更多记录时为空。",
-    "segment": "监管规则所属板块：沪市主板、深市主板或创业板。",
+    "segment": "监管规则所属板块：沪市主板、深市主板、创业板或科创板。",
     "calculated_state": "系统计算达到条件的状态，不等同于交易所正式认定。",
     "announced_state": "事件水位以内交易所已经正式公告的状态。",
     "triggered_rules": "该股票达到条件且输入完整的规则列表。",

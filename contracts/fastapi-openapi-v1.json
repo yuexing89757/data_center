@@ -8959,7 +8959,7 @@
                 "type": "null"
               }
             ],
-            "description": "监管规则所属板块：沪市主板、深市主板或创业板。",
+            "description": "监管规则所属板块：沪市主板、深市主板、创业板或科创板。",
             "title": "Segment"
           },
           "symbol": {
@@ -9435,11 +9435,12 @@
             "type": "integer"
           },
           "segment": {
-            "description": "监管规则所属板块：沪市主板、深市主板或创业板。",
+            "description": "监管规则所属板块：沪市主板、深市主板、创业板或科创板。",
             "enum": [
               "SSE_MAIN",
               "SZSE_MAIN",
-              "GEM"
+              "GEM",
+              "STAR"
             ],
             "title": "Segment",
             "type": "string"
@@ -9866,11 +9867,12 @@
             "type": "string"
           },
           "segment": {
-            "description": "监管规则所属板块：沪市主板、深市主板或创业板。",
+            "description": "监管规则所属板块：沪市主板、深市主板、创业板或科创板。",
             "enum": [
               "SSE_MAIN",
               "SZSE_MAIN",
-              "GEM"
+              "GEM",
+              "STAR"
             ],
             "title": "Segment",
             "type": "string"
@@ -10103,11 +10105,12 @@
             "title": "Name"
           },
           "segment": {
-            "description": "监管规则所属板块：沪市主板、深市主板或创业板。",
+            "description": "监管规则所属板块：沪市主板、深市主板、创业板或科创板。",
             "enum": [
               "SSE_MAIN",
               "SZSE_MAIN",
-              "GEM"
+              "GEM",
+              "STAR"
             ],
             "title": "Segment",
             "type": "string"

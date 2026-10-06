@@ -10,6 +10,7 @@ from market_data_center.providers.contracts import ProviderError
 
 REGULATION_BENCHMARK_SYMBOLS = (
     "SSE:000002",
+    "SSE:000688",
     "SZSE:399107",
     "SZSE:399102",
 )
@@ -57,6 +58,6 @@ class RegulationBenchmarkService:
         return RegulationBenchmarkCollectionSummary(
             trade_date=trade_date,
             expected_count=len(REGULATION_BENCHMARK_SYMBOLS),
-            accepted_count=3 - len(missing_symbols),
+            accepted_count=len(REGULATION_BENCHMARK_SYMBOLS) - len(missing_symbols),
             missing_symbols=missing_symbols,
         )

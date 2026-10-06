@@ -16,6 +16,7 @@ from market_data_center.domain.regulation import (
     RegulationRuleLevel,
     RegulationSegment,
     regulation_event_natural_key,
+    segment_price_limit_board,
     validate_regulation_rules,
 )
 
@@ -181,6 +182,35 @@ def test_validate_regulation_rules_allows_distinct_official_windows() -> None:
         ten_day,
         thirty_day,
     )
+
+
+def test_star_segment_binds_to_sse_and_shares_the_active_rule_set_version() -> None:
+    star_rule = _deviation_rule(
+        rule_code="STAR_ABNORMAL_3D_DEV_UP",
+        segment=RegulationSegment.STAR,
+        benchmark_symbol="SSE:000688",
+    )
+    assert star_rule.exchange is Exchange.SSE
+    with pytest.raises(ValueError, match="does not match segment"):
+        _deviation_rule(
+            rule_code="STAR_WRONG_EXCHANGE",
+            segment=RegulationSegment.STAR,
+            exchange=Exchange.SZSE,
+            benchmark_symbol="SSE:000688",
+        )
+    # STAR rules join the other segments under the one active rule-set version.
+    active = validate_regulation_rules(
+        (_deviation_rule(), _turnover_rule(), _count_rule(), star_rule),
+        date(2026, 9, 2),
+    )
+    assert star_rule in active
+
+
+def test_segment_price_limit_board_maps_every_segment() -> None:
+    assert segment_price_limit_board(RegulationSegment.STAR) == "star"
+    assert segment_price_limit_board(RegulationSegment.GEM) == "gem"
+    assert segment_price_limit_board(RegulationSegment.SSE_MAIN) == "mainboard"
+    assert segment_price_limit_board(RegulationSegment.SZSE_MAIN) == "mainboard"
 
 
 def _event(**changes: object) -> RegulationEventRecord:

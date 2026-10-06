@@ -77,7 +77,7 @@ class RegulationTriggerStockItem(ApiModel):
     symbol: str = Field(pattern=r"^(SSE|SZSE):[0-9]{6}$")
     name: str | None
     exchange: Literal["SSE", "SZSE"]
-    segment: Literal["SSE_MAIN", "SZSE_MAIN", "GEM"]
+    segment: Literal["SSE_MAIN", "SZSE_MAIN", "GEM", "STAR"]
     calculated_state: Literal["ABNORMAL_TRIGGERED", "SERIOUS_TRIGGERED"]
     announced_state: Literal["NONE", "ABNORMAL", "SERIOUS_ABNORMAL"]
     triggered_rules: list[RegulationTriggeredRuleItem]
@@ -170,7 +170,7 @@ class RegulationRecentEventStockItem(ApiModel):
     symbol: str = Field(pattern=r"^(SSE|SZSE):[0-9]{6}$")
     name: str | None
     exchange: Literal["SSE", "SZSE"]
-    segment: Literal["SSE_MAIN", "SZSE_MAIN", "GEM"]
+    segment: Literal["SSE_MAIN", "SZSE_MAIN", "GEM", "STAR"]
     official_event_count_30d: int = Field(ge=1)
     latest_source_event_id: str
     latest_event_date: date
@@ -197,7 +197,7 @@ class RegulationSymbolTriggerResponse(RegulationQueryMetadata):
     symbol: str = Field(pattern=r"^(SSE|SZSE):[0-9]{6}$")
     name: str | None
     exchange: Literal["SSE", "SZSE"]
-    segment: Literal["SSE_MAIN", "SZSE_MAIN", "GEM"]
+    segment: Literal["SSE_MAIN", "SZSE_MAIN", "GEM", "STAR"]
     applicability: Literal["APPLICABLE", "NOT_APPLICABLE", "INSUFFICIENT_DATA"]
     data_completeness: Literal["COMPLETE", "INCOMPLETE", "NOT_APPLICABLE"]
     calculated_state: Literal["NORMAL", "ABNORMAL_TRIGGERED", "SERIOUS_TRIGGERED"]

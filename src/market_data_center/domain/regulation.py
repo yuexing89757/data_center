@@ -20,6 +20,7 @@ class RegulationSegment(StrEnum):
     SSE_MAIN = "SSE_MAIN"
     SZSE_MAIN = "SZSE_MAIN"
     GEM = "GEM"
+    STAR = "STAR"
 
 
 class RegulationRuleLevel(StrEnum):
@@ -112,9 +113,18 @@ def _require_timezone_aware(value: datetime, field_name: str) -> None:
 
 
 def _expected_exchange(segment: RegulationSegment) -> Exchange:
-    if segment is RegulationSegment.SSE_MAIN:
+    if segment in (RegulationSegment.SSE_MAIN, RegulationSegment.STAR):
         return Exchange.SSE
     return Exchange.SZSE
+
+
+def segment_price_limit_board(segment: RegulationSegment) -> str:
+    """Map a regulation segment to its price-limit board key."""
+    if segment is RegulationSegment.STAR:
+        return "star"
+    if segment is RegulationSegment.GEM:
+        return "gem"
+    return "mainboard"
 
 
 @dataclass(frozen=True, slots=True)

@@ -16,7 +16,7 @@ from market_data_center.domain.regulation import (
     RegulationRule,
     RegulationRuleKind,
     RegulationRuleLevel,
-    RegulationSegment,
+    segment_price_limit_board,
 )
 from market_data_center.domain.stock_pool import price_limit_rule
 from market_data_center.providers.regulation_quote import MonitorQuote, quote_issue
@@ -188,7 +188,7 @@ def _threshold(
     limit = price_limit_rule(
         candidate.exchange,
         target,
-        board="gem" if candidate.segment is RegulationSegment.GEM else "mainboard",
+        board=segment_price_limit_board(candidate.segment),
     )
     lower, upper = calculate_price_limit_range(reference, limit.regular_ratio, limit.price_tick)
     reachable = price <= upper if rule.direction is RegulationDirection.UP else price >= lower
