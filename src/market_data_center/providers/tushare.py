@@ -1,5 +1,6 @@
 """Tushare Pro adapter; source fields and units stop at this boundary."""
 
+import gzip
 import json
 import re
 from collections.abc import Callable, Mapping, Sequence
@@ -286,6 +287,9 @@ class TushareHttpClient:
                     headers={
                         "Content-Type": "application/json",
                         "User-Agent": "market-data-center/0.1",
+                        # The relay gateway rejects large responses without
+                        # gzip negotiation ("please enable gzip").
+                        "Accept-Encoding": "gzip",
                     },
                 )
                 response = self._connection.getresponse()
@@ -299,6 +303,8 @@ class TushareHttpClient:
                     raise ProviderError(
                         f"Tushare HTTP status {response.status} for {self._endpoint}"
                     )
+                if response.headers.get("Content-Encoding", "").strip().lower() == "gzip":
+                    body = gzip.decompress(body)
                 return body
             except ProviderError:
                 self.close()

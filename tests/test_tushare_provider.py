@@ -1089,27 +1089,37 @@ def test_board_moneyflows_reject_unknown_content_type_and_row_date() -> None:
 
 
 class _FakeHttpResponse:
-    def __init__(self, status: int, body: bytes) -> None:
+    def __init__(self, status: int, body: bytes, headers: dict[str, str] | None = None) -> None:
         self.status = status
         self._body = body
+        self.headers = headers or {}
 
     def read(self) -> bytes:
         return self._body
 
 
 class _FakeHttpConnection:
-    def __init__(self, statuses: list[int], body: bytes) -> None:
+    def __init__(
+        self,
+        statuses: list[int],
+        body: bytes,
+        *,
+        headers: dict[str, str] | None = None,
+    ) -> None:
         self._statuses = statuses
         self._body = body
+        self._headers = headers
         self.requests = 0
         self.closed = False
+        self.sent_headers: dict[str, str] = {}
 
     def request(self, method: str, path: str, *, body: bytes, headers: dict[str, str]) -> None:
         self.requests += 1
+        self.sent_headers = headers
 
     def getresponse(self) -> _FakeHttpResponse:
         status = self._statuses.pop(0) if self._statuses else 200
-        return _FakeHttpResponse(status, self._body)
+        return _FakeHttpResponse(status, self._body, self._headers)
 
     def close(self) -> None:
         self.closed = True
@@ -1153,3 +1163,27 @@ def test_tushare_client_fails_after_two_consecutive_5xx(
     with pytest.raises(ProviderError, match="HTTP status 503"):
         client.query("top10_floatholders", params={}, fields=("ts_code",))
     assert connection.requests == 2
+
+
+def test_tushare_client_negotiates_gzip_and_decompresses_the_response(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    from gzip import compress
+
+    from market_data_center.providers import tushare as tushare_module
+
+    document = json_dumps(
+        {"code": 0, "data": {"fields": ["ts_code"], "items": [["600000.SH"]]}}
+    ).encode()
+    connection = _FakeHttpConnection([], compress(document), headers={"Content-Encoding": "gzip"})
+    monkeypatch.setattr(
+        tushare_module,
+        "_open_http_connection",
+        lambda parts, timeout: connection,
+    )
+    client = tushare_module.TushareHttpClient("secret-token")
+
+    rows = client.query("top10_floatholders", params={}, fields=("ts_code",))
+
+    assert rows == [{"ts_code": "600000.SH"}]
+    assert connection.sent_headers["Accept-Encoding"] == "gzip"
