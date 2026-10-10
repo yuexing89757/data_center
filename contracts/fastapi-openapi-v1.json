@@ -6992,6 +6992,140 @@
         "title": "KaipanlaLimitUpHistoryResponse",
         "type": "object"
       },
+      "KaipanlaHotTalkItem": {
+        "additionalProperties": false,
+        "properties": {
+          "has_vote": {
+            "description": "来源标记该条目是否包含投票，不提交投票。",
+            "title": "Has Vote",
+            "type": "boolean"
+          },
+          "heat_value": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源页面热度值，精确整数；不推断为阅读人数；缺失为空。",
+            "title": "Heat Value"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "example": "2026-09-18 09:35:00",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源发布时间，可能与分组日期不同；缺失为空。",
+            "example": "2026-10-08 18:42:50",
+            "title": "Published At"
+          },
+          "rank": {
+            "description": "来源日期组内的展示排名。",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Rank",
+            "type": "integer"
+          },
+          "title": {
+            "description": "话题标题，保留来源文字。",
+            "title": "Title",
+            "type": "string"
+          },
+          "topic_id": {
+            "description": "来源条目 ID。",
+            "title": "Topic Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "topic_id",
+          "rank",
+          "title",
+          "heat_value",
+          "published_at",
+          "has_vote"
+        ],
+        "title": "KaipanlaHotTalkItem",
+        "type": "object"
+      },
+      "KaipanlaHotTalksResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "description": "最新来源日期的条目，按来源展示顺序排列。",
+            "items": {
+              "$ref": "#/components/schemas/KaipanlaHotTalkItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "observed_at": {
+            "description": "收到响应的上海时区时间。",
+            "example": "2026-10-10 19:05:00",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "persisted": {
+            "const": false,
+            "description": "固定 false，响应不入库。",
+            "title": "Persisted",
+            "type": "boolean"
+          },
+          "returned_count": {
+            "description": "该日期全部条目数量。",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Returned Count",
+            "type": "integer"
+          },
+          "source_code": {
+            "const": "kaipanla",
+            "description": "固定来源：开盘啦。",
+            "title": "Source Code",
+            "type": "string"
+          },
+          "source_layout": {
+            "const": "kaipanla.hot_talks.v1",
+            "description": "列表字段布局版本。",
+            "title": "Source Layout",
+            "type": "string"
+          },
+          "topic_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源最新日期组；不是交易日；成功空列表时为空。",
+            "title": "Topic Date"
+          }
+        },
+        "required": [
+          "source_code",
+          "source_layout",
+          "persisted",
+          "observed_at",
+          "topic_date",
+          "returned_count",
+          "items"
+        ],
+        "title": "KaipanlaHotTalksResponse",
+        "type": "object"
+      },
       "KaipanlaMoneyEffectItem": {
         "additionalProperties": false,
         "properties": {
@@ -13863,6 +13997,53 @@
           }
         ],
         "summary": "查询开盘啦历史成分股及机构预测",
+        "tags": [
+          "实时接口"
+        ]
+      }
+    },
+    "/api/v1/realtime/kaipanla/hot-talks": {
+      "get": {
+        "description": "请求时读取首页明天炒什么（盘中显示今天炒什么）查看全部列表，仅返回最新来源日期全部条目。单次上游请求，复用 X-API-Key，不入库、不自动翻页、不依赖模拟器。",
+        "operationId": "hot_talks_api_v1_realtime_kaipanla_hot_talks_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KaipanlaHotTalksResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "查询开盘啦明天炒什么最新话题",
         "tags": [
           "实时接口"
         ]

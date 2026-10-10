@@ -1,10 +1,10 @@
 """Dump the Kaipanla "What to trade today/tomorrow" list from a local MuMu emulator.
 
 This is a manual, on-demand UI extraction tool. It reads the published topic
-ranking through Android UI Automation (``uiautomator dump``) — the upstream
-HTTP endpoint requires a logged-in account token and applies certificate
-pinning, so it cannot be integrated as a credential-free read-only provider
-(ADR-0059 style). The script sends no account credentials, writes no database
+ranking through Android UI Automation (``uiautomator dump``). Topic/InfoList
+was verified credential-free on 2026-10-10 and is available through the API's
+/api/v1/realtime/kaipanla/hot-talks route. This UI tool remains useful for
+page cross-checks. The script sends no account credentials, writes no database
 rows, saves no Raw objects, and registers no schedule.
 
 Requirements:
@@ -20,8 +20,8 @@ Usage::
 The app shows "明天炒什么" after market close and "今天炒什么" intraday; both
 are the same ``HotTalkListActivity`` ranking. Output is a JSON document with
 ``observed_at`` (Asia/Shanghai), the screen title, and ``items`` grouped by
-trade date, each item carrying rank, read count text, and title. Reading
-counts are kept as the displayed string (for example ``14.41万``); nothing is
+source date, each item carrying rank, displayed heat text (legacy ``reads``
+field), and title. Heat values are kept as displayed (for example ``14.41万``); nothing is
 converted or fabricated.
 """
 

@@ -63,6 +63,11 @@ The historical market-emotion chart is available at
 `GET /api/v1/realtime/kaipanla/market-emotion/chart?offset=0&limit=100`.
 See [the chart API guide](docs/开盘啦市场情绪图实时接口.md).
 
+The newest "What to trade tomorrow/today" topic-date group is available at
+`GET /api/v1/realtime/kaipanla/hot-talks`. It reads the source directly without
+credentials or an emulator and returns ranked titles, source heat values, publication
+timestamps and vote flags. See [the topic API guide](docs/开盘啦明天炒什么实时接口.md).
+
 Kaipanla board reads provide three authenticated GET routes under
 `/api/v1/realtime/kaipanla/boards`: latest rankings, `/history`, and
 `/{board_code}/members/history` with institutional profit forecasts. Each request reads one

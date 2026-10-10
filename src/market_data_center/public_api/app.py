@@ -40,6 +40,10 @@ from market_data_center.providers.kaipanla_emotion_chart import (
     KaipanlaEmotionChartProvider,
     KaipanlaEmotionChartUpstream,
 )
+from market_data_center.providers.kaipanla_hot_talks import (
+    KaipanlaHotTalksProvider,
+    KaipanlaHotTalksUpstream,
+)
 from market_data_center.providers.kaipanla_market_history import (
     KaipanlaMarketHistoryInvalid,
     KaipanlaMarketHistoryProvider,
@@ -67,6 +71,7 @@ from market_data_center.public_api.kaipanla_boards import router as kaipanla_boa
 from market_data_center.public_api.kaipanla_emotion_chart import (
     router as kaipanla_emotion_chart_router,
 )
+from market_data_center.public_api.kaipanla_hot_talks import router as kaipanla_hot_talks_router
 from market_data_center.public_api.kaipanla_market_history import (
     router as kaipanla_market_history_router,
 )
@@ -140,6 +145,7 @@ def create_app(
     kaipanla_auction_provider: KaipanlaAuctionProvider | None = None,
     kaipanla_money_effect_provider: KaipanlaMoneyEffectProvider | None = None,
     kaipanla_emotion_chart_provider: KaipanlaEmotionChartProvider | None = None,
+    kaipanla_hot_talks_provider: KaipanlaHotTalksProvider | None = None,
     kaipanla_boards_provider: KaipanlaBoardsProvider | None = None,
     kaipanla_market_history_provider: KaipanlaMarketHistoryProvider | None = None,
 ) -> FastAPI:
@@ -227,6 +233,10 @@ def create_app(
         or KaipanlaEmotionChartProvider(timeout_seconds=configured.fastapi_kaipanla_timeout_seconds)
     )
     app.include_router(kaipanla_emotion_chart_router, dependencies=[Depends(_require_api_key)])
+    app.state.kaipanla_hot_talks_provider = kaipanla_hot_talks_provider or KaipanlaHotTalksProvider(
+        timeout_seconds=configured.fastapi_kaipanla_timeout_seconds
+    )
+    app.include_router(kaipanla_hot_talks_router, dependencies=[Depends(_require_api_key)])
     app.state.kaipanla_boards_provider = kaipanla_boards_provider or KaipanlaBoardsProvider(
         timeout_seconds=configured.fastapi_kaipanla_timeout_seconds
     )
@@ -1009,6 +1019,10 @@ def _install_exception_handlers(app: FastAPI) -> None:
         return _error_response(
             502, "upstream_error", "Kaipanla emotion-chart provider request failed"
         )
+
+    @app.exception_handler(KaipanlaHotTalksUpstream)
+    async def kaipanla_hot_talks_upstream(_: Request, __: KaipanlaHotTalksUpstream) -> JSONResponse:
+        return _error_response(502, "upstream_error", "Kaipanla hot-talks provider request failed")
 
     @app.exception_handler(KaipanlaMoneyEffectUpstream)
     async def kaipanla_money_effect_upstream(
