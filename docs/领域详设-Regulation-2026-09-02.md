@@ -19,7 +19,7 @@
 
 - 官方规则的版本、有效期、参数和来源；
 - 交易所正式异常/严重异常事件事实；
-- 沪市主板、深市主板、创业板普通股票的每日规则状态；
+- 沪市主板、科创板、深市主板、创业板普通股票的每日规则状态；
 - 固定指数情景下可达到规则条件的 T+1 收盘价；
 - 计算版本、输入哈希、数据完整性和稳定只读契约。
 
@@ -27,7 +27,7 @@
 
 - 预测价格、停牌概率、资金行为或监管措施；
 - HIGH/MEDIUM/LOW 等主观风险等级；
-- 科创板、北交所、ST/*ST、退市整理期和无涨跌幅限制交易日；
+- 北交所、ST/*ST、退市整理期和无涨跌幅限制交易日；
 - 龙虎榜、游资、题材、策略或回测；
 - 2026年7月6日前规则历史；
 - 监管规则在线编辑器、通用规则 DSL 或事件溯源平台。
@@ -57,7 +57,7 @@ Regulation ──> api_v1.query_regulation_warnings ──> FastAPI
 ### 3.1 标识
 
 - 股票统一使用 `SSE:600000`、`SZSE:000001` 等标准 `symbol`，不保存 `ts_code`。
-- 基准指数分别为 `SSE:000002`、`SZSE:399107`、`SZSE:399102`。
+- 基准指数分别为 `SSE:000002`、`SSE:000688`、`SZSE:399107`、`SZSE:399102`。
 - 交易日使用 `Asia/Shanghai` 的本地 `date`。
 - 来源发布时间、首次观察时间和审计时间使用 `timestamptz`。
 
@@ -67,9 +67,12 @@ Regulation ──> api_v1.query_regulation_warnings ──> FastAPI
 SSE_MAIN
 SZSE_MAIN
 GEM
+STAR
 ```
 
-板块由 Security 身份、交易所、证券类型和代码范围确定。无法唯一判定时不应用规则。
+板块由 Security 身份、交易所、证券类型和代码范围确定：SSE 688000-689999（689 为 CDR）
+判定为 `STAR`，规则口径沿用上交所主板规则文本，基准指数为上证科创板50成份指数，涨跌幅
+限制 ±20%、上市前 5 个交易日无限制。无法唯一判定时不应用规则。
 
 ### 3.3 核心枚举
 
@@ -106,9 +109,12 @@ cn-a-share-regulation-2026-07-06.v1
 有效期从2026年7月6日开始。上交所依据《上海证券交易所交易规则（2026年修订）》第5.4.1至
 5.4.6条；深交所依据《深圳证券交易所交易规则（2026年修订）》第5.4.2至5.4.6条。
 
-### 4.2 26条规则字典
+### 4.2 35条规则字典
 
-表中 `threshold` 单位为百分点；`turnover ratio=30` 表示30倍，不是30%。
+表中 `threshold` 单位为百分点；`turnover ratio=30` 表示30倍，不是30%。2026-10-06 起
+`STAR` 板块按上交所主板口径并入（规则参数与 SSE_MAIN 相同，基准指数为 `SSE:000688`），
+与既有规则共用同一 `rule_set_version`，规则集内容变化由每次计算记录的 `rule_set_hash`
+区分。
 
 | rule_code | segment | level | kind | direction | parameters | reset | clause |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -121,6 +127,15 @@ cn-a-share-regulation-2026-07-06.v1
 | SSE_MAIN_SERIOUS_10D_DEV_DOWN | SSE_MAIN | SERIOUS_ABNORMAL | CUMULATIVE_DEVIATION | DOWN | window=10, threshold=-50 | SERIOUS_ABNORMAL | SSE 5.4.3(2) |
 | SSE_MAIN_SERIOUS_30D_DEV_UP | SSE_MAIN | SERIOUS_ABNORMAL | CUMULATIVE_DEVIATION | UP | window=30, threshold=200 | SERIOUS_ABNORMAL | SSE 5.4.3(3) |
 | SSE_MAIN_SERIOUS_30D_DEV_DOWN | SSE_MAIN | SERIOUS_ABNORMAL | CUMULATIVE_DEVIATION | DOWN | window=30, threshold=-70 | SERIOUS_ABNORMAL | SSE 5.4.3(3) |
+| STAR_ABNORMAL_3D_DEV_UP | STAR | ABNORMAL | CUMULATIVE_DEVIATION | UP | window=3, threshold=20 | ABNORMAL | SSE 5.4.2(1) |
+| STAR_ABNORMAL_3D_DEV_DOWN | STAR | ABNORMAL | CUMULATIVE_DEVIATION | DOWN | window=3, threshold=-20 | ABNORMAL | SSE 5.4.2(1) |
+| STAR_ABNORMAL_TURNOVER | STAR | ABNORMAL | TURNOVER_COMPOSITE | NONE | latest=3, prior=5, ratio=30, cumulative=20 | ABNORMAL | SSE 5.4.2(2) |
+| STAR_SERIOUS_10D_COUNT_UP | STAR | SERIOUS_ABNORMAL | EVENT_COUNT | UP | count_window=10, required=4 | SERIOUS_ABNORMAL | SSE 5.4.3(1) |
+| STAR_SERIOUS_10D_COUNT_DOWN | STAR | SERIOUS_ABNORMAL | EVENT_COUNT | DOWN | count_window=10, required=4 | SERIOUS_ABNORMAL | SSE 5.4.3(1) |
+| STAR_SERIOUS_10D_DEV_UP | STAR | SERIOUS_ABNORMAL | CUMULATIVE_DEVIATION | UP | window=10, threshold=100 | SERIOUS_ABNORMAL | SSE 5.4.3(2) |
+| STAR_SERIOUS_10D_DEV_DOWN | STAR | SERIOUS_ABNORMAL | CUMULATIVE_DEVIATION | DOWN | window=10, threshold=-50 | SERIOUS_ABNORMAL | SSE 5.4.3(2) |
+| STAR_SERIOUS_30D_DEV_UP | STAR | SERIOUS_ABNORMAL | CUMULATIVE_DEVIATION | UP | window=30, threshold=200 | SERIOUS_ABNORMAL | SSE 5.4.3(3) |
+| STAR_SERIOUS_30D_DEV_DOWN | STAR | SERIOUS_ABNORMAL | CUMULATIVE_DEVIATION | DOWN | window=30, threshold=-70 | SERIOUS_ABNORMAL | SSE 5.4.3(3) |
 | SZSE_MAIN_ABNORMAL_3D_DEV_UP | SZSE_MAIN | ABNORMAL | CUMULATIVE_DEVIATION | UP | window=3, threshold=20 | ABNORMAL | SZSE 5.4.3(1) |
 | SZSE_MAIN_ABNORMAL_3D_DEV_DOWN | SZSE_MAIN | ABNORMAL | CUMULATIVE_DEVIATION | DOWN | window=3, threshold=-20 | ABNORMAL | SZSE 5.4.3(1) |
 | SZSE_MAIN_ABNORMAL_TURNOVER | SZSE_MAIN | ABNORMAL | TURNOVER_COMPOSITE | NONE | latest=3, prior=5, ratio=30, cumulative=20 | ABNORMAL | SZSE 5.4.3(2) |
@@ -141,8 +156,12 @@ cn-a-share-regulation-2026-07-06.v1
 
 ### 4.3 基准指数
 
-2026-10-01 来源替代（ADR-0048 已批准澄清，Issue #69）：三个固定基准后续缺口采集使用
-Tushare `index_daily`，标准 symbol 在适配器内映射至 `000002.SH`、`399107.SZ`、`399102.SZ`。
+2026-10-06 STAR 扩展：新增第四个固定基准 `SSE:000688`（上证科创板50成份指数），
+供 `STAR` 板块偏离规则使用，进入同一白名单缺口采集与在线行情映射。
+
+2026-10-01 来源替代（ADR-0048 已批准澄清，Issue #69）：固定基准后续缺口采集使用
+Tushare `index_daily`，标准 symbol 在适配器内映射至 `000002.SH`、`000688.SH`、
+`399107.SZ`、`399102.SZ`。
 Raw 使用 `tushare.index_daily.v1`，校验身份、日期范围、重复日期和空响应；与在线采集共用
 标准化逻辑，手转股、千元转元使用 Decimal。旧 BaoStock 事实与 Raw 不变；普通股票仍走
 remote pytdx only。来源切换不改变计算版本或起算边界，不新增数据库结构或公开接口。
@@ -155,6 +174,7 @@ remote pytdx only。来源切换不改变计算版本或起算边界，不新增
 | segment | benchmark_symbol | benchmark_name |
 | --- | --- | --- |
 | SSE_MAIN | `SSE:000002` | 上证A股指数 |
+| STAR | `SSE:000688` | 上证科创板50成份指数 |
 | SZSE_MAIN | `SZSE:399107` | 深证A股指数 |
 | GEM | `SZSE:399102` | 创业板综合指数 |
 
@@ -167,7 +187,7 @@ remote pytdx only。来源切换不改变计算版本或起算边界，不新增
 - UP 阈值为正、DOWN 阈值为负；
 - `effective_date >= 2026-07-06`；
 - source document、clause、URL 和规则集版本非空；
-- GEM 不存在首版换手率复合规则。
+- GEM 不存在首版换手率复合规则；STAR 首版沿用 SSE_MAIN 全部规则，含换手率复合规则。
 
 ## 5. 领域对象
 
@@ -177,7 +197,7 @@ remote pytdx only。来源切换不改变计算版本或起算边界，不新增
 | --- | --- | --- |
 | `rule_code` | str | 全局稳定代码 |
 | `exchange` | enum | SSE 或 SZSE |
-| `segment` | enum | SSE_MAIN、SZSE_MAIN、GEM |
+| `segment` | enum | SSE_MAIN、SZSE_MAIN、GEM、STAR |
 | `rule_name` | str | 中性官方规则名称 |
 | `level` | enum | ABNORMAL 或 SERIOUS_ABNORMAL |
 | `kind` | enum | 三个类型化公式族之一 |
@@ -188,7 +208,7 @@ remote pytdx only。来源切换不改变计算版本或起算边界，不新增
 | `ratio_threshold` | Decimal \| None | 日均换手率倍数，首版30 |
 | `secondary_threshold_pct` | Decimal \| None | 最新窗口累计换手率，首版20 |
 | `count_window_days` | int \| None | 事件次数窗口，首版10 |
-| `required_count` | int \| None | 主板4、创业板3 |
+| `required_count` | int \| None | 主板与科创板4、创业板3 |
 | `counted_event_kind` | str \| None | 固定价格偏离型异常事件 |
 | `reset_level` | enum | 对应官方重置边界 |
 | `benchmark_symbol` | str \| None | 偏离规则必填 |
@@ -365,7 +385,7 @@ Domain 对象不包含 `ingestion_id` 或 `calculation_id`；服务和持久化�
 证券必须同时满足：
 
 - `security_type=stock`，交易所为SSE或SZSE；
-- 能确定属于首版三个板块之一；
+- 能确定属于四个板块（SSE_MAIN、SZSE_MAIN、GEM、STAR）之一；
 - 目标日在证券上市生命周期内；
 - 有价格涨跌幅限制；
 - 能依据目标日 SecurityNameHistory 和每日指标证明不是 ST/*ST；
@@ -415,7 +435,7 @@ deviation_pct(a,T) = (stock_factor(a,T) - index_factor(a,T)) * 100
 
 ### 7.4 换手率复合条件
 
-仅沪深主板：
+沪深主板与科创板：
 
 ```text
 latest_avg = sum(turnover_pct[T-2..T]) / 3
@@ -580,12 +600,13 @@ Raw 保留来源响应字段、文档 URL、来源发布时间、抓取页游标
 
 ## 10. 基准指数日线采集
 
-allowlist-only 服务使用 Tushare `index_daily` 采集三个指数（2026-10-01 起来源替代）。每个指数单独创建
+allowlist-only 服务使用 Tushare `index_daily` 采集四个指数（2026-10-01 起来源替代，
+2026-10-06 起加入科创板50）。每个指数单独创建
 指数 ingestion，与普通股票 pytdx ingestion 分离。
 
 完整性要求：
 
-- 恰好请求三个允许的标准指数 symbol；
+- 恰好请求四个允许的标准指数 symbol；
 - `security_type=index`；
 - 每个缺失交易日单独请求，trade_date 必须等于请求日，不跨过已有有效日期；
 - OHLC和previous_close为正，volume/amount保持来源单位转换；
@@ -631,7 +652,7 @@ Job ID：`regulation-event-reconciliation`
 WorkflowRun/JobExecution 记录：
 
 - 每个来源请求页数、Raw行数、接受/拒绝/歧义事件数；
-- 三个指数接受数和缺失symbol；
+- 四个指数接受数和缺失symbol；
 - 规则集版本/哈希；
 - expected/complete/incomplete/not-applicable证券数；
 - 各 segment 完整性；
@@ -814,7 +835,7 @@ FastAPI 层接受六位 `code`，经 Security 事实解析为唯一股票 `symbo
 - Decimal不经过float；
 - Raw先于标准化、manifest校验和离线重放；
 - 相同事件幂等、内容修订触发新计算；
-- Tushare三个指数白名单、来源错误/缺失/单位/Raw重放及普通股票路由不变；
+- Tushare四个指数白名单、来源错误/缺失/单位/Raw重放及普通股票路由不变；
 - segment级和symbol级partial语义；
 - 相同input_hash幂等，不混合calculation_id。
 

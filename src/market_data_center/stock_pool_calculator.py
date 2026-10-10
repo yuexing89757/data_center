@@ -176,6 +176,12 @@ def _rejection_reason(candidate: StockPoolCandidate) -> str | None:
 
 
 def _is_mainboard(exchange: Exchange, code: str) -> bool:
+    """Board membership for the mainboard limit-up/down pools only.
+
+    STAR (SSE 688/689) and GEM listings are intentionally excluded: the pool
+    definitions cover mainboard stocks exclusively. Regulation monitoring
+    covers STAR separately via its own segment and price-limit rules.
+    """
     if len(code) != 6 or not code.isdigit():
         return False
     if exchange is Exchange.SSE:

@@ -8,6 +8,7 @@ from typing import Protocol, Self
 
 from market_data_center.domain.auction_indicative import CallAuctionIndicativeDetailRecord
 from market_data_center.domain.board_index import BoardIndexProviderRecord
+from market_data_center.domain.board_moneyflow import BoardMoneyflowRecord
 from market_data_center.domain.classification import ClassificationRecord
 from market_data_center.domain.convertible_bond import ConvertibleBondRecord
 from market_data_center.domain.deducted_profit import DeductedProfitRecord
@@ -29,6 +30,7 @@ from market_data_center.domain.stock_daily_indicator import StockDailyIndicatorS
 from market_data_center.domain.stock_technical_factor import StockTechnicalFactorSnapshotRecord
 from market_data_center.domain.today_limit_down import LimitDownSourceRecord
 from market_data_center.domain.today_limit_up import LimitUpSourceRecord
+from market_data_center.domain.top10_float_holder import Top10FloatHolderRecord
 
 type ProviderRecord = (
     CallAuctionIndicativeDetailRecord
@@ -42,6 +44,8 @@ type ProviderRecord = (
     | StockTechnicalFactorSnapshotRecord
     | DeductedProfitRecord
     | ShareholderCountRecord
+    | Top10FloatHolderRecord
+    | BoardMoneyflowRecord
     | FiveLevelQuoteSnapshotRecord
     | ConvertibleBondRecord
     | LimitUpSourceRecord
@@ -150,6 +154,26 @@ class ShareholderCountProvider(Protocol):
     def fetch_shareholder_counts(
         self, source_symbol: str | None, start_date: date, end_date: date
     ) -> "ProviderBatch[ShareholderCountRecord]": ...
+
+
+class Top10FloatHoldersProvider(Protocol):
+    source_code: str
+
+    def fetch_top10_float_holders(
+        self,
+        announcement_date: date,
+        *,
+        period: str | None = None,
+        symbol: str | None = None,
+    ) -> "ProviderBatch[Top10FloatHolderRecord]": ...
+
+
+class BoardMoneyflowProvider(Protocol):
+    """Dedicated capability boundary for Eastmoney board money-flow facts."""
+
+    source_code: str
+
+    def fetch_board_moneyflows(self, trade_date: date) -> "ProviderBatch[BoardMoneyflowRecord]": ...
 
 
 class ConvertibleBondProvider(Protocol):

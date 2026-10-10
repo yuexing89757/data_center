@@ -1,19 +1,25 @@
 """Tushare Pro adapter; source fields and units stop at this boundary."""
 
+import gzip
 import json
+import re
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 from functools import partial
+from http.client import HTTPConnection, HTTPException, HTTPSConnection
 from time import sleep
 from types import TracebackType
 from typing import Protocol, Self
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.parse import SplitResult, urlsplit
 
 from pydantic import ValidationError
 
+from market_data_center.domain.board_moneyflow import (
+    BoardMoneyflowRecord,
+    BoardMoneyflowType,
+)
 from market_data_center.domain.classification import ClassificationRecord
 from market_data_center.domain.convertible_bond import (
     ConvertibleBondBasicRecord,
@@ -45,6 +51,7 @@ from market_data_center.domain.stock_daily_indicator import (
     PriceLimitStatus,
     StockDailyIndicatorSnapshotRecord,
 )
+from market_data_center.domain.top10_float_holder import Top10FloatHolderRecord
 from market_data_center.providers.contracts import (
     ProviderBatch,
     ProviderError,
@@ -76,7 +83,7 @@ DAILY_BAR_FIELDS = (
     "amount",
 )
 REGULATION_ST_FIELDS = ("ts_code", "name", "trade_date", "type", "type_name")
-REGULATION_INDEX_CODES = frozenset(("000002.SH", "399107.SZ", "399102.SZ"))
+REGULATION_INDEX_CODES = frozenset(("000002.SH", "000688.SH", "399107.SZ", "399102.SZ"))
 STOCK_DAILY_INDICATOR_FIELDS = (
     "ts_code",
     "trade_date",
@@ -110,6 +117,39 @@ DEDUCTED_PROFIT_FIELDS = (
 )
 SHAREHOLDER_COUNT_FIELDS = ("ts_code", "ann_date", "end_date", "holder_num")
 SHAREHOLDER_COUNT_RESPONSE_LIMIT = 3_000
+TOP10_FLOAT_HOLDERS_FIELDS = (
+    "ts_code",
+    "ann_date",
+    "end_date",
+    "holder_name",
+    "hold_amount",
+    "hold_ratio",
+    "hold_float_ratio",
+    "hold_change",
+    "holder_type",
+)
+TOP10_FLOAT_HOLDERS_RESPONSE_LIMIT = 6_000
+MONEYFLOW_IND_DC_FIELDS = (
+    "trade_date",
+    "content_type",
+    "ts_code",
+    "name",
+    "pct_change",
+    "close",
+    "net_amount",
+    "net_amount_rate",
+    "buy_elg_amount",
+    "buy_elg_amount_rate",
+    "buy_lg_amount",
+    "buy_lg_amount_rate",
+    "buy_md_amount",
+    "buy_md_amount_rate",
+    "buy_sm_amount",
+    "buy_sm_amount_rate",
+    "buy_sm_amount_stock",
+    "rank",
+)
+MONEYFLOW_IND_DC_RESPONSE_LIMIT = 6_000
 CB_BASIC_FIELDS = (
     "ts_code",
     "bond_id",
@@ -152,8 +192,24 @@ class TushareClient(Protocol):
     ) -> Sequence[Mapping[str, object]]: ...
 
 
+def _open_http_connection(parts: SplitResult, timeout_seconds: float) -> HTTPConnection:
+    host = parts.hostname or ""
+    if not host:
+        raise ProviderError(f"Tushare endpoint has no host: {parts.geturl()}")
+    if parts.scheme == "https":
+        return HTTPSConnection(host, parts.port or 443, timeout=timeout_seconds)
+    if parts.scheme == "http":
+        return HTTPConnection(host, parts.port or 80, timeout=timeout_seconds)
+    raise ProviderError(f"unsupported Tushare endpoint scheme: {parts.scheme}")
+
+
 class TushareHttpClient:
-    """Small client for Tushare's documented JSON API."""
+    """Small client for Tushare's documented JSON API.
+
+    Requests reuse one keep-alive HTTP(S) connection: some deployment networks
+    drop a large share of new TCP handshakes, which made one-request-per-socket
+    crawls take tens of seconds per call.
+    """
 
     def __init__(
         self,
@@ -167,6 +223,7 @@ class TushareHttpClient:
         self._token = token.strip()
         self._endpoint = endpoint
         self._timeout_seconds = timeout_seconds
+        self._connection: HTTPConnection | None = None
 
     def query(
         self, api_name: str, *, params: Mapping[str, str], fields: Sequence[str]
@@ -179,16 +236,12 @@ class TushareHttpClient:
                 "fields": ",".join(fields),
             }
         ).encode("utf-8")
-        request = Request(
-            self._endpoint,
-            data=payload,
-            headers={"Content-Type": "application/json", "User-Agent": "market-data-center/0.1"},
-            method="POST",
-        )
         try:
-            with urlopen(request, timeout=self._timeout_seconds) as response:
-                document = json.loads(response.read(), parse_float=Decimal)
-        except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as error:
+            body = self._post(payload)
+            document = json.loads(body, parse_float=Decimal)
+        except ProviderError:
+            raise
+        except (HTTPException, OSError, TimeoutError, json.JSONDecodeError) as error:
             raise ProviderError(f"Tushare {api_name} request failed") from error
         if not isinstance(document, Mapping):
             raise ProviderError(f"Tushare {api_name} returned an invalid response")
@@ -215,6 +268,54 @@ class TushareHttpClient:
                 raise ProviderError(f"Tushare {api_name} returned a malformed row")
             rows.append(dict(zip(response_fields, item, strict=True)))
         return rows
+
+    def close(self) -> None:
+        if self._connection is not None:
+            self._connection.close()
+            self._connection = None
+
+    def _post(self, payload: bytes) -> bytes:
+        parts = urlsplit(self._endpoint)
+        for attempt in range(2):
+            if self._connection is None:
+                self._connection = _open_http_connection(parts, self._timeout_seconds)
+            try:
+                self._connection.request(
+                    "POST",
+                    parts.path or "/",
+                    body=payload,
+                    headers={
+                        "Content-Type": "application/json",
+                        "User-Agent": "market-data-center/0.1",
+                        # The relay gateway rejects large responses without
+                        # gzip negotiation ("please enable gzip").
+                        "Accept-Encoding": "gzip",
+                    },
+                )
+                response = self._connection.getresponse()
+                body = response.read()
+                if response.status != 200:
+                    if response.status >= 500 and not attempt:
+                        # Relay gateways throw transient 502/503/504 blips;
+                        # one retry on a fresh connection keeps long crawls alive.
+                        self.close()
+                        continue
+                    raise ProviderError(
+                        f"Tushare HTTP status {response.status} for {self._endpoint}"
+                    )
+                if response.headers.get("Content-Encoding", "").strip().lower() == "gzip":
+                    body = gzip.decompress(body)
+                return body
+            except ProviderError:
+                self.close()
+                raise
+            except (HTTPException, OSError):
+                # A kept-alive socket can go stale between requests; retry once
+                # on a fresh connection before surfacing the failure.
+                self.close()
+                if attempt:
+                    raise
+        raise AssertionError("unreachable retry loop")
 
 
 class TushareProvider(AbstractContextManager["TushareProvider"]):
@@ -261,6 +362,10 @@ class TushareProvider(AbstractContextManager["TushareProvider"]):
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
+        client = self._client
+        close = getattr(client, "close", None)
+        if callable(close):
+            close()
         return None
 
     def source_symbol(self, symbol: str) -> str:
@@ -510,6 +615,77 @@ class TushareProvider(AbstractContextManager["TushareProvider"]):
             record_factory=lambda: _shareholder_count_records(rows),
         )
 
+    def fetch_top10_float_holders(
+        self,
+        announcement_date: date,
+        *,
+        period: str | None = None,
+        symbol: str | None = None,
+    ) -> ProviderBatch[Top10FloatHolderRecord]:
+        """Read one announcement day market-wide; period/symbol narrow splits."""
+        params: dict[str, str] = {"ann_date": announcement_date.strftime("%Y%m%d")}
+        if period is not None:
+            if not re.fullmatch(r"[0-9]{8}", period):
+                raise ProviderError(f"invalid Tushare period: {period}")
+            params["period"] = period
+        ts_code: str | None = None
+        if symbol is not None:
+            ts_code = self.source_symbol(symbol)
+            params["ts_code"] = ts_code
+        if self._shareholder_count_request_started:
+            self._sleeper(self._shareholder_count_request_interval_seconds)
+        self._shareholder_count_request_started = True
+        result: Sequence[Mapping[str, object]] = _provider_call(
+            "top10_floatholders",
+            lambda: self._client.query(
+                "top10_floatholders",
+                params=params,
+                fields=TOP10_FLOAT_HOLDERS_FIELDS,
+            ),
+        )
+        rows = _rows(result, TOP10_FLOAT_HOLDERS_FIELDS, "top10_floatholders")
+        rows.sort(
+            key=lambda row: (
+                row["ts_code"],
+                row["end_date"],
+                row["ann_date"],
+                row["holder_name"],
+            )
+        )
+        return ProviderBatch(
+            raw_rows=rows,
+            request_params={
+                "ann_date": params["ann_date"],
+                "period": period,
+                "source_symbol": ts_code,
+            },
+            schema_version="tushare.top10_float_holder.v1",
+            record_factory=lambda: _top10_float_holder_records(rows),
+        )
+
+    def fetch_board_moneyflows(self, trade_date: date) -> ProviderBatch[BoardMoneyflowRecord]:
+        """Read one trading day of Eastmoney concept/industry/region board flows."""
+        params = {"trade_date": trade_date.strftime("%Y%m%d")}
+        if self._shareholder_count_request_started:
+            self._sleeper(self._shareholder_count_request_interval_seconds)
+        self._shareholder_count_request_started = True
+        result: Sequence[Mapping[str, object]] = _provider_call(
+            "moneyflow_ind_dc",
+            lambda: self._client.query(
+                "moneyflow_ind_dc",
+                params=params,
+                fields=MONEYFLOW_IND_DC_FIELDS,
+            ),
+        )
+        rows = _rows(result, MONEYFLOW_IND_DC_FIELDS, "moneyflow_ind_dc")
+        rows.sort(key=lambda row: (row["ts_code"], row["trade_date"]))
+        return ProviderBatch(
+            raw_rows=rows,
+            request_params={"trade_date": params["trade_date"]},
+            schema_version="tushare.board_moneyflow.v1",
+            record_factory=lambda: _board_moneyflow_records(rows, trade_date),
+        )
+
     def fetch_convertible_bonds(self) -> ProviderBatch[ConvertibleBondRecord]:
         result = _provider_call(
             "cb_basic",
@@ -591,6 +767,8 @@ def normalize_tushare_raw(
         DatasetCode.REGULATION_ST_SNAPSHOT: "tushare.regulation_st_snapshot.v1",
         DatasetCode.DEDUCTED_PROFIT: "tushare.deducted_profit.v1",
         DatasetCode.SHAREHOLDER_COUNT: "tushare.shareholder_count.v1",
+        DatasetCode.TOP10_FLOAT_HOLDER: "tushare.top10_float_holder.v1",
+        DatasetCode.BOARD_MONEYFLOW: "tushare.board_moneyflow.v1",
         DatasetCode.CONVERTIBLE_BOND: "tushare.convertible_bond.v1",
         DatasetCode.CONVERTIBLE_BOND_DAILY_BAR: "tushare.convertible_bond_daily_bar.v1",
     }.get(dataset_code)
@@ -640,6 +818,11 @@ def normalize_tushare_raw(
                 )
             )
         )
+    if dataset_code is DatasetCode.TOP10_FLOAT_HOLDER:
+        return tuple(_top10_float_holder_records(raw_rows))
+    if dataset_code is DatasetCode.BOARD_MONEYFLOW:
+        trade_date = _request_date(request_params, "trade_date")
+        return tuple(_board_moneyflow_records(raw_rows, trade_date))
     if dataset_code is DatasetCode.CONVERTIBLE_BOND:
         return tuple(_map_cb_basic(row) for row in raw_rows)
     if dataset_code is DatasetCode.CONVERTIBLE_BOND_DAILY_BAR:
@@ -953,7 +1136,7 @@ def _map_shareholder_count(row: Mapping[str, str]) -> ShareholderCountRecord:
     _, _, symbol = _normalize_symbol(row["ts_code"])
     statistics_date = _parse_date(row["end_date"])
     announcement_date = _parse_date(row["ann_date"])
-    shareholder_count = _strict_integer(row.get("holder_num"), "holder_num")
+    shareholder_count = _share_count(row.get("holder_num"), "holder_num")
     return ShareholderCountRecord(
         symbol=symbol,
         statistics_date=statistics_date,
@@ -980,6 +1163,109 @@ def _shareholder_count_records(
             continue
         records.append(_map_shareholder_count(row))
     return records
+
+
+def _top10_float_holder_records(
+    rows: Sequence[Mapping[str, str]],
+) -> list[Top10FloatHolderRecord]:
+    """Map source rows; holder rank is derived per (symbol, end_date, ann_date) group.
+
+    The source can list more than ten rows for one announcement group (duplicate
+    entities under short and full names). Rank every row faithfully by descending
+    amount; domain validation quarantines ranks beyond ten instead of failing
+    the whole request.
+    """
+    records: list[Top10FloatHolderRecord] = []
+    groups: dict[tuple[str, str, str], list[Mapping[str, str]]] = {}
+    for row in rows:
+        if not row["hold_amount"].strip():
+            continue
+        key = (row["ts_code"], row["end_date"], row["ann_date"])
+        groups.setdefault(key, []).append(row)
+    for (ts_code, end_date_text, ann_date_text), members in groups.items():
+        _, _, symbol = _normalize_symbol(ts_code)
+        end_date = _parse_date(end_date_text)
+        announcement_date = _parse_date(ann_date_text)
+        ordered = sorted(
+            members,
+            key=lambda row: (
+                -Decimal(row["hold_amount"]),
+                row["holder_name"],
+            ),
+        )
+        for rank, row in enumerate(ordered, start=1):
+            records.append(
+                Top10FloatHolderRecord(
+                    symbol=symbol,
+                    end_date=end_date,
+                    announcement_date=announcement_date,
+                    holder_rank=rank,
+                    holder_name=row["holder_name"],
+                    hold_amount=_share_count(row["hold_amount"], "hold_amount"),
+                    hold_ratio=_decimal(row["hold_ratio"]),
+                    hold_float_ratio=_decimal(row["hold_float_ratio"]),
+                    hold_change=_optional_int(row["hold_change"]),
+                    holder_type=(row["holder_type"].strip() or None),
+                    source_code="tushare",
+                )
+            )
+    return records
+
+
+_BOARD_MONEYFLOW_TYPES = {
+    "概念": BoardMoneyflowType.CONCEPT,
+    "行业": BoardMoneyflowType.INDUSTRY,
+    "地域": BoardMoneyflowType.REGION,
+}
+
+
+def _board_moneyflow_records(
+    rows: Sequence[Mapping[str, str]], trade_date: date
+) -> list[BoardMoneyflowRecord]:
+    """Map one day of Eastmoney board flows; blank core facts stay in Raw only."""
+    records: list[BoardMoneyflowRecord] = []
+    for row in rows:
+        if _parse_date(row["trade_date"]) != trade_date:
+            raise ProviderError("Tushare moneyflow_ind_dc row date does not match request")
+        pct_change = _decimal(row["pct_change"])
+        net_amount = _decimal(row["net_amount"])
+        if pct_change is None or net_amount is None:
+            # Blank core facts mean the source has no publishable flow row.
+            continue
+        board_type = _BOARD_MONEYFLOW_TYPES.get(row["content_type"].strip())
+        if board_type is None:
+            raise ProviderError(f"unknown moneyflow_ind_dc content_type: {row['content_type']}")
+        records.append(
+            BoardMoneyflowRecord(
+                board_code=_board_moneyflow_code(row["ts_code"]),
+                trade_date=trade_date,
+                board_type=board_type,
+                name=row["name"].strip(),
+                pct_change=pct_change,
+                close=_decimal(row["close"]),
+                net_amount=net_amount,
+                net_amount_rate=_decimal(row["net_amount_rate"]),
+                extra_large_amount=_decimal(row["buy_elg_amount"]),
+                extra_large_rate=_decimal(row["buy_elg_amount_rate"]),
+                large_amount=_decimal(row["buy_lg_amount"]),
+                large_rate=_decimal(row["buy_lg_amount_rate"]),
+                medium_amount=_decimal(row["buy_md_amount"]),
+                medium_rate=_decimal(row["buy_md_amount_rate"]),
+                small_amount=_decimal(row["buy_sm_amount"]),
+                small_rate=_decimal(row["buy_sm_amount_rate"]),
+                top_small_buy_stock=(row["buy_sm_amount_stock"].strip() or None),
+                rank=_optional_int(row["rank"]),
+                source_code="tushare",
+            )
+        )
+    return records
+
+
+def _board_moneyflow_code(ts_code: str) -> str:
+    candidate = ts_code.strip().upper()
+    if not candidate.endswith(".DC"):
+        raise ProviderError(f"unexpected moneyflow_ind_dc board code: {ts_code}")
+    return f"DC:{candidate[:-3]}"
 
 
 def _source_symbol(value: str) -> str:
@@ -1039,12 +1325,16 @@ def _optional_int(value: str | None) -> int | None:
         raise ProviderError(f"invalid Tushare integer: {value}") from error
 
 
-def _strict_integer(value: str | None, field_name: str) -> int:
-    # Parse the source's integer faithfully; domain validation quarantines <= 0.
+_SHARE_COUNT_PATTERN = re.compile(r"[+-]?[0-9]+(?:\.0+)?\Z")
+
+
+def _share_count(value: str | None, field_name: str) -> int:
+    # Relay endpoints serialize JSON integers as floats: "163327.0". Accept the
+    # zero-fraction form only; scientific notation and real fractions stay invalid.
     candidate = value.strip() if value is not None else ""
-    if not candidate or not candidate.removeprefix("-").isdigit():
-        raise ProviderError(f"invalid Tushare integer: {field_name}")
-    return int(candidate)
+    if not _SHARE_COUNT_PATTERN.fullmatch(candidate):
+        raise ProviderError(f"invalid Tushare {field_name}: {value}")
+    return int(Decimal(candidate))
 
 
 def _decimal(value: str | None) -> Decimal | None:

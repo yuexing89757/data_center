@@ -31,6 +31,7 @@ from market_data_center.domain.regulation import (
     RegulationRuleLevel,
     RegulationRunStatus,
     RegulationSegment,
+    segment_price_limit_board,
     validate_regulation_rules,
 )
 from market_data_center.domain.stock_pool import DailyPriceLimit, price_limit_rule
@@ -651,6 +652,8 @@ def _segment(exchange: str, code: str) -> RegulationSegment | None:
     if len(code) != 6 or not code.isdigit():
         return None
     number = int(code)
+    if exchange == "SSE" and 688000 <= number <= 689999:
+        return RegulationSegment.STAR
     if exchange == "SSE" and (600000 <= number <= 603999 or 605000 <= number <= 605999):
         return RegulationSegment.SSE_MAIN
     if exchange == "SZSE" and (300000 <= number <= 301999):
@@ -840,7 +843,7 @@ def _assemble_source(
             limit_rule = price_limit_rule(
                 exchange,
                 next_trade_date,
-                board="gem" if segment is RegulationSegment.GEM else "mainboard",
+                board=segment_price_limit_board(segment),
             )
             lower, upper = calculate_price_limit_range(
                 next_reference, limit_rule.regular_ratio, limit_rule.price_tick

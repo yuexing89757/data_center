@@ -18,6 +18,7 @@ from market_data_center.domain.regulation import (
 )
 from market_data_center.persistence.regulation_postgres import (
     PostgreSQLRegulationPersistence,
+    _segment,
     _watermark,
 )
 
@@ -101,6 +102,24 @@ def test_load_active_rules_maps_decimal_domain_without_database_identity() -> No
     assert rules[0].threshold_pct == Decimal("20")
     assert not hasattr(rules[0], "rule_id")
     assert connection.execute.call_count == 1
+
+
+@pytest.mark.parametrize(
+    ("exchange", "code", "expected"),
+    [
+        ("SSE", "688167", RegulationSegment.STAR),
+        ("SSE", "689009", RegulationSegment.STAR),
+        ("SSE", "600000", RegulationSegment.SSE_MAIN),
+        ("SSE", "605000", RegulationSegment.SSE_MAIN),
+        ("SSE", "687990", None),
+        ("SZSE", "300750", RegulationSegment.GEM),
+        ("SZSE", "000001", RegulationSegment.SZSE_MAIN),
+        ("BSE", "920000", None),
+        ("SSE", "6881", None),
+    ],
+)
+def test_segment_classifies_star_cdr_and_existing_boards(exchange, code, expected) -> None:
+    assert _segment(exchange, code) is expected
 
 
 def _mapping_result(rows: tuple[dict[str, object], ...]) -> MagicMock:

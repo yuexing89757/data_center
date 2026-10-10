@@ -17,6 +17,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import create_engine
 
 from market_data_center.auction_service import AuctionCollectionService
+from market_data_center.board_moneyflow_service import BoardMoneyflowService
 from market_data_center.close_price_new_highs_service import ClosePriceNewHighsService
 from market_data_center.daily_bar_batch import DailyBarBulkSummary, PreparedDailyBarBatch
 from market_data_center.database_urls import sqlalchemy_url
@@ -95,6 +96,7 @@ from market_data_center.shareholder_count_service import (
     ShareholderCountService,
 )
 from market_data_center.stock_pool_service import StockPoolService
+from market_data_center.top10_float_holder_service import Top10FloatHolderService
 
 AUTO_PROVIDER_CODE = "auto"
 DEFAULT_BOARD_INDEX_PROVIDER_CODE = "akshare_ths"
@@ -212,6 +214,70 @@ def main() -> None:
             raise
         execution.succeed()
         print(dumps(asdict(shareholder_summary), sort_keys=True))
+        return
+
+    if args.dataset == "top10-float-holders":
+        end_date = date.fromisoformat(args.end_date) if args.end_date else None
+        start_date = date.fromisoformat(args.start_date) if args.start_date else None
+        today = datetime.now(SHANGHAI_TIME_ZONE).date()
+        window_end = end_date or today
+        window_start = start_date or (window_end - timedelta(days=8))
+        if window_end > today:
+            raise SystemExit("top10-float-holders end date must not be in the future")
+        if window_start > window_end:
+            raise SystemExit("top10-float-holders start date must not follow end date")
+        execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
+            WorkflowCode.TOP10_FLOAT_HOLDERS_WEEKLY,
+            datetime.now(UTC).replace(second=0, microsecond=0),
+            TriggerSource.MANUAL,
+        )
+        try:
+            with create_provider("tushare") as provider:
+                top10_summary = Top10FloatHolderService(
+                    IngestionPipeline(
+                        provider=provider,
+                        persistence=persistence,
+                        raw_store=raw_store,
+                    ),
+                    persistence,
+                ).sync_range(window_start, window_end)
+        except BaseException as error:
+            execution.fail(error)
+            raise
+        execution.succeed()
+        print(dumps(asdict(top10_summary), sort_keys=True))
+        return
+
+    if args.dataset == "board-moneyflow":
+        end_date = date.fromisoformat(args.end_date) if args.end_date else None
+        start_date = date.fromisoformat(args.start_date) if args.start_date else None
+        today = datetime.now(SHANGHAI_TIME_ZONE).date()
+        window_end = end_date or today
+        window_start = start_date or (window_end - timedelta(days=4))
+        if window_end > today:
+            raise SystemExit("board-moneyflow end date must not be in the future")
+        if window_start > window_end:
+            raise SystemExit("board-moneyflow start date must not follow end date")
+        execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
+            WorkflowCode.BOARD_MONEYFLOW_DAILY,
+            datetime.now(UTC).replace(second=0, microsecond=0),
+            TriggerSource.MANUAL,
+        )
+        try:
+            with create_provider("tushare") as provider:
+                moneyflow_summary = BoardMoneyflowService(
+                    IngestionPipeline(
+                        provider=provider,
+                        persistence=persistence,
+                        raw_store=raw_store,
+                    ),
+                    persistence,
+                ).sync_range(window_start, window_end)
+        except BaseException as error:
+            execution.fail(error)
+            raise
+        execution.succeed()
+        print(dumps(asdict(moneyflow_summary), sort_keys=True))
         return
 
     if args.dataset == "call-auction-indicative-detail":
@@ -1944,6 +2010,42 @@ def _parser() -> ArgumentParser:
         help="inclusive YYYY-MM-DD; defaults to the current Asia/Shanghai date",
     )
     shareholder_daily.add_argument(
+        "--provider",
+        choices=(AUTO_PROVIDER_CODE, *available_provider_codes()),
+        default=SUPPRESS,
+    )
+
+    top10_holders = subparsers.add_parser(
+        "top10-float-holders",
+        help="synchronize Tushare top-10 float-holder facts for an announcement window",
+    )
+    top10_holders.add_argument(
+        "--start-date",
+        help="inclusive YYYY-MM-DD announcement window start; defaults to 9 days back",
+    )
+    top10_holders.add_argument(
+        "--end-date",
+        help="inclusive YYYY-MM-DD announcement window end; defaults to today",
+    )
+    top10_holders.add_argument(
+        "--provider",
+        choices=(AUTO_PROVIDER_CODE, *available_provider_codes()),
+        default=SUPPRESS,
+    )
+
+    board_moneyflow = subparsers.add_parser(
+        "board-moneyflow",
+        help="synchronize Eastmoney board money-flow facts for a trade-date window",
+    )
+    board_moneyflow.add_argument(
+        "--start-date",
+        help="inclusive YYYY-MM-DD trade-date window start; defaults to 5 days back",
+    )
+    board_moneyflow.add_argument(
+        "--end-date",
+        help="inclusive YYYY-MM-DD trade-date window end; defaults to today",
+    )
+    board_moneyflow.add_argument(
         "--provider",
         choices=(AUTO_PROVIDER_CODE, *available_provider_codes()),
         default=SUPPRESS,

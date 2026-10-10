@@ -945,7 +945,8 @@
             "enum": [
               "SSE_MAIN",
               "SZSE_MAIN",
-              "GEM"
+              "GEM",
+              "STAR"
             ],
             "title": "Segment",
             "type": "string"
@@ -1476,7 +1477,8 @@
             "enum": [
               "SSE_MAIN",
               "SZSE_MAIN",
-              "GEM"
+              "GEM",
+              "STAR"
             ],
             "title": "Segment",
             "type": "string"
@@ -1775,7 +1777,8 @@
             "enum": [
               "SSE_MAIN",
               "SZSE_MAIN",
-              "GEM"
+              "GEM",
+              "STAR"
             ],
             "title": "Segment",
             "type": "string"
@@ -3404,7 +3407,8 @@
         "enum": [
           "SSE_MAIN",
           "SZSE_MAIN",
-          "GEM"
+          "GEM",
+          "STAR"
         ],
         "title": "RegulationSegment",
         "type": "string"

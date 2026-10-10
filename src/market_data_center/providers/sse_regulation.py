@@ -36,7 +36,17 @@ READ_TIMEOUT_SECONDS = 15
 
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
 _JSONP = re.compile(rb"^[^(]*\((.*)\)\s*;?\s*$", re.DOTALL)
+# SSE mainboard 600000-605999 and STAR 688000-689999 (689 = CDR listings).
 _MAINBOARD_CODE = re.compile(r"^60[0-5][0-9]{3}$")
+_STAR_CODE = re.compile(r"^68[89][0-9]{3}$")
+
+
+def _event_segment(code: str) -> RegulationSegment | None:
+    if _MAINBOARD_CODE.fullmatch(code) is not None:
+        return RegulationSegment.SSE_MAIN
+    if _STAR_CODE.fullmatch(code) is not None:
+        return RegulationSegment.STAR
+    return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -303,7 +313,8 @@ def _normalize_row(
     code = _text(row.get("secCode"))
     reason_code = _text(row.get("refType"))
     reason = _REASONS.get(reason_code)
-    if reason is None or _MAINBOARD_CODE.fullmatch(code) is None:
+    segment = _event_segment(code) if reason is not None else None
+    if reason is None or segment is None:
         return None
     try:
         trade_date = _compact_date(row.get("tradeDate"))
@@ -329,10 +340,17 @@ def _normalize_row(
         if reason.level is RegulationRuleLevel.ABNORMAL
         else RegulationEventType.SERIOUS_ABNORMAL_VOLATILITY
     )
+    # STAR disclosures cite the same clauses but map to the STAR rule codes,
+    # mirroring how the SZSE adapter switches SZSE_MAIN/GEM prefixes.
+    rule_codes = (
+        tuple(code.replace("SSE_MAIN_", "STAR_", 1) for code in reason.rule_codes)
+        if segment is RegulationSegment.STAR
+        else reason.rule_codes
+    )
     return RegulationEventRecord(
         symbol=f"SSE:{code}",
         exchange=Exchange.SSE,
-        segment=RegulationSegment.SSE_MAIN,
+        segment=segment,
         event_type=event_type,
         event_level=reason.level,
         direction=reason.direction,
@@ -345,7 +363,7 @@ def _normalize_row(
         source_url=source_url,
         source_content_hash=hashlib.sha256(canonical.encode()).hexdigest(),
         source_code="sse_official",
-        explicit_rule_codes=reason.rule_codes,
+        explicit_rule_codes=rule_codes,
         observed_at=normalized_observed_at,
     )
 

@@ -239,6 +239,29 @@ def test_regulation_models_reject_impossible_scenario_reachability(scenario, rea
         model.model_validate(payload)
 
 
+def test_regulation_public_models_accept_star_segment():
+    import typing
+
+    for model in (
+        models.RegulationTriggerStockItem,
+        models.RegulationRecentEventStockItem,
+        models.RegulationSymbolTriggerResponse,
+    ):
+        assert "STAR" in typing.get_args(model.model_fields["segment"].annotation)
+
+    item = models.RegulationTriggerStockItem(
+        code="688167",
+        symbol="SSE:688167",
+        name="磐石科技",
+        exchange="SSE",
+        segment="STAR",
+        calculated_state="ABNORMAL_TRIGGERED",
+        announced_state="NONE",
+        triggered_rules=[],
+    )
+    assert item.segment == "STAR"
+
+
 @pytest.mark.parametrize(
     "scenario,state", [("CURRENT", "CURRENTLY_TRIGGERED"), ("NONE", "NOT_PRICE_CALCULABLE")]
 )

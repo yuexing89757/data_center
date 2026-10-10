@@ -18,6 +18,7 @@ from psycopg.errors import CheckViolation, InsufficientPrivilege
 from sqlalchemy import Connection, Engine, create_engine, text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
+from market_data_center.board_moneyflow_batch import PreparedBoardMoneyflowBatch
 from market_data_center.call_auction_market_series_writer import (
     CapturedAttempt,
     CapturedRound,
@@ -31,6 +32,8 @@ from market_data_center.domain import (
     BoardIndexRecord,
     BoardIndexStatus,
     BoardIndexType,
+    BoardMoneyflowRecord,
+    BoardMoneyflowType,
     CalculatedTradingDay,
     CallAuctionMarketSnapshotRecord,
     CapitalRecord,
@@ -74,6 +77,7 @@ from market_data_center.domain import (
     SecurityType,
     ShareCapitalRecord,
     StockDailyIndicatorSnapshotRecord,
+    Top10FloatHolderRecord,
     TradeStatus,
     deducted_profit_revision_key,
 )
@@ -136,6 +140,7 @@ from market_data_center.recovery import (
     verify_restored_snapshot,
 )
 from market_data_center.regulation_service import RegulationService
+from market_data_center.top10_float_holder_batch import PreparedTop10FloatHolderBatch
 
 pytestmark = pytest.mark.integration
 
@@ -177,11 +182,12 @@ def test_regulation_schema_catalog_constraints_and_private_grants(
         assert catalog == [
             ("GEM", 8, date(2026, 7, 6), 1),
             ("SSE_MAIN", 9, date(2026, 7, 6), 1),
+            ("STAR", 9, date(2026, 7, 6), 1),
             ("SZSE_MAIN", 9, date(2026, 7, 6), 1),
         ]
         assert connection.execute(
             text(
-                "select count(distinct rule_set_version) = 1 and count(*) = 26 from regulation.rule"
+                "select count(distinct rule_set_version) = 1 and count(*) = 35 from regulation.rule"
             )
         ).scalar_one()
 
@@ -7026,6 +7032,10 @@ def test_worker_has_only_ingestion_permissions(
         ("core", "stock_technical_factor_snapshot", "INSERT"),
         ("core", "stock_technical_factor_snapshot", "SELECT"),
         ("core", "stock_technical_factor_snapshot", "UPDATE"),
+        ("core", "top10_float_holder", "INSERT"),
+        ("core", "top10_float_holder", "SELECT"),
+        ("core", "board_moneyflow", "INSERT"),
+        ("core", "board_moneyflow", "SELECT"),
         ("core", "trading_calendar", "INSERT"),
         ("core", "trading_calendar", "SELECT"),
         ("core", "trading_calendar", "UPDATE"),
@@ -7072,6 +7082,8 @@ def test_internal_tables_have_rls_with_worker_only_policies(database_engine: Eng
         ("core", "shareholder_count"),
         ("core", "stock_daily_indicator"),
         ("core", "stock_technical_factor_snapshot"),
+        ("core", "top10_float_holder"),
+        ("core", "board_moneyflow"),
         ("core", "trading_calendar"),
         ("ingestion", "ingestion_run"),
         ("ingestion", "raw_manifest"),
@@ -7101,6 +7113,232 @@ def test_internal_tables_have_rls_with_worker_only_policies(database_engine: Eng
     assert rls_tables == expected_tables
     assert {(cast(str, row[0]), cast(str, row[1])) for row in policies} == expected_tables
     assert all(row[2] == ["market_data_worker"] for row in policies)
+
+
+def test_top10_float_holder_commits_are_idempotent_and_constraints_hold(
+    database_engine: Engine,
+) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+    _commit_security_prerequisite(persistence)
+
+    def _holder(rank: int, name: str) -> Top10FloatHolderRecord:
+        return Top10FloatHolderRecord(
+            symbol=SYMBOL,
+            end_date=date(2026, 6, 30),
+            announcement_date=date(2026, 8, 28),
+            holder_rank=rank,
+            holder_name=name,
+            hold_amount=7_086_834_641 // rank,
+            hold_ratio=Decimal("21.2781"),
+            hold_float_ratio=Decimal("21.2781"),
+            hold_change=None,
+            holder_type="一般企业",
+            source_code="tushare",
+        )
+
+    holders = (
+        _holder(1, "上海国际集团有限公司"),
+        _holder(2, "中国证券金融股份有限公司"),
+    )
+    first_run = _running_run(DatasetCode.TOP10_FLOAT_HOLDER, ProviderCode.TUSHARE)
+    persistence.create_ingestion_run(first_run)
+    persistence.commit_top10_float_holder_batches(
+        (
+            PreparedTop10FloatHolderBatch(
+                run=_completed_run(first_run, len(holders)),
+                manifest=_manifest(
+                    first_run.ingestion_id, "top10-holder-first", len(holders), provider="tushare"
+                ),
+                records=tuple(
+                    IngestionEnvelope(first_run.ingestion_id, holder) for holder in holders
+                ),
+            ),
+        )
+    )
+
+    assert _scalar(database_engine, "select count(*) from core.top10_float_holder") == 2
+    assert (
+        _scalar(
+            database_engine,
+            "select count(*) from ingestion.raw_manifest where ingestion_id = :run",
+            {"run": first_run.ingestion_id},
+        )
+        == 1
+    )
+
+    # A later run repeating the same natural keys must not duplicate facts;
+    # the earlier ingestion lineage stays attached to the surviving rows.
+    second_run = _running_run(DatasetCode.TOP10_FLOAT_HOLDER, ProviderCode.TUSHARE)
+    persistence.create_ingestion_run(second_run)
+    persistence.commit_top10_float_holder_batches(
+        (
+            PreparedTop10FloatHolderBatch(
+                run=_completed_run(second_run, len(holders)),
+                manifest=_manifest(
+                    second_run.ingestion_id, "top10-holder-second", len(holders), provider="tushare"
+                ),
+                records=tuple(
+                    IngestionEnvelope(second_run.ingestion_id, holder) for holder in holders
+                ),
+            ),
+        )
+    )
+
+    assert _scalar(database_engine, "select count(*) from core.top10_float_holder") == 2
+    assert (
+        _scalar(
+            database_engine,
+            "select count(*) from core.top10_float_holder where ingestion_id = :run",
+            {"run": first_run.ingestion_id},
+        )
+        == 2
+    )
+    assert persistence.top10_float_holder_completed_days(date(2026, 8, 1), date(2026, 8, 31)) == {
+        date(2026, 8, 28)
+    }
+    assert (
+        persistence.top10_float_holder_completed_days(date(2026, 9, 1), date(2026, 9, 30)) == set()
+    )
+
+    # Hard invariants hold at the database boundary, not only inside the pipeline.
+    insert_holder = text(
+        """
+        insert into core.top10_float_holder (
+            symbol, end_date, announcement_date, holder_rank, holder_name,
+            hold_amount, source_code, ingestion_id
+        ) values (
+            :symbol, :end_date, :announcement_date, :rank, :name, :amount, 'tushare', :run
+        )
+        """
+    )
+    base_parameters = {
+        "symbol": SYMBOL,
+        "end_date": date(2026, 6, 30),
+        "announcement_date": date(2026, 8, 28),
+        "name": "越界股东",
+        "amount": 100,
+        "run": second_run.ingestion_id,
+    }
+    for violating in ({"rank": 11}, {"rank": 3, "amount": 0}, {"rank": 3, "name": "  "}):
+        with (
+            pytest.raises(IntegrityError) as captured,
+            database_engine.begin() as connection,
+        ):
+            connection.execute(insert_holder, {**base_parameters, **violating})
+        assert isinstance(captured.value.orig, CheckViolation)
+
+    with pytest.raises(IntegrityError), database_engine.begin() as connection:
+        connection.execute(
+            insert_holder,
+            {**base_parameters, "rank": 3, "end_date": date(2026, 8, 29)},
+        )
+
+
+def test_board_moneyflow_commits_are_idempotent_and_constraints_hold(
+    database_engine: Engine,
+) -> None:
+    persistence = PostgreSQLPersistence(database_engine)
+
+    def _flow(board_code: str, board_type: BoardMoneyflowType, name: str) -> BoardMoneyflowRecord:
+        return BoardMoneyflowRecord(
+            board_code=board_code,
+            trade_date=date(2026, 9, 30),
+            board_type=board_type,
+            name=name,
+            pct_change=Decimal("0.23"),
+            close=Decimal("22111.86"),
+            net_amount=Decimal("-726583552.00"),
+            net_amount_rate=Decimal("-0.56"),
+            extra_large_amount=Decimal("-415738368.00"),
+            extra_large_rate=Decimal("-0.32"),
+            large_amount=None,
+            large_rate=None,
+            medium_amount=None,
+            medium_rate=None,
+            small_amount=Decimal("507232000.00"),
+            small_rate=Decimal("0.39"),
+            top_small_buy_stock="剑桥科技",
+            rank=27,
+            source_code="tushare",
+        )
+
+    flows = (_flow("DC:BK0145", BoardMoneyflowType.REGION, "上海板块"),)
+    first_run = _running_run(DatasetCode.BOARD_MONEYFLOW, ProviderCode.TUSHARE)
+    persistence.create_ingestion_run(first_run)
+    persistence.commit_board_moneyflow_batches(
+        (
+            PreparedBoardMoneyflowBatch(
+                run=_completed_run(first_run, 1),
+                manifest=_manifest(
+                    first_run.ingestion_id, "board-moneyflow", 1, provider="tushare"
+                ),
+                records=tuple(IngestionEnvelope(first_run.ingestion_id, flow) for flow in flows),
+            ),
+        )
+    )
+
+    assert _scalar(database_engine, "select count(*) from core.board_moneyflow") == 1
+
+    second_run = _running_run(DatasetCode.BOARD_MONEYFLOW, ProviderCode.TUSHARE)
+    persistence.create_ingestion_run(second_run)
+    persistence.commit_board_moneyflow_batches(
+        (
+            PreparedBoardMoneyflowBatch(
+                run=_completed_run(second_run, 1),
+                manifest=_manifest(
+                    second_run.ingestion_id, "board-moneyflow-2", 1, provider="tushare"
+                ),
+                records=tuple(IngestionEnvelope(second_run.ingestion_id, flow) for flow in flows),
+            ),
+        )
+    )
+
+    assert _scalar(database_engine, "select count(*) from core.board_moneyflow") == 1
+    assert (
+        _scalar(
+            database_engine,
+            "select count(*) from core.board_moneyflow where ingestion_id = :run",
+            {"run": first_run.ingestion_id},
+        )
+        == 1
+    )
+    assert persistence.board_moneyflow_completed_days(date(2026, 9, 28), date(2026, 9, 30)) == {
+        date(2026, 9, 30)
+    }
+    assert persistence.board_moneyflow_completed_days(date(2026, 10, 1), date(2026, 10, 9)) == set()
+
+    insert_flow = text(
+        """
+        insert into core.board_moneyflow (
+            trade_date, board_code, board_type, name, pct_change, net_amount,
+            source_code, ingestion_id
+        ) values (
+            :trade_date, :board_code, :board_type, :name, :pct_change, :net_amount,
+            'tushare', :run
+        )
+        """
+    )
+    base_parameters = {
+        "trade_date": date(2026, 9, 30),
+        "board_type": "industry",
+        "name": "银行",
+        "pct_change": 0.51,
+        "net_amount": 1000.0,
+        "run": second_run.ingestion_id,
+    }
+    for violating in ({"board_code": "BK0475.DC"}, {"board_code": "DC:BK0475", "name": "  "}):
+        with (
+            pytest.raises(IntegrityError) as captured,
+            database_engine.begin() as connection,
+        ):
+            connection.execute(insert_flow, {**base_parameters, **violating})
+        assert isinstance(captured.value.orig, CheckViolation)
+
+    with pytest.raises(IntegrityError), database_engine.begin() as connection:
+        connection.execute(
+            insert_flow,
+            {**base_parameters, "board_code": "DC:BK0475", "board_type": "theme"},
+        )
 
 
 @pytest.mark.skipif(which("pg_dump") is None, reason="pg_dump is not installed")
@@ -9130,7 +9368,9 @@ def test_regulation_service_publishes_calculation_in_disposable_database(
     )
     symbols = (
         ("SSE:600000", "600000", "stock", "Regulation Test"),
+        ("SSE:688167", "688167", "stock", "Regulation STAR Test"),
         ("SSE:000002", "000002", "index", "SSE A Share Index"),
+        ("SSE:000688", "000688", "index", "SSE STAR 50 Index"),
         ("SZSE:399107", "399107", "index", "SZSE A Share Index"),
         ("SZSE:399102", "399102", "index", "GEM Composite Index"),
     )
@@ -9242,12 +9482,17 @@ insert into core.stock_daily_indicator (
     symbol, trade_date, market, close, turnover_rate_pct,
     price_limit_status, source_code, ingestion_id
 ) values (
-    'SSE:600000', :trade_date, 'CN_A_SHARE', 10, 1,
+    :symbol, :trade_date, 'CN_A_SHARE', 10, 1,
     'flat', 'tushare', :ingestion_id
 )
 """),
             [
-                {"trade_date": day, "ingestion_id": indicator_ingestion_id}
+                {
+                    "symbol": symbol,
+                    "trade_date": day,
+                    "ingestion_id": indicator_ingestion_id,
+                }
+                for symbol in ("SSE:600000", "SSE:688167")
                 for day in trading_dates[:-1]
             ],
         )
@@ -9264,22 +9509,31 @@ insert into core.stock_daily_indicator (
     ).calculate(date(2026, 9, 2))
 
     assert summary.status.value == "PARTIAL"
-    assert summary.coverage.expected_count == 1
-    assert summary.coverage.incomplete_count == 1
+    assert summary.coverage.expected_count == 2
+    assert summary.coverage.incomplete_count == 2
     with database_engine.connect() as connection:
         assert (
             connection.execute(
                 text("select count(*) from regulation.status where calculation_id=:id"),
                 {"id": summary.calculation_id},
             ).scalar_one()
-            == 1
+            == 2
         )
+        star_row = connection.execute(
+            text("""
+select segment, benchmark_symbol from regulation.status
+where calculation_id=:id and symbol='SSE:688167'
+"""),
+            {"id": summary.calculation_id},
+        ).one()
+        assert star_row.segment == "STAR"
+        assert star_row.benchmark_symbol == "SSE:000688"
         assert (
             connection.execute(
                 text("select count(*) from regulation.rule_result where calculation_id=:id"),
                 {"id": summary.calculation_id},
             ).scalar_one()
-            == 9
+            == 18
         )
         assert (
             connection.execute(
@@ -9337,6 +9591,7 @@ values ('SSE:000002',:day,'CN_A_SHARE',100,100,100,100,:previous,1,100,'trading'
         )
     gaps = PostgreSQLRegulationPersistence(database_engine).benchmark_gaps(days[-1])
     assert gaps["SSE:000002"] == days[-30:-1]
+    assert gaps["SSE:000688"] == days[-30:]
     assert gaps["SZSE:399107"] == days[-30:]
     assert gaps["SZSE:399102"] == days[-30:]
     with pytest.raises(ValueError, match="calendar"):

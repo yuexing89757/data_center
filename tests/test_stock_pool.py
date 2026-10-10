@@ -27,6 +27,7 @@ EFFECTIVE = date(2026, 8, 3)
 def test_versioned_price_limit_catalog_supports_mainboard_and_gem() -> None:
     gem = price_limit_rule(Exchange.SZSE, date(2026, 9, 3), board="gem")
     main = price_limit_rule(Exchange.SSE, date(2026, 9, 3))
+    star = price_limit_rule(Exchange.SSE, date(2026, 9, 3), board="star")
 
     assert gem.rule_version == "CN_GEM_2026_07_06"
     assert gem.regular_ratio == Decimal("0.20")
@@ -34,6 +35,11 @@ def test_versioned_price_limit_catalog_supports_mainboard_and_gem() -> None:
     assert gem.price_tick == Decimal("0.01")
     assert gem.initial_no_limit_trading_days == 5
     assert main.regular_ratio == Decimal("0.10")
+    assert star.rule_version == "CN_STAR_2026_07_06"
+    assert star.regular_ratio == Decimal("0.20")
+    assert star.st_ratio == Decimal("0.20")
+    assert star.price_tick == Decimal("0.01")
+    assert star.initial_no_limit_trading_days == 5
 
 
 def test_price_limit_catalog_rejects_wrong_exchange_board_or_date() -> None:

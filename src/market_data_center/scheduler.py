@@ -26,6 +26,7 @@ from sqlalchemy import URL, create_engine
 
 from market_data_center.auction_series_archive_service import AuctionSeriesArchiveService
 from market_data_center.board_index_daily_schedule import collect_board_index_daily_bar_gap
+from market_data_center.board_moneyflow_service import BoardMoneyflowService
 from market_data_center.call_auction_market_series_service import (
     CallAuctionMarketSeriesService,
 )
@@ -80,6 +81,7 @@ from market_data_center.regulation_service import RegulationMonitorService, Regu
 from market_data_center.reliability import recover_stale_runs
 from market_data_center.scheduling_catalog import (
     BOARD_INDEX_DAILY_BAR_JOB_ID,
+    BOARD_MONEYFLOW_DAILY_JOB_ID,
     CALL_AUCTION_MARKET_SERIES_ARCHIVE_JOB_ID,
     CALL_AUCTION_MARKET_SERIES_JOB_ID,
     CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID,
@@ -100,6 +102,7 @@ from market_data_center.scheduling_catalog import (
     STOCK_TECHNICAL_FACTOR_JOB_ID,
     TODAY_LIMIT_DOWN_SNAPSHOT_JOB_ID,
     TODAY_LIMIT_UP_SNAPSHOT_JOB_ID,
+    TOP10_FLOAT_HOLDERS_WEEKLY_JOB_ID,
     JobDefinition,
     job_definition,
     job_definitions,
@@ -112,6 +115,7 @@ from market_data_center.settings import (
 )
 from market_data_center.shareholder_count_service import ShareholderCountService
 from market_data_center.stock_pool_service import StockPoolService
+from market_data_center.top10_float_holder_service import Top10FloatHolderService
 
 SCHEDULER_LOCK_KEY = "market-data-center:scheduler"
 LOGGER = getLogger(__name__)
@@ -526,6 +530,92 @@ def run_shareholder_count_daily_job() -> None:
                 )
                 execution.step(
                     "shareholder_count_daily",
+                    1,
+                    lambda: service.sync_daily(as_of_date),
+                )
+        except BaseException as error:
+            execution.fail(error)
+            raise
+        execution.succeed()
+    finally:
+        engine.dispose()
+
+
+def run_top10_float_holders_weekly_job() -> None:
+    """Synchronize the rolling top-10 float-holder announcement window on Saturdays."""
+    settings = WorkerSettings()  # type: ignore[call-arg]
+    scheduling = SchedulerSettings()
+    engine = create_engine(
+        sqlalchemy_url(settings.database_url.get_secret_value()), pool_pre_ping=True
+    )
+    scheduled_for = _scheduled_job_fire_time(
+        TOP10_FLOAT_HOLDERS_WEEKLY_JOB_ID,
+        scheduling,
+        weekdays_only=False,
+    )
+    as_of_date = datetime.now(ZoneInfo(SCHEDULER_TIMEZONE)).date()
+    try:
+        persistence = PostgreSQLPersistence(engine)
+        execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
+            WorkflowCode.TOP10_FLOAT_HOLDERS_WEEKLY,
+            scheduled_for,
+            TriggerSource.SCHEDULED,
+        )
+        try:
+            with create_provider("tushare") as provider:
+                service = Top10FloatHolderService(
+                    IngestionPipeline(
+                        provider=provider,
+                        persistence=persistence,
+                        raw_store=LocalRawStore(settings.raw_data_root),
+                    ),
+                    persistence,
+                )
+                execution.step(
+                    "collect_top10_float_holders",
+                    1,
+                    lambda: service.sync_weekly(as_of_date),
+                )
+        except BaseException as error:
+            execution.fail(error)
+            raise
+        execution.succeed()
+    finally:
+        engine.dispose()
+
+
+def run_board_moneyflow_daily_job() -> None:
+    """Synchronize the rolling Eastmoney board money-flow window on weekdays."""
+    settings = WorkerSettings()  # type: ignore[call-arg]
+    scheduling = SchedulerSettings()
+    engine = create_engine(
+        sqlalchemy_url(settings.database_url.get_secret_value()), pool_pre_ping=True
+    )
+    scheduled_for = _scheduled_job_fire_time(
+        BOARD_MONEYFLOW_DAILY_JOB_ID,
+        scheduling,
+        weekdays_only=True,
+    )
+    as_of_date = datetime.now(ZoneInfo(SCHEDULER_TIMEZONE)).date()
+    try:
+        persistence = PostgreSQLPersistence(engine)
+        execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
+            WorkflowCode.BOARD_MONEYFLOW_DAILY,
+            scheduled_for,
+            TriggerSource.SCHEDULED,
+        )
+        try:
+            with create_provider("tushare") as provider:
+                service = BoardMoneyflowService(
+                    IngestionPipeline(
+                        provider=provider,
+                        persistence=persistence,
+                        raw_store=LocalRawStore(settings.raw_data_root),
+                    ),
+                    persistence,
+                )
+                execution.step(
+                    "collect_board_moneyflow",
                     1,
                     lambda: service.sync_daily(as_of_date),
                 )
@@ -1022,6 +1112,8 @@ def build_scheduler(settings: SchedulerSettings | None = None) -> BlockingSchedu
         STALE_RUN_RECOVERY_JOB_ID: run_stale_recovery_job,
         DEDUCTED_PROFIT_JOB_ID: run_deducted_profit_job,
         SHAREHOLDER_COUNT_DAILY_JOB_ID: run_shareholder_count_daily_job,
+        TOP10_FLOAT_HOLDERS_WEEKLY_JOB_ID: run_top10_float_holders_weekly_job,
+        BOARD_MONEYFLOW_DAILY_JOB_ID: run_board_moneyflow_daily_job,
         STOCK_POOL_JOB_ID: run_stock_pool_job,
         EOD_QUOTE_SNAPSHOT_JOB_ID: run_eod_quote_snapshot_job,
         CALL_AUCTION_MARKET_SERIES_JOB_ID: run_call_auction_market_series_job,

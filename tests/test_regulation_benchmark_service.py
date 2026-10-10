@@ -34,26 +34,29 @@ class GapPersistence:
         return {symbol: (date(2026, 8, 11), trade_date) for symbol in REGULATION_BENCHMARK_SYMBOLS}
 
 
-def test_benchmark_collection_requests_only_missing_dates_for_three_official_indices() -> None:
+def test_benchmark_collection_requests_only_missing_dates_for_all_official_indices() -> None:
     pipeline = FakePipeline()
 
     summary = RegulationBenchmarkService(pipeline, GapPersistence(pipeline)).collect(TRADE_DATE)
 
     assert REGULATION_BENCHMARK_SYMBOLS == (
         "SSE:000002",
+        "SSE:000688",
         "SZSE:399107",
         "SZSE:399102",
     )
     assert pipeline.calls == [
         ("SSE:000002", date(2026, 8, 11), date(2026, 8, 11)),
         ("SSE:000002", TRADE_DATE, TRADE_DATE),
+        ("SSE:000688", date(2026, 8, 11), date(2026, 8, 11)),
+        ("SSE:000688", TRADE_DATE, TRADE_DATE),
         ("SZSE:399107", date(2026, 8, 11), date(2026, 8, 11)),
         ("SZSE:399107", TRADE_DATE, TRADE_DATE),
         ("SZSE:399102", date(2026, 8, 11), date(2026, 8, 11)),
         ("SZSE:399102", TRADE_DATE, TRADE_DATE),
     ]
-    assert summary.expected_count == 3
-    assert summary.accepted_count == 3
+    assert summary.expected_count == 4
+    assert summary.accepted_count == 4
 
 
 def test_benchmark_collection_reports_when_index_history_is_missing() -> None:
@@ -73,7 +76,7 @@ def test_benchmark_complete_history_skips_network_and_checks_persisted_coverage(
             return {symbol: () for symbol in REGULATION_BENCHMARK_SYMBOLS}
 
     summary = RegulationBenchmarkService(pipeline, CompletePersistence()).collect(TRADE_DATE)
-    assert summary.accepted_count == 3
+    assert summary.accepted_count == 4
     assert pipeline.calls == []
 
 
@@ -91,7 +94,12 @@ def test_one_missing_index_is_partial_and_does_not_block_other_segments() -> Non
 
     class PartialPersistence:
         def benchmark_gaps(self, trade_date):
-            return {"SSE:000002": (), "SZSE:399107": (date(2026, 8, 11),), "SZSE:399102": ()}
+            return {
+                "SSE:000002": (),
+                "SSE:000688": (),
+                "SZSE:399107": (date(2026, 8, 11),),
+                "SZSE:399102": (),
+            }
 
     class FailedPipeline(FakePipeline):
         def ingest_daily_bars(self, source_symbol, start, end):
@@ -99,7 +107,7 @@ def test_one_missing_index_is_partial_and_does_not_block_other_segments() -> Non
             raise ProviderError("upstream unavailable")
 
     summary = RegulationBenchmarkService(FailedPipeline(), PartialPersistence()).collect(TRADE_DATE)
-    assert summary.accepted_count == 2
+    assert summary.accepted_count == 3
     assert summary.missing_symbols == ("SZSE:399107",)
     fetched, accepted, rejected, status = _result_statistics(summary)
-    assert (fetched, accepted, rejected, status.value) == (3, 2, 1, "partial")
+    assert (fetched, accepted, rejected, status.value) == (4, 3, 1, "partial")
