@@ -39,6 +39,7 @@ from market_data_center.scheduling_catalog import (
     STALE_RUN_RECOVERY_JOB_ID,
     STOCK_DAILY_INDICATOR_JOB_ID,
     STOCK_POOL_JOB_ID,
+    STOCK_TECHNICAL_FACTOR_JOB_ID,
 )
 from market_data_center.settings import SchedulerSettings
 
@@ -1108,6 +1109,7 @@ def test_scheduler_health_requires_jobs_fresh_snapshot_and_no_stale_runs(tmp_pat
             PYTDX_POOL_REFRESH_JOB_ID,
             STALE_RUN_RECOVERY_JOB_ID,
             STOCK_DAILY_INDICATOR_JOB_ID,
+            STOCK_TECHNICAL_FACTOR_JOB_ID,
             STOCK_POOL_JOB_ID,
             CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID,
             BOARD_INDEX_DAILY_BAR_JOB_ID,

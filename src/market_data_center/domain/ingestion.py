@@ -34,6 +34,7 @@ class DatasetCode(StrEnum):
     BOARD_INDEX_DAILY_BAR = "board_index_daily_bar"
     BOARD_INDEX_CONSTITUENT_SNAPSHOT = "board_index_constituent_snapshot"
     STOCK_DAILY_INDICATOR = "stock_daily_indicator"
+    STOCK_TECHNICAL_FACTOR = "stock_technical_factor"
     DEDUCTED_PROFIT = "deducted_profit"
     SHAREHOLDER_COUNT = "shareholder_count"
     FIVE_LEVEL_QUOTE = "five_level_quote"

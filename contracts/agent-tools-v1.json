@@ -904,6 +904,64 @@
           }
         }
       }
+    },
+    {
+      "name": "market_stock_technical_factors",
+      "description": "Read up to 100 exact-date source technical factor snapshots without historical fallback. Adjustment variants use decimal strings/null; common counts use integers/null; missing identifiers are explicit.",
+      "endpoint": "query_stock_technical_factors",
+      "read_only": true,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "p_symbols",
+          "p_trade_date"
+        ],
+        "properties": {
+          "p_symbols": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "string",
+              "pattern": "^(SSE|SZSE|BSE):[0-9]{6}$"
+            }
+          },
+          "p_trade_date": {
+            "type": "string",
+            "format": "date"
+          }
+        }
+      }
+    },
+    {
+      "name": "market_stock_technical_factors_by_codes",
+      "description": "Read up to 100 exact-date source technical factor snapshots without historical fallback. Adjustment variants use decimal strings/null; common counts use integers/null; missing identifiers are explicit.",
+      "endpoint": "query_stock_technical_factors_by_codes",
+      "read_only": true,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "p_codes",
+          "p_trade_date"
+        ],
+        "properties": {
+          "p_codes": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]{6}$"
+            }
+          },
+          "p_trade_date": {
+            "type": "string",
+            "format": "date"
+          }
+        }
+      }
     }
   ]
 }

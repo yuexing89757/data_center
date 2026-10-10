@@ -511,6 +511,19 @@ def main() -> None:
             raise
         execution.succeed()
         return
+    if args.dataset == "stock-technical-factor-daily":
+        execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
+            WorkflowCode.STOCK_TECHNICAL_FACTOR,
+            datetime.now(UTC).replace(second=0, microsecond=0),
+            TriggerSource.MANUAL,
+        )
+        try:
+            run_stock_technical_factor_workflow(args, persistence, raw_store, execution=execution)
+        except BaseException as error:
+            execution.fail(error)
+            raise
+        execution.succeed()
+        return
     if args.dataset == "stock-daily-indicators-daily":
         execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
             WorkflowCode.STOCK_DAILY_INDICATOR,
@@ -603,9 +616,13 @@ def _run_reliability_command(
     raw_store: LocalRawStore,
 ) -> None:
     if args.dataset == "raw-replay":
+        from market_data_center.persistence.technical_factor_postgres import (
+            PostgreSQLTechnicalFactorPersistence,
+        )
+
         summary = RawReplayService(
             raw_store=raw_store,
-            persistence=persistence,
+            persistence=PostgreSQLTechnicalFactorPersistence(persistence._engine),
         ).replay(UUID(args.ingestion_id), dry_run=args.dry_run)
         print(dumps(summary.as_json(), ensure_ascii=False, sort_keys=True))
         return
@@ -1039,6 +1056,71 @@ def run_daily_workflow(
         lambda: _execute_operation(daily_bar_args, persistence, raw_store),
     )
     return bar_end_date
+
+
+def collect_stock_technical_factors(
+    trade_date: date, persistence: PostgreSQLPersistence, raw_store: LocalRawStore
+) -> IngestionRun:
+    from market_data_center.persistence.technical_factor_postgres import (
+        PostgreSQLTechnicalFactorPersistence,
+    )
+    from market_data_center.providers.tushare_technical_factor import TushareTechnicalFactorProvider
+    from market_data_center.technical_factor_service import TechnicalFactorIngestionService
+
+    return TechnicalFactorIngestionService(
+        provider=TushareTechnicalFactorProvider.default(),
+        persistence=PostgreSQLTechnicalFactorPersistence(persistence._engine),
+        raw_store=raw_store,
+    ).ingest_snapshot(trade_date)
+
+
+def run_stock_technical_factor_workflow(
+    args: Namespace,
+    persistence: PostgreSQLPersistence,
+    raw_store: LocalRawStore,
+    *,
+    execution: WorkflowExecution | None = None,
+) -> IngestionRun | None:
+    if args.provider != "tushare":
+        raise SystemExit("stock-technical-factor-daily requires --provider tushare")
+    trade_date = (
+        date.fromisoformat(args.as_of_date)
+        if args.as_of_date
+        else datetime.now(SHANGHAI_TIME_ZONE).date()
+    )
+    calendar_args = _derived_args(
+        args,
+        dataset="trading-calendar",
+        start_date=trade_date.isoformat(),
+        end_date=trade_date.isoformat(),
+    )
+    calendar_run = _execute_workflow_step(
+        execution,
+        "trading_calendar",
+        1,
+        lambda: _execute_operation(calendar_args, persistence, raw_store),
+    )
+    if (
+        calendar_run is None
+        or cast(IngestionRun, calendar_run).status is not IngestionStatus.SUCCEEDED
+    ):
+        raise RuntimeError("trading calendar synchronization did not succeed")
+    if persistence.latest_trading_date(trade_date, trade_date) != trade_date:
+        print(f"stock-technical-factor-daily market closed on {trade_date.isoformat()}")
+        return None
+    result = _execute_workflow_step(
+        execution,
+        "stock_technical_factor",
+        2,
+        lambda: collect_stock_technical_factors(trade_date, persistence, raw_store),
+    )
+    if result.status is not IngestionStatus.SUCCEEDED or result.accepted_rows <= 0:
+        raise RuntimeError("stock technical factor snapshot failed quality checks")
+    print(
+        f"stock-technical-factor-daily date={trade_date.isoformat()} "
+        f"accepted={result.accepted_rows}"
+    )
+    return result
 
 
 def run_stock_daily_indicator_workflow(
@@ -1819,6 +1901,12 @@ def _parser() -> ArgumentParser:
         help="run a read-only worker health check and exit",
     )
 
+    technical_factor_daily = subparsers.add_parser(
+        "stock-technical-factor-daily", help="collect the exact trading day's professional factors"
+    )
+    technical_factor_daily.add_argument(
+        "--as-of-date", help="YYYY-MM-DD; defaults to the current Asia/Shanghai date"
+    )
     daily_indicator_daily = subparsers.add_parser(
         "stock-daily-indicators-daily",
         help="synchronize today's Tushare market snapshot and enforce one-month Core retention",

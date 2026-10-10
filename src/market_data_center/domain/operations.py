@@ -22,6 +22,7 @@ class TriggerSource(StrEnum):
 class WorkflowCode(StrEnum):
     DAILY_MARKET = "daily_market"
     STOCK_DAILY_INDICATOR = "stock_daily_indicator"
+    STOCK_TECHNICAL_FACTOR = "stock_technical_factor"
     STALE_RUN_RECOVERY = "stale_run_recovery"
     DEDUCTED_PROFIT = "deducted_profit"
     STOCK_POOL = "stock_pool"

@@ -36,6 +36,8 @@ EXPECTED_ENDPOINTS = {
     "query_regulation_symbol_trigger",
     "query_regulation_monitor_candidates",
     "query_regulation_monitor_inputs",
+    "query_stock_technical_factors",
+    "query_stock_technical_factors_by_codes",
 }
 
 

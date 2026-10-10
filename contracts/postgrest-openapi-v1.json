@@ -736,6 +736,48 @@
           }
         }
       }
+    },
+    "/rpc/query_stock_technical_factors": {
+      "post": {
+        "operationId": "queryStockTechnicalFactors",
+        "summary": "Read exact-date source technical factor snapshots without historical fallback",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/StockTechnicalFactors"
+        },
+        "responses": {
+          "200": {
+            "description": "Bounded snapshots with decimal string/null maps and explicit missing identifiers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StockTechnicalFactorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rpc/query_stock_technical_factors_by_codes": {
+      "post": {
+        "operationId": "queryStockTechnicalFactorsByCodes",
+        "summary": "Read exact-date source technical factor snapshots without historical fallback",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/StockTechnicalFactorsByCodes"
+        },
+        "responses": {
+          "200": {
+            "description": "Bounded snapshots with decimal string/null maps and explicit missing identifiers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StockTechnicalFactorResponseByCodes"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3727,6 +3769,141 @@
         ],
         "title": "MonitorInputsRpcResponse",
         "type": "object"
+      },
+      "StockTechnicalFactorItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "symbol",
+          "code",
+          "name",
+          "trade_date",
+          "source_code",
+          "factor_catalog_version",
+          "unadjusted",
+          "forward_adjusted",
+          "backward_adjusted",
+          "common"
+        ],
+        "properties": {
+          "symbol": {
+            "$ref": "#/components/schemas/StandardSymbol"
+          },
+          "code": {
+            "type": "string",
+            "pattern": "^[0-9]{6}$"
+          },
+          "name": {
+            "type": "string"
+          },
+          "trade_date": {
+            "$ref": "#/components/schemas/Date"
+          },
+          "source_code": {
+            "type": "string"
+          },
+          "factor_catalog_version": {
+            "type": "string"
+          },
+          "unadjusted": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^-?[0-9]+(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$"
+            }
+          },
+          "forward_adjusted": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^-?[0-9]+(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$"
+            }
+          },
+          "backward_adjusted": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^-?[0-9]+(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$"
+            }
+          },
+          "common": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            }
+          }
+        }
+      },
+      "StockTechnicalFactorResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "trade_date",
+          "items",
+          "missing_symbols"
+        ],
+        "properties": {
+          "trade_date": {
+            "$ref": "#/components/schemas/Date"
+          },
+          "items": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/StockTechnicalFactorItem"
+            }
+          },
+          "missing_symbols": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "string",
+              "pattern": "^(SSE|SZSE|BSE):[0-9]{6}$"
+            }
+          }
+        }
+      },
+      "StockTechnicalFactorResponseByCodes": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "trade_date",
+          "items",
+          "missing_codes"
+        ],
+        "properties": {
+          "trade_date": {
+            "$ref": "#/components/schemas/Date"
+          },
+          "items": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/StockTechnicalFactorItem"
+            }
+          },
+          "missing_codes": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]{6}$"
+            }
+          }
+        }
       }
     },
     "requestBodies": {
@@ -4389,6 +4566,66 @@
               "properties": {
                 "p_trade_date": {
                   "$ref": "#/components/schemas/Date"
+                }
+              }
+            }
+          }
+        }
+      },
+      "StockTechnicalFactors": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "p_symbols",
+                "p_trade_date"
+              ],
+              "properties": {
+                "p_symbols": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 100,
+                  "items": {
+                    "type": "string",
+                    "pattern": "^(SSE|SZSE|BSE):[0-9]{6}$"
+                  }
+                },
+                "p_trade_date": {
+                  "type": "string",
+                  "format": "date"
+                }
+              }
+            }
+          }
+        }
+      },
+      "StockTechnicalFactorsByCodes": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "p_codes",
+                "p_trade_date"
+              ],
+              "properties": {
+                "p_codes": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 100,
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[0-9]{6}$"
+                  }
+                },
+                "p_trade_date": {
+                  "type": "string",
+                  "format": "date"
                 }
               }
             }

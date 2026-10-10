@@ -10719,6 +10719,183 @@
         ],
         "title": "ValidationError",
         "type": "object"
+      },
+      "StockTechnicalFactorQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "codes": {
+            "description": "六位股票代码集合, 最多100个, 重复代码去重",
+            "items": {
+              "pattern": "^[0-9]{6}$",
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Codes",
+            "type": "array"
+          },
+          "trade_date": {
+            "description": "必填精确交易日, 不回退历史日期",
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "codes",
+          "trade_date"
+        ],
+        "title": "StockTechnicalFactorQuery",
+        "type": "object"
+      },
+      "StockTechnicalFactorItem": {
+        "additionalProperties": false,
+        "properties": {
+          "backward_adjusted": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "description": "后复权技术因子, 十进制字符串或空值",
+            "title": "Backward Adjusted",
+            "type": "object"
+          },
+          "code": {
+            "description": "六位股票代码",
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "common": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "description": "共同计数项, 整数或空值",
+            "title": "Common",
+            "type": "object"
+          },
+          "factor_catalog_version": {
+            "description": "受控技术因子目录版本",
+            "title": "Factor Catalog Version",
+            "type": "string"
+          },
+          "forward_adjusted": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "description": "前复权技术因子, 十进制字符串或空值",
+            "title": "Forward Adjusted",
+            "type": "object"
+          },
+          "name": {
+            "description": "证券名称",
+            "title": "Name",
+            "type": "string"
+          },
+          "source_code": {
+            "description": "快照来源代码",
+            "title": "Source Code",
+            "type": "string"
+          },
+          "symbol": {
+            "description": "标准证券代码",
+            "title": "Symbol",
+            "type": "string"
+          },
+          "trade_date": {
+            "description": "来源快照的交易日",
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "unadjusted": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "description": "不复权技术因子, 十进制字符串或空值",
+            "title": "Unadjusted",
+            "type": "object"
+          }
+        },
+        "required": [
+          "symbol",
+          "code",
+          "name",
+          "trade_date",
+          "source_code",
+          "factor_catalog_version",
+          "unadjusted",
+          "forward_adjusted",
+          "backward_adjusted",
+          "common"
+        ],
+        "title": "StockTechnicalFactorItem",
+        "type": "object"
+      },
+      "StockTechnicalFactorResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "description": "当日已存储的技术因子快照",
+            "items": {
+              "$ref": "#/components/schemas/StockTechnicalFactorItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "missing_codes": {
+            "description": "当日无快照或未登记的请求代码",
+            "items": {
+              "pattern": "^[0-9]{6}$",
+              "type": "string"
+            },
+            "title": "Missing Codes",
+            "type": "array"
+          },
+          "trade_date": {
+            "description": "请求的精确交易日",
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "trade_date",
+          "items",
+          "missing_codes"
+        ],
+        "title": "StockTechnicalFactorResponse",
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -15162,6 +15339,83 @@
         "summary": "检查 API 服务就绪状态",
         "tags": [
           "系统状态"
+        ]
+      }
+    },
+    "/v1/stock-technical-factors/query": {
+      "post": {
+        "description": "查询最多100个六位股票代码在精确交易日的已存储技术因子快照, 不回退历史日期。三种复权口径分别返回十进制字符串或空值, 共同计数项返回整数或空值。仅调用有界只读接口, 不触发采集或计算。",
+        "operationId": "query_stock_technical_factors_v1_stock_technical_factors_query_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StockTechnicalFactorQuery"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StockTechnicalFactorResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "按股票代码和交易日查询专业版技术因子",
+        "tags": [
+          "市场数据"
         ]
       }
     }

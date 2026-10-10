@@ -140,6 +140,14 @@ and then retains one calendar month in Core while preserving Raw and audit linea
 market-data-center --provider tushare stock-daily-indicators-daily
 ```
 
+Professional technical factors are collected separately through Tushare `stk_factor_pro`.
+The Worker registers `stock-technical-factor-daily` for 21:00 Asia/Shanghai on weekdays,
+checks the actual trading calendar, and preserves all 226 factor values and their adjustment
+bases. Existing daily indicators keep their original behavior. The authenticated
+`POST /v1/stock-technical-factors/query` reads up to 100 codes for an exact trading date.
+See the [technical-factor runbook](docs/runbooks/stock-technical-factor.md) for migration
+prerequisites, single-day retries, Raw replay and missing-data behavior.
+
 Run the unified cross-platform collection Worker as the single supervised application process:
 
 ```bash

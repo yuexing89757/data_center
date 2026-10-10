@@ -26,6 +26,7 @@ from market_data_center.domain.records import (
 from market_data_center.domain.regulation import RegulationEventRecord
 from market_data_center.domain.shareholder_count import ShareholderCountRecord
 from market_data_center.domain.stock_daily_indicator import StockDailyIndicatorSnapshotRecord
+from market_data_center.domain.stock_technical_factor import StockTechnicalFactorSnapshotRecord
 from market_data_center.domain.today_limit_down import LimitDownSourceRecord
 from market_data_center.domain.today_limit_up import LimitUpSourceRecord
 
@@ -38,6 +39,7 @@ type ProviderRecord = (
     | ClassificationRecord
     | BoardIndexProviderRecord
     | StockDailyIndicatorSnapshotRecord
+    | StockTechnicalFactorSnapshotRecord
     | DeductedProfitRecord
     | ShareholderCountRecord
     | FiveLevelQuoteSnapshotRecord

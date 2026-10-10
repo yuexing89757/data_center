@@ -71,6 +71,10 @@ from market_data_center.domain.stock_daily_indicator import (
     StockDailyIndicatorSnapshotRecord,
     validate_stock_daily_indicators,
 )
+from market_data_center.domain.stock_technical_factor import (
+    StockTechnicalFactorSnapshotRecord,
+    validate_technical_factor_snapshot,
+)
 from market_data_center.domain.validation import validate_daily_bars
 from market_data_center.providers.akshare import normalize_akshare_raw
 from market_data_center.providers.akshare_ths import normalize_akshare_ths_raw
@@ -86,6 +90,7 @@ from market_data_center.providers.tushare import normalize_tushare_raw
 from market_data_center.providers.tushare_dragon_tiger import (
     normalize_tushare_dragon_tiger_raw,
 )
+from market_data_center.providers.tushare_technical_factor import normalize_technical_factor_raw
 from market_data_center.raw_store import LocalRawStore, RawIntegrityError
 from market_data_center.shareholder_count_batch import (
     PreparedShareholderCountBatch,
@@ -93,6 +98,7 @@ from market_data_center.shareholder_count_batch import (
     shareholder_count_rejection_quality_results,
     shareholder_count_unsupported_exchange_quality_result,
 )
+from market_data_center.technical_factor_service import TechnicalFactorPersistence
 
 
 @dataclass(frozen=True, slots=True)
@@ -431,6 +437,11 @@ class RawReplayService:
                 raise ProviderError("unsupported DragonTiger replay provider")
             records: tuple[ProviderRecord, ...] = result.events
             findings = result.findings
+        elif source.dataset_code is DatasetCode.STOCK_TECHNICAL_FACTOR:
+            if source.provider_code is not ProviderCode.TUSHARE:
+                raise ProviderError("technical factor replay requires Tushare")
+            records = tuple(normalize_technical_factor_raw(rows, source.manifest.schema_version))
+            findings = ()
         else:
             normalizer = _NORMALIZERS[source.provider_code]
             records = normalizer(
@@ -690,6 +701,39 @@ class RawReplayService:
                 len(capital_validation.accepted),
                 capital_validation.rejected_rows,
             )
+
+        if source.dataset_code is DatasetCode.STOCK_TECHNICAL_FACTOR:
+            factor_persistence = cast(TechnicalFactorPersistence, self._persistence)
+            trade_date = date.fromisoformat(str(source.request_params.get("trade_date", "")))
+            floor = source.request_params.get("minimum_accepted_rows")
+            if type(floor) is not int or floor < 1:
+                raise ValueError("technical factor replay requires the recorded coverage floor")
+            factor_records = cast(tuple[StockTechnicalFactorSnapshotRecord, ...], records)
+            if source.manifest is None:
+                raise RawIntegrityError("technical factor replay requires a Raw manifest")
+            fetched = source.manifest.row_count
+            with factor_persistence.task_lock(
+                f"tushare:stock_technical_factor:{trade_date.isoformat()}"
+            ):
+                factor_accepted = validate_technical_factor_snapshot(
+                    factor_records,
+                    trade_date=trade_date,
+                    known_symbols=factor_persistence.technical_factor_securities(trade_date),
+                    known_trading_dates=self._persistence.known_trading_dates({trade_date}),
+                    minimum_accepted_rows=floor,
+                )
+                completed = self._completed(run, fetched, len(factor_accepted), 0)
+                if completed is not None:
+                    factor_persistence.commit_technical_factor_batch(
+                        completed,
+                        None,
+                        tuple(
+                            IngestionEnvelope(completed.ingestion_id, item)
+                            for item in factor_accepted
+                        ),
+                        (),
+                    )
+            return self._summary(source, completed, dry_run, fetched, len(factor_accepted), 0)
 
         if source.dataset_code is DatasetCode.STOCK_DAILY_INDICATOR:
             indicator_records = cast(tuple[StockDailyIndicatorSnapshotRecord, ...], records)

@@ -57,6 +57,7 @@ EXPECTED_TABLES = {
     ("core", "security_name_history"),
     ("core", "shareholder_count"),
     ("core", "stock_daily_indicator"),
+    ("core", "stock_technical_factor_snapshot"),
     ("core", "trading_calendar"),
     ("derived", "adjusted_daily_bar"),
     ("derived", "calculation_run"),

@@ -29,7 +29,11 @@ from market_data_center.board_index_daily_schedule import collect_board_index_da
 from market_data_center.call_auction_market_series_service import (
     CallAuctionMarketSeriesService,
 )
-from market_data_center.cli import run_daily_workflow, run_stock_daily_indicator_workflow
+from market_data_center.cli import (
+    run_daily_workflow,
+    run_stock_daily_indicator_workflow,
+    run_stock_technical_factor_workflow,
+)
 from market_data_center.close_price_new_highs_service import ClosePriceNewHighsService
 from market_data_center.database_urls import sqlalchemy_url
 from market_data_center.domain.operations import TriggerSource, WorkflowCode
@@ -93,6 +97,7 @@ from market_data_center.scheduling_catalog import (
     STALE_RUN_RECOVERY_JOB_ID,
     STOCK_DAILY_INDICATOR_JOB_ID,
     STOCK_POOL_JOB_ID,
+    STOCK_TECHNICAL_FACTOR_JOB_ID,
     TODAY_LIMIT_DOWN_SNAPSHOT_JOB_ID,
     TODAY_LIMIT_UP_SNAPSHOT_JOB_ID,
     JobDefinition,
@@ -212,6 +217,34 @@ def run_pytdx_pool_refresh_job(
             PytdxPoolSettings(),
             trigger_source,
         )
+    finally:
+        engine.dispose()
+
+
+def run_stock_technical_factor_job() -> None:
+    """Collect today's independent professional-factor snapshot inside the Worker."""
+    settings = WorkerSettings()  # type: ignore[call-arg]
+    scheduling = SchedulerSettings()
+    engine = create_engine(
+        sqlalchemy_url(settings.database_url.get_secret_value()), pool_pre_ping=True
+    )
+    try:
+        execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
+            WorkflowCode.STOCK_TECHNICAL_FACTOR,
+            _scheduled_job_fire_time(STOCK_TECHNICAL_FACTOR_JOB_ID, scheduling),
+            TriggerSource.SCHEDULED,
+        )
+        try:
+            run_stock_technical_factor_workflow(
+                Namespace(provider="tushare", as_of_date=None),
+                PostgreSQLPersistence(engine),
+                LocalRawStore(settings.raw_data_root),
+                execution=execution,
+            )
+        except BaseException as error:
+            execution.fail(error)
+            raise
+        execution.succeed()
     finally:
         engine.dispose()
 
@@ -985,6 +1018,7 @@ def build_scheduler(settings: SchedulerSettings | None = None) -> BlockingSchedu
     functions = {
         DAILY_RUN_JOB_ID: run_daily_market_job,
         STOCK_DAILY_INDICATOR_JOB_ID: run_stock_daily_indicator_job,
+        STOCK_TECHNICAL_FACTOR_JOB_ID: run_stock_technical_factor_job,
         STALE_RUN_RECOVERY_JOB_ID: run_stale_recovery_job,
         DEDUCTED_PROFIT_JOB_ID: run_deducted_profit_job,
         SHAREHOLDER_COUNT_DAILY_JOB_ID: run_shareholder_count_daily_job,

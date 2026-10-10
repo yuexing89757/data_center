@@ -6,6 +6,7 @@ from market_data_center.settings import SchedulerSettings
 
 DAILY_RUN_JOB_ID = "daily-run"
 STOCK_DAILY_INDICATOR_JOB_ID = "stock-daily-indicators-daily"
+STOCK_TECHNICAL_FACTOR_JOB_ID = "stock-technical-factor-daily"
 STALE_RUN_RECOVERY_JOB_ID = "recover-stale-ingestion-runs"
 DEDUCTED_PROFIT_JOB_ID = "deducted-profit-daily"
 SHAREHOLDER_COUNT_DAILY_JOB_ID = "shareholder-count-daily"
@@ -56,6 +57,12 @@ class JobDefinition:
 
 
 WORKFLOW_DEFINITIONS = (
+    WorkflowDefinition(
+        "stock_technical_factor",
+        "专业版股票技术因子更新",
+        "核验交易日并保存 Tushare 专业版全市场技术因子快照。",
+        ("trading_calendar", "stock_technical_factor"),
+    ),
     WorkflowDefinition(
         "daily_market",
         "日 K 与基础数据更新",
@@ -211,6 +218,21 @@ def job_definitions(settings: SchedulerSettings) -> tuple[JobDefinition, ...]:
     timezone = SCHEDULER_TIMEZONE
     timeout = JOB_TIMEOUT_SECONDS
     return (
+        JobDefinition(
+            STOCK_TECHNICAL_FACTOR_JOB_ID,
+            "专业版股票技术因子更新",
+            "采集当日 stk_factor_pro 全市场技术因子。",
+            "stock_technical_factor",
+            "cron",
+            "周一至周五 21:00",
+            timezone,
+            True,
+            timeout,
+            "失败保留缺口; 通过显式日期的单日命令重试",
+            day_of_week="mon-fri",
+            hour=21,
+            minute=0,
+        ),
         JobDefinition(
             DAILY_RUN_JOB_ID,
             "日 K 与基础数据更新",
