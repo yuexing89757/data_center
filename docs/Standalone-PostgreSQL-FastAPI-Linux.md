@@ -12,6 +12,14 @@ see the [configuration maintenance record](最小生产发布运行手册.md#同
 
 ## Preconditions
 
+Since 2026-10-10, the owner has permanently waived PostgreSQL backup and database restore
+drills for routine deployments of this project, including API/Worker releases and ordered
+migrations. Do not run them, wait for them, or request another backup confirmation unless
+the owner separately asks for database backup or recovery. Follow the
+[deployment policy](最小生产发布运行手册.md#常规部署的-postgresql-备份规则2026-10-10);
+Raw verification, isolated migration tests, protected production migrations and runtime
+health checks remain required.
+
 ### Regulation query release (2026-09-22)
 
 Apply ordered migration `20260922000100` through the protected production workflow
@@ -66,7 +74,8 @@ old timeout and verifies the bounded query without relying on manual production 
 The exact database setup gate is:
 
 1. Apply the pending ordered API-role and limit-up query migrations with the protected migration
-   connection. Verify backup/restore evidence before any production migration.
+   connection. Follow the routine deployment policy above; PostgreSQL backup/restore
+   evidence is not a prerequisite for production migration.
 2. In a protected operator session, create a randomly named LOGIN role with a generated password,
    grant it membership in `market_data_api`, and set role defaults for read-only transactions and a
    five-second statement timeout. Store the resulting direct PostgreSQL URL only in the root-owned

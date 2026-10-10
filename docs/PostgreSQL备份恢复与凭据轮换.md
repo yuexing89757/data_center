@@ -4,6 +4,10 @@
 
 ## 1. 恢复目标
 
+2026-10-10 起，本项目常规线上部署默认不执行 PostgreSQL 备份或备份恢复演练，
+也不将其作为上线门禁；见[长期部署规则](最小生产发布运行手册.md#常规部署的-postgresql-备份规则2026-10-10)。
+本文的数据库备份与恢复步骤仅在项目所有者另行明确要求该操作时执行。
+
 一次备份只有在独立数据库成功恢复并通过以下检查后才算有效：
 
 - `audit`、`core`、`ingestion` 和 `regulation` 领域表行数与源库一致；
@@ -25,8 +29,8 @@ RTO 目标为 60 分钟，RPO 目标为 24 小时。上线后根据实际数据�
 `SOURCE_DATABASE_URL`，不得复用 Worker 凭据或打印连接串。
 新增领域或表后必须在相应有序迁移中补齐备份读取授权；不授予所有未来对象的默认权限。
 
-上线前先在独立 PostgreSQL 实例验证迁移和完整备份恢复，再通过受保护 production
-workflow 应用迁移；禁止手工执行角色或 grants DDL。
+上线前在独立 PostgreSQL 实例验证迁移和集成测试，再通过受保护 production
+workflow 应用迁移；常规部署不要求完整备份恢复。禁止手工执行角色或 grants DDL。
 
 仓库工具备份 Market Data Center 的 `audit`、`billboard`、`capital`、`classification`、`convertible_bond`、`core`、`derived`、`ingestion`、`metrics`、`operations`、`realtime`、`regulation`、`stock_pool`、`today_limit_down` 和 `today_limit_up` 数据，不把凭据放入进程参数。备份默认写入已被 Git 忽略的 `backups/`。
 
