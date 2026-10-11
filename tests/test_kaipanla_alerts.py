@@ -341,3 +341,163 @@ def test_published_contract_matches_runtime_for_all_alert_routes():
     for name, model in schema["components"]["schemas"].items():
         if name.startswith("Kaipanla"):
             assert saved["components"]["schemas"][name] == model
+
+
+def test_multiple_exposes_source_count_not_unconfirmed_numeric_enums():
+    transport = Transport(
+        {
+            "errcode": "0",
+            "Day": "2026-09-29",
+            "List": [
+                [
+                    "001216",
+                    "示例",
+                    1,
+                    "10日内3次异动个股",
+                    2,
+                    9,
+                    "5.1",
+                    "33.32",
+                    "14.54",
+                    "29.09",
+                    0,
+                ],
+                [
+                    "688137",
+                    "示例二",
+                    2,
+                    "30日内偏离值临近200%",
+                    5,
+                    28,
+                    "157.22",
+                    "165.41",
+                    "17.02",
+                    "141.35",
+                    0,
+                ],
+            ],
+        }
+    )
+    response = client(transport).get(PREFIX + "/multiple", headers={"X-API-Key": KEY})
+    assert response.status_code == 200
+    first, second = response.json()["groups"][0]["items"]
+    assert first["rule_description"] == "10日内3次异动个股"
+    assert first["source_abnormal_count_10d"] == 3
+    assert second["source_abnormal_count_10d"] is None
+    assert first["deviation_pct"] == "5.1"
+    assert first["expected_trigger_price"] == "33.32"
+    assert first["expected_change_pct"] == "14.54"
+    assert first["last_price"] == "29.09"
+    assert first["change_pct"] == "0"
+
+
+def test_severe_maps_trigger_pairs_by_group_not_deviation_space():
+    row = [
+        "001216",
+        "示例",
+        "10日100%",
+        "3.74",
+        "",
+        "5.42",
+        "29.56",
+        "1.68",
+        "未触发异动",
+        "12.2",
+        "板块",
+        0,
+        "30日200%",
+        "32.64",
+        0,
+        0,
+        0,
+        "",
+        "2026-09-29",
+        "29.09",
+    ]
+    tomorrow = row.copy()
+    tomorrow[5:7] = ["9.7", "155.06"]
+    response = client(
+        Transport(
+            {"errcode": "0", "Day": "2026-09-29", "List_Today": [row], "List_Tormorow": [tomorrow]}
+        )
+    ).get(PREFIX + "/severe", headers={"X-API-Key": KEY})
+    assert response.status_code == 200
+    today_item = response.json()["groups"][0]["items"][0]
+    next_item = response.json()["groups"][1]["items"][0]
+    assert today_item["rule_description"] == "10日100%"
+    assert today_item["trigger_status"] == "未触发异动"
+    assert today_item["today_trigger_change_pct"] == "5.42"
+    assert today_item["today_trigger_price"] == "29.56"
+    assert today_item["tomorrow_trigger_change_pct"] is None
+    assert today_item["tomorrow_trigger_price"] is None
+    assert next_item["tomorrow_trigger_change_pct"] == "9.7"
+    assert next_item["rule_description"] == "30日200%"
+    assert next_item["tomorrow_trigger_price"] == "155.06"
+    assert next_item["today_trigger_price"] is None
+    assert next_item["trigger_status"] is None
+
+
+@pytest.mark.parametrize("value", ["NaN", "bad", -1])
+def test_named_trigger_price_rejects_invalid_values(value):
+    row = [
+        "001216",
+        "示例",
+        "10日100%",
+        0,
+        "",
+        0,
+        value,
+        0,
+        "",
+        0,
+        "",
+        0,
+        "",
+        0,
+        0,
+        0,
+        0,
+        "",
+        "2026-09-29",
+        1,
+    ]
+    response = client(Transport({"errcode": "0", "List_Today": [row], "List_Tormorow": []})).get(
+        PREFIX + "/severe", headers={"X-API-Key": KEY}
+    )
+    assert response.status_code == 502
+
+
+def test_unknown_layout_retains_raw_values_without_guessing_named_fields():
+    response = client(
+        Transport({"errcode": "0", "List": [["001216", "示例", 1, "10日内3次异动个股", 2]]})
+    ).get(PREFIX + "/multiple", headers={"X-API-Key": KEY})
+    assert response.status_code == 200
+    item = response.json()["groups"][0]["items"][0]
+    assert item["source_abnormal_count_10d"] is None
+    assert item["expected_trigger_price"] is None
+
+
+@pytest.mark.parametrize(
+    "path,lists",
+    [
+        (
+            "/severe",
+            {
+                "List_Today": [["001216", "示例", *([None] * 18)]],
+                "List_Tormorow": [["001216", "示例", *([None] * 18)]],
+            },
+        ),
+        ("/multiple", {"List": [["001216", "示例", *([None] * 9)]]}),
+    ],
+)
+def test_confirmed_layout_keeps_missing_optional_fields_null(path, lists):
+    response = client(Transport({"errcode": "0", **lists})).get(
+        PREFIX + path, headers={"X-API-Key": KEY}
+    )
+    assert response.status_code == 200
+    for group in response.json()["groups"]:
+        item = group["items"][0]
+        assert item["code"] == "001216"
+        assert item["rule_description"] is None
+        assert item["trigger_status"] is None
+        assert item["source_abnormal_count_10d"] is None

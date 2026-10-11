@@ -51,7 +51,9 @@ Kaipanla alerts are exposed by ten authenticated FastAPI routes under
 `/api/v1/realtime/kaipanla/alerts`, grouped as `实时接口`. They fetch on request without
 database/Raw writes or Worker jobs. See [the API guide](docs/开盘啦异动提醒实时接口.md)
 for date handling, paging, source-column limitations and examples. Restart the API process
-after updating code; no database migration is needed for these routes.
+after updating code; no database migration is needed for these routes. Confirmed layouts
+also expose source rule text, today's/next-trading-day trigger thresholds and explicitly
+stated 10-day Kaipanla counts; unprovided values remain null, not zero or official counts.
 
 Kaipanla home-page market-emotion money-effect history is exposed by
 `GET /api/v1/realtime/kaipanla/market-emotion/money-effect`. It returns the verified list

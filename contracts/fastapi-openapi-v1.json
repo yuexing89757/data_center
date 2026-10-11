@@ -5242,7 +5242,7 @@
                 "type": "null"
               }
             ],
-            "description": "现价刷新接口的涨跌幅，单位百分比；其他接口为空。",
+            "description": "来源当前涨跌幅，单位百分比；未提供时为空。",
             "title": "Change Pct"
           },
           "code": {
@@ -5250,6 +5250,19 @@
             "pattern": "^[0-9]{6}$",
             "title": "Code",
             "type": "string"
+          },
+          "deviation_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "多次异动列表的来源偏离值，百分比。",
+            "title": "Deviation Pct"
           },
           "document_url": {
             "anyOf": [
@@ -5276,6 +5289,32 @@
             "description": "重点监控结束日期；来源未提供时为空。",
             "title": "End Date"
           },
+          "expected_change_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源预计异动价对应的涨幅，百分比。",
+            "title": "Expected Change Pct"
+          },
+          "expected_trigger_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "多次异动列表来源预计异动价，元；不擅自解释为今日或次日。",
+            "title": "Expected Trigger Price"
+          },
           "last_price": {
             "anyOf": [
               {
@@ -5286,7 +5325,7 @@
                 "type": "null"
               }
             ],
-            "description": "现价刷新接口的最新价，单位元；其他接口为空。",
+            "description": "来源最新价，单位元；未提供时为空。",
             "title": "Last Price"
           },
           "name": {
@@ -5300,6 +5339,31 @@
             ],
             "description": "来源股票名称；现价接口未提供时为空。",
             "title": "Name"
+          },
+          "rule_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "开盘啦原文规则或分组说明，不代表交易所认定。",
+            "title": "Rule Description"
+          },
+          "source_abnormal_count_10d": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "仅从来源明确的10日内N次异动文字提取；未提供为null，不混入公告或系统测算次数。",
+            "title": "Source Abnormal Count 10D"
           },
           "source_values": {
             "description": "按 source_layout 标识的完整来源行；数组列语义尚未全部确认，不作为标准指标。小数以字符串返回。",
@@ -5340,6 +5404,70 @@
             "description": "标准证券代码，例如 SZSE:001216。",
             "title": "Symbol",
             "type": "string"
+          },
+          "today_trigger_change_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源当日触发涨幅，百分比；不是当前涨幅或偏离值空间。",
+            "title": "Today Trigger Change Pct"
+          },
+          "today_trigger_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "严重异动today分组的来源当日触发价，元；未提供为null。",
+            "title": "Today Trigger Price"
+          },
+          "tomorrow_trigger_change_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源次日触发涨幅，百分比；次日相对来源交易日，不是预测或已触发事实。",
+            "title": "Tomorrow Trigger Change Pct"
+          },
+          "tomorrow_trigger_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "严重异动tomorrow分组的来源次日触发价，元；未提供为null。",
+            "title": "Tomorrow Trigger Price"
+          },
+          "trigger_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源当日触发状态原文；不由现价比较推断，不代表交易所公告。",
+            "title": "Trigger Status"
           }
         },
         "required": [
@@ -5352,7 +5480,17 @@
           "start_date",
           "end_date",
           "announcement_date",
-          "document_url"
+          "document_url",
+          "rule_description",
+          "source_abnormal_count_10d",
+          "deviation_pct",
+          "expected_trigger_price",
+          "expected_change_pct",
+          "trigger_status",
+          "today_trigger_price",
+          "today_trigger_change_pct",
+          "tomorrow_trigger_price",
+          "tomorrow_trigger_change_pct"
         ],
         "title": "KaipanlaAlertItem",
         "type": "object"

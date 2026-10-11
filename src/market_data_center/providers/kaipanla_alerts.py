@@ -185,7 +185,7 @@ def _decimal(value: object) -> Decimal | None:
     return number
 
 
-def _item(row: object, layout: str) -> AlertItem:
+def _item(row: object, layout: str, group: str = "items") -> AlertItem:
     if isinstance(row, dict):
         row = [row["StockID"], row["StockName"]]
     if not isinstance(row, list) or len(row) < 2 or len(row) > 100:
@@ -213,6 +213,11 @@ def _item(row: object, layout: str) -> AlertItem:
     price = change = None
     start = end = announcement = None
     document = None
+    rule_description = None
+    source_count = None
+    deviation = trigger_price = trigger_change = None
+    trigger_status = None
+    today_price = today_change = tomorrow_price = tomorrow_change = None
     if layout == "quote":
         price, change = _decimal(row[1]), _decimal(row[2])
         if price is not None and price < 0:
@@ -227,6 +232,35 @@ def _item(row: object, layout: str) -> AlertItem:
             document = None
         elif not isinstance(document, str) or urlsplit(document).scheme not in ("https", "http"):
             raise ValueError("invalid document URL")
+    if layout == "multiple" and len(row) == 11:
+        rule_description = row[3]
+        if rule_description is not None and not isinstance(rule_description, str):
+            raise ValueError("invalid source rule description")
+        count_match = re.fullmatch(r"10日内([0-9]+)次异动个股", rule_description or "")
+        if count_match:
+            source_count = int(count_match[1])
+        deviation, trigger_price, trigger_change = map(_decimal, row[6:9])
+        price, change = map(_decimal, row[9:11])
+        if any(value is not None and value < 0 for value in (price, trigger_price)):
+            raise ValueError("negative source price")
+    if layout == "severe" and len(row) == 20 and group in {"today", "tomorrow"}:
+        # APP 6.3.20.0 ar0.b/c + SevereAbnormalFragment: raw 5/6 is the
+        # group's trigger change/price. Raw 9 is deviation space, NOT a return.
+        rule_description = row[2] if group == "today" else row[12]
+        if rule_description is not None and not isinstance(rule_description, str):
+            raise ValueError("invalid source rule description")
+        pair_change, pair_price = _decimal(row[5]), _decimal(row[6])
+        price = _decimal(row[19])
+        if any(value is not None and value < 0 for value in (price, pair_price)):
+            raise ValueError("negative source price")
+        if group == "today":
+            today_change, today_price = pair_change, pair_price
+            change = _decimal(row[3])
+            trigger_status = row[8]
+            if trigger_status is not None and not isinstance(trigger_status, str):
+                raise ValueError("invalid source trigger status")
+        else:
+            tomorrow_change, tomorrow_price = pair_change, pair_price
     return AlertItem(
         symbol=f"{market}:{code}",
         code=code,
@@ -238,6 +272,16 @@ def _item(row: object, layout: str) -> AlertItem:
         end_date=end,
         announcement_date=announcement,
         document_url=document,
+        rule_description=rule_description,
+        source_abnormal_count_10d=source_count,
+        deviation_pct=deviation,
+        expected_trigger_price=trigger_price,
+        expected_change_pct=trigger_change,
+        trigger_status=trigger_status,
+        today_trigger_price=today_price,
+        today_trigger_change_pct=today_change,
+        tomorrow_trigger_price=tomorrow_price,
+        tomorrow_trigger_change_pct=tomorrow_change,
     )
 
 
@@ -262,7 +306,7 @@ def _normalize(
         rows = data.get(field)
         if not isinstance(rows, list) or len(rows) > 5000:
             raise ValueError("invalid or missing source list")
-        items = tuple(_item(row, row_layout) for row in rows)
+        items = tuple(_item(row, row_layout, key) for row in rows)
         if endpoint == "quote_refresh":
             returned = [item.code for item in items]
             if len(set(returned)) != len(returned) or not set(returned) <= set(codes):

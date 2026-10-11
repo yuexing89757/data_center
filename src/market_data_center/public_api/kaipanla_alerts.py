@@ -28,14 +28,37 @@ class KaipanlaAlertItem(ApiModel):
             "小数以字符串返回。"
         )
     )
-    last_price: Decimal | None = Field(description="现价刷新接口的最新价，单位元；其他接口为空。")
-    change_pct: Decimal | None = Field(
-        description="现价刷新接口的涨跌幅，单位百分比；其他接口为空。"
-    )
+    last_price: Decimal | None = Field(description="来源最新价，单位元；未提供时为空。")
+    change_pct: Decimal | None = Field(description="来源当前涨跌幅，单位百分比；未提供时为空。")
     start_date: date | None = Field(description="重点监控开始日期；来源未提供时为空。")
     end_date: date | None = Field(description="重点监控结束日期；来源未提供时为空。")
     announcement_date: date | None = Field(description="问询函公告日期；来源未提供时为空。")
     document_url: str | None = Field(description="来源提供的公告链接；接口不下载该文档。")
+    rule_description: str | None = Field(description="开盘啦原文规则或分组说明，不代表交易所认定。")
+    source_abnormal_count_10d: int | None = Field(
+        ge=0,
+        description="仅从来源明确的10日内N次异动文字提取；未提供为null，不混入公告或系统测算次数。",
+    )
+    deviation_pct: Decimal | None = Field(description="多次异动列表的来源偏离值，百分比。")
+    expected_trigger_price: Decimal | None = Field(
+        description="多次异动列表来源预计异动价，元；不擅自解释为今日或次日。"
+    )
+    expected_change_pct: Decimal | None = Field(description="来源预计异动价对应的涨幅，百分比。")
+    trigger_status: str | None = Field(
+        description="来源当日触发状态原文；不由现价比较推断，不代表交易所公告。"
+    )
+    today_trigger_price: Decimal | None = Field(
+        description="严重异动today分组的来源当日触发价，元；未提供为null。"
+    )
+    today_trigger_change_pct: Decimal | None = Field(
+        description="来源当日触发涨幅，百分比；不是当前涨幅或偏离值空间。"
+    )
+    tomorrow_trigger_price: Decimal | None = Field(
+        description="严重异动tomorrow分组的来源次日触发价，元；未提供为null。"
+    )
+    tomorrow_trigger_change_pct: Decimal | None = Field(
+        description="来源次日触发涨幅，百分比；次日相对来源交易日，不是预测或已触发事实。"
+    )
 
 
 class KaipanlaAlertGroup(ApiModel):

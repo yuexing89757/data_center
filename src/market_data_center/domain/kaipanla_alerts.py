@@ -17,6 +17,16 @@ class AlertItem:
     end_date: date | None = None
     announcement_date: date | None = None
     document_url: str | None = None
+    rule_description: str | None = None
+    source_abnormal_count_10d: int | None = None
+    deviation_pct: Decimal | None = None
+    expected_trigger_price: Decimal | None = None
+    expected_change_pct: Decimal | None = None
+    trigger_status: str | None = None
+    today_trigger_price: Decimal | None = None
+    today_trigger_change_pct: Decimal | None = None
+    tomorrow_trigger_price: Decimal | None = None
+    tomorrow_trigger_change_pct: Decimal | None = None
 
 
 @dataclass(frozen=True)
