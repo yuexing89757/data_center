@@ -221,6 +221,11 @@ def _normalize_row(
             board_name=_text(row[11]),
             limit_up_bid_amount_cny=_number(row[18], nonnegative=True),
             auction_change_pct=_number(row[19]),
+            change_pct=_number(row[4]),
+            auction_net_amount_cny=_number(row[20]),
+            actual_float_market_value_cny=_number(row[15], nonnegative=True),
+            auction_turnover_rate_pct=_number(row[21], nonnegative=True),
+            auction_amount_cny=_number(row[22], nonnegative=True),
         )
     if kind == "limit_up":
         return LimitUpHistoryItem(

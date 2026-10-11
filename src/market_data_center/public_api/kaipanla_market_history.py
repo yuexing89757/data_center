@@ -24,6 +24,21 @@ class AuctionHistoryItem(_HistoryItem):
     board_name: str | None = Field(description="来源板块或题材文字。")
     limit_up_bid_amount_cny: Decimal | None = Field(description="涨停委买额，单位元。")
     auction_change_pct: Decimal | None = Field(description="竞价涨跌幅，单位百分比。")
+    change_pct: Decimal | None = Field(
+        description="来源历史行情涨跌幅，单位百分比；不是竞价涨幅或当前实时行情，精确事件时点未提供。"
+    )
+    auction_net_amount_cny: Decimal | None = Field(
+        description="来源竞价净额，单位元，可负；不是成交额。"
+    )
+    actual_float_market_value_cny: Decimal | None = Field(
+        description="来源实际流通市值，单位元；不是股数，不保证等于前收盘自由流通市值。"
+    )
+    auction_turnover_rate_pct: Decimal | None = Field(
+        description="来源竞价换手率，单位百分比；0.23表示0.23%；未提供精确撮合时点。"
+    )
+    auction_amount_cny: Decimal | None = Field(
+        description="来源竞价成交额，单位元；不是委买额或净额；未提供精确撮合时点。"
+    )
 
 
 class LimitUpHistoryItem(_HistoryItem):

@@ -35,6 +35,8 @@ def row(kind: str, code: str = "001368") -> list[object]:
     result[0], result[1] = code, "示例股票"
     if kind == "auction":
         result[11], result[18], result[19] = "半导体", "2404248.123456789", "10.0567"
+        result[4], result[20] = "-2.35", "-8055159.123456789"
+        result[15], result[21], result[22] = "1234567890.123456789", "0.23", "8994552.123456789"
     elif kind == "limit_up":
         result[6], result[9], result[16] = 1790578605, "首板", "海峡两岸"
     elif kind == "limit_down":
@@ -87,6 +89,11 @@ def test_fixed_history_request_and_typed_fields(kind, pid_type, sort_type):
     if kind == "auction":
         assert item.limit_up_bid_amount_cny == Decimal("2404248.123456789")
         assert item.auction_change_pct == Decimal("10.0567")
+        assert item.change_pct == Decimal("-2.35")
+        assert item.auction_net_amount_cny == Decimal("-8055159.123456789")
+        assert item.actual_float_market_value_cny == Decimal("1234567890.123456789")
+        assert item.auction_turnover_rate_pct == Decimal("0.23")
+        assert item.auction_amount_cny == Decimal("8994552.123456789")
         assert set(vars(item)) == {
             "symbol",
             "code",
@@ -94,6 +101,11 @@ def test_fixed_history_request_and_typed_fields(kind, pid_type, sort_type):
             "board_name",
             "limit_up_bid_amount_cny",
             "auction_change_pct",
+            "change_pct",
+            "auction_net_amount_cny",
+            "actual_float_market_value_cny",
+            "auction_turnover_rate_pct",
+            "auction_amount_cny",
         }
     elif kind == "limit_up":
         assert item.limit_up_at.isoformat() == "2026-09-28T14:56:45+08:00"
@@ -246,6 +258,11 @@ def test_history_routes_return_only_named_category_fields(kind):
     if kind == "auction":
         assert item["limit_up_bid_amount_cny"] == "2404248.123456789"
         assert item["auction_change_pct"] == "10.0567"
+        assert item["change_pct"] == "-2.35"
+        assert item["auction_net_amount_cny"] == "-8055159.123456789"
+        assert item["actual_float_market_value_cny"] == "1234567890.123456789"
+        assert item["auction_turnover_rate_pct"] == "0.23"
+        assert item["auction_amount_cny"] == "8994552.123456789"
         assert "limit_up_at" not in item
     elif kind == "limit_up":
         assert item["limit_up_at"] == "2026-09-28 14:56:45"
@@ -305,3 +322,43 @@ def test_authenticated_openapi_routes_match_checked_in_contract():
         assert operation["security"] == [{"APIKeyHeader": []}]
         assert {"401", "422", "502"} <= operation["responses"].keys()
         assert saved["paths"][route] == schema["paths"][route]
+
+
+@pytest.mark.parametrize(
+    ("index", "field"),
+    [
+        (15, "actual_float_market_value_cny"),
+        (21, "auction_turnover_rate_pct"),
+        (22, "auction_amount_cny"),
+    ],
+)
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (None, None),
+        ("", None),
+        ("--", None),
+        (0, Decimal(0)),
+        ("0.1234567890123456789", Decimal("0.1234567890123456789")),
+    ],
+)
+def test_auction_research_fields_preserve_missing_zero_and_precision(index, field, value, expected):
+    source_row = row("auction")
+    source_row[index] = value
+    item = (
+        provider(Transport({"errcode": 0, "day": "2026-09-28", "list": [source_row]}))
+        .fetch(kind="auction", trade_date=TRADE_DATE)
+        .items[0]
+    )
+    assert getattr(item, field) == expected
+
+
+@pytest.mark.parametrize("index", [15, 21, 22])
+@pytest.mark.parametrize("value", [True, "-1", "NaN", "infinity", "not-a-number"])
+def test_invalid_auction_research_numbers_fail_the_batch(index, value):
+    source_row = row("auction")
+    source_row[index] = value
+    with pytest.raises(KaipanlaMarketHistoryUpstream):
+        provider(Transport({"errcode": 0, "day": "2026-09-28", "list": [source_row]})).fetch(
+            kind="auction", trade_date=TRADE_DATE
+        )

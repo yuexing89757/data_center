@@ -16,6 +16,11 @@ class AuctionHistoryItem:
     board_name: str | None
     limit_up_bid_amount_cny: Decimal | None
     auction_change_pct: Decimal | None
+    change_pct: Decimal | None
+    auction_net_amount_cny: Decimal | None
+    actual_float_market_value_cny: Decimal | None
+    auction_turnover_rate_pct: Decimal | None
+    auction_amount_cny: Decimal | None
 
 
 @dataclass(frozen=True)

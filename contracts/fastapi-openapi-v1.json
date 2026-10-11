@@ -4,6 +4,32 @@
       "AuctionHistoryItem": {
         "additionalProperties": false,
         "properties": {
+          "actual_float_market_value_cny": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源实际流通市值，单位元；不是股数，不保证等于前收盘自由流通市值。",
+            "title": "Actual Float Market Value Cny"
+          },
+          "auction_amount_cny": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源竞价成交额，单位元；不是委买额或净额；未提供精确撮合时点。",
+            "title": "Auction Amount Cny"
+          },
           "auction_change_pct": {
             "anyOf": [
               {
@@ -17,6 +43,32 @@
             "description": "竞价涨跌幅，单位百分比。",
             "title": "Auction Change Pct"
           },
+          "auction_net_amount_cny": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源竞价净额，单位元，可负；不是成交额。",
+            "title": "Auction Net Amount Cny"
+          },
+          "auction_turnover_rate_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源竞价换手率，单位百分比；0.23表示0.23%；未提供精确撮合时点。",
+            "title": "Auction Turnover Rate Pct"
+          },
           "board_name": {
             "anyOf": [
               {
@@ -28,6 +80,19 @@
             ],
             "description": "来源板块或题材文字。",
             "title": "Board Name"
+          },
+          "change_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源历史行情涨跌幅，单位百分比；不是竞价涨幅或当前实时行情，精确事件时点未提供。",
+            "title": "Change Pct"
           },
           "code": {
             "description": "六位股票代码。",
@@ -72,7 +137,12 @@
           "name",
           "board_name",
           "limit_up_bid_amount_cny",
-          "auction_change_pct"
+          "auction_change_pct",
+          "change_pct",
+          "auction_net_amount_cny",
+          "actual_float_market_value_cny",
+          "auction_turnover_rate_pct",
+          "auction_amount_cny"
         ],
         "title": "AuctionHistoryItem",
         "type": "object"
@@ -6784,6 +6854,140 @@
         "title": "KaipanlaEmotionChartResponse",
         "type": "object"
       },
+      "KaipanlaHotTalkItem": {
+        "additionalProperties": false,
+        "properties": {
+          "has_vote": {
+            "description": "来源标记该条目是否包含投票，不提交投票。",
+            "title": "Has Vote",
+            "type": "boolean"
+          },
+          "heat_value": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源页面热度值，精确整数；不推断为阅读人数；缺失为空。",
+            "title": "Heat Value"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "example": "2026-09-18 09:35:00",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源发布时间，可能与分组日期不同；缺失为空。",
+            "example": "2026-10-08 18:42:50",
+            "title": "Published At"
+          },
+          "rank": {
+            "description": "来源日期组内的展示排名。",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Rank",
+            "type": "integer"
+          },
+          "title": {
+            "description": "话题标题，保留来源文字。",
+            "title": "Title",
+            "type": "string"
+          },
+          "topic_id": {
+            "description": "来源条目 ID。",
+            "title": "Topic Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "topic_id",
+          "rank",
+          "title",
+          "heat_value",
+          "published_at",
+          "has_vote"
+        ],
+        "title": "KaipanlaHotTalkItem",
+        "type": "object"
+      },
+      "KaipanlaHotTalksResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "description": "最新来源日期的条目，按来源展示顺序排列。",
+            "items": {
+              "$ref": "#/components/schemas/KaipanlaHotTalkItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "observed_at": {
+            "description": "收到响应的上海时区时间。",
+            "example": "2026-10-10 19:05:00",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "persisted": {
+            "const": false,
+            "description": "固定 false，响应不入库。",
+            "title": "Persisted",
+            "type": "boolean"
+          },
+          "returned_count": {
+            "description": "该日期全部条目数量。",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Returned Count",
+            "type": "integer"
+          },
+          "source_code": {
+            "const": "kaipanla",
+            "description": "固定来源：开盘啦。",
+            "title": "Source Code",
+            "type": "string"
+          },
+          "source_layout": {
+            "const": "kaipanla.hot_talks.v1",
+            "description": "列表字段布局版本。",
+            "title": "Source Layout",
+            "type": "string"
+          },
+          "topic_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源最新日期组；不是交易日；成功空列表时为空。",
+            "title": "Topic Date"
+          }
+        },
+        "required": [
+          "source_code",
+          "source_layout",
+          "persisted",
+          "observed_at",
+          "topic_date",
+          "returned_count",
+          "items"
+        ],
+        "title": "KaipanlaHotTalksResponse",
+        "type": "object"
+      },
       "KaipanlaLimitDownHistoryResponse": {
         "additionalProperties": false,
         "properties": {
@@ -6990,140 +7194,6 @@
           "items"
         ],
         "title": "KaipanlaLimitUpHistoryResponse",
-        "type": "object"
-      },
-      "KaipanlaHotTalkItem": {
-        "additionalProperties": false,
-        "properties": {
-          "has_vote": {
-            "description": "来源标记该条目是否包含投票，不提交投票。",
-            "title": "Has Vote",
-            "type": "boolean"
-          },
-          "heat_value": {
-            "anyOf": [
-              {
-                "minimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "来源页面热度值，精确整数；不推断为阅读人数；缺失为空。",
-            "title": "Heat Value"
-          },
-          "published_at": {
-            "anyOf": [
-              {
-                "example": "2026-09-18 09:35:00",
-                "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "来源发布时间，可能与分组日期不同；缺失为空。",
-            "example": "2026-10-08 18:42:50",
-            "title": "Published At"
-          },
-          "rank": {
-            "description": "来源日期组内的展示排名。",
-            "maximum": 100.0,
-            "minimum": 1.0,
-            "title": "Rank",
-            "type": "integer"
-          },
-          "title": {
-            "description": "话题标题，保留来源文字。",
-            "title": "Title",
-            "type": "string"
-          },
-          "topic_id": {
-            "description": "来源条目 ID。",
-            "title": "Topic Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "topic_id",
-          "rank",
-          "title",
-          "heat_value",
-          "published_at",
-          "has_vote"
-        ],
-        "title": "KaipanlaHotTalkItem",
-        "type": "object"
-      },
-      "KaipanlaHotTalksResponse": {
-        "additionalProperties": false,
-        "properties": {
-          "items": {
-            "description": "最新来源日期的条目，按来源展示顺序排列。",
-            "items": {
-              "$ref": "#/components/schemas/KaipanlaHotTalkItem"
-            },
-            "title": "Items",
-            "type": "array"
-          },
-          "observed_at": {
-            "description": "收到响应的上海时区时间。",
-            "example": "2026-10-10 19:05:00",
-            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
-            "title": "Observed At",
-            "type": "string"
-          },
-          "persisted": {
-            "const": false,
-            "description": "固定 false，响应不入库。",
-            "title": "Persisted",
-            "type": "boolean"
-          },
-          "returned_count": {
-            "description": "该日期全部条目数量。",
-            "maximum": 100.0,
-            "minimum": 0.0,
-            "title": "Returned Count",
-            "type": "integer"
-          },
-          "source_code": {
-            "const": "kaipanla",
-            "description": "固定来源：开盘啦。",
-            "title": "Source Code",
-            "type": "string"
-          },
-          "source_layout": {
-            "const": "kaipanla.hot_talks.v1",
-            "description": "列表字段布局版本。",
-            "title": "Source Layout",
-            "type": "string"
-          },
-          "topic_date": {
-            "anyOf": [
-              {
-                "format": "date",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "来源最新日期组；不是交易日；成功空列表时为空。",
-            "title": "Topic Date"
-          }
-        },
-        "required": [
-          "source_code",
-          "source_layout",
-          "persisted",
-          "observed_at",
-          "topic_date",
-          "returned_count",
-          "items"
-        ],
-        "title": "KaipanlaHotTalksResponse",
         "type": "object"
       },
       "KaipanlaMoneyEffectItem": {
@@ -10621,6 +10691,183 @@
         "title": "StockQuoteLevel",
         "type": "object"
       },
+      "StockTechnicalFactorItem": {
+        "additionalProperties": false,
+        "properties": {
+          "backward_adjusted": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "description": "后复权技术因子, 十进制字符串或空值",
+            "title": "Backward Adjusted",
+            "type": "object"
+          },
+          "code": {
+            "description": "六位股票代码",
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "common": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "description": "共同计数项, 整数或空值",
+            "title": "Common",
+            "type": "object"
+          },
+          "factor_catalog_version": {
+            "description": "受控技术因子目录版本",
+            "title": "Factor Catalog Version",
+            "type": "string"
+          },
+          "forward_adjusted": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "description": "前复权技术因子, 十进制字符串或空值",
+            "title": "Forward Adjusted",
+            "type": "object"
+          },
+          "name": {
+            "description": "证券名称",
+            "title": "Name",
+            "type": "string"
+          },
+          "source_code": {
+            "description": "快照来源代码",
+            "title": "Source Code",
+            "type": "string"
+          },
+          "symbol": {
+            "description": "标准证券代码",
+            "title": "Symbol",
+            "type": "string"
+          },
+          "trade_date": {
+            "description": "来源快照的交易日",
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "unadjusted": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "description": "不复权技术因子, 十进制字符串或空值",
+            "title": "Unadjusted",
+            "type": "object"
+          }
+        },
+        "required": [
+          "symbol",
+          "code",
+          "name",
+          "trade_date",
+          "source_code",
+          "factor_catalog_version",
+          "unadjusted",
+          "forward_adjusted",
+          "backward_adjusted",
+          "common"
+        ],
+        "title": "StockTechnicalFactorItem",
+        "type": "object"
+      },
+      "StockTechnicalFactorQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "codes": {
+            "description": "六位股票代码集合, 最多100个, 重复代码去重",
+            "items": {
+              "pattern": "^[0-9]{6}$",
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Codes",
+            "type": "array"
+          },
+          "trade_date": {
+            "description": "必填精确交易日, 不回退历史日期",
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "codes",
+          "trade_date"
+        ],
+        "title": "StockTechnicalFactorQuery",
+        "type": "object"
+      },
+      "StockTechnicalFactorResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "description": "当日已存储的技术因子快照",
+            "items": {
+              "$ref": "#/components/schemas/StockTechnicalFactorItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "missing_codes": {
+            "description": "当日无快照或未登记的请求代码",
+            "items": {
+              "pattern": "^[0-9]{6}$",
+              "type": "string"
+            },
+            "title": "Missing Codes",
+            "type": "array"
+          },
+          "trade_date": {
+            "description": "请求的精确交易日",
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "trade_date",
+          "items",
+          "missing_codes"
+        ],
+        "title": "StockTechnicalFactorResponse",
+        "type": "object"
+      },
       "TopGainer20dItem": {
         "additionalProperties": false,
         "properties": {
@@ -10855,183 +11102,6 @@
           "type"
         ],
         "title": "ValidationError",
-        "type": "object"
-      },
-      "StockTechnicalFactorQuery": {
-        "additionalProperties": false,
-        "properties": {
-          "codes": {
-            "description": "六位股票代码集合, 最多100个, 重复代码去重",
-            "items": {
-              "pattern": "^[0-9]{6}$",
-              "type": "string"
-            },
-            "maxItems": 100,
-            "minItems": 1,
-            "title": "Codes",
-            "type": "array"
-          },
-          "trade_date": {
-            "description": "必填精确交易日, 不回退历史日期",
-            "format": "date",
-            "title": "Trade Date",
-            "type": "string"
-          }
-        },
-        "required": [
-          "codes",
-          "trade_date"
-        ],
-        "title": "StockTechnicalFactorQuery",
-        "type": "object"
-      },
-      "StockTechnicalFactorItem": {
-        "additionalProperties": false,
-        "properties": {
-          "backward_adjusted": {
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "description": "后复权技术因子, 十进制字符串或空值",
-            "title": "Backward Adjusted",
-            "type": "object"
-          },
-          "code": {
-            "description": "六位股票代码",
-            "pattern": "^[0-9]{6}$",
-            "title": "Code",
-            "type": "string"
-          },
-          "common": {
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "description": "共同计数项, 整数或空值",
-            "title": "Common",
-            "type": "object"
-          },
-          "factor_catalog_version": {
-            "description": "受控技术因子目录版本",
-            "title": "Factor Catalog Version",
-            "type": "string"
-          },
-          "forward_adjusted": {
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "description": "前复权技术因子, 十进制字符串或空值",
-            "title": "Forward Adjusted",
-            "type": "object"
-          },
-          "name": {
-            "description": "证券名称",
-            "title": "Name",
-            "type": "string"
-          },
-          "source_code": {
-            "description": "快照来源代码",
-            "title": "Source Code",
-            "type": "string"
-          },
-          "symbol": {
-            "description": "标准证券代码",
-            "title": "Symbol",
-            "type": "string"
-          },
-          "trade_date": {
-            "description": "来源快照的交易日",
-            "format": "date",
-            "title": "Trade Date",
-            "type": "string"
-          },
-          "unadjusted": {
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "description": "不复权技术因子, 十进制字符串或空值",
-            "title": "Unadjusted",
-            "type": "object"
-          }
-        },
-        "required": [
-          "symbol",
-          "code",
-          "name",
-          "trade_date",
-          "source_code",
-          "factor_catalog_version",
-          "unadjusted",
-          "forward_adjusted",
-          "backward_adjusted",
-          "common"
-        ],
-        "title": "StockTechnicalFactorItem",
-        "type": "object"
-      },
-      "StockTechnicalFactorResponse": {
-        "additionalProperties": false,
-        "properties": {
-          "items": {
-            "description": "当日已存储的技术因子快照",
-            "items": {
-              "$ref": "#/components/schemas/StockTechnicalFactorItem"
-            },
-            "title": "Items",
-            "type": "array"
-          },
-          "missing_codes": {
-            "description": "当日无快照或未登记的请求代码",
-            "items": {
-              "pattern": "^[0-9]{6}$",
-              "type": "string"
-            },
-            "title": "Missing Codes",
-            "type": "array"
-          },
-          "trade_date": {
-            "description": "请求的精确交易日",
-            "format": "date",
-            "title": "Trade Date",
-            "type": "string"
-          }
-        },
-        "required": [
-          "trade_date",
-          "items",
-          "missing_codes"
-        ],
-        "title": "StockTechnicalFactorResponse",
         "type": "object"
       }
     },
