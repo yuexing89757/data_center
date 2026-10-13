@@ -5,6 +5,12 @@
 from typing import Any
 
 FIELD_DESCRIPTIONS_ZH = {
+    "page": "来源页号，从1开始，最大100；一次请求只读取一页。",
+    "page_size": "来源单页上限；行情最多6000、股池500、题材100、成分股1000。",
+    "market": "即时行情市场：all全部沪深A股、mainboard主板、star科创板、growth创业板。",
+    "period": "腾讯K线周期：day日K或week周K。",
+    "server": "腾讯固定服务器：web为web.ifzq.gtimg.cn，ifzq为ifzq.gtimg.cn。",
+    "theme_code": "东方财富题材代码字符串，保留前导零，例如00647。",
     "exclude_st": "是否过滤 ST 股票，默认 true。",
     "filter": "严重异动筛选：all 全部、triggered 已触发、suspended 被停牌。",
     "before_date": "历史重点监控日期游标；省略则读取首批，后续使用 next_date。",

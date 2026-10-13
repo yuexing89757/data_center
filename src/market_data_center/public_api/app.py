@@ -21,6 +21,11 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from market_data_center.database_urls import sqlalchemy_url
 from market_data_center.domain import ClassificationType
+from market_data_center.providers.auction_sources import (
+    AuctionSourcesInvalid,
+    AuctionSourcesProvider,
+    AuctionSourcesUpstream,
+)
 from market_data_center.providers.eastmoney_auction import EastmoneyAuctionIndicativeProvider
 from market_data_center.providers.kaipanla_alerts import (
     KaipanlaAlertsProvider,
@@ -65,6 +70,7 @@ from market_data_center.public_api.auction_indicative_write import (
     AuctionIndicativeApiPersistence,
     AuctionIndicativePersistenceQueue,
 )
+from market_data_center.public_api.auction_sources import router as auction_sources_router
 from market_data_center.public_api.kaipanla_alerts import router as kaipanla_alerts_router
 from market_data_center.public_api.kaipanla_auction import router as kaipanla_auction_router
 from market_data_center.public_api.kaipanla_boards import router as kaipanla_boards_router
@@ -148,6 +154,7 @@ def create_app(
     kaipanla_hot_talks_provider: KaipanlaHotTalksProvider | None = None,
     kaipanla_boards_provider: KaipanlaBoardsProvider | None = None,
     kaipanla_market_history_provider: KaipanlaMarketHistoryProvider | None = None,
+    auction_sources_provider: AuctionSourcesProvider | None = None,
 ) -> FastAPI:
     configured = settings or ApiSettings()  # type: ignore[call-arg]
     owned_engine: Engine | None = None
@@ -206,6 +213,10 @@ def create_app(
     )
     app.state.api_settings = configured
     app.state.query_service = query_service
+    app.state.auction_sources_provider = auction_sources_provider or AuctionSourcesProvider(
+        timeout_seconds=configured.fastapi_auction_sources_timeout_seconds
+    )
+    app.include_router(auction_sources_router, dependencies=[Depends(_require_api_key)])
     app.include_router(technical_factors_router, dependencies=[Depends(_require_api_key)])
     app.state.kaipanla_alerts_provider = kaipanla_alerts_provider or KaipanlaAlertsProvider(
         timeout_seconds=configured.fastapi_kaipanla_timeout_seconds
@@ -992,6 +1003,14 @@ def _require_bounded_date_range(start_date: date, end_date: date) -> None:
 
 
 def _install_exception_handlers(app: FastAPI) -> None:
+    @app.exception_handler(AuctionSourcesUpstream)
+    async def auction_sources_upstream(_: Request, __: AuctionSourcesUpstream) -> JSONResponse:
+        return _error_response(502, "upstream_error", "external source request failed")
+
+    @app.exception_handler(AuctionSourcesInvalid)
+    async def auction_sources_invalid(_: Request, __: AuctionSourcesInvalid) -> JSONResponse:
+        return _error_response(422, "validation_error", "source request parameters are invalid")
+
     @app.exception_handler(KaipanlaMarketHistoryUpstream)
     async def kaipanla_market_history_upstream(
         _: Request, __: KaipanlaMarketHistoryUpstream

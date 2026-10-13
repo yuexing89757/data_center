@@ -1,5 +1,9 @@
 # Market Data Center
 
+竞价九合一的12类来源已接入apiServer“实时接口”：东方财富行情/股池/日K/题材，
+腾讯分时/K线/指数，新浪日K。使用既有X-API-Key，请求时读取且不入库。
+来源网站、上游地址、参数及示例见[实时接口说明](docs/竞价九合一来源实时接口.md)。
+
 A phase-one A-share daily market data pipeline using Python 3.12 and PostgreSQL. Security and calendar use BaoStock/AKShare routing; pytdx quote and Daily Bar reads share one capability-aware endpoint pool maintained by the Worker.
 
 The three Regulation benchmark indices use Tushare `index_daily` (ADR-0048 clarification,

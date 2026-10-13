@@ -5184,6 +5184,7 @@
         "title": "HotMoneyActionResponse",
         "type": "object"
       },
+      "JsonValue": {},
       "KaipanlaAlertGroup": {
         "additionalProperties": false,
         "properties": {
@@ -10785,6 +10786,1782 @@
         "title": "SecurityType",
         "type": "string"
       },
+      "SourceBarItem": {
+        "additionalProperties": false,
+        "properties": {
+          "amount_cny": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源成交额，单位人民币元；腾讯及新浪未提供时为空，不推算。",
+            "title": "Amount Cny"
+          },
+          "close": {
+            "description": "该周期收盘或当前价格，末条可能未完成，单位元。",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Close",
+            "type": "string"
+          },
+          "high": {
+            "description": "该周期最高价，单位元，不修正异常来源OHLC。",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "High",
+            "type": "string"
+          },
+          "low": {
+            "description": "该周期最低价，单位元。",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Low",
+            "type": "string"
+          },
+          "open": {
+            "description": "该周期开盘价，单位元。",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Open",
+            "type": "string"
+          },
+          "trade_date": {
+            "description": "来源K线日期；周K为来源标记日，不自行推算周末。",
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "volume_shares": {
+            "description": "该周期来源成交量，单位股；东财/腾讯手乘100，新浪直接读股。",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Volume Shares",
+            "type": "string"
+          }
+        },
+        "required": [
+          "trade_date",
+          "open",
+          "close",
+          "high",
+          "low",
+          "volume_shares",
+          "amount_cny"
+        ],
+        "title": "SourceBarItem",
+        "type": "object"
+      },
+      "SourceIndexItem": {
+        "additionalProperties": false,
+        "properties": {
+          "change_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源涨跌幅，读取腾讯索引32，单位百分比。",
+            "title": "Change Pct"
+          },
+          "current": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "当前指数点位。",
+            "title": "Current"
+          },
+          "index_code": {
+            "const": "sh000001",
+            "description": "固定查询上证指数，不接受任意代码。",
+            "title": "Index Code",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源指数名称。",
+            "title": "Name"
+          },
+          "previous_close": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "前收盘指数点位。",
+            "title": "Previous Close"
+          }
+        },
+        "required": [
+          "index_code",
+          "name",
+          "current",
+          "previous_close",
+          "change_pct"
+        ],
+        "title": "SourceIndexItem",
+        "type": "object"
+      },
+      "SourceMinuteItem": {
+        "additionalProperties": false,
+        "properties": {
+          "cumulative_amount_cny": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源累计成交额，单位人民币元；缺失为空，不使用0代替。",
+            "title": "Cumulative Amount Cny"
+          },
+          "cumulative_volume_shares": {
+            "description": "来源累计成交量，单位股；逐行手乘100，不再次累加。",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Cumulative Volume Shares",
+            "type": "string"
+          },
+          "price": {
+            "description": "来源分时价格，单位元。",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Price",
+            "type": "string"
+          },
+          "time": {
+            "description": "上海交易时区分时时间HH:mm。",
+            "title": "Time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "time",
+          "price",
+          "cumulative_volume_shares",
+          "cumulative_amount_cny"
+        ],
+        "title": "SourceMinuteItem",
+        "type": "object"
+      },
+      "SourcePoolItem": {
+        "additionalProperties": false,
+        "properties": {
+          "break_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源炸板次数，跌停池或缺失为空。",
+            "title": "Break Count"
+          },
+          "code": {
+            "description": "来源六位股票代码。",
+            "title": "Code",
+            "type": "string"
+          },
+          "consecutive_limit_up_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "仅涨停池提供的来源连板数，其他池为空。",
+            "title": "Consecutive Limit Up Days"
+          },
+          "first_limit_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源首次封板时间HH:mm:ss；缺失及跌停池为空。",
+            "title": "First Limit Time"
+          },
+          "industry": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源行业名称。",
+            "title": "Industry"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源股票名称。",
+            "title": "Name"
+          },
+          "sealing_amount_cny": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源封单金额，单位人民币元。",
+            "title": "Sealing Amount Cny"
+          },
+          "symbol": {
+            "description": "标准证券代码。",
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "code",
+          "name",
+          "consecutive_limit_up_days",
+          "first_limit_time",
+          "break_count",
+          "sealing_amount_cny",
+          "industry"
+        ],
+        "title": "SourcePoolItem",
+        "type": "object"
+      },
+      "SourceQuoteItem": {
+        "additionalProperties": false,
+        "properties": {
+          "amount_cny": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "累计成交金额，单位人民币元。",
+            "title": "Amount Cny"
+          },
+          "change_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "当前涨跌幅，单位百分比。",
+            "title": "Change Pct"
+          },
+          "code": {
+            "description": "六位股票代码，保留前导零。",
+            "title": "Code",
+            "type": "string"
+          },
+          "concepts": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源概念文字，不创建成分历史。",
+            "title": "Concepts"
+          },
+          "float_market_value_cny": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源流通市值，单位人民币元。",
+            "title": "Float Market Value Cny"
+          },
+          "industry": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源行业名称，不创建分类事实。",
+            "title": "Industry"
+          },
+          "last_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "当前价格，单位元。",
+            "title": "Last Price"
+          },
+          "listing_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源上市日期，不含时间。",
+            "title": "Listing Date"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源股票名称，缺失为空。",
+            "title": "Name"
+          },
+          "open": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "本交易日开盘价，单位元。",
+            "title": "Open"
+          },
+          "previous_close": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "前收盘价，单位元。",
+            "title": "Previous Close"
+          },
+          "symbol": {
+            "description": "带交易所前缀的标准证券代码。",
+            "title": "Symbol",
+            "type": "string"
+          },
+          "total_market_value_cny": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源总市值，单位人民币元。",
+            "title": "Total Market Value Cny"
+          },
+          "turnover_rate_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "换手率，单位百分比。",
+            "title": "Turnover Rate Pct"
+          },
+          "volume_ratio": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源量比，缺失为空。",
+            "title": "Volume Ratio"
+          },
+          "volume_shares": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "截至来源时点的累计成交量，单位股，来源手乘100。",
+            "title": "Volume Shares"
+          }
+        },
+        "required": [
+          "symbol",
+          "code",
+          "name",
+          "last_price",
+          "change_pct",
+          "open",
+          "previous_close",
+          "volume_shares",
+          "amount_cny",
+          "turnover_rate_pct",
+          "volume_ratio",
+          "total_market_value_cny",
+          "float_market_value_cny",
+          "listing_date",
+          "industry",
+          "concepts"
+        ],
+        "title": "SourceQuoteItem",
+        "type": "object"
+      },
+      "SourceResponse_SourceBarItem_": {
+        "additionalProperties": false,
+        "properties": {
+          "adjustment": {
+            "anyOf": [
+              {
+                "enum": [
+                  "forward",
+                  "none",
+                  "unspecified"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "实际价格复权口径；新浪unspecified，非K线为空。",
+            "title": "Adjustment"
+          },
+          "items": {
+            "description": "经过来源边界转换的本页数据；成功空数组与来源失败区分。",
+            "items": {
+              "$ref": "#/components/schemas/SourceBarItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "observed_at": {
+            "description": "本服务收到来源响应的上海时间，不是来源成交时间。",
+            "example": "2026-09-18 09:35:00",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "page": {
+            "description": "本次请求页号，从1开始，非分页接口固定1。",
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "description": "请求页长，非分页接口仅为默认值，以items数量为准。",
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "persisted": {
+            "const": false,
+            "description": "固定false；不写数据库、Raw或缓存。",
+            "title": "Persisted",
+            "type": "boolean"
+          },
+          "purpose": {
+            "description": "此接口的来源数据用途，不含本地策略计算。",
+            "title": "Purpose",
+            "type": "string"
+          },
+          "source_code": {
+            "description": "固定来源标识。",
+            "enum": [
+              "eastmoney",
+              "tencent",
+              "sina"
+            ],
+            "title": "Source Code",
+            "type": "string"
+          },
+          "source_name": {
+            "description": "来源网站名称。",
+            "title": "Source Name",
+            "type": "string"
+          },
+          "source_website": {
+            "description": "来源网站首页，区别于上游数据请求地址。",
+            "title": "Source Website",
+            "type": "string"
+          },
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "K线/分时请求的标准证券代码；其他接口为空。",
+            "title": "Symbol"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源显式总数；未提供时为空，不从满页推断。",
+            "title": "Total"
+          },
+          "trade_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源池/分时日期；其他返回为空，不按观测日猜测。",
+            "title": "Trade Date"
+          },
+          "upstream_method": {
+            "description": "实际发送的上游HTTP方法。",
+            "enum": [
+              "GET",
+              "POST"
+            ],
+            "title": "Upstream Method",
+            "type": "string"
+          },
+          "upstream_parameters": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "实际查询参数或JSON请求体；固定字符串来自原软件，不代表永久授权。",
+            "title": "Upstream Parameters",
+            "type": "object"
+          },
+          "upstream_url": {
+            "description": "本次固定上游地址，不含查询串。",
+            "title": "Upstream Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_code",
+          "source_name",
+          "source_website",
+          "upstream_url",
+          "upstream_method",
+          "upstream_parameters",
+          "purpose",
+          "persisted",
+          "observed_at",
+          "page",
+          "page_size",
+          "trade_date",
+          "symbol",
+          "adjustment",
+          "total",
+          "items"
+        ],
+        "title": "SourceResponse[SourceBarItem]",
+        "type": "object"
+      },
+      "SourceResponse_SourceIndexItem_": {
+        "additionalProperties": false,
+        "properties": {
+          "adjustment": {
+            "anyOf": [
+              {
+                "enum": [
+                  "forward",
+                  "none",
+                  "unspecified"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "实际价格复权口径；新浪unspecified，非K线为空。",
+            "title": "Adjustment"
+          },
+          "items": {
+            "description": "经过来源边界转换的本页数据；成功空数组与来源失败区分。",
+            "items": {
+              "$ref": "#/components/schemas/SourceIndexItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "observed_at": {
+            "description": "本服务收到来源响应的上海时间，不是来源成交时间。",
+            "example": "2026-09-18 09:35:00",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "page": {
+            "description": "本次请求页号，从1开始，非分页接口固定1。",
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "description": "请求页长，非分页接口仅为默认值，以items数量为准。",
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "persisted": {
+            "const": false,
+            "description": "固定false；不写数据库、Raw或缓存。",
+            "title": "Persisted",
+            "type": "boolean"
+          },
+          "purpose": {
+            "description": "此接口的来源数据用途，不含本地策略计算。",
+            "title": "Purpose",
+            "type": "string"
+          },
+          "source_code": {
+            "description": "固定来源标识。",
+            "enum": [
+              "eastmoney",
+              "tencent",
+              "sina"
+            ],
+            "title": "Source Code",
+            "type": "string"
+          },
+          "source_name": {
+            "description": "来源网站名称。",
+            "title": "Source Name",
+            "type": "string"
+          },
+          "source_website": {
+            "description": "来源网站首页，区别于上游数据请求地址。",
+            "title": "Source Website",
+            "type": "string"
+          },
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "K线/分时请求的标准证券代码；其他接口为空。",
+            "title": "Symbol"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源显式总数；未提供时为空，不从满页推断。",
+            "title": "Total"
+          },
+          "trade_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源池/分时日期；其他返回为空，不按观测日猜测。",
+            "title": "Trade Date"
+          },
+          "upstream_method": {
+            "description": "实际发送的上游HTTP方法。",
+            "enum": [
+              "GET",
+              "POST"
+            ],
+            "title": "Upstream Method",
+            "type": "string"
+          },
+          "upstream_parameters": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "实际查询参数或JSON请求体；固定字符串来自原软件，不代表永久授权。",
+            "title": "Upstream Parameters",
+            "type": "object"
+          },
+          "upstream_url": {
+            "description": "本次固定上游地址，不含查询串。",
+            "title": "Upstream Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_code",
+          "source_name",
+          "source_website",
+          "upstream_url",
+          "upstream_method",
+          "upstream_parameters",
+          "purpose",
+          "persisted",
+          "observed_at",
+          "page",
+          "page_size",
+          "trade_date",
+          "symbol",
+          "adjustment",
+          "total",
+          "items"
+        ],
+        "title": "SourceResponse[SourceIndexItem]",
+        "type": "object"
+      },
+      "SourceResponse_SourceMinuteItem_": {
+        "additionalProperties": false,
+        "properties": {
+          "adjustment": {
+            "anyOf": [
+              {
+                "enum": [
+                  "forward",
+                  "none",
+                  "unspecified"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "实际价格复权口径；新浪unspecified，非K线为空。",
+            "title": "Adjustment"
+          },
+          "items": {
+            "description": "经过来源边界转换的本页数据；成功空数组与来源失败区分。",
+            "items": {
+              "$ref": "#/components/schemas/SourceMinuteItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "observed_at": {
+            "description": "本服务收到来源响应的上海时间，不是来源成交时间。",
+            "example": "2026-09-18 09:35:00",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "page": {
+            "description": "本次请求页号，从1开始，非分页接口固定1。",
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "description": "请求页长，非分页接口仅为默认值，以items数量为准。",
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "persisted": {
+            "const": false,
+            "description": "固定false；不写数据库、Raw或缓存。",
+            "title": "Persisted",
+            "type": "boolean"
+          },
+          "purpose": {
+            "description": "此接口的来源数据用途，不含本地策略计算。",
+            "title": "Purpose",
+            "type": "string"
+          },
+          "source_code": {
+            "description": "固定来源标识。",
+            "enum": [
+              "eastmoney",
+              "tencent",
+              "sina"
+            ],
+            "title": "Source Code",
+            "type": "string"
+          },
+          "source_name": {
+            "description": "来源网站名称。",
+            "title": "Source Name",
+            "type": "string"
+          },
+          "source_website": {
+            "description": "来源网站首页，区别于上游数据请求地址。",
+            "title": "Source Website",
+            "type": "string"
+          },
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "K线/分时请求的标准证券代码；其他接口为空。",
+            "title": "Symbol"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源显式总数；未提供时为空，不从满页推断。",
+            "title": "Total"
+          },
+          "trade_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源池/分时日期；其他返回为空，不按观测日猜测。",
+            "title": "Trade Date"
+          },
+          "upstream_method": {
+            "description": "实际发送的上游HTTP方法。",
+            "enum": [
+              "GET",
+              "POST"
+            ],
+            "title": "Upstream Method",
+            "type": "string"
+          },
+          "upstream_parameters": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "实际查询参数或JSON请求体；固定字符串来自原软件，不代表永久授权。",
+            "title": "Upstream Parameters",
+            "type": "object"
+          },
+          "upstream_url": {
+            "description": "本次固定上游地址，不含查询串。",
+            "title": "Upstream Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_code",
+          "source_name",
+          "source_website",
+          "upstream_url",
+          "upstream_method",
+          "upstream_parameters",
+          "purpose",
+          "persisted",
+          "observed_at",
+          "page",
+          "page_size",
+          "trade_date",
+          "symbol",
+          "adjustment",
+          "total",
+          "items"
+        ],
+        "title": "SourceResponse[SourceMinuteItem]",
+        "type": "object"
+      },
+      "SourceResponse_SourcePoolItem_": {
+        "additionalProperties": false,
+        "properties": {
+          "adjustment": {
+            "anyOf": [
+              {
+                "enum": [
+                  "forward",
+                  "none",
+                  "unspecified"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "实际价格复权口径；新浪unspecified，非K线为空。",
+            "title": "Adjustment"
+          },
+          "items": {
+            "description": "经过来源边界转换的本页数据；成功空数组与来源失败区分。",
+            "items": {
+              "$ref": "#/components/schemas/SourcePoolItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "observed_at": {
+            "description": "本服务收到来源响应的上海时间，不是来源成交时间。",
+            "example": "2026-09-18 09:35:00",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "page": {
+            "description": "本次请求页号，从1开始，非分页接口固定1。",
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "description": "请求页长，非分页接口仅为默认值，以items数量为准。",
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "persisted": {
+            "const": false,
+            "description": "固定false；不写数据库、Raw或缓存。",
+            "title": "Persisted",
+            "type": "boolean"
+          },
+          "purpose": {
+            "description": "此接口的来源数据用途，不含本地策略计算。",
+            "title": "Purpose",
+            "type": "string"
+          },
+          "source_code": {
+            "description": "固定来源标识。",
+            "enum": [
+              "eastmoney",
+              "tencent",
+              "sina"
+            ],
+            "title": "Source Code",
+            "type": "string"
+          },
+          "source_name": {
+            "description": "来源网站名称。",
+            "title": "Source Name",
+            "type": "string"
+          },
+          "source_website": {
+            "description": "来源网站首页，区别于上游数据请求地址。",
+            "title": "Source Website",
+            "type": "string"
+          },
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "K线/分时请求的标准证券代码；其他接口为空。",
+            "title": "Symbol"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源显式总数；未提供时为空，不从满页推断。",
+            "title": "Total"
+          },
+          "trade_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源池/分时日期；其他返回为空，不按观测日猜测。",
+            "title": "Trade Date"
+          },
+          "upstream_method": {
+            "description": "实际发送的上游HTTP方法。",
+            "enum": [
+              "GET",
+              "POST"
+            ],
+            "title": "Upstream Method",
+            "type": "string"
+          },
+          "upstream_parameters": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "实际查询参数或JSON请求体；固定字符串来自原软件，不代表永久授权。",
+            "title": "Upstream Parameters",
+            "type": "object"
+          },
+          "upstream_url": {
+            "description": "本次固定上游地址，不含查询串。",
+            "title": "Upstream Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_code",
+          "source_name",
+          "source_website",
+          "upstream_url",
+          "upstream_method",
+          "upstream_parameters",
+          "purpose",
+          "persisted",
+          "observed_at",
+          "page",
+          "page_size",
+          "trade_date",
+          "symbol",
+          "adjustment",
+          "total",
+          "items"
+        ],
+        "title": "SourceResponse[SourcePoolItem]",
+        "type": "object"
+      },
+      "SourceResponse_SourceQuoteItem_": {
+        "additionalProperties": false,
+        "properties": {
+          "adjustment": {
+            "anyOf": [
+              {
+                "enum": [
+                  "forward",
+                  "none",
+                  "unspecified"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "实际价格复权口径；新浪unspecified，非K线为空。",
+            "title": "Adjustment"
+          },
+          "items": {
+            "description": "经过来源边界转换的本页数据；成功空数组与来源失败区分。",
+            "items": {
+              "$ref": "#/components/schemas/SourceQuoteItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "observed_at": {
+            "description": "本服务收到来源响应的上海时间，不是来源成交时间。",
+            "example": "2026-09-18 09:35:00",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "page": {
+            "description": "本次请求页号，从1开始，非分页接口固定1。",
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "description": "请求页长，非分页接口仅为默认值，以items数量为准。",
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "persisted": {
+            "const": false,
+            "description": "固定false；不写数据库、Raw或缓存。",
+            "title": "Persisted",
+            "type": "boolean"
+          },
+          "purpose": {
+            "description": "此接口的来源数据用途，不含本地策略计算。",
+            "title": "Purpose",
+            "type": "string"
+          },
+          "source_code": {
+            "description": "固定来源标识。",
+            "enum": [
+              "eastmoney",
+              "tencent",
+              "sina"
+            ],
+            "title": "Source Code",
+            "type": "string"
+          },
+          "source_name": {
+            "description": "来源网站名称。",
+            "title": "Source Name",
+            "type": "string"
+          },
+          "source_website": {
+            "description": "来源网站首页，区别于上游数据请求地址。",
+            "title": "Source Website",
+            "type": "string"
+          },
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "K线/分时请求的标准证券代码；其他接口为空。",
+            "title": "Symbol"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源显式总数；未提供时为空，不从满页推断。",
+            "title": "Total"
+          },
+          "trade_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源池/分时日期；其他返回为空，不按观测日猜测。",
+            "title": "Trade Date"
+          },
+          "upstream_method": {
+            "description": "实际发送的上游HTTP方法。",
+            "enum": [
+              "GET",
+              "POST"
+            ],
+            "title": "Upstream Method",
+            "type": "string"
+          },
+          "upstream_parameters": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "实际查询参数或JSON请求体；固定字符串来自原软件，不代表永久授权。",
+            "title": "Upstream Parameters",
+            "type": "object"
+          },
+          "upstream_url": {
+            "description": "本次固定上游地址，不含查询串。",
+            "title": "Upstream Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_code",
+          "source_name",
+          "source_website",
+          "upstream_url",
+          "upstream_method",
+          "upstream_parameters",
+          "purpose",
+          "persisted",
+          "observed_at",
+          "page",
+          "page_size",
+          "trade_date",
+          "symbol",
+          "adjustment",
+          "total",
+          "items"
+        ],
+        "title": "SourceResponse[SourceQuoteItem]",
+        "type": "object"
+      },
+      "SourceResponse_SourceThemeItem_": {
+        "additionalProperties": false,
+        "properties": {
+          "adjustment": {
+            "anyOf": [
+              {
+                "enum": [
+                  "forward",
+                  "none",
+                  "unspecified"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "实际价格复权口径；新浪unspecified，非K线为空。",
+            "title": "Adjustment"
+          },
+          "items": {
+            "description": "经过来源边界转换的本页数据；成功空数组与来源失败区分。",
+            "items": {
+              "$ref": "#/components/schemas/SourceThemeItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "observed_at": {
+            "description": "本服务收到来源响应的上海时间，不是来源成交时间。",
+            "example": "2026-09-18 09:35:00",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "page": {
+            "description": "本次请求页号，从1开始，非分页接口固定1。",
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "description": "请求页长，非分页接口仅为默认值，以items数量为准。",
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "persisted": {
+            "const": false,
+            "description": "固定false；不写数据库、Raw或缓存。",
+            "title": "Persisted",
+            "type": "boolean"
+          },
+          "purpose": {
+            "description": "此接口的来源数据用途，不含本地策略计算。",
+            "title": "Purpose",
+            "type": "string"
+          },
+          "source_code": {
+            "description": "固定来源标识。",
+            "enum": [
+              "eastmoney",
+              "tencent",
+              "sina"
+            ],
+            "title": "Source Code",
+            "type": "string"
+          },
+          "source_name": {
+            "description": "来源网站名称。",
+            "title": "Source Name",
+            "type": "string"
+          },
+          "source_website": {
+            "description": "来源网站首页，区别于上游数据请求地址。",
+            "title": "Source Website",
+            "type": "string"
+          },
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "K线/分时请求的标准证券代码；其他接口为空。",
+            "title": "Symbol"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源显式总数；未提供时为空，不从满页推断。",
+            "title": "Total"
+          },
+          "trade_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源池/分时日期；其他返回为空，不按观测日猜测。",
+            "title": "Trade Date"
+          },
+          "upstream_method": {
+            "description": "实际发送的上游HTTP方法。",
+            "enum": [
+              "GET",
+              "POST"
+            ],
+            "title": "Upstream Method",
+            "type": "string"
+          },
+          "upstream_parameters": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "实际查询参数或JSON请求体；固定字符串来自原软件，不代表永久授权。",
+            "title": "Upstream Parameters",
+            "type": "object"
+          },
+          "upstream_url": {
+            "description": "本次固定上游地址，不含查询串。",
+            "title": "Upstream Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_code",
+          "source_name",
+          "source_website",
+          "upstream_url",
+          "upstream_method",
+          "upstream_parameters",
+          "purpose",
+          "persisted",
+          "observed_at",
+          "page",
+          "page_size",
+          "trade_date",
+          "symbol",
+          "adjustment",
+          "total",
+          "items"
+        ],
+        "title": "SourceResponse[SourceThemeItem]",
+        "type": "object"
+      },
+      "SourceResponse_SourceThemeStockItem_": {
+        "additionalProperties": false,
+        "properties": {
+          "adjustment": {
+            "anyOf": [
+              {
+                "enum": [
+                  "forward",
+                  "none",
+                  "unspecified"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "实际价格复权口径；新浪unspecified，非K线为空。",
+            "title": "Adjustment"
+          },
+          "items": {
+            "description": "经过来源边界转换的本页数据；成功空数组与来源失败区分。",
+            "items": {
+              "$ref": "#/components/schemas/SourceThemeStockItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "observed_at": {
+            "description": "本服务收到来源响应的上海时间，不是来源成交时间。",
+            "example": "2026-09-18 09:35:00",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "page": {
+            "description": "本次请求页号，从1开始，非分页接口固定1。",
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "description": "请求页长，非分页接口仅为默认值，以items数量为准。",
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "persisted": {
+            "const": false,
+            "description": "固定false；不写数据库、Raw或缓存。",
+            "title": "Persisted",
+            "type": "boolean"
+          },
+          "purpose": {
+            "description": "此接口的来源数据用途，不含本地策略计算。",
+            "title": "Purpose",
+            "type": "string"
+          },
+          "source_code": {
+            "description": "固定来源标识。",
+            "enum": [
+              "eastmoney",
+              "tencent",
+              "sina"
+            ],
+            "title": "Source Code",
+            "type": "string"
+          },
+          "source_name": {
+            "description": "来源网站名称。",
+            "title": "Source Name",
+            "type": "string"
+          },
+          "source_website": {
+            "description": "来源网站首页，区别于上游数据请求地址。",
+            "title": "Source Website",
+            "type": "string"
+          },
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "K线/分时请求的标准证券代码；其他接口为空。",
+            "title": "Symbol"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源显式总数；未提供时为空，不从满页推断。",
+            "title": "Total"
+          },
+          "trade_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源池/分时日期；其他返回为空，不按观测日猜测。",
+            "title": "Trade Date"
+          },
+          "upstream_method": {
+            "description": "实际发送的上游HTTP方法。",
+            "enum": [
+              "GET",
+              "POST"
+            ],
+            "title": "Upstream Method",
+            "type": "string"
+          },
+          "upstream_parameters": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "实际查询参数或JSON请求体；固定字符串来自原软件，不代表永久授权。",
+            "title": "Upstream Parameters",
+            "type": "object"
+          },
+          "upstream_url": {
+            "description": "本次固定上游地址，不含查询串。",
+            "title": "Upstream Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_code",
+          "source_name",
+          "source_website",
+          "upstream_url",
+          "upstream_method",
+          "upstream_parameters",
+          "purpose",
+          "persisted",
+          "observed_at",
+          "page",
+          "page_size",
+          "trade_date",
+          "symbol",
+          "adjustment",
+          "total",
+          "items"
+        ],
+        "title": "SourceResponse[SourceThemeStockItem]",
+        "type": "object"
+      },
+      "SourceThemeItem": {
+        "additionalProperties": false,
+        "properties": {
+          "change_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "板块涨幅，单位百分比；今日机会f3、题材排行bf3。",
+            "title": "Change Pct"
+          },
+          "leader_change_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "题材排行领涨股涨幅，单位百分比；今日机会为空。",
+            "title": "Leader Change Pct"
+          },
+          "leader_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源领涨股名称；今日机会未给此字段时为空。",
+            "title": "Leader Name"
+          },
+          "limit_up_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源fex3涨停数量，缺失为空。",
+            "title": "Limit Up Count"
+          },
+          "stock_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源明确stockNum/stockCount成分数量，缺失为空。",
+            "title": "Stock Count"
+          },
+          "theme_code": {
+            "description": "来源题材代码，保留前导零，例如00647。",
+            "title": "Theme Code",
+            "type": "string"
+          },
+          "theme_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源题材名称。",
+            "title": "Theme Name"
+          }
+        },
+        "required": [
+          "theme_code",
+          "theme_name",
+          "change_pct",
+          "leader_change_pct",
+          "leader_name",
+          "limit_up_count",
+          "stock_count"
+        ],
+        "title": "SourceThemeItem",
+        "type": "object"
+      },
+      "SourceThemeStockItem": {
+        "additionalProperties": false,
+        "properties": {
+          "change_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源涨跌幅，单位百分比。",
+            "title": "Change Pct"
+          },
+          "code": {
+            "description": "来源六位股票代码。",
+            "title": "Code",
+            "type": "string"
+          },
+          "last_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源f2当前价格，单位元；不把未确认f57作为价格。",
+            "title": "Last Price"
+          },
+          "main_net_amount_cny": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源f62主力净流入，单位人民币元，允许负数。",
+            "title": "Main Net Amount Cny"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源股票名称。",
+            "title": "Name"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源首条入选说明文字；不生成AI分析或交易结论。",
+            "title": "Reason"
+          },
+          "symbol": {
+            "description": "标准证券代码。",
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "code",
+          "name",
+          "last_price",
+          "change_pct",
+          "main_net_amount_cny",
+          "reason"
+        ],
+        "title": "SourceThemeStockItem",
+        "type": "object"
+      },
       "StockQuoteLevel": {
         "additionalProperties": false,
         "properties": {
@@ -13049,6 +14826,775 @@
         ]
       }
     },
+    "/api/v1/realtime/eastmoney/broken-limit": {
+      "get": {
+        "description": "来源网站：东方财富 https://www.eastmoney.com/。上游接口：https://push2ex.eastmoney.com/getTopicZBPool。用途：共享面板使用的来源炸板数量及列表。调用示例：`GET /api/v1/realtime/eastmoney/broken-limit?trade_date=2026-10-12&page_size=500`，请求头`X-API-Key: <你的API Key>`。一次只读一个上游响应，不入库、不自动翻页、不跨源回退；失败502，参数错误422。响应内upstream_parameters回显实际查询参数/POST JSON体，金额及小数序列化为字符串。",
+        "operationId": "broken_limit_api_v1_realtime_eastmoney_broken_limit_get",
+        "parameters": [
+          {
+            "description": "交易日。",
+            "in": "query",
+            "name": "trade_date",
+            "required": true,
+            "schema": {
+              "examples": [
+                "2026-10-12"
+              ],
+              "format": "date",
+              "title": "Trade Date",
+              "type": "string"
+            }
+          },
+          {
+            "description": "来源页号，从1开始，最大100；一次请求只读取一页。",
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "examples": [
+                1
+              ],
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "来源单页上限；行情最多6000、股池500、题材100、成分股1000。",
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 500,
+              "examples": [
+                500
+              ],
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceResponse_SourcePoolItem_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "东方财富指定日炸板池",
+        "tags": [
+          "实时接口"
+        ]
+      }
+    },
+    "/api/v1/realtime/eastmoney/klines": {
+      "get": {
+        "description": "来源网站：东方财富 https://www.eastmoney.com/。上游接口：https://push2his.eastmoney.com/api/qt/stock/kline/get。用途：策略历史行情，klt=101、fqt=1、end=20500101；不写普通日K领域。调用示例：`GET /api/v1/realtime/eastmoney/klines?symbol=SSE:600000&limit=160`，请求头`X-API-Key: <你的API Key>`。一次只读一个上游响应，不入库、不自动翻页、不跨源回退；失败502，参数错误422。响应内upstream_parameters回显实际查询参数/POST JSON体，金额及小数序列化为字符串。",
+        "operationId": "eastmoney_klines_api_v1_realtime_eastmoney_klines_get",
+        "parameters": [
+          {
+            "description": "带交易所前缀的标准证券代码。",
+            "in": "query",
+            "name": "symbol",
+            "required": true,
+            "schema": {
+              "examples": [
+                "SSE:600000",
+                "SZSE:000001"
+              ],
+              "pattern": "^(?:SSE:6[0-9]{5}|SZSE:[03][0-9]{5})$",
+              "title": "Symbol",
+              "type": "string"
+            }
+          },
+          {
+            "description": "最多返回的记录数。",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 160,
+              "examples": [
+                160
+              ],
+              "maximum": 640,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceResponse_SourceBarItem_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "东方财富前复权日K（即时读取）",
+        "tags": [
+          "实时接口"
+        ]
+      }
+    },
+    "/api/v1/realtime/eastmoney/limit-down": {
+      "get": {
+        "description": "来源网站：东方财富 https://www.eastmoney.com/。上游接口：https://push2ex.eastmoney.com/getTopicDTPool。用途：共享面板使用的来源跌停数量及列表；不计算情绪等级。调用示例：`GET /api/v1/realtime/eastmoney/limit-down?trade_date=2026-10-12&page_size=500`，请求头`X-API-Key: <你的API Key>`。一次只读一个上游响应，不入库、不自动翻页、不跨源回退；失败502，参数错误422。响应内upstream_parameters回显实际查询参数/POST JSON体，金额及小数序列化为字符串。",
+        "operationId": "limit_down_api_v1_realtime_eastmoney_limit_down_get",
+        "parameters": [
+          {
+            "description": "交易日。",
+            "in": "query",
+            "name": "trade_date",
+            "required": true,
+            "schema": {
+              "examples": [
+                "2026-10-12"
+              ],
+              "format": "date",
+              "title": "Trade Date",
+              "type": "string"
+            }
+          },
+          {
+            "description": "来源页号，从1开始，最大100；一次请求只读取一页。",
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "examples": [
+                1
+              ],
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "来源单页上限；行情最多6000、股池500、题材100、成分股1000。",
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 500,
+              "examples": [
+                500
+              ],
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceResponse_SourcePoolItem_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "东方财富指定日跌停池",
+        "tags": [
+          "实时接口"
+        ]
+      }
+    },
+    "/api/v1/realtime/eastmoney/limit-up": {
+      "get": {
+        "description": "来源网站：东方财富 https://www.eastmoney.com/。上游接口：https://push2ex.eastmoney.com/getTopicZTPool。用途：昨日涨停、首板筛选和来源连板数；精确匹配来源日期。调用示例：`GET /api/v1/realtime/eastmoney/limit-up?trade_date=2026-10-12&page=1&page_size=500`，请求头`X-API-Key: <你的API Key>`。一次只读一个上游响应，不入库、不自动翻页、不跨源回退；失败502，参数错误422。响应内upstream_parameters回显实际查询参数/POST JSON体，金额及小数序列化为字符串。",
+        "operationId": "limit_up_api_v1_realtime_eastmoney_limit_up_get",
+        "parameters": [
+          {
+            "description": "交易日。",
+            "in": "query",
+            "name": "trade_date",
+            "required": true,
+            "schema": {
+              "examples": [
+                "2026-10-12"
+              ],
+              "format": "date",
+              "title": "Trade Date",
+              "type": "string"
+            }
+          },
+          {
+            "description": "来源页号，从1开始，最大100；一次请求只读取一页。",
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "examples": [
+                1
+              ],
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "来源单页上限；行情最多6000、股池500、题材100、成分股1000。",
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 500,
+              "examples": [
+                500
+              ],
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceResponse_SourcePoolItem_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "东方财富指定日涨停池",
+        "tags": [
+          "实时接口"
+        ]
+      }
+    },
+    "/api/v1/realtime/eastmoney/quotes": {
+      "get": {
+        "description": "来源网站：东方财富 https://www.eastmoney.com/。上游接口：https://push2dycalc.eastmoney.com/api/qt/clist/get。用途：综合、谛听、黑马、尾盘、一进二、猎手、顺势的行情读取；不是竞价快照。调用示例：`GET /api/v1/realtime/eastmoney/quotes?market=mainboard&page=1&page_size=5000`，请求头`X-API-Key: <你的API Key>`。一次只读一个上游响应，不入库、不自动翻页、不跨源回退；失败502，参数错误422。响应内upstream_parameters回显实际查询参数/POST JSON体，金额及小数序列化为字符串。",
+        "operationId": "quotes_api_v1_realtime_eastmoney_quotes_get",
+        "parameters": [
+          {
+            "description": "即时行情市场：all全部沪深A股、mainboard主板、star科创板、growth创业板。",
+            "in": "query",
+            "name": "market",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "enum": [
+                "all",
+                "mainboard",
+                "star",
+                "growth"
+              ],
+              "examples": [
+                "all"
+              ],
+              "title": "Market",
+              "type": "string"
+            }
+          },
+          {
+            "description": "来源页号，从1开始，最大100；一次请求只读取一页。",
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "examples": [
+                1
+              ],
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "来源单页上限；行情最多6000、股池500、题材100、成分股1000。",
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 5000,
+              "examples": [
+                5000
+              ],
+              "maximum": 6000,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceResponse_SourceQuoteItem_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "东方财富全市场即时行情（单页）",
+        "tags": [
+          "实时接口"
+        ]
+      }
+    },
+    "/api/v1/realtime/eastmoney/themes": {
+      "get": {
+        "description": "来源网站：东方财富 https://www.eastmoney.com/。上游接口：POST https://emcfgdata.eastmoney.com/api/themeInvest/getThemeList。用途：热点概念题材列表，sort=-1；bf3板块涨幅与f3领涨股涨幅分开。调用示例：`GET /api/v1/realtime/eastmoney/themes?page=1&page_size=100`，请求头`X-API-Key: <你的API Key>`。一次只读一个上游响应，不入库、不自动翻页、不跨源回退；失败502，参数错误422。响应内upstream_parameters回显实际查询参数/POST JSON体，金额及小数序列化为字符串。",
+        "operationId": "themes_api_v1_realtime_eastmoney_themes_get",
+        "parameters": [
+          {
+            "description": "来源页号，从1开始，最大100；一次请求只读取一页。",
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "examples": [
+                1
+              ],
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "来源单页上限；行情最多6000、股池500、题材100、成分股1000。",
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "examples": [
+                100
+              ],
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceResponse_SourceThemeItem_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "东方财富题材排行（单页）",
+        "tags": [
+          "实时接口"
+        ]
+      }
+    },
+    "/api/v1/realtime/eastmoney/themes/today": {
+      "get": {
+        "description": "来源网站：东方财富 https://www.eastmoney.com/。上游接口：POST https://emcfgdata.eastmoney.com/api/themeInvest/getTodayChance。用途：热点概念今日题材；固定args.pageSize=100,pageNum=1,sort=-1。调用示例：`GET /api/v1/realtime/eastmoney/themes/today`，请求头`X-API-Key: <你的API Key>`。一次只读一个上游响应，不入库、不自动翻页、不跨源回退；失败502，参数错误422。响应内upstream_parameters回显实际查询参数/POST JSON体，金额及小数序列化为字符串。",
+        "operationId": "today_themes_api_v1_realtime_eastmoney_themes_today_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceResponse_SourceThemeItem_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "东方财富今日题材机会",
+        "tags": [
+          "实时接口"
+        ]
+      }
+    },
+    "/api/v1/realtime/eastmoney/themes/{theme_code}/stocks": {
+      "get": {
+        "description": "来源网站：东方财富 https://www.eastmoney.com/。上游接口：POST https://emcfgdata.eastmoney.com/api/themeInvest/getStockList。用途：热点概念选中题材的股票，themeCode保留字符串、sort=-1、sortField=f3；不生成AI评分。调用示例：`GET /api/v1/realtime/eastmoney/themes/00647/stocks?page=1&page_size=1000`，请求头`X-API-Key: <你的API Key>`。一次只读一个上游响应，不入库、不自动翻页、不跨源回退；失败502，参数错误422。响应内upstream_parameters回显实际查询参数/POST JSON体，金额及小数序列化为字符串。",
+        "operationId": "theme_stocks_api_v1_realtime_eastmoney_themes__theme_code__stocks_get",
+        "parameters": [
+          {
+            "description": "东方财富题材代码字符串，保留前导零，例如00647。",
+            "in": "path",
+            "name": "theme_code",
+            "required": true,
+            "schema": {
+              "examples": [
+                "00647"
+              ],
+              "pattern": "^[0-9A-Za-z]{1,32}$",
+              "title": "Theme Code",
+              "type": "string"
+            }
+          },
+          {
+            "description": "来源页号，从1开始，最大100；一次请求只读取一页。",
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "examples": [
+                1
+              ],
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "来源单页上限；行情最多6000、股池500、题材100、成分股1000。",
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 1000,
+              "examples": [
+                1000
+              ],
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceResponse_SourceThemeStockItem_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "东方财富题材成分股（单页）",
+        "tags": [
+          "实时接口"
+        ]
+      }
+    },
     "/api/v1/realtime/kaipanla/alerts/hot": {
       "get": {
         "description": "请求时直连开盘啦，复用 X-API-Key 鉴权，不写数据库、不保存 Raw、不触发 Worker。数值字段使用 Decimal，时间采用上海时区。来源推算与数据中心监管规则计算结果独立。尚未确认的数组字段保留在 source_values，并以 source_layout 标记布局，不能当作标准指标。",
@@ -14810,6 +17356,353 @@
           }
         ],
         "summary": "查询开盘啦历史涨停股票",
+        "tags": [
+          "实时接口"
+        ]
+      }
+    },
+    "/api/v1/realtime/sina/klines": {
+      "get": {
+        "description": "来源网站：新浪财经 https://finance.sina.com.cn/。上游接口：https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData。用途：策略备用日K，scale=240、ma=no；复权未明确标注unspecified。调用示例：`GET /api/v1/realtime/sina/klines?symbol=SZSE:000001&limit=120`，请求头`X-API-Key: <你的API Key>`。一次只读一个上游响应，不入库、不自动翻页、不跨源回退；失败502，参数错误422。响应内upstream_parameters回显实际查询参数/POST JSON体，金额及小数序列化为字符串。",
+        "operationId": "sina_klines_api_v1_realtime_sina_klines_get",
+        "parameters": [
+          {
+            "description": "带交易所前缀的标准证券代码。",
+            "in": "query",
+            "name": "symbol",
+            "required": true,
+            "schema": {
+              "examples": [
+                "SSE:600000",
+                "SZSE:000001"
+              ],
+              "pattern": "^(?:SSE:6[0-9]{5}|SZSE:[03][0-9]{5})$",
+              "title": "Symbol",
+              "type": "string"
+            }
+          },
+          {
+            "description": "最多返回的记录数。",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 160,
+              "examples": [
+                160
+              ],
+              "maximum": 640,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceResponse_SourceBarItem_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "新浪日K备用来源（即时读取）",
+        "tags": [
+          "实时接口"
+        ]
+      }
+    },
+    "/api/v1/realtime/tencent/index": {
+      "get": {
+        "description": "来源网站：腾讯财经 https://finance.qq.com/。上游接口：https://qt.gtimg.cn/?q=sh000001。用途：猎手指数日志用的指数行情；读取索引32涨幅，纠正原软件取33最高价的问题。调用示例：`GET /api/v1/realtime/tencent/index`，请求头`X-API-Key: <你的API Key>`。一次只读一个上游响应，不入库、不自动翻页、不跨源回退；失败502，参数错误422。响应内upstream_parameters回显实际查询参数/POST JSON体，金额及小数序列化为字符串。",
+        "operationId": "index_api_v1_realtime_tencent_index_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceResponse_SourceIndexItem_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "腾讯上证指数当前行情",
+        "tags": [
+          "实时接口"
+        ]
+      }
+    },
+    "/api/v1/realtime/tencent/klines": {
+      "get": {
+        "description": "来源网站：腾讯财经 https://finance.qq.com/。上游接口：https://{web.ifzq|ifzq}.gtimg.cn/appstock/app/fqkline/get。用途：综合主源、其他策略备用及猎手K线；请求qfq，回退day/week时adjustment=none。调用示例：`GET /api/v1/realtime/tencent/klines?symbol=SSE:600000&period=day&limit=640&server=web`，请求头`X-API-Key: <你的API Key>`。一次只读一个上游响应，不入库、不自动翻页、不跨源回退；失败502，参数错误422。响应内upstream_parameters回显实际查询参数/POST JSON体，金额及小数序列化为字符串。",
+        "operationId": "tencent_klines_api_v1_realtime_tencent_klines_get",
+        "parameters": [
+          {
+            "description": "带交易所前缀的标准证券代码。",
+            "in": "query",
+            "name": "symbol",
+            "required": true,
+            "schema": {
+              "examples": [
+                "SSE:600000",
+                "SZSE:000001"
+              ],
+              "pattern": "^(?:SSE:6[0-9]{5}|SZSE:[03][0-9]{5})$",
+              "title": "Symbol",
+              "type": "string"
+            }
+          },
+          {
+            "description": "最多返回的记录数。",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 160,
+              "examples": [
+                160
+              ],
+              "maximum": 640,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "腾讯K线周期：day日K或week周K。",
+            "in": "query",
+            "name": "period",
+            "required": false,
+            "schema": {
+              "default": "day",
+              "enum": [
+                "day",
+                "week"
+              ],
+              "examples": [
+                "day"
+              ],
+              "title": "Period",
+              "type": "string"
+            }
+          },
+          {
+            "description": "腾讯固定服务器：web为web.ifzq.gtimg.cn，ifzq为ifzq.gtimg.cn。",
+            "in": "query",
+            "name": "server",
+            "required": false,
+            "schema": {
+              "default": "web",
+              "enum": [
+                "web",
+                "ifzq"
+              ],
+              "examples": [
+                "web"
+              ],
+              "title": "Server",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceResponse_SourceBarItem_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "腾讯日/周K（标明实际复权）",
+        "tags": [
+          "实时接口"
+        ]
+      }
+    },
+    "/api/v1/realtime/tencent/minute": {
+      "get": {
+        "description": "来源网站：腾讯财经 https://finance.qq.com/。上游接口：https://web.ifzq.gtimg.cn/appstock/app/minute/query。用途：猎手分时图；价格、累计股数及累计金额，交易日期由来源给出；不重复累加或生成均价。调用示例：`GET /api/v1/realtime/tencent/minute?symbol=SSE:600000`，请求头`X-API-Key: <你的API Key>`。一次只读一个上游响应，不入库、不自动翻页、不跨源回退；失败502，参数错误422。响应内upstream_parameters回显实际查询参数/POST JSON体，金额及小数序列化为字符串。",
+        "operationId": "minute_api_v1_realtime_tencent_minute_get",
+        "parameters": [
+          {
+            "description": "带交易所前缀的标准证券代码。",
+            "in": "query",
+            "name": "symbol",
+            "required": true,
+            "schema": {
+              "examples": [
+                "SSE:600000",
+                "SZSE:000001"
+              ],
+              "pattern": "^(?:SSE:6[0-9]{5}|SZSE:[03][0-9]{5})$",
+              "title": "Symbol",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceResponse_SourceMinuteItem_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "腾讯当日分时图数据（累计量额）",
         "tags": [
           "实时接口"
         ]
