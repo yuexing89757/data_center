@@ -38,9 +38,6 @@ comment on column billboard.dragon_tiger_event.event_id is '来源事件唯一�
 comment on column billboard.dragon_tiger_event.symbol is '标准证券代码，格式如 SSE:600000、SZSE:000001、BSE:920000；保留代码前导零。';
 comment on column billboard.dragon_tiger_event.market is '统一交易日历市场代码 CN_A_SHARE。';
 comment on column billboard.dragon_tiger_event.trade_date is '交易所本地交易日期；以统一交易日历为准。';
-comment on column billboard.dragon_tiger_event.period_type is '披露统计期间类型；不等同于触发窗口长度。';
-comment on column billboard.dragon_tiger_event.period_start_date is '来源事件统计期间起始日期。';
-comment on column billboard.dragon_tiger_event.period_end_date is '来源事件统计期间结束日期。';
 comment on column billboard.dragon_tiger_event.reason_id is '龙虎榜标准上榜原因标识。';
 comment on column billboard.dragon_tiger_event.reason_name_raw is '来源返回的上榜原因原文。';
 comment on column billboard.dragon_tiger_event.close_price is '来源收盘价，人民币元。';
@@ -74,7 +71,6 @@ comment on column billboard.dragon_tiger_reason.reason_id is '龙虎榜标准上
 comment on column billboard.dragon_tiger_reason.reason_code is '龙虎榜标准上榜原因代码。';
 comment on column billboard.dragon_tiger_reason.reason_name is '标准上榜原因名称。';
 comment on column billboard.dragon_tiger_reason.reason_type is '上榜原因类型。';
-comment on column billboard.dragon_tiger_reason.period_type is '披露统计期间类型；不等同于触发窗口长度。';
 comment on column billboard.dragon_tiger_reason.description is '标准目录条目的解释说明。';
 comment on column billboard.dragon_tiger_reason.is_active is '目录条目是否有效。';
 comment on column billboard.dragon_tiger_reason.created_at is '记录首次写入时间（带时区）。';
@@ -107,7 +103,6 @@ comment on table billboard.reason_source_alias is '龙虎榜上榜原因来源�
 comment on column billboard.reason_source_alias.source_code is '实际数据来源代码；单个成功采集批次不合并多个来源。';
 comment on column billboard.reason_source_alias.source_reason_code is '来源系统上榜原因代码。';
 comment on column billboard.reason_source_alias.source_reason_name is '来源系统上榜原因名称。';
-comment on column billboard.reason_source_alias.period_type is '披露统计期间类型；不等同于触发窗口长度。';
 comment on column billboard.reason_source_alias.reason_id is '龙虎榜标准上榜原因标识。';
 comment on column billboard.reason_source_alias.first_seen_at is '首次观测到该来源映射的时间（带时区）。';
 comment on column billboard.reason_source_alias.last_seen_at is '最近观测到该来源映射的时间（带时区）。';
@@ -152,9 +147,6 @@ comment on column billboard.trading_seat.updated_at is '记录最后更新时间
 -- billboard.trading_seat_alias
 comment on table billboard.trading_seat_alias is '龙虎榜交易席位来源别名；关联稳定席位与来源身份。';
 comment on column billboard.trading_seat_alias.alias_id is '交易席位来源别名标识。';
-comment on column billboard.trading_seat_alias.seat_id is '稳定交易席位标识。';
-comment on column billboard.trading_seat_alias.source_code is '实际数据来源代码；单个成功采集批次不合并多个来源。';
-comment on column billboard.trading_seat_alias.source_seat_key is '来源系统席位身份键。';
 comment on column billboard.trading_seat_alias.alias_name is '来源席位别名。';
 comment on column billboard.trading_seat_alias.created_at is '记录首次写入时间（带时区）。';
 comment on column billboard.trading_seat_alias.identity_id is '稳定来源身份映射标识。';
