@@ -11,6 +11,8 @@ from market_data_center.providers.pytdx_pool import (
     PytdxCapability,
     PytdxPoolRefreshResult,
     PytdxProbeResult,
+    _NetworkPytdxEndpointProbe,
+    default_pytdx_candidates,
     endpoints_for,
     load_endpoint_pool,
     refresh_endpoint_pool,
@@ -31,6 +33,92 @@ class FakeProbe:
         if isinstance(result, BaseException):
             raise result
         return result
+
+
+def test_refresh_reaches_standard_nodes_missing_from_upstream_catalog(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pytdx.config import hosts
+
+    monkeypatch.setattr(hosts, "hq_hosts", [("legacy", "legacy.example", 7709)])
+    result = refresh_endpoint_pool(
+        tmp_path / "pool.json",
+        probe=FakeProbe(
+            {
+                ("139.9.52.158", 7709): _probe_result(
+                    "139.9.52.158", 10, quote=True, sse=True, szse=True
+                ),
+            }
+        ),
+        clock=lambda: AWARE_NOW,
+    )
+    assert result.published
+    assert endpoints_for(result.pool, PytdxCapability.DAILY_BAR_SSE) == (("139.9.52.158", 7709),)
+
+
+def test_candidates_do_not_probe_the_same_endpoint_twice(monkeypatch: pytest.MonkeyPatch) -> None:
+    from pytdx.config import hosts
+
+    monkeypatch.setattr(hosts, "hq_hosts", [("upstream", "139.9.52.158", 7709)] * 2)
+    candidates = default_pytdx_candidates()
+    assert candidates.count(("139.9.52.158", 7709)) == 1
+
+
+def test_network_probe_does_not_advertise_empty_shell_daily_bars(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from market_data_center.providers import pytdx_protocol
+
+    class Client:
+        def connect(self, *args: object, **kwargs: object) -> bool:
+            return True
+
+        def get_security_quotes(self, requests: object) -> list[object]:
+            return [{}]
+
+        def get_security_bars(self, *args: object) -> list[object]:
+            raise ProviderError("pytdx malformed Daily Bar response")
+
+        def disconnect(self) -> None:
+            pass
+
+    monkeypatch.setattr(pytdx_protocol, "DecimalDailyBarClient", lambda **kwargs: Client())
+    result = _NetworkPytdxEndpointProbe().probe("legacy.example", 7709)
+    assert result is not None
+    assert result.capabilities[PytdxCapability.QUOTE]
+    assert not any(
+        result.capabilities[c] for c in PytdxCapability if c is not PytdxCapability.QUOTE
+    )
+
+
+def test_network_probe_accepts_nodes_that_require_a_real_page(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from market_data_center.providers import pytdx_protocol
+
+    class Client:
+        def connect(self, *args: object, **kwargs: object) -> bool:
+            return True
+
+        def get_security_quotes(self, requests: object) -> list[object]:
+            return [{}]
+
+        def get_security_bars(
+            self, category: int, market: int, code: str, start: int, count: int
+        ) -> list[object]:
+            if count < 100:
+                raise ProviderError("node does not serve tiny requests")
+            return [{}] if code in {"600000", "000001"} else []
+
+        def disconnect(self) -> None:
+            pass
+
+    monkeypatch.setattr(pytdx_protocol, "DecimalDailyBarClient", lambda **kwargs: Client())
+    result = _NetworkPytdxEndpointProbe().probe("standard.example", 7709)
+    assert result is not None
+    assert result.capabilities[PytdxCapability.DAILY_BAR_SSE]
+    assert result.capabilities[PytdxCapability.DAILY_BAR_SZSE]
+    assert not result.capabilities[PytdxCapability.DAILY_BAR_BSE]
 
 
 def _capabilities(

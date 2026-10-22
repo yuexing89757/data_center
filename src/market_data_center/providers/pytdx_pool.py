@@ -20,6 +20,8 @@ POOL_SCHEMA_VERSION = "pytdx.endpoint_pool.v1"
 PROBE_MAX_WORKERS = 16
 PROBE_TIMEOUT_SECONDS = 4.0
 PROBE_OVERALL_TIMEOUT_SECONDS = 180.0
+# Verified standard-protocol nodes missing from pytdx's bundled legacy catalog.
+SUPPLEMENTAL_CANDIDATES = (("139.9.52.158", 7709), ("103.251.85.94", 7709))
 
 
 class PytdxCapability(StrEnum):
@@ -139,7 +141,7 @@ def default_pytdx_candidates() -> tuple[tuple[str, int], ...]:
     """Return the deduplicated network candidates bundled with pytdx."""
     from pytdx.config.hosts import hq_hosts  # type: ignore[import-untyped]
 
-    candidates: list[tuple[str, int]] = []
+    candidates: list[tuple[str, int]] = list(SUPPLEMENTAL_CANDIDATES)
     for entry in hq_hosts:
         if not isinstance(entry, (list, tuple)) or len(entry) < 3:
             continue
@@ -335,9 +337,9 @@ def _pool_document(pool: PytdxEndpointPool) -> dict[str, object]:
 
 class _NetworkPytdxEndpointProbe:
     def probe(self, host: str, port: int) -> PytdxProbeResult | None:
-        from pytdx.hq import TdxHq_API  # type: ignore[import-untyped]
+        from market_data_center.providers.pytdx_protocol import DecimalDailyBarClient
 
-        api = TdxHq_API(heartbeat=False, auto_retry=False, raise_exception=True)
+        api = DecimalDailyBarClient(heartbeat=False, auto_retry=False, raise_exception=True)
         started = perf_counter()
         try:
             if not api.connect(host, port, time_out=PROBE_TIMEOUT_SECONDS):
@@ -349,13 +351,13 @@ class _NetworkPytdxEndpointProbe:
                         lambda: api.get_security_quotes([(1, "600000")])
                     ),
                     PytdxCapability.DAILY_BAR_SSE: _probe_call(
-                        lambda: api.get_security_bars(9, 1, "600000", 0, 1)
+                        lambda: api.get_security_bars(9, 1, "600000", 0, 100)
                     ),
                     PytdxCapability.DAILY_BAR_SZSE: _probe_call(
-                        lambda: api.get_security_bars(9, 0, "000001", 0, 1)
+                        lambda: api.get_security_bars(9, 0, "000001", 0, 100)
                     ),
                     PytdxCapability.DAILY_BAR_BSE: _probe_call(
-                        lambda: api.get_security_bars(9, 0, "920000", 0, 1)
+                        lambda: api.get_security_bars(9, 0, "920000", 0, 100)
                     ),
                 }
             )

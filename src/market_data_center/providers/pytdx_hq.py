@@ -31,6 +31,9 @@ from market_data_center.providers.pytdx_pool import (
     endpoints_for,
     load_endpoint_pool,
 )
+from market_data_center.providers.pytdx_protocol import (
+    decode_volume_decimal as _decode_volume_decimal,
+)
 from market_data_center.settings import PytdxHqSettings, PytdxPoolSettings
 
 
@@ -369,27 +372,6 @@ def _normalization_reason(error: Exception) -> str:
 
 def _price(cents: int) -> Decimal:
     return Decimal(cents) / Decimal(100)
-
-
-def _decode_volume_decimal(encoded: int) -> Decimal:
-    logpoint = encoded >> 24
-    high = (encoded >> 16) & 0xFF
-    middle = (encoded >> 8) & 0xFF
-    low = encoded & 0xFF
-
-    def power(exponent: int) -> Decimal:
-        return Decimal(2) ** exponent
-
-    first = power(logpoint * 2 - 0x7F)
-    exponent = logpoint * 2 - 0x86
-    if high > 0x80:
-        second = power(exponent) * Decimal(128) + Decimal(high & 0x7F) * power(exponent + 1)
-    else:
-        second = power(exponent) * Decimal(high)
-    multiplier = Decimal(2) if high & 0x80 else Decimal(1)
-    third = power(logpoint * 2 - 0x8E) * Decimal(middle) * multiplier
-    fourth = power(logpoint * 2 - 0x96) * Decimal(low) * multiplier
-    return first + second + third + fourth
 
 
 def _raw_row(row: Mapping[str, object]) -> Mapping[str, str]:

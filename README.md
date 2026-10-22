@@ -6,6 +6,12 @@
 
 A phase-one A-share daily market data pipeline using Python 3.12 and PostgreSQL. Security and calendar use BaoStock/AKShare routing; pytdx quote and Daily Bar reads share one capability-aware endpoint pool maintained by the Worker.
 
+Remote Daily Bars keep category 9 and the standard TDX protocol. The reviewed candidate catalog
+supplements pytdx's legacy list; probes and collection share strict Decimal decoding and reject
+empty-shell or truncated pages. New remote Raw v2 retains source lot volumes and normalizes them
+to shares; legacy Raw replay and stored history remain unchanged. See
+[Daily Bar validation and remote diagnostics](docs/DailyBar数据质量验收.md).
+
 The three Regulation benchmark indices use Tushare `index_daily` (ADR-0048 clarification,
 Issue #69); this does not change ordinary stock routing or replace existing historical Raw.
 
@@ -372,3 +378,8 @@ the current Shanghai trading date only. It remains disabled unless
 indicative/matching observations—not exchange trade ticks or order-by-order data.
 
 The CLI uses deterministic provider routing by default: BaoStock then AKShare for security/calendar, and pytdx only for Daily Bars. At startup and every hour, the Worker probes a bounded candidate set and atomically publishes one versioned pool with quote, SSE, SZSE and BSE capability flags. Consumers filter that pool by capability, use bounded connection failover, and keep one endpoint for a successful batch. Missing or unavailable bars remain explicit gaps and are not filled from other providers. Public TDX nodes have no availability or rate-limit guarantee. Use `--provider baostock|akshare|pytdx` to bypass routing for reproducible diagnostics.
+
+## 本地日线恢复验收补充
+
+本地单日采集会先保留较早记录计算昨收价，再裁剪请求日期。已有空昨收记录需要显式重新
+采集，普通缺行补采不会自动修复字段；验收同时检查记录覆盖、昨收完整性和 Raw 重放。

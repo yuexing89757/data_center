@@ -37,6 +37,7 @@ from market_data_center.providers.pytdx_pool import (
     endpoints_for,
     load_endpoint_pool,
 )
+from market_data_center.providers.pytdx_protocol import DecimalDailyBarClient
 from market_data_center.settings import PytdxDailyBarSettings, PytdxPoolSettings
 
 DAILY_BAR_CATEGORY = 9
@@ -122,8 +123,7 @@ class PytdxProvider:
                 self._vipdoc_path, exchange, code, start_date, end_date
             )
             if local_rows:
-                ordered = sorted(local_rows, key=lambda row: _parse_date(row["date"]))
-                raw_rows = _rows_with_previous_close(ordered)
+                raw_rows = local_rows
                 return ProviderBatch(
                     raw_rows=raw_rows,
                     request_params={
@@ -187,9 +187,11 @@ class PytdxProvider:
                 "page_size": self._settings.pytdx_daily_bar_page_size,
                 "max_pages": self._settings.pytdx_daily_bar_max_pages,
                 "adjust": "none",
+                "volume_unit": "lot",
+                "volume_lot_size": 100,
             },
-            schema_version="pytdx.remote_daily_bar.v1",
-            record_factory=lambda: _daily_bar_records(raw_rows, symbol),
+            schema_version="pytdx.remote_daily_bar.v2",
+            record_factory=lambda: _remote_daily_bar_records(raw_rows, symbol),
         )
 
     def _session_for(
@@ -287,12 +289,15 @@ def normalize_pytdx_raw(
         "pytdx.local_daily_bar.v1",
         "pytdx.local_daily_bar.v2",
         "pytdx.remote_daily_bar.v1",
+        "pytdx.remote_daily_bar.v2",
     }:
         raise ProviderError(f"unsupported pytdx Raw schema: {schema_version}")
     source_symbol = request_params.get("source_symbol")
     if not isinstance(source_symbol, str):
         raise ProviderError("pytdx replay request is missing source_symbol")
     _, _, symbol = _parse_source_symbol(source_symbol)
+    if schema_version == "pytdx.remote_daily_bar.v2":
+        return tuple(_remote_daily_bar_records(raw_rows, symbol))
     normalized_rows = (
         _rows_with_previous_close(raw_rows)
         if schema_version == "pytdx.local_daily_bar.v1"
@@ -302,11 +307,9 @@ def normalize_pytdx_raw(
 
 
 def _default_client_factory() -> PytdxDailyBarClient:
-    from pytdx.hq import TdxHq_API  # type: ignore[import-untyped]
-
     return cast(
         PytdxDailyBarClient,
-        TdxHq_API(heartbeat=True, auto_retry=False, raise_exception=True),
+        DecimalDailyBarClient(heartbeat=True, auto_retry=False, raise_exception=True),
     )
 
 
@@ -338,7 +341,7 @@ def _read_local_day_file(
         return None
     data = day_file.read_bytes()
     record_count = len(data) // 32
-    rows: list[RawRow] = []
+    rows_by_date: dict[date, RawRow] = {}
     for index in range(record_count):
         offset = index * 32
         raw_date, open_raw, high_raw, low_raw, close_raw, amount_raw, vol_raw, _prev = unpack(
@@ -348,21 +351,27 @@ def _read_local_day_file(
             trade_date = date(raw_date // 10000, raw_date % 10000 // 100, raw_date % 100)
         except ValueError:
             continue
-        if trade_date < start_date or trade_date > end_date:
+        if trade_date > end_date:
             continue
-        rows.append(
-            {
-                "date": f"{raw_date:08d}",
-                "price_scale": "",
-                "open": str(open_raw),
-                "high": str(high_raw),
-                "low": str(low_raw),
-                "close": str(close_raw),
-                "amount": f"{amount_raw:.0f}",
-                "volume": str(vol_raw),
-            }
-        )
-    return tuple(rows)
+        row: RawRow = {
+            "date": f"{raw_date:08d}",
+            "price_scale": "",
+            "open": str(open_raw),
+            "high": str(high_raw),
+            "low": str(low_raw),
+            "close": str(close_raw),
+            "amount": f"{amount_raw:.0f}",
+            "volume": str(vol_raw),
+        }
+        if trade_date in rows_by_date and rows_by_date[trade_date] != row:
+            raise ProviderError("pytdx local daily bars contain conflicting dates")
+        rows_by_date[trade_date] = row
+    # Keep preceding source bars until previous_close is captured in immutable Raw.
+    return tuple(
+        row
+        for row in _rows_with_previous_close(tuple(rows_by_date.values()))
+        if _parse_date(row["date"]) >= start_date
+    )
 
 
 def _remote_raw_row(row: object) -> RawRow:
@@ -414,6 +423,16 @@ def _map_daily_bar(row: Mapping[str, str], symbol: str) -> DailyBarRecord:
         trade_status=TradeStatus.UNKNOWN,
         is_st=None,
         source_code="pytdx",
+    )
+
+
+def _remote_daily_bar_records(
+    rows: Sequence[Mapping[str, str]], symbol: str
+) -> list[DailyBarRecord]:
+    # v2 retains source lots in Raw; legacy v1 replay keeps its original result.
+    return _daily_bar_records(
+        ({**row, "volume": str(_decimal(row["volume"], "volume") * 100)} for row in rows),
+        symbol,
     )
 
 

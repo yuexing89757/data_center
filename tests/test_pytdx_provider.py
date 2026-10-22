@@ -230,10 +230,12 @@ def test_remote_daily_bars_crop_sort_normalize_and_capture_endpoint(tmp_path: Pa
     assert record.symbol == "SSE:600000"
     assert record.close == Decimal("10.20")
     assert record.previous_close == Decimal("9.80")
-    assert record.volume == 123_400
+    assert record.volume == 12_340_000
     assert record.amount == Decimal("1258680.00")
     assert record.trade_status is TradeStatus.UNKNOWN
-    assert batch.schema_version == "pytdx.remote_daily_bar.v1"
+    assert batch.schema_version == "pytdx.remote_daily_bar.v2"
+    assert batch.request_params["volume_unit"] == "lot"
+    assert batch.raw_rows[0]["volume"] == "123400"
     assert batch.request_params["endpoint"] == "first.example:7709"
     assert "endpoint" not in batch.raw_rows[0]
 
@@ -245,6 +247,35 @@ def test_remote_daily_bars_crop_sort_normalize_and_capture_endpoint(tmp_path: Pa
     )
     assert tuple(batch.records) == replayed
     assert isinstance(replayed[0], DailyBarRecord)
+
+
+def test_legacy_remote_raw_replay_preserves_original_volume() -> None:
+    rows = (
+        {
+            "date": "20261022",
+            "price_scale": "1",
+            "open": "10",
+            "high": "11",
+            "low": "9",
+            "close": "10",
+            "volume": "1234",
+            "amount": "1234000",
+        },
+    )
+    legacy = normalize_pytdx_raw(
+        DatasetCode.DAILY_BAR,
+        "pytdx.remote_daily_bar.v1",
+        rows,
+        {"source_symbol": "sh.600000"},
+    )
+    current = normalize_pytdx_raw(
+        DatasetCode.DAILY_BAR,
+        "pytdx.remote_daily_bar.v2",
+        rows,
+        {"source_symbol": "sh.600000"},
+    )
+    assert legacy[0].volume == 1234
+    assert current[0].volume == 123_400
 
 
 def test_remote_daily_bars_paginate_with_hard_bounds(tmp_path: Path) -> None:
@@ -330,6 +361,7 @@ def test_local_only_mode_without_endpoints(tmp_path: Path) -> None:
 
     assert len(batch.records) == 1
     assert batch.records[0].close == Decimal("9.25")
+    assert batch.records[0].previous_close is None
     assert batch.schema_version == "pytdx.local_daily_bar.v2"
 
 
@@ -374,29 +406,46 @@ def test_legacy_local_raw_remains_replayable() -> None:
     assert replayed[0].previous_close == Decimal("9.80")
 
 
-def test_remote_zero_decoder_sentinel_is_normalized_without_changing_raw(tmp_path: Path) -> None:
+def test_legacy_remote_zero_decoder_sentinel_preserves_replay() -> None:
     sentinel = "5.877471754111438e-39"
-    row = {**_bar("2026-09-21"), "vol": sentinel, "amount": sentinel}
-    with _provider(tmp_path, FakeClient({0: [row]})) as provider:
-        batch = provider.fetch_daily_bars("sh.601059", date(2026, 9, 21), date(2026, 9, 21))
-    assert batch.raw_rows[0]["volume"] == sentinel
-    assert batch.raw_rows[0]["amount"] == sentinel
-    assert batch.records[0].volume == 0
-    assert batch.records[0].amount == Decimal(0)
-    assert batch.records[0].trade_status is TradeStatus.UNKNOWN
-    replayed = normalize_pytdx_raw(
-        DatasetCode.DAILY_BAR, batch.schema_version, batch.raw_rows, batch.request_params
+    rows = (
+        {
+            "date": "20260921",
+            "price_scale": "1",
+            "open": "10",
+            "high": "11",
+            "low": "9",
+            "close": "10",
+            "volume": sentinel,
+            "amount": sentinel,
+        },
     )
-    assert replayed == tuple(batch.records)
+    replayed = normalize_pytdx_raw(
+        DatasetCode.DAILY_BAR,
+        "pytdx.remote_daily_bar.v1",
+        rows,
+        {"source_symbol": "sh.601059"},
+    )
+    assert replayed[0].volume == 0
+    assert replayed[0].amount == Decimal(0)
+    assert rows[0]["volume"] == sentinel
 
 
-@pytest.mark.parametrize("value", ["0.5", "1e-38", "-1e-39"])
+@pytest.mark.parametrize("value", ["0.005", "1e-38", "-1e-39"])
 def test_other_fractional_volumes_are_not_silently_rounded(tmp_path: Path, value: str) -> None:
     row = {**_bar("2026-09-21"), "vol": value}
     with _provider(tmp_path, FakeClient({0: [row]})) as provider:
         batch = provider.fetch_daily_bars("sh.601059", date(2026, 9, 21), date(2026, 9, 21))
     with pytest.raises(ProviderError, match="integer volume"):
         _ = batch.records
+
+
+def test_remote_fractional_lots_convert_to_integral_shares(tmp_path: Path) -> None:
+    row = {**_bar("2026-10-22"), "vol": "0.5"}
+    with _provider(tmp_path, FakeClient({0: [row]})) as provider:
+        batch = provider.fetch_daily_bars("sh.600000", date(2026, 10, 22), date(2026, 10, 22))
+    assert batch.records[0].volume == 50
+    assert batch.raw_rows[0]["volume"] == "0.5"
 
 
 def _write_day_file(vipdoc: Path, exchange: str, code: str, bars: list[tuple]) -> Path:
@@ -428,12 +477,98 @@ def test_read_local_day_file_parses_and_filters(tmp_path: Path) -> None:
     assert len(rows) == 2
     assert rows[0]["date"] == "20260805"
     assert rows[0]["close"] == "915"
+    assert rows[0]["previous_close"] == "905"
     assert rows[1]["date"] == "20260806"
+    assert rows[1]["previous_close"] == "915"
 
 
 def test_read_local_day_file_returns_none_when_absent(tmp_path: Path) -> None:
     rows = _read_local_day_file(str(tmp_path), "sh", "999999", date(2026, 8, 5), date(2026, 8, 7))
     assert rows is None
+
+
+@pytest.mark.parametrize(
+    "exchange, symbol", [("sh", "SSE:600000"), ("sz", "SZSE:000001"), ("bj", "BSE:920000")]
+)
+def test_local_single_day_preserves_prior_close_and_raw_replay(
+    tmp_path: Path, exchange: str, symbol: str
+) -> None:
+    vipdoc = tmp_path / "vipdoc"
+    code = symbol.split(":")[1]
+    # Unsorted input, a weekend gap, and a future row must not change the prior close.
+    _write_day_file(
+        vipdoc,
+        exchange,
+        code,
+        [
+            (20260810, 920, 930, 915, 925, 400000.0, 40001),
+            (20260811, 925, 940, 920, 935, 500000.0, 50000),
+            (20260806, 900, 920, 895, 905, 100000.0, 10000),
+            (20260807, 905, 925, 900, 920, 300000.0, 30000),
+        ],
+    )
+    provider = PytdxProvider(
+        PytdxDailyBarSettings(pytdx_vipdoc_path=str(vipdoc), _env_file=None),
+        pool_settings=PytdxPoolSettings(pytdx_pool_path=tmp_path / "missing.json", _env_file=None),
+        client_factory=FakeClient,
+    )
+    with provider:
+        batch = provider.fetch_daily_bars(
+            provider.source_symbol(symbol), date(2026, 8, 10), date(2026, 8, 10)
+        )
+    assert len(batch.records) == len(batch.raw_rows) == 1
+    record = batch.records[0]
+    assert record.symbol == symbol
+    assert record.trade_date == date(2026, 8, 10)
+    assert record.previous_close == Decimal("9.20")
+    assert record.close == Decimal("9.25")
+    assert record.volume == 40001
+    assert record.amount == Decimal("400000")
+    assert batch.raw_rows[0]["previous_close"] == "920"
+    assert normalize_pytdx_raw(
+        DatasetCode.DAILY_BAR, batch.schema_version, batch.raw_rows, batch.request_params
+    ) == tuple(batch.records)
+
+
+def test_local_raw_missing_previous_close_remains_missing_on_replay() -> None:
+    rows = (
+        {
+            "date": "20260810",
+            "open": "920",
+            "high": "930",
+            "low": "915",
+            "close": "925",
+            "amount": "400000",
+            "volume": "40001",
+            "previous_close": "",
+        },
+    )
+    replayed = normalize_pytdx_raw(
+        DatasetCode.DAILY_BAR, "pytdx.local_daily_bar.v2", rows, {"source_symbol": "sh.600000"}
+    )
+    assert replayed[0].previous_close is None
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_local_previous_close_rejects_conflicting_context(tmp_path: Path, reverse: bool) -> None:
+    bars = [
+        (20260807, 905, 930, 900, 920, 300000.0, 30000),
+        (20260807, 905, 930, 900, 930, 300000.0, 30000),
+        (20260810, 920, 940, 915, 935, 400000.0, 40001),
+    ]
+    _write_day_file(tmp_path, "sh", "600000", list(reversed(bars)) if reverse else bars)
+    with pytest.raises(ProviderError, match="conflicting"):
+        _read_local_day_file(str(tmp_path), "sh", "600000", date(2026, 8, 10), date(2026, 8, 10))
+
+
+def test_local_identical_duplicates_do_not_become_previous_close(tmp_path: Path) -> None:
+    prior = (20260807, 905, 930, 900, 920, 300000.0, 30000)
+    current = (20260810, 920, 940, 915, 935, 400000.0, 40001)
+    _write_day_file(tmp_path, "sh", "600000", [prior, prior, current, current])
+    rows = _read_local_day_file(str(tmp_path), "sh", "600000", date(2026, 8, 10), date(2026, 8, 10))
+    assert rows is not None
+    assert len(rows) == 1
+    assert rows[0]["previous_close"] == "920"
 
 
 def test_local_daily_bar_takes_priority_over_remote(tmp_path: Path) -> None:

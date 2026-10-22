@@ -20,7 +20,9 @@
 ## 统一节点池
 
 Worker 取得全局 Scheduler advisory lock 后执行启动刷新，之后由 APScheduler 每 1 小时
-刷新。候选来自 pytdx 内置目录；探测分别验证实时 quote、SSE 日 K、SZSE 日 K 和 BSE 日 K。
+刷新。候选来自 pytdx 内置目录与代码中审核过的补充目录，按 endpoint 去重；探测分别验证
+实时 quote、SSE 日 K、SZSE 日 K 和 BSE 日 K。日线探测使用与采集相同的严格 Decimal
+解码器，真实请求 100 条日线；连接成功或返回非空报文头均不足以判定日线可用。
 新池至少需要 quote、SSE 与 SZSE 各一个可用节点才能原子发布；BSE 能力缺失不阻断发布，
 但北交所远程 Daily Bar 保持显式缺口。刷新失败不修改 last-good；新旧池均无效时 Worker
 拒绝启动。
@@ -34,6 +36,11 @@ Provider 先按 symbol 定位本地 `.day` 文件。文件存在且产生目标�
 `pytdx.local_daily_bar.v2`，不读取池、不建立网络 client。文件缺失时，SSE、SZSE、BSE
 分别筛选 `daily_bar_sse`、`daily_bar_szse`、`daily_bar_bse` 节点。
 
+本地读取先按日期排序来源记录并计算 `previous_close`，再裁剪请求区间。区间外最近一条
+较早记录只提供昨收上下文，不进入返回记录和 Raw 行数；不存在较早记录时保留空值。
+新采集仍用本地 v2 Raw 显式保存该字段，已有 Raw 的空字段重放仍为空。恢复历史缺失字段
+需要显式重新采集，生成新的 Raw 和 ingestion lineage，不能编辑旧 Raw 或仅重放旧批次。
+
 Provider 为每个市场延迟建立一个固定会话。建立会话时按池顺序有限尝试；成功后该市场在
 当前 Provider 生命周期内固定一个 endpoint。任何读取异常或协议形状错误产生
 `ProviderError`，不得在同一请求或成功批次中途切换节点；下一个独立 Provider 尝试才重新
@@ -46,9 +53,16 @@ TDX category 固定为 `9`。offset 从 0 递增，直到覆盖开始日期、�
 冲突重复行阻断。请求范围外的最近前一条记录只用于 `previous_close`，不写入结果。
 
 SSE 映射 market 1；SZSE 与现有 pytdx BSE 协议映射保持 Provider 边界内。Raw schema
-`pytdx.remote_daily_bar.v1` 保存字符串字段，request metadata 包含实际 endpoint、TDX market、
-symbol、日期范围、category、分页边界和 `adjust=none`。Domain Record 只保留
+`pytdx.remote_daily_bar.v2` 保存字符串字段，request metadata 包含实际 endpoint、TDX market、
+symbol、日期范围、category、分页边界、`adjust=none`、`volume_unit=lot` 与
+`volume_lot_size=100`。价格与金额从线上的整数编码直接解为 Decimal；Raw 的成交量
+保持来源“手”值，v2 标准化时精确乘 100 转成股，不舍入非整数股。整手来源缺少的零股
+不能补造，可能与逐股的本地文件相差不足一手。旧远程 v1 与本地 v1/v2 Raw 保持原有重放
+行为，不通过新版本重放改变历史结果。Domain Record 只保留
 `source_code=pytdx`，不包含节点池或 endpoint 字段。
+
+协议页数量与实际字节必须一致，日期必须有效；2 字节空壳、截断和多余数据产生明确的
+`ProviderError`，不得把已解析的前几行当作一个成功批次。合法的显式零条页仍为空页。
 
 ## 运维与可观测性
 

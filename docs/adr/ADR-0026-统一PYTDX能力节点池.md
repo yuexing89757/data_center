@@ -23,7 +23,7 @@ endpoint，导致可用池存在时 Worker 仍可能拒绝启动。公共 TDX �
 2. Worker 取得全局 Scheduler advisory lock 后执行启动刷新，随后每 1 小时通过
    APScheduler 刷新。刷新间隔由受控代码任务目录固定，不通过 `.env` 配置。不得使用 cron、
    Windows Task Scheduler 或其他 OS 级刷新任务。
-3. 刷新从 pytdx 内置候选目录执行有界并发探测。每个节点显式记录 `quote`、
+3. 刷新从 pytdx 内置候选目录与源码中经过审核的补充节点执行有界并发探测。每个节点显式记录 `quote`、
    `daily_bar_sse`、`daily_bar_szse`、`daily_bar_bse` 四项布尔能力及探测延迟。
 4. 新池只有在至少各有一个 quote、SSE 日 K 和 SZSE 日 K 节点时才能发布；BSE 能力独立
    记录，不作为发布硬门禁。BSE 无可用节点时保留显式缺口。
@@ -67,6 +67,11 @@ capability。节点按 `(latency_ms, host, port)` 稳定排序。池文件是可
 不得提交 Git，也不属于 Raw market data。
 
 ## 后果与限制
+
+2026-10-23（Issue #90）兼容修正：内置目录缺少仍支持标准日线协议的部分节点，因此
+增加受控补充目录，合并后按 endpoint 去重；不新增环境变量或运行时无界扫描。日线探测
+与采集共用严格 Decimal 解码器，使用真实 100 条请求页；2 字节空壳、截断和非法日期
+均不授予对应日线 capability。公共节点仍可能在探测后失效，last-good 也不代表当前可用。
 
 - 节点维护从人工配置转为 Worker 内部受控刷新，运维只配置池路径，不配置刷新周期。
 - Worker 启动依赖一个满足门禁的新池或 last-good 池；网络全面不可用且没有 last-good 时
