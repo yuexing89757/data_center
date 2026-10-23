@@ -2889,9 +2889,11 @@ def test_today_limit_up_fill_reads_ready_pool_with_append_only_worker_role(
     assert summary.member_count == 0
 
 
-def test_today_limit_up_fill_rejects_unverified_source_before_member_publication(
+@pytest.mark.parametrize("verified_source", [False, True])
+def test_today_limit_up_fill_admits_only_verified_source_before_member_publication(
     migrated_database_url: str,
     database_engine: Engine,
+    verified_source: bool,
 ) -> None:
     symbols = ["SSE:600000", "SSE:600001"]
     core_persistence = PostgreSQLPersistence(database_engine)
@@ -2989,6 +2991,13 @@ insert into core.stock_daily_indicator (
             symbols,
             with_price_limits=True,
         )
+        if verified_source:
+            _seed_quantity_fixture_proof(
+                connection, market_run.ingestion_id, ("daily_bar.volume", "daily_bar.amount")
+            )
+            _seed_quantity_fixture_proof(
+                connection, indicator_run.ingestion_id, ("stock_daily_indicator.shares",)
+            )
 
     worker_engine = create_engine(
         _sqlalchemy_url(migrated_database_url),
@@ -3006,28 +3015,51 @@ insert into core.stock_daily_indicator (
                 first_limit_up_at=datetime(2026, 7, 28, 9, 30, tzinfo=UTC),
                 last_limit_up_at=datetime(2026, 7, 28, 14, 59, tzinfo=UTC),
                 open_count=0,
-                source_reported_sealed_funds_cny=None,
+                source_reported_sealed_funds_cny=Decimal("123.45"),
                 consecutive_limit_up_days=1,
             ),
         )
-        # Source-unit admission precedes publication, including missing-observation partials.
-        with pytest.raises(ProviderError, match="quantity unit contract"):
-            persistence.commit_snapshot(
+        manifest = _manifest(
+            running.ingestion_id, "today_limit_up_source", row_count=1, provider="akshare"
+        )
+        if verified_source:
+            manifest = replace(
+                manifest, schema_version="akshare_eastmoney.current_day_limit_up_pool.v1"
+            )
+            summary = persistence.commit_snapshot(
                 trade_date=TRADE_DATE,
                 requested_status=TodayLimitUpSnapshotStatus.READY,
                 run=_completed_run(running, row_count=1),
-                manifest=_manifest(
-                    running.ingestion_id,
-                    "today_limit_up_source",
-                    row_count=1,
-                    provider="akshare",
-                ),
+                manifest=manifest,
                 source_records=source_records,
                 ingestion_quality=(),
             )
+            assert summary.status == "partial"
+            assert summary.member_count == 1
+            assert summary.rejected_count == 1
+            with database_engine.connect() as connection:
+                assert connection.scalar(
+                    text("select source_reported_sealed_funds_cny from today_limit_up.member")
+                ) == Decimal("123.45")
+                assert connection.scalar(
+                    text("select audit.snapshot_quantity_is_certified('today_limit_up', :id)"),
+                    {"id": summary.snapshot_id},
+                )
+        else:
+            with pytest.raises(ProviderError, match="quantity unit contract"):
+                persistence.commit_snapshot(
+                    trade_date=TRADE_DATE,
+                    requested_status=TodayLimitUpSnapshotStatus.READY,
+                    run=_completed_run(running, row_count=1),
+                    manifest=manifest,
+                    source_records=source_records,
+                    ingestion_quality=(),
+                )
     finally:
         worker_engine.dispose()
 
+    if verified_source:
+        return
     assert _scalar(database_engine, "select count(*) from today_limit_up.snapshot") == 0
     assert _scalar(database_engine, "select count(*) from today_limit_up.member") == 0
     assert _scalar(database_engine, "select count(*) from today_limit_up.calculation_quality") == 0

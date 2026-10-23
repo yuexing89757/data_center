@@ -148,8 +148,10 @@ def _rules() -> dict[QuantityIdentity, QuantityUnitRule]:
         "stock_zt_pool_em",
         ("akshare_eastmoney.current_day_limit_up_pool.v1",),
         ("封板资金",),
-        None,
-        "Official stock_zt_pool_em field table does not establish source sealed-funds units",
+        "cny",
+        "Eastmoney getTopicZTPool fund is unscaled CNY; official frontend mapping, "
+        "Tushare limit_list_ths CNY reference and 82-row 2026-10-23 Raw comparison; "
+        "docs/source-quantity-units.md (2026-10-24 verification)",
     )
     add(
         "akshare",

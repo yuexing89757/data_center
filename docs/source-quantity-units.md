@@ -18,6 +18,7 @@ PostgreSQL bigint 溢出。Decimal 上下文精度不能使转换发生舍入。
 | baostock / query_history_k_data_plus | baostock.daily_bar.v1 | 股票 / volume | 股 | 既有 BaoStock 股票日 K 契约及 adapter/replay 测试；不扩大到指数 |
 | tushare / daily | tushare.daily_bar.v1 | 股票 / vol | 手 ×100；amount 千元 ×1000 | [Tushare 日线字段表](https://tushare.pro/document/2?doc_id=27)及既有 adapter/replay 测试 |
 | tushare / daily_basic | tushare.stock_daily_indicator.v1 | 股票 / total_share、float_share、free_share | 万股 ×10000 | [Tushare 每日指标字段表](https://tushare.pro/document/2?doc_id=32)及既有资本数量测试 |
+| akshare / stock_zt_pool_em | akshare_eastmoney.current_day_limit_up_pool.v1 | 股票 / 封板资金 | 元，不缩放 | 下述 2026-10-24 官方映射、同花顺金额基准及当日 Raw 逐项核验 |
 | akshare / stock_zh_a_gbjg_em | akshare.capital.v1 | 股票 / 总股本、流通受限股份、已流通股份、已上市流通A股 | 未核实，阻断 | 当前官方字段表未明确来源单位；现有标准 DTO 的“股”不能反证来源单位 |
 | akshare / stock_history_dividend_detail | akshare.capital.v1 | 股票 / 基准股本 | 股 | [AKShare 官方配股历史输出表](https://akshare.akfamily.xyz/data/stock/stock.html)明确“基准股本”单位股（2026-10-23 核验）；零值/缺失回归 |
 | tushare / top10_floatholders | tushare.top10_float_holder.v1 | 股票 / hold_amount | 股 | 已接受 Top10FloatHolder 领域契约及整数股/Raw replay 测试 |
@@ -43,13 +44,67 @@ PostgreSQL bigint 溢出。Decimal 上下文精度不能使转换发生舍入。
 | baostock / query_history_k_data_plus / baostock.daily_bar.v1 | 非股票代码（包含指数） | 不能从同 endpoint 股票规则推断；身份没有股票规则即失败 |
 | tushare / stk_factor_pro / tushare.stock_technical_factor.v1 | 三组 OBV、EMV、MAEMV | [官方参数表](https://tushare.pro/document/2?doc_id=328)不能证明输出缩放；不假设 OBV 为手或简单×100，整批标准化失败，全部为null的来源也不绕过 |
 | akshare / stock_zh_a_gbjg_em / akshare.capital.v1 | 四个股本数量字段 | 尚无独立来源单位证据；保留完整三类 Capital Raw，遇到 ShareCapital 记录则整批标准化失败，不能只删未知字段继续发布成功 |
-| akshare / stock_zt_pool_em / akshare_eastmoney.current_day_limit_up_pool.v1 | 封板资金 | 官方当前表未明确来源单位；来源观察标准化失败，不能从字段名或数值推断元 |
-| akshare / stock_zt_pool_dtgc_em / akshare_eastmoney.current_day_limit_down_pool.v1 | 封单资金 | 同上，独立来源观察标准化失败；不借用涨停资金契约 |
+| akshare / stock_zt_pool_dtgc_em / akshare_eastmoney.current_day_limit_down_pool.v1 | 封单资金 | 官方字段表未明确来源单位，独立来源观察标准化失败；不借用涨停资金契约 |
 | 已退役 pysnowball 及其 Raw | 股票盘口数量 | 本整改不重新启用无已确认契约的适配器或 replay |
 | 未登记 schema、endpoint、品种或字段 | 所有数量 | fail closed；未知股票/基金/债券不可借股票规则转换 |
 
 技术因子来源公式与带符号 OBV 不由无符号整数股 helper 重定义。对外 JSON 叶子屏蔽、
 目录版本及历史数量认证由领域/持久化/公共读取门禁负责。
+
+### 2026-10-24：涨停来源“封板资金”核验
+
+核验范围限定为 `akshare / stock_zt_pool_em / akshare_eastmoney.current_day_limit_up_pool.v1`
+的“封板资金”，不扩展至跌停池或其他金额字段。
+
+- [AKShare 官方输出表](https://akshare.akfamily.xyz/data/stock/stock.html#id424)
+  对该字段只列出 `int64`，单位说明为空，不能据此认证为元。
+- [AKShare 固定提交的适配代码](https://github.com/akfamily/akshare/blob/4771e6ea34f6139f226e2bf4fab88ce17579831d/akshare/stock_feature/stock_ztb_em.py)
+  从 Eastmoney `getTopicZTPool` 获取数据，对“封板资金”仅调用 `pd.to_numeric`，未做乘除缩放。
+  这证明 AKShare 未主动换算该字段，不能单独证明上游基准单位。
+- [东方财富官方页面脚本](https://quote.eastmoney.com/ztb/newstatic/build/detail.js)
+  中，`detail-ztgc` 的 `fund` 列描述为涨停价买入挂单的资金总量，使用 `numbericFormat`
+  以万、亿缩略展示，未见该列的元/万元基准单位声明。核验文件 SHA256 为
+  `4230dc2141d97c63223db43e5bb78241c4ad76c35b3f58eaca239ca1b3eb7ad5`。
+- 复核更正：此前把“封单资金(手)”误归入 `ztgc`；该表头实际属于跌停首页 `dtgc`，
+  不能作为涨停详情 `detail-ztgc` 的单位冲突证据，也不能用于认证涨停字段。
+- 本轮另核对[官方源码映射](https://quote.eastmoney.com/ztb/newstatic/build/detail.js.map)
+  的 `src/modules/tableconfig/confighead.ts`、`urlconfig.ts` 和 `src/modules/common/utils.ts`：
+  `detail-ztgc` 对应 `getTopicZTPool`，`fund` 直接交给通用数字格式化函数；
+  函数除以 10000/100000000 后添加万/亿，没有明确基准货币单位。
+  源码映射 SHA256 为 `445587c116b915267d23f537f4afb73f59fb33a176f2df1f5509743ce01f1e17`。
+  [官方另一份页面脚本](https://quote.eastmoney.com/ztb/newstatic/js/detail.js)行为相同，
+  SHA256 为 `c38e66371790f495c90f6304163395feaa3380cb2d22b2cb7e198eaa98834e62`。
+- 经用户授权，在 MuMu 中只读查看开盘啦：当前涨停列表为 82 家；华数传媒（000156）
+  详情展示“封单 3903万”，买一价格 7.71、数量 5.06万。该页面没有明确标注封单基准单位，
+  也未证明开盘啦与 Eastmoney `fund` 的来源对应关系。这仅是交叉核对线索，
+  不以价格乘数量或数值接近作为来源单位认证依据。
+- 同日继续在 MuMu 的同花顺查看华数传媒：买一栏显示 0.39亿，涨停数据面板的
+  “最高封单额”显示 1.74亿，与开盘啦对应展示在精度范围内一致；当前封单与日内最大封单
+  属于不同指标，不能混比。随后用户明确指定 Tushare `limit_list_d` 并授权恢复当天列表。
+  [Tushare limit_list_d](https://tushare.pro/document/2?doc_id=298) 的 `fd_amount` 描述未列基准单位；
+  [limit_list_ths](https://tushare.pro/document/2?doc_id=355) 的 `limit_amount`、`lu_limit_order`
+  描述为“元|个”。须逐字段、榜单类别核对，不能将同花顺展示值或 Tushare 契约外推给 AKShare。
+
+此前仅有文档空白和客户端展示时保持阻断。随后完成以下显式对照，不采用数量级/价格启发式：
+
+1. Tushare `limit_list_ths`，`trade_date=20261023`、`ts_code=000156.SZ`、
+   `limit_type=涨停池`，返回 `limit_amount=39029562.0`；该字段是官方表中的封单**额**（元），
+   同次 `limit_order=5062200.0` 为另一数量字段，不能互换。该金额与同花顺 0.39亿、
+   开盘啦3903万的展示吻合；没有通过股价乘数量反推单位。
+2. 同日 Tushare `limit_list_d` 的 `fd_amount=39029562.0` 与上述金额完全一致。
+   已保存的 AKShare v1 Raw 中华数传媒“封板资金”为 `39029562`，映射未缩放。
+3. 完整按股票代码对照 Tushare `limit_list_d` 与既有 AKShare Raw，82条金额全部相等，差异0。
+   其他人工展示核对样本：平安电工8789939元、曙光股份23970446元、奥普特45969345元，
+   对应开盘啦879.0万、2397万、4597万。
+4. 原批次 `39a3c676-d528-4a8e-a9fc-7ae5b371be92`，Raw
+   `a0113adf-e761-4f0d-8b68-5c8fec05e514`，82条；完整性校验 SHA256
+   `60d6b03be73eb5cf8bff9b866ce792aa1c233360d78c4821bff857b66fc48e70`。
+
+结合官方 endpoint/字段/格式化链路和上述有明确金额语义的同日核验，将本目录精确身份的
+“封板资金”登记为 `cny`，适配器使用 Decimal 原值，不乘除100/10000。
+这不是跨来源通用单位推断器；未知 schema、跌停接口仍阻断。
+Tushare 本次仅作为核验来源，未新增生产适配器、自动切换或拼接来源批次。
+没有修改不可变 Raw。历史快照和其他日期不会因这条静态规则自动认证，仍须逐批核验并受控重建。
 
 可转债张数、金额与发行规模分别证明，不借用股票规则：
 

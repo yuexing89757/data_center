@@ -159,12 +159,39 @@ def test_quote_stock_contract_does_not_accept_index_or_bond(symbol: str) -> None
             identity(symbol)
 
 
-@pytest.mark.parametrize(
-    "normalizer,field", [(limit_up_source, "封板资金"), (limit_down_source, "封单资金")]
-)
-def test_source_pool_unknown_money_unit_blocks_standard_observation(normalizer, field: str) -> None:
+def test_source_down_pool_unknown_money_unit_blocks_standard_observation() -> None:
     with pytest.raises(ProviderError, match="quantity unit contract"):
-        normalizer({"代码": "600000", field: "123.45"}, date(2026, 10, 22))
+        limit_down_source({"代码": "600000", "封单资金": "123.45"}, date(2026, 10, 22))
+
+
+@pytest.mark.parametrize("amount", ["123.45", "0", "9007199254740993.01", None, ""])
+def test_source_up_funds_are_cny_without_scaling(amount: str | None) -> None:
+    record = limit_up_source({"代码": "600000", "封板资金": amount}, date(2026, 10, 22))
+    assert record.source_reported_sealed_funds_cny == (
+        None if amount in (None, "") else Decimal(amount)
+    )
+
+
+@pytest.mark.parametrize("amount", ["-1", "Infinity", "-Infinity", "bad"])
+def test_source_up_funds_reject_invalid_amounts(amount: str) -> None:
+    with pytest.raises(ProviderError):
+        limit_up_source({"代码": "600000", "封板资金": amount}, date(2026, 10, 22))
+
+
+def test_source_up_funds_certificate_is_scoped_to_verified_schema() -> None:
+    rules = quantity_group_rules(
+        provider="akshare",
+        schema_version="akshare_eastmoney.current_day_limit_up_pool.v1",
+        field_group="today_limit_up.source_observation.quantities",
+    )
+    assert len(rules) == 1
+    assert rules[0][1].source_unit == "cny"
+    with pytest.raises(ProviderError):
+        quantity_group_rules(
+            provider="akshare",
+            schema_version="akshare_eastmoney.current_day_limit_up_pool.v2",
+            field_group="today_limit_up.source_observation.quantities",
+        )
 
 
 def test_gbjg_unknown_quantity_unit_blocks_standard_capital() -> None:
@@ -176,10 +203,6 @@ def test_gbjg_unknown_quantity_unit_blocks_standard_capital() -> None:
     "schema,group",
     [
         ("akshare.capital.v1", "capital.shares"),
-        (
-            "akshare_eastmoney.current_day_limit_up_pool.v1",
-            "today_limit_up.source_observation.quantities",
-        ),
         (
             "akshare_eastmoney.current_day_limit_down_pool.v1",
             "today_limit_down.source_observation.quantities",

@@ -6,7 +6,12 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import pytest
 
-from market_data_center.domain.ingestion import IngestionRun, QualityResult, RawManifest
+from market_data_center.domain.ingestion import (
+    IngestionRun,
+    QualityResult,
+    RawFileFormat,
+    RawManifest,
+)
 from market_data_center.domain.today_limit_up import (
     LimitUpSourceRecord,
     TodayLimitUpDependencies,
@@ -17,7 +22,7 @@ from market_data_center.persistence.today_limit_up_postgres import (
     TodayLimitUpFillSummary,
     _member,
 )
-from market_data_center.providers.akshare_limit_up import AkshareCurrentDayLimitUpProvider
+from market_data_center.providers.akshare_limit_up import AkshareCurrentDayLimitUpProvider, _map_row
 from market_data_center.providers.contracts import ProviderBatch
 from market_data_center.raw_store import LocalRawStore
 from market_data_center.scheduler import build_scheduler, run_today_limit_up_snapshot_job
@@ -46,7 +51,7 @@ class Client:
         )
 
 
-def test_akshare_limit_up_mapping_preserves_source_semantics(synthetic_quantity_contract) -> None:
+def test_akshare_limit_up_mapping_preserves_source_semantics() -> None:
     batch = AkshareCurrentDayLimitUpProvider(Client()).fetch_limit_up_pool(date(2026, 8, 11))
     record = batch.records[0]
     assert record.symbol == "SZSE:000001"
@@ -55,6 +60,36 @@ def test_akshare_limit_up_mapping_preserves_source_semantics(synthetic_quantity_
     assert record.first_limit_up_at == datetime(
         2026, 8, 11, 9, 30, 1, tzinfo=ZoneInfo("Asia/Shanghai")
     )
+
+
+def test_limit_up_raw_roundtrip_keeps_money_exact_on_repeated_normalization(tmp_path) -> None:
+    batch = AkshareCurrentDayLimitUpProvider(Client()).fetch_limit_up_pool(date(2026, 8, 11))
+    store = LocalRawStore(tmp_path)
+    ingestion_id = uuid4()
+    stored = store.write_jsonl(
+        provider="akshare",
+        dataset="today_limit_up_source",
+        partition_date=date(2026, 8, 11),
+        ingestion_id=ingestion_id,
+        rows=batch.raw_rows,
+        schema_version=batch.schema_version,
+    )
+    manifest = RawManifest(
+        uuid4(),
+        ingestion_id,
+        stored.object_path,
+        RawFileFormat.JSONL,
+        stored.content_sha256,
+        stored.byte_size,
+        stored.row_count,
+        stored.schema_version,
+    )
+    for _ in range(2):
+        rows = store.read_jsonl(manifest)
+        record = _map_row(rows[0], date(2026, 8, 11))
+        assert record == batch.records[0]
+        assert record.source_reported_sealed_funds_cny == Decimal("123.45")
+        assert rows[0]["封板资金"] == "123.45"
 
 
 def test_member_uses_exact_free_float_cap_and_bid1_amount() -> None:
@@ -287,11 +322,3 @@ def test_fill_service_commits_raw_and_snapshot(tmp_path) -> None:
     ).fill(date(2026, 8, 11))
     assert result.status == "ready"
     assert persistence.committed
-
-
-@pytest.fixture
-def synthetic_quantity_contract(monkeypatch):
-    """Isolate the parser; real unverified-source blocking is tested separately."""
-    monkeypatch.setattr(
-        "market_data_center.providers.akshare_limit_up.quantity_unit_rule", lambda **kwargs: None
-    )
