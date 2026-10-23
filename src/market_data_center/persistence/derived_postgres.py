@@ -26,6 +26,8 @@ from market_data_center.domain.records import (
     TradeStatus,
 )
 
+_DAILY_BAR_SYMBOL_PAGE_SIZE = 100
+
 
 class PostgreSQLDerivedPersistence:
     def __init__(self, engine: Engine) -> None:
@@ -240,9 +242,26 @@ insert into metrics.classification_daily_metric (
         self, connection: Connection, start_date: date, end_date: date
     ) -> DerivedCalculationInput:
         parameters = {"start_date": start_date, "end_date": end_date}
-        bars = tuple(
-            _daily_bar(row) for row in connection.execute(_SELECT_DAILY_BARS, parameters).mappings()
-        )
+        bars: list[DailyBarRecord] = []
+        after_symbol = ""
+        while symbols := list(
+            connection.execute(
+                _SELECT_DAILY_BAR_SYMBOLS,
+                {
+                    **parameters,
+                    "after_symbol": after_symbol,
+                    "page_size": _DAILY_BAR_SYMBOL_PAGE_SIZE,
+                },
+            ).scalars()
+        ):
+            # Keep certification work bounded within the same repeatable-read snapshot.
+            bars.extend(
+                _daily_bar(row)
+                for row in connection.execute(
+                    _SELECT_DAILY_BARS, {**parameters, "symbols": symbols}
+                ).mappings()
+            )
+            after_symbol = symbols[-1]
         distributions = tuple(
             _distribution(row)
             for row in connection.execute(_SELECT_DISTRIBUTIONS, parameters).mappings()
@@ -261,7 +280,7 @@ insert into metrics.classification_daily_metric (
             connection.execute(_SELECT_MEMBERSHIPS, parameters).mappings()
         )
         return DerivedCalculationInput(
-            daily_bars=bars,
+            daily_bars=tuple(bars),
             distributions=distributions,
             rights_issues=rights_issues,
             share_capital=share_capital,
@@ -284,11 +303,18 @@ insert into metrics.classification_daily_metric (
         return watermark
 
 
+_SELECT_DAILY_BAR_SYMBOLS = text("""
+    select distinct symbol
+    from core.daily_bar
+    where trade_date between :start_date and :end_date
+      and symbol > :after_symbol
+    order by symbol
+    limit :page_size
+""")
+
 _SELECT_DAILY_BARS = text("""
 with target_symbols as (
-    select distinct symbol
-    from audit.unit_safe_daily_bar
-    where trade_date between :start_date and :end_date
+    select unnest(cast(:symbols as text[])) as symbol
 ), target_bars as (
     select bar.symbol, bar.trade_date, bar.market, bar.open, bar.high, bar.low,
            bar.close,

@@ -117,6 +117,9 @@ market-data-center derived-recompute \
 
 - 计算前获取日期区间级 advisory lock；
 - 输入在 PostgreSQL Repeatable Read 快照中加载；
+- 日 K 输入按证券 keyset 每页最多 100 个加载，所有页和 watermark 共用该快照；
+  标识分页只读取 Core 证券键，目标、20 日预热及事件行情的数量仍通过单位认证视图准入。
+  分页不改变输入顺序、去重、哈希、计算公式或算法版本。
 - 所有输出和成功状态在一个事务中提交；
 - 计算失败只更新 failed run，不留下部分输出；
 - Golden Dataset 覆盖复权、收益率、市值和分类统计；
