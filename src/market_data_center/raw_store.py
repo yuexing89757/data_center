@@ -30,6 +30,9 @@ class StoredRawObject:
 
 class LocalRawStore:
     def __init__(self, root: Path) -> None:
+        for parent in (root.absolute(), *root.absolute().parents):
+            if parent.is_symlink() or parent.is_junction():
+                raise RawIntegrityError("Raw root contains a link")
         self._root = root.resolve()
 
     @property
@@ -142,6 +145,13 @@ class LocalRawStore:
         return payload
 
     def _safe_path(self, object_path: str) -> Path:
+        return self.resolve_path(object_path)
+
+    def resolve_path(self, object_path: str) -> Path:
+        """Resolve an internal object without traversing filesystem links."""
+        for parent in (self._root, *self._root.parents):
+            if parent.is_symlink() or parent.is_junction():
+                raise RawIntegrityError("Raw root contains a link")
         parts = object_path.split("/")
         if any(part in {"", ".", ".."} for part in parts) or any(
             character in object_path for character in ("\\", ":", "\x00")

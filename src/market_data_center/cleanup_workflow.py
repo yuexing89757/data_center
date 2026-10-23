@@ -1,6 +1,7 @@
 """Shared manual/scheduled cleanup boundary; preview has no write side effects."""
 
 import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from threading import Event
 from time import monotonic
@@ -11,6 +12,7 @@ from market_data_center.data_cleanup_service import DataCleanupFailure, DataClea
 from market_data_center.operations_service import WorkflowExecution
 from market_data_center.persistence.postgres import PostgreSQLPersistence
 from market_data_center.persistence.quality_archive_postgres import QualityArchivePersistence
+from market_data_center.persistence.raw_compression_postgres import RawCompressionPersistence
 from market_data_center.quality_cleanup_service import (
     CleanupBudget,
     QualityCleanupFailure,
@@ -19,9 +21,36 @@ from market_data_center.quality_cleanup_service import (
     maintenance_seconds,
     quality_cutoff,
 )
+from market_data_center.raw_cleanup_service import (
+    RawCleanupFailure,
+    RawCleanupResult,
+    RawCleanupService,
+    raw_cutoff,
+)
 from market_data_center.settings import WorkerSettings
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class CleanupWorkflowResult:
+    quality: QualityCleanupResult
+    raw: RawCleanupResult | None = None
+
+    @property
+    def errors(self) -> tuple[str, ...]:
+        return self.quality.errors + (self.raw.errors if self.raw else ())
+
+    @property
+    def partial(self) -> bool:
+        return bool(self.errors)
+
+    def report(self) -> dict[str, object]:
+        return {
+            "quality": self.quality.report(),
+            "raw": self.raw.report() if self.raw else {"skipped": True},
+            "partial": self.partial,
+        }
 
 
 def run_cleanup_workflow(
@@ -31,7 +60,7 @@ def run_cleanup_workflow(
     *,
     now: datetime,
     scheduled: bool,
-) -> QualityCleanupResult:
+) -> CleanupWorkflowResult:
     from zoneinfo import ZoneInfo
 
     reference_date = now.astimezone(ZoneInfo("Asia/Shanghai")).date()
@@ -41,15 +70,21 @@ def run_cleanup_workflow(
     duration = maintenance_seconds(now, scheduled=scheduled)
     budget = CleanupBudget(monotonic() + duration)
     repo.start_report(
-        run_id, reference_date, now, quality_cutoff(reference_date), service.disk_report()
+        run_id,
+        reference_date,
+        now,
+        quality_cutoff(reference_date),
+        service.disk_report(),
+        raw_before=raw_cutoff(reference_date),
     )
     report: dict[str, object] = {}
     status = "failed"
+    raw_result = None
     try:
         if not duration:
             result = execution.step(
                 "archive_auction_quality",
-                2,
+                3,
                 lambda: QualityCleanupResult(errors=("outside_maintenance_window",)),
             )
         else:
@@ -69,18 +104,36 @@ def run_cleanup_workflow(
                     "deleted_rows": snapshot.deleted_rows,
                     "history_deleted_rows": snapshot.history_deleted_rows,
                 }
+                raw_result = execution.step(
+                    "compress_raw",
+                    2,
+                    lambda: RawCleanupService(
+                        RawCompressionPersistence(engine), settings.raw_data_root
+                    ).run(
+                        reference_date,
+                        run_id,
+                        CleanupBudget(
+                            min(budget.deadline, monotonic() + 900), cancelled=lost.is_set
+                        ),
+                    ),
+                )
+                report["raw"] = raw_result.report()
                 result = execution.step(
                     "archive_auction_quality",
-                    2,
+                    3,
                     lambda: service.run(reference_date, run_id, budget),
                 )
         report["quality"] = result.report()
-        report["remaining"] = repo.preview(quality_cutoff(reference_date))
-        status = "partial" if result.partial else "succeeded"
-        return result
+        combined = CleanupWorkflowResult(result, raw_result)
+        # Reporting must not restart a global scan after work or budget expiry.
+        report["remaining"] = {"counts_complete": False, "has_more": combined.partial}
+        status = "partial" if combined.partial else "succeeded"
+        return combined
     except BaseException as error:
         if isinstance(error, QualityCleanupFailure):
             report["quality"] = error.result.report()
+        if isinstance(error, RawCleanupFailure):
+            report["raw"] = error.result.report()
         if isinstance(error, DataCleanupFailure):
             report["snapshots"] = {
                 "deleted_rows": error.result.deleted_rows,

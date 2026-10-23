@@ -14,6 +14,13 @@ class Repository:
     def quality_candidates(self, cutoff, *, after=None):
         return self.groups if after is None else ()
 
+    def quality_candidate_page(self, cutoff, *, after=None):
+        from market_data_center.quality_archive import QualityCandidatePage
+
+        groups = self.quality_candidates(cutoff, after=after)
+        cursor = (groups[-1].ingestion_id, groups[-1].rule_code) if groups else after
+        return QualityCandidatePage(groups, cursor, len(groups), not groups)
+
     def preview(self, cutoff):
         return {"groups": 1, "rows": 1}
 
@@ -152,3 +159,64 @@ def test_bad_group_does_not_starve_next_valid_group(tmp_path):
     )
     assert result.failed == 1 and result.completed == 1 and result.deleted_rows == 1
     assert result.partial
+
+
+def test_row_budget_stops_before_another_candidate_page(tmp_path, monkeypatch):
+    from market_data_center import quality_cleanup_service as module
+
+    class NoNextPage(Repository):
+        def quality_candidates(self, cutoff, *, after=None):
+            assert after is None, "must not query again after reaching the row budget"
+            return self.groups
+
+    monkeypatch.setattr(module, "MAX_ARCHIVE_ROWS", 1)
+    result = service(tmp_path, NoNextPage()).run(
+        date(2026, 9, 27), uuid4(), module.CleanupBudget(100, monotonic=lambda: 0)
+    )
+    assert result.completed == 1 and result.deleted_rows == 1 and result.failed == 0
+    assert result.errors == ("quality_row_budget",)
+
+
+def test_next_valid_group_exceeding_remaining_budget_is_not_a_failure(tmp_path, monkeypatch):
+    from dataclasses import replace
+
+    from market_data_center import quality_cleanup_service as module
+
+    class TwoRows(Repository):
+        def quality_candidates(self, cutoff, *, after=None):
+            assert after is None, "must not query another page after remaining-budget exit"
+            return self.groups
+
+        def load_quality_rows(self, candidate):
+            assert candidate.ingestion_id == group().ingestion_id, "must not load second group"
+            return (row(), row(quality_result_id="00000000-0000-0000-0000-000000000003"))
+
+    repo = TwoRows()
+    repo.groups = (
+        replace(group(), row_count=2),
+        replace(group(), ingestion_id=uuid4(), row_count=2),
+    )
+    monkeypatch.setattr(module, "MAX_ARCHIVE_ROWS", 3)
+    result = service(tmp_path, repo).run(
+        date(2026, 9, 27), uuid4(), module.CleanupBudget(100, monotonic=lambda: 0)
+    )
+    assert result.completed == 1 and result.failed == 0
+    assert result.deleted_rows == 2
+    assert repo.writes == ["temp", "delete"]
+    assert result.errors == ("quality_row_budget",)
+
+
+def test_empty_eligible_page_does_not_hide_a_later_old_group(tmp_path):
+    from market_data_center.quality_archive import QualityCandidatePage
+    from market_data_center.quality_cleanup_service import CleanupBudget
+
+    class RecentFirst(Repository):
+        def quality_candidate_page(self, cutoff, *, after=None):
+            if after is None:
+                return QualityCandidatePage((), (uuid4(), "recent"), 200, False)
+            return QualityCandidatePage(self.groups, after, 1, True)
+
+    result = service(tmp_path, RecentFirst()).run(
+        date(2026, 9, 27), uuid4(), CleanupBudget(100, monotonic=lambda: 0)
+    )
+    assert result.completed == 1 and not result.partial

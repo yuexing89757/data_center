@@ -34,6 +34,7 @@ from market_data_center.persistence.today_limit_down_postgres import TodayLimitD
 from market_data_center.persistence.today_limit_up_postgres import TodayLimitUpFillSummary
 from market_data_center.providers.pytdx_pool import PytdxPoolRefreshResult
 from market_data_center.quality_cleanup_service import QualityCleanupFailure, QualityCleanupResult
+from market_data_center.raw_cleanup_service import RawCleanupFailure, RawCleanupResult
 from market_data_center.regulation_benchmark_service import (
     RegulationBenchmarkCollectionSummary,
 )
@@ -64,7 +65,7 @@ class WorkflowExecution:
             result = operation()
         except BaseException as error:
             fetched = accepted = rejected = 0
-            if isinstance(error, (DataCleanupFailure, QualityCleanupFailure)):
+            if isinstance(error, (DataCleanupFailure, QualityCleanupFailure, RawCleanupFailure)):
                 fetched, accepted, rejected, _ = _result_statistics(error.result)
                 self._accepted_rows += accepted
                 self._rejected_rows += rejected
@@ -139,7 +140,7 @@ def safe_error_summary(error: BaseException) -> str:
 
 
 def _result_statistics(result: object) -> tuple[int, int, int, ExecutionStatus]:
-    if isinstance(result, QualityCleanupResult):
+    if isinstance(result, (QualityCleanupResult, RawCleanupResult)):
         return (
             result.scanned,
             result.completed,

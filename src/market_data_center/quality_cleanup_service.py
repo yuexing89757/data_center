@@ -149,17 +149,20 @@ class QualityCleanupService:
         try:
             while True:
                 budget.checkpoint()
-                candidates = self.persistence.quality_candidates(cutoff, after=after)
-                if not candidates:
-                    break
-                for group in candidates:
+                if deleted >= MAX_ARCHIVE_ROWS:
+                    raise CleanupInterrupted("quality_row_budget")
+                page = self.persistence.quality_candidate_page(cutoff, after=after)
+                for group in page.groups:
                     budget.checkpoint()
-                    after = (group.ingestion_id, group.rule_code)
+                    if deleted >= MAX_ARCHIVE_ROWS:
+                        raise CleanupInterrupted("quality_row_budget")
                     scanned += 1
-                    if deleted + group.row_count > MAX_ARCHIVE_ROWS:
+                    if group.row_count > MAX_ARCHIVE_ROWS:
                         failed += 1
-                        errors.append("quality_row_budget")
+                        errors.append("archive_unit_too_large")
                         continue
+                    if deleted + group.row_count > MAX_ARCHIVE_ROWS:
+                        raise CleanupInterrupted("quality_row_budget")
                     try:
                         rows = self.persistence.load_quality_rows(group)
                         content_bytes = sum(len(row.encode("utf8")) + 1 for row in rows)
@@ -198,6 +201,11 @@ class QualityCleanupService:
                             else "archive_io_error"
                         )
                     # Database failures deliberately escape: no subsequent writes.
+                if page.complete:
+                    break
+                if page.after is None or page.after == after:
+                    raise RuntimeError("quality candidate cursor did not advance")
+                after = page.after
         except CleanupInterrupted as error:
             errors.append(str(error))
         except Exception as error:

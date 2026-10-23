@@ -265,6 +265,13 @@ Archive gaps fail closed. Session/round metadata, Raw and lineage records, quali
 history remain retained. Times, retention rules, and target tables are code-owned; `.env` exposes
 only the two enable switches.
 
+The local ADR-0058 extension adds verified lossless gzip for registered JSONL Raw older than
+seven days, followed by bounded archival of the two approved quality rules older than 30 days.
+It preserves original manifests and uses the same Worker maintenance lock and budget. Preview
+counts are explicitly bounded lower bounds when incomplete. See
+[Raw compression and cleanup](docs/Raw无损压缩与清理闭环.md) for registration, crash recovery,
+deployment and first-execution requirements; this does not assert production execution.
+
 DragonTiger collection is opt-in and remains disabled until source-rights review is recorded
 (`DRAGON_TIGER_ENABLED=false`). The `dragon-tiger-collect` command requires
 `--confirm-eastmoney-source-terms-reviewed`. The Worker catalog first runs the independent Tushare

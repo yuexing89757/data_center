@@ -33,6 +33,26 @@ from market_data_center.shareholder_count_batch import ShareholderCountSyncSumma
 NOW = datetime(2026, 8, 2, 10, tzinfo=UTC)
 
 
+def test_raw_budget_exit_records_partial_and_completed_objects():
+    from market_data_center.raw_cleanup_service import RawCleanupResult
+
+    persistence = MemoryOperationsPersistence()
+    execution = WorkflowExecutionService(cast(PostgreSQLOperationsPersistence, persistence)).start(
+        WorkflowCode.DATA_CLEANUP, NOW, TriggerSource.SCHEDULED
+    )
+    execution.step(
+        "compress_raw",
+        2,
+        lambda: RawCleanupResult(
+            scanned=10, completed=9, failed=1, errors=("raw_integrity_error", "raw_object_budget")
+        ),
+    )
+    execution.succeed()
+    assert persistence.finished_jobs[0].status is ExecutionStatus.PARTIAL
+    assert persistence.finished_workflows[0].status is ExecutionStatus.PARTIAL
+    assert persistence.finished_workflows[0].accepted_rows == 9
+
+
 def test_failed_cleanup_keeps_previously_committed_counts():
     from market_data_center.quality_cleanup_service import (
         QualityCleanupFailure,
@@ -166,6 +186,7 @@ def test_job_catalog_is_stable_and_references_defined_workflows() -> None:
     assert workflows["security_bse_daily"].step_codes == ("sync_bse_security",)
     assert workflows["data_cleanup"].step_codes == (
         "cleanup_call_auction_market_series_snapshots",
+        "compress_raw",
         "archive_auction_quality",
     )
     assert all(job.timezone == "Asia/Shanghai" for job in jobs)

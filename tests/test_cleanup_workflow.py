@@ -8,18 +8,22 @@ import pytest
 
 from market_data_center import cleanup_workflow as module
 from market_data_center.quality_cleanup_service import QualityCleanupResult
+from market_data_center.raw_cleanup_service import RawCleanupResult
 
 
 @pytest.mark.parametrize("hour", [3, 4, 9])
 @pytest.mark.parametrize("fail_quality", [False, True])
-def test_workflow_window_shared_lock_and_reports(monkeypatch, tmp_path, hour, fail_quality):
+@pytest.mark.parametrize("raw_partial", [False, True])
+def test_workflow_window_shared_lock_and_reports(
+    monkeypatch, tmp_path, hour, fail_quality, raw_partial
+):
     calls = []
 
     class Repo:
         def __init__(self, engine):
             pass
 
-        def start_report(self, *args):
+        def start_report(self, *args, **kwargs):
             calls.append("start")
 
         def finish_report(self, run_id, now, status, report, disk):
@@ -29,7 +33,7 @@ def test_workflow_window_shared_lock_and_reports(monkeypatch, tmp_path, hour, fa
                 assert report["snapshots"]["deleted_rows"] == 0
 
         def preview(self, cutoff):
-            return {"groups": 0, "rows": 0}
+            pytest.fail("finalization must not restart a candidate-count query")
 
     class Quality:
         def __init__(self, repo, root):
@@ -60,6 +64,15 @@ def test_workflow_window_shared_lock_and_reports(monkeypatch, tmp_path, hour, fa
             yield
             calls.append("unlock")
 
+    class Raw:
+        def __init__(self, repo, root):
+            pass
+
+        def run(self, day, run_id, budget):
+            budget.checkpoint()
+            calls.append("raw")
+            return RawCleanupResult(errors=("raw_object_budget",) if raw_partial else ())
+
     class Snapshots:
         def __init__(self, repo):
             pass
@@ -73,6 +86,12 @@ def test_workflow_window_shared_lock_and_reports(monkeypatch, tmp_path, hour, fa
         run = SimpleNamespace(workflow_run_id=uuid4())
 
         def step(self, code, sequence, operation):
+            expected = {
+                "cleanup_call_auction_market_series_snapshots": 1,
+                "compress_raw": 2,
+                "archive_auction_quality": 3,
+            }
+            assert sequence == expected[code]
             calls.append(code)
             return operation()
 
@@ -81,6 +100,8 @@ def test_workflow_window_shared_lock_and_reports(monkeypatch, tmp_path, hour, fa
         ("QualityCleanupService", Quality),
         ("PostgreSQLPersistence", Facts),
         ("DataCleanupService", Snapshots),
+        ("RawCompressionPersistence", Repo),
+        ("RawCleanupService", Raw),
     ]:
         monkeypatch.setattr(module, name, fake)
 
@@ -105,12 +126,14 @@ def test_workflow_window_shared_lock_and_reports(monkeypatch, tmp_path, hour, fa
             "lock",
             "cleanup_call_auction_market_series_snapshots",
             "snapshots",
+            "compress_raw",
+            "raw",
             "archive_auction_quality",
             "quality",
             "unlock",
-            "succeeded",
+            "partial" if raw_partial else "succeeded",
         ]
-        assert not result.partial
+        assert result.partial == raw_partial
     else:
         assert calls == ["start", "archive_auction_quality", "partial"]
         assert result.errors == ("outside_maintenance_window",)

@@ -7053,6 +7053,8 @@ def test_worker_has_only_ingestion_permissions(
         ("ingestion", "ingestion_run", "UPDATE"),
         ("ingestion", "raw_manifest", "INSERT"),
         ("ingestion", "raw_manifest", "SELECT"),
+        ("ingestion", "raw_compression", "SELECT"),
+        ("ingestion", "raw_compression", "INSERT"),
     }
     expected.update(
         ("audit", table, privilege)
@@ -7112,6 +7114,7 @@ def test_worker_has_only_ingestion_permissions(
 
 def test_internal_tables_have_rls_with_worker_only_policies(database_engine: Engine) -> None:
     expected_tables = {
+        ("ingestion", "raw_compression"),
         ("audit", "quantity_unit_certification"),
         ("audit", "quantity_unit_repair_run"),
         ("audit", "quantity_unit_repair_item"),
@@ -7394,7 +7397,23 @@ def test_application_backup_restores_to_independent_database(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _prepare_api_data(database_engine)
+    # Synthetic metadata exercises the newly added representation table in dump/restore.
+    with database_engine.begin() as connection:
+        connection.execute(
+            text("""
+            insert into ingestion.raw_compression
+              (raw_id,object_path,content_sha256,content_bytes,row_count,compressed_sha256,
+               compressed_bytes,plaintext_removed_at)
+            select raw_id,object_path || '.gz',content_sha256,byte_size,row_count,
+                   repeat('1',64),1,now() from ingestion.raw_manifest
+        """)
+        )
     source_snapshot = capture_database_snapshot(migrated_database_url)
+    assert (
+        dict(source_snapshot.row_counts)["raw_compression"]
+        == dict(source_snapshot.row_counts)["raw_manifest"]
+        > 0
+    )
     backup_path = tmp_path / "application-data.dump"
 
     monkeypatch.setenv("PGOPTIONS", "-c role=market_data_backup")
@@ -9801,3 +9820,193 @@ def _scalar(
 ) -> object:
     with engine.connect() as connection:
         return cast(object, connection.execute(text(statement), parameters or {}).scalar_one())
+
+
+def test_quality_paging_advances_past_recent_groups_and_preview_is_bounded(
+    database_engine, quality_archive_worker
+):
+    recent = datetime.now(UTC)
+    for value in (1, 2):
+        _seed_archive_quality(database_engine, ingestion_id=UUID(int=value), created=recent)
+    old_id, _ = _seed_archive_quality(database_engine, ingestion_id=UUID(int=3))
+    cutoff = recent - timedelta(days=30)
+    repo = quality_archive_worker
+    first = repo.quality_candidate_page(cutoff, page_size=2)
+    assert first.groups == () and not first.complete and first.scanned_groups == 2
+    second = repo.quality_candidate_page(cutoff, after=first.after, page_size=2)
+    assert second.complete and [g.ingestion_id for g in second.groups] == [old_id]
+    assert repo.preview(cutoff)["counts_complete"] is True
+
+
+def test_quality_page_size_is_bounded(quality_archive_worker):
+    for invalid in (0, 201):
+        with pytest.raises(ValueError):
+            quality_archive_worker.quality_candidate_page(datetime.now(UTC), page_size=invalid)
+
+
+@pytest.mark.integration
+def test_quality_preview_does_not_claim_recent_first_page_is_total(
+    database_engine, quality_archive_worker
+):
+    with database_engine.begin() as c:
+        c.execute(
+            text("""
+            insert into ingestion.ingestion_run
+                (ingestion_id,provider_code,dataset_code,status,requested_at,started_at,finished_at)
+            select md5(n::text)::uuid,'baostock','call_auction_market_series',
+                   'succeeded',now(),now(),now()
+            from generate_series(1,201) n
+        """)
+        )
+        c.execute(
+            text("""
+            insert into audit.quality_result
+                (ingestion_id,dataset_code,rule_code,severity,status,message)
+            select ingestion_id,'call_auction_market_series','realtime_quote.lot_precision',
+                'info','failed','test' from ingestion.ingestion_run
+        """)
+        )
+    preview = quality_archive_worker.preview(datetime.now(UTC) - timedelta(days=30))
+    assert preview["scanned_groups"] == 200
+    assert preview["groups"] == 0 and preview["rows"] == 0
+    assert preview["counts_complete"] is False and preview["next_cursor"]
+
+
+@pytest.mark.integration
+def test_raw_compression_registration_permissions_resume_and_manifest_immutability(
+    database_engine, quality_archive_worker, tmp_path
+):
+    from test_raw_store import _raw_fixture
+
+    from market_data_center.persistence.raw_compression_postgres import RawCompressionPersistence
+    from market_data_center.raw_compression import publish_raw_gzip, remove_verified_plaintext
+
+    store, manifest, _plain, compressed = _raw_fixture(tmp_path)
+    compressed.unlink()
+    old = datetime.now(UTC) - timedelta(days=50)
+    with database_engine.begin() as c:
+        c.execute(
+            text("""insert into ingestion.ingestion_run
+            (ingestion_id,provider_code,dataset_code,status,requested_at,started_at,finished_at)
+            values (:id,'baostock','security','succeeded',:old,:old,:old)"""),
+            {"id": manifest.ingestion_id, "old": old},
+        )
+        c.execute(
+            text("""insert into ingestion.raw_manifest
+            (raw_id,ingestion_id,object_path,file_format,content_sha256,byte_size,row_count,schema_version,created_at)
+            values (:id,:ingestion_id,:path,'jsonl',:hash,:bytes,:rows,:version,:old)"""),
+            {
+                "id": manifest.raw_id,
+                "ingestion_id": manifest.ingestion_id,
+                "path": manifest.object_path,
+                "hash": manifest.content_sha256,
+                "bytes": manifest.byte_size,
+                "rows": manifest.row_count,
+                "version": manifest.schema_version,
+                "old": old,
+            },
+        )
+        original = dict(c.execute(text("select * from ingestion.raw_manifest")).mappings().one())
+    repo = RawCompressionPersistence(quality_archive_worker.engine)
+    cutoff = datetime.now(UTC) - timedelta(days=7)
+    assert repo.candidates(cutoff).manifests == (manifest,)
+    representation = publish_raw_gzip(store, manifest, uuid4())
+    # Candidate identity becomes stale before registration: no registry write or unlink.
+    with database_engine.begin() as c:
+        c.execute(
+            text("update ingestion.raw_manifest set schema_version=:version where raw_id=:id"),
+            {"version": "changed.after.candidate", "id": manifest.raw_id},
+        )
+    from market_data_center.raw_store import RawIntegrityError
+
+    with pytest.raises(RawIntegrityError, match="identity"):
+        repo.register(manifest, representation, cutoff)
+    assert (tmp_path / manifest.object_path).exists()
+    with database_engine.begin() as c:
+        assert c.execute(text("select count(*) from ingestion.raw_compression")).scalar_one() == 0
+        c.execute(
+            text("update ingestion.raw_manifest set schema_version=:version where raw_id=:id"),
+            {"version": manifest.schema_version, "id": manifest.raw_id},
+        )
+    repo.register(manifest, representation, cutoff)
+    repo.register(manifest, representation, cutoff)
+    assert repo.candidates(cutoff).manifests == (manifest,)
+    remove_verified_plaintext(store, manifest, representation)
+    repo.confirm_removed(manifest, representation)
+    repo.confirm_removed(manifest, representation)
+    assert not repo.candidates(cutoff).manifests
+    assert store.read_jsonl(manifest)
+    with database_engine.connect() as c:
+        assert (
+            dict(c.execute(text("select * from ingestion.raw_manifest")).mappings().one())
+            == original
+        )
+        assert c.execute(
+            text(
+                "select has_table_privilege('market_data_backup',"
+                " 'ingestion.raw_compression', 'select')"
+            )
+        ).scalar_one()
+        assert not c.execute(
+            text("select has_table_privilege('anon', 'ingestion.raw_compression', 'select')")
+        ).scalar_one()
+    for statement in [
+        "update ingestion.raw_compression set compressed_bytes=1",
+        "delete from ingestion.raw_compression",
+        "update ingestion.raw_manifest set byte_size=0",
+    ]:
+        with pytest.raises(DBAPIError), quality_archive_worker.engine.begin() as c:
+            c.execute(text(statement))
+
+
+@pytest.mark.integration
+def test_raw_compression_candidates_require_both_old_timestamps_and_terminal_jsonl(database_engine):
+    from market_data_center.persistence.raw_compression_postgres import RawCompressionPersistence
+    from market_data_center.raw_cleanup_service import raw_cutoff
+
+    cutoff = raw_cutoff(datetime.now(UTC).astimezone(ZoneInfo("Asia/Shanghai")).date())
+    ids = []
+    with database_engine.begin() as c:
+        for created_delta, finished_delta, status, file_format, size in [
+            (-1, -1, "succeeded", "jsonl", 10),
+            (-1, -1, "partial", "jsonl", 20),
+            (0, -1, "succeeded", "jsonl", 30),
+            (-1, 0, "succeeded", "jsonl", 30),
+            (-1, -1, "running", "jsonl", 30),
+            (-1, -1, "failed", "parquet", 30),
+            (-1, -1, "failed", "jsonl", 268435457),
+        ]:
+            ingestion_id, raw_id = uuid4(), uuid4()
+            ids.append(raw_id)
+            old = cutoff - timedelta(days=1)
+            c.execute(
+                text("""insert into ingestion.ingestion_run
+                (ingestion_id,provider_code,dataset_code,status,requested_at,started_at,finished_at)
+                values (:id,'baostock','security',:status,:old,:old,:finished)"""),
+                {
+                    "id": ingestion_id,
+                    "status": status,
+                    "old": old,
+                    "finished": cutoff + timedelta(seconds=finished_delta),
+                },
+            )
+            c.execute(
+                text("""insert into ingestion.raw_manifest
+                (raw_id,ingestion_id,object_path,file_format,content_sha256,byte_size,row_count,schema_version,created_at)
+                values (:id,:ingestion_id,:path,:format,:hash,:size,1,'test.v1',:created)"""),
+                {
+                    "id": raw_id,
+                    "ingestion_id": ingestion_id,
+                    "path": f"test/{raw_id}.jsonl",
+                    "format": file_format,
+                    "hash": "0" * 64,
+                    "size": size,
+                    "created": cutoff + timedelta(seconds=created_delta),
+                },
+            )
+    repo = RawCompressionPersistence(database_engine)
+    first = repo.candidates(cutoff, page_size=1)
+    assert [item.raw_id for item in first.manifests] == [ids[1]]
+    second = repo.candidates(cutoff, page_size=1, after=first.after)
+    assert [item.raw_id for item in second.manifests] == [ids[0]]
+    assert not repo.candidates(cutoff, after=second.after).manifests

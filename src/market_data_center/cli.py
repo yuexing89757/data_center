@@ -1632,8 +1632,10 @@ def _run_cleanup_command(args: Namespace) -> None:
     from market_data_center.operations_service import WorkflowExecutionService
     from market_data_center.persistence.operations_postgres import PostgreSQLOperationsPersistence
     from market_data_center.persistence.quality_archive_postgres import QualityArchivePersistence
+    from market_data_center.persistence.raw_compression_postgres import RawCompressionPersistence
     from market_data_center.quality_archive import read_quality_archive
     from market_data_center.quality_cleanup_service import QualityCleanupService
+    from market_data_center.raw_cleanup_service import raw_cutoff
 
     if args.dataset == "data-cleanup" and args.execute != args.confirm:
         print(dumps({"error": "execution_requires_execute_and_confirm"}))
@@ -1666,6 +1668,7 @@ def _run_cleanup_command(args: Namespace) -> None:
                 dumps(
                     {
                         "quality": service.preview(now.date()),
+                        "raw": RawCompressionPersistence(engine).preview(raw_cutoff(now.date())),
                         "snapshots": repo.snapshot_preview(now.date()),
                     },
                     sort_keys=True,

@@ -1,4 +1,6 @@
 import gzip
+import os
+import subprocess
 from dataclasses import replace
 from datetime import date
 from hashlib import sha256
@@ -261,3 +263,27 @@ def test_reader_rejects_symlinks_even_within_raw_root(tmp_path: Path, link_targe
 
     with pytest.raises(RawIntegrityError):
         store.read_jsonl(manifest)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows junction semantics")
+@pytest.mark.parametrize("location", ["root", "child"])
+def test_raw_paths_reject_real_windows_junctions(tmp_path, location):
+    target = tmp_path / "target"
+    target.mkdir()
+    link = tmp_path / "linked"
+    subprocess.run(
+        ["cmd.exe", "/c", "mklink", "/J", str(link), str(target)],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+    )
+    try:
+        assert link.is_junction()
+        with pytest.raises(RawIntegrityError, match="link"):
+            if location == "root":
+                LocalRawStore(link)
+            else:
+                LocalRawStore(tmp_path).resolve_path("linked/object.jsonl")
+    finally:
+        link.rmdir()  # remove this junction only; its target remains intact
+    assert target.is_dir()

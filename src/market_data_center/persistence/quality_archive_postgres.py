@@ -1,7 +1,7 @@
 """Internal archive transactions. Never delete quality evidence by date alone."""
 
 import json
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from datetime import date, datetime
 from pathlib import Path
@@ -15,6 +15,7 @@ from market_data_center.quality_archive import (
     MAX_ARCHIVE_ROWS,
     QualityArchiveGroup,
     QualityArchiveObject,
+    QualityCandidatePage,
     read_quality_archive,
     validate_rows,
 )
@@ -47,53 +48,87 @@ class QualityArchivePersistence:
             connection.execute(text("set local timezone = 'UTC'"))
             yield connection
 
-    def quality_candidates(
+    def quality_candidate_page(
         self,
         cutoff: datetime,
         *,
         after: tuple[UUID, str] | None = None,
-    ) -> tuple[QualityArchiveGroup, ...]:
+        page_size: int = 200,
+    ) -> QualityCandidatePage:
+        if not 1 <= page_size <= 200:
+            raise ValueError("quality candidate page size out of bounds")
+        seek = (
+            "and (q.ingestion_id, q.rule_code) > (cast(:after_id as uuid), :after_rule)"
+            if after is not None
+            else ""
+        )
+        # Materialize only bounded keys before joining runs or aggregating rows.
+        # A page of recent/running groups must still advance its scanned cursor.
         with self.transaction(readonly=True) as connection:
-            rows = connection.execute(
-                text(f"""
-                select q.ingestion_id, q.rule_code, count(*) row_count,
-                       min(q.created_at) first_created_at, max(q.created_at) last_created_at
-                from audit.quality_result q
-                join ingestion.ingestion_run i using (ingestion_id)
-                where {ELIGIBLE} and i.status in ('succeeded', 'partial', 'failed')
-                  and i.dataset_code = 'call_auction_market_series'
-                  and (cast(:after_id as uuid) is null or
-                       (q.ingestion_id, q.rule_code) > (cast(:after_id as uuid), :after_rule))
-                group by q.ingestion_id, q.rule_code
-                having max(q.created_at) < :cutoff
-                order by q.ingestion_id, q.rule_code limit 200
-            """),
-                {
-                    "cutoff": cutoff,
-                    "after_id": after[0] if after else None,
-                    "after_rule": after[1] if after else "",
-                },
-            ).mappings()
-            return tuple(QualityArchiveGroup(**row) for row in rows)
-
-    def preview(self, cutoff: datetime) -> dict[str, object]:
-        with self.transaction(readonly=True) as connection:
-            row = (
+            rows = (
                 connection.execute(
                     text(f"""
-                select count(*) groups, coalesce(sum(row_count), 0)::bigint rows
-                from (select count(*) row_count from audit.quality_result q
-                  join ingestion.ingestion_run i using (ingestion_id)
-                  where {ELIGIBLE} and i.status in ('succeeded','failed','partial')
-                    and i.dataset_code = 'call_auction_market_series'
-                  group by q.ingestion_id, q.rule_code having max(q.created_at) < :cutoff) s
-            """),
-                    {"cutoff": cutoff},
+                with keys as materialized (
+                    select distinct q.ingestion_id, q.rule_code
+                    from audit.quality_result q
+                    where {ELIGIBLE} {seek}
+                    order by q.ingestion_id, q.rule_code limit :page_size
+                )
+                select k.ingestion_id, k.rule_code, i.status, i.dataset_code,
+                       facts.row_count, facts.first_created_at, facts.last_created_at
+                from keys k join ingestion.ingestion_run i using (ingestion_id)
+                cross join lateral (
+                    select count(*) row_count, min(q.created_at) first_created_at,
+                           max(q.created_at) last_created_at
+                    from audit.quality_result q
+                    where {ELIGIBLE}
+                      and q.ingestion_id=k.ingestion_id and q.rule_code=k.rule_code
+                ) facts
+                order by k.ingestion_id,k.rule_code
+                """),
+                    {
+                        "page_size": page_size,
+                        "after_id": after[0] if after else None,
+                        "after_rule": after[1] if after else None,
+                    },
                 )
                 .mappings()
-                .one()
+                .all()
             )
-            return dict(row)
+        groups = tuple(
+            QualityArchiveGroup(
+                row["ingestion_id"],
+                row["rule_code"],
+                row["row_count"],
+                row["first_created_at"],
+                row["last_created_at"],
+            )
+            for row in rows
+            if row["row_count"] > 0
+            and row["status"] in ("succeeded", "partial", "failed")
+            and row["dataset_code"] == "call_auction_market_series"
+            and row["last_created_at"] < cutoff
+        )
+        cursor = (rows[-1]["ingestion_id"], rows[-1]["rule_code"]) if rows else after
+        return QualityCandidatePage(groups, cursor, len(rows), len(rows) < page_size)
+
+    def quality_candidates(
+        self, cutoff: datetime, *, after: tuple[UUID, str] | None = None
+    ) -> tuple[QualityArchiveGroup, ...]:
+        """Compatibility helper; maintenance uses the cursor-bearing bounded page."""
+        return self.quality_candidate_page(cutoff, after=after).groups
+
+    def preview(self, cutoff: datetime) -> dict[str, object]:
+        page = self.quality_candidate_page(cutoff)
+        return {
+            "groups": len(page.groups),
+            "rows": sum(group.row_count for group in page.groups),
+            "counts_complete": page.complete,
+            "scanned_groups": page.scanned_groups,
+            "next_cursor": (
+                [str(page.after[0]), page.after[1]] if page.after is not None else None
+            ),
+        }
 
     def snapshot_preview(self, reference_date: date) -> dict[str, object]:
         from market_data_center.data_cleanup_service import (
@@ -305,6 +340,8 @@ class QualityArchivePersistence:
         now: datetime,
         cutoff: datetime,
         disk: Mapping[str, object],
+        *,
+        raw_before: datetime | None = None,
     ) -> None:
         with self.transaction() as connection:
             connection.execute(
@@ -317,12 +354,24 @@ class QualityArchivePersistence:
                     "id": run_id,
                     "day": reference_date,
                     "now": now,
-                    "cutoffs": json.dumps({"quality_before": cutoff.isoformat()}),
+                    "cutoffs": json.dumps(
+                        {
+                            "quality_before": cutoff.isoformat(),
+                            **({"raw_before": raw_before.isoformat()} if raw_before else {}),
+                        }
+                    ),
                     "disks": json.dumps({"before": disk}),
                 },
             )
 
     def register_temp(self, run_id: UUID, operation_id: UUID, path: str, now: datetime) -> None:
+        self.register_temps(run_id, [(operation_id, path)], now)
+
+    def register_temps(
+        self, run_id: UUID, temps: Sequence[tuple[UUID, str]], now: datetime
+    ) -> None:
+        if not 1 <= len(temps) <= 200:
+            raise ValueError("temporary ownership page size out of bounds")
         with self.transaction() as connection:
             count = connection.execute(
                 text("""
@@ -340,6 +389,7 @@ class QualityArchivePersistence:
                                 "path": path,
                                 "created_at": now.isoformat(),
                             }
+                            for operation_id, path in temps
                         ]
                     ),
                 },

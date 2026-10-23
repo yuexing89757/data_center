@@ -50,6 +50,14 @@ class QualityArchiveGroup:
     last_created_at: datetime
 
 
+@dataclass(frozen=True, slots=True)
+class QualityCandidatePage:
+    groups: tuple[QualityArchiveGroup, ...]
+    after: tuple[UUID, str] | None
+    scanned_groups: int
+    complete: bool
+
+
 @dataclass(frozen=True)
 class QualityArchiveObject:
     archive_id: UUID
