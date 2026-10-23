@@ -408,3 +408,6 @@ for the exact cutoff, retained calculation inputs, archive evidence, and unfinis
 This one-off operation does not change the Worker's recurring retention periods.
 
 2026-10-23新增历史清理范围见[ADR-0070](docs/adr/ADR-0070-定时历史结果归档清理.md)及[清理闭环](docs/Raw无损压缩与清理闭环.md)：竞价附属事实、技术因子、龙虎榜、监管结果及旧版本快照按一个自然月、完整依赖组归档后清理；部署状态以发布审计为准。
+
+2026-10-23涨停列表已恢复64条主板记录，状态partial，2只来源缺失保持可见；封板资金按元原值提供。
+单位证据、测试及线上验收见[恢复记录](docs/runbooks/limit-up-recovery-2026-10-24.md)。
