@@ -7006,6 +7006,9 @@ def test_worker_has_only_ingestion_permissions(
 ) -> None:
     _prepare_api_data(database_engine)
     expected = {
+        ("audit", "history_archive", "INSERT"),
+        ("audit", "history_archive", "SELECT"),
+        ("audit", "history_retention_catalog", "SELECT"),
         ("audit", "quality_archive", "INSERT"),
         ("audit", "quality_archive", "SELECT"),
         ("audit", "quality_result", "DELETE"),
@@ -7115,6 +7118,8 @@ def test_worker_has_only_ingestion_permissions(
 
 def test_internal_tables_have_rls_with_worker_only_policies(database_engine: Engine) -> None:
     expected_tables = {
+        ("audit", "history_archive"),
+        ("audit", "history_retention_catalog"),
         ("ingestion", "raw_retirement"),
         ("ingestion", "raw_compression"),
         ("audit", "quantity_unit_certification"),

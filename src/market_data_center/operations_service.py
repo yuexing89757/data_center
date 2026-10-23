@@ -29,6 +29,7 @@ from market_data_center.dragon_tiger_service import (
     DragonTigerBackfillSummary,
     DragonTigerCollectionSummary,
 )
+from market_data_center.history_cleanup_service import HistoryCleanupResult
 from market_data_center.persistence.operations_postgres import PostgreSQLOperationsPersistence
 from market_data_center.persistence.today_limit_down_postgres import TodayLimitDownFillSummary
 from market_data_center.persistence.today_limit_up_postgres import TodayLimitUpFillSummary
@@ -140,6 +141,13 @@ def safe_error_summary(error: BaseException) -> str:
 
 
 def _result_statistics(result: object) -> tuple[int, int, int, ExecutionStatus]:
+    if isinstance(result, HistoryCleanupResult):
+        return (
+            result.deleted_rows,
+            result.deleted_rows,
+            0,
+            ExecutionStatus.PARTIAL if result.partial else ExecutionStatus.SUCCEEDED,
+        )
     if isinstance(result, (QualityCleanupResult, RawCleanupResult)):
         return (
             result.scanned,

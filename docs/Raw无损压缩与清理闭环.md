@@ -85,3 +85,65 @@ Worker只读此表，压缩候选排除未恢复退役项；回放读取显式�
 确认restored_at。数据库备份和恢复清单包含该登记表。操作工具默认预览，首次移除前必须有
 匹配归档证据、正确存储根身份和在线表示验证；缺失/未认证的归档不猜测补齐。
 具体执行范围、恢复依据及保留例外见[月前历史清理记录](runbooks/month-retention-production-2026-10-23.md)。
+
+
+## ADR-0070：新增历史结果清理（2026-10-23）
+
+所有者要求把建议表加入任务。新步骤 `archive_history_results` 排在既有三个步骤之后；
+新范围按上海执行日减一个自然月、严格小于截止日，以下表共 32 张。
+原竞价序列历史仍保留六个月，不以一个月替换；质量规则白名单及Raw退役范围不变。
+
+| 原子单元根表 | 同事务归档删除的子表 |
+|---|---|
+| `realtime.call_auction_indicative_snapshot` | `realtime.call_auction_indicative_detail` |
+| `realtime.call_auction_market_snapshot` | 无 |
+| `realtime.call_auction_snapshot` | 无 |
+| `realtime.eod_quote_snapshot` | 无 |
+| `realtime.auction_collection_session` | `derived.auction_quote_metric`、`realtime.five_level_quote_snapshot`、`realtime.auction_collection_round` |
+| `realtime.call_auction_market_series_session` | `realtime.call_auction_market_series_round` |
+| `core.stock_technical_factor_snapshot` | 无 |
+| `core.board_moneyflow` | 无 |
+| `billboard.dragon_tiger_event` | `billboard.seat_trade` |
+| `billboard.trading_seat_profile_daily` | 无 |
+| `regulation.status` | `regulation.warning`、`regulation.rule_result` |
+| `stock_pool.snapshot` | `stock_pool.member` |
+| `stock_pool.calculation_quality` | 无 |
+| `today_limit_up.snapshot` | `today_limit_up.member`、`today_limit_up.calculation_quality` |
+| `today_limit_down.snapshot` | `today_limit_down.member`、`today_limit_down.calculation_quality` |
+| `today_limit_up.source_observation` | 无 |
+| `today_limit_down.source_observation` | 无 |
+| `derived.close_price_new_high_120d_snapshot` | `derived.close_price_new_high_120d_member` |
+
+股票池仍被任何竞价会话/报价引用时保留全部成员；共享质量记录只有所有引用快照已清除且
+自身超过一个月才归档。竞价会话必须结束；序列会话仍有在线或六个月历史引用时保留。
+监管结果的计算ID若仍在monitor_context链中则保留。日K、每日指标、涨跌停基础事实、
+股东比较输入、全部基础资料/采集计算血缘/单位修复证据不加入此次日期删除。
+
+每个依赖组先锁父行、读完整子事实，将原始PostgreSQL JSON文本连同结构、主键、数据库
+身份、工作流和截止日写入`RAW_DATA_ROOT/_history_archive/<UUID>.jsonl.gz`。
+归档经fsync和重新解压SHA校验后，在同一事务登记`audit.history_archive`并精确删除。
+数据库仅暴露锁定和完整组删除函数，Worker不能直接调用逐子表删除助手。
+数据库再次检查完整子集合、父项存在及所有外部FK，不依靠CASCADE删除未归档事实。
+
+新步骤最多10分钟/100000行；单组10000行/32MiB。超过组上限保持原组不变并记录partial，
+按主键游标继续后续组，不让一个超大会话挡住全表。不同表组轮转，共用原30分钟预算和
+maintenance:data_cleanup锁；Raw最多15分钟，质检最多5分钟，为历史步骤预留10分钟。
+若前置快照步骤占用预算，后续步骤按剩余时间提前结束。错误报告只含安全错误码。
+已提交进度保留；下次自动重新扫描剩余数据。没有成功登记的归档文件可能是失败事务残留，
+不得当成已清理记录，不自动删除这些恢复证据。
+
+`market-data-center data-cleanup`默认预览，新增每组最多201个候选根的只读统计，
+`counts_complete=false`表示下界；不是全库精确计数。实际执行仍需`--execute --confirm`。
+线上归档目录必须可写、容量满足保护门槛，并纳入现有独立备份；部署检查记录磁盘位置。
+本地实现不代表线上已迁移/启用，以发布运行记录为准。
+
+恢复工具：管理员通过标准PG环境变量连接精确目标，运行
+`uv run python scripts/restore_history_archive.py --archive-id <UUID> --root <Raw根>`。
+默认只验证；加`--execute --confirm`才恢复。恢复会校验登记的压缩/内容SHA、数据库实例、
+表结构、主键及冲突，按父到子顺序在单事务还原；已相同行幂等，不同内容拒绝。
+执行持有同一个维护锁，保存命令输出作为运维回执；不修改原归档和Raw。
+恢复工具只恢复数据库归档行，不自动恢复更早被退役的Raw或变更数量认证。
+
+独立审查发现并修复：超大第一组导致整表饥饿；Worker可单独删除子表绕过原子组。
+验收须包含这两个回归、数值/null、日期边界、损坏归档拒绝、回滚、重复执行、权限和
+实际完整schema兼容。数据库删除是页面复用，不承诺数据文件立即缩小。

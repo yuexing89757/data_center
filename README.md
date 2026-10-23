@@ -406,3 +406,5 @@ Offline Raw retirement preserves manifests, blocks replay until verified restora
 retired objects from scheduled compression. See the [monthly cleanup audit](docs/runbooks/month-retention-production-2026-10-23.md)
 for the exact cutoff, retained calculation inputs, archive evidence, and unfinished exceptions.
 This one-off operation does not change the Worker's recurring retention periods.
+
+2026-10-23新增历史清理范围见[ADR-0070](docs/adr/ADR-0070-定时历史结果归档清理.md)及[清理闭环](docs/Raw无损压缩与清理闭环.md)：竞价附属事实、技术因子、龙虎榜、监管结果及旧版本快照按一个自然月、完整依赖组归档后清理；部署状态以发布审计为准。

@@ -9,7 +9,9 @@ from time import monotonic
 from sqlalchemy import Engine
 
 from market_data_center.data_cleanup_service import DataCleanupFailure, DataCleanupService
+from market_data_center.history_cleanup_service import HistoryCleanupResult, HistoryCleanupService
 from market_data_center.operations_service import WorkflowExecution
+from market_data_center.persistence.history_retention_postgres import HistoryRetentionPersistence
 from market_data_center.persistence.postgres import PostgreSQLPersistence
 from market_data_center.persistence.quality_archive_postgres import QualityArchivePersistence
 from market_data_center.persistence.raw_compression_postgres import RawCompressionPersistence
@@ -36,10 +38,15 @@ logger = logging.getLogger(__name__)
 class CleanupWorkflowResult:
     quality: QualityCleanupResult
     raw: RawCleanupResult | None = None
+    history: HistoryCleanupResult | None = None
 
     @property
     def errors(self) -> tuple[str, ...]:
-        return self.quality.errors + (self.raw.errors if self.raw else ())
+        return (
+            self.quality.errors
+            + (self.raw.errors if self.raw else ())
+            + (self.history.errors if self.history else ())
+        )
 
     @property
     def partial(self) -> bool:
@@ -49,6 +56,7 @@ class CleanupWorkflowResult:
         return {
             "quality": self.quality.report(),
             "raw": self.raw.report() if self.raw else {"skipped": True},
+            "history": self.history.report() if self.history else {"skipped": True},
             "partial": self.partial,
         }
 
@@ -80,6 +88,7 @@ def run_cleanup_workflow(
     report: dict[str, object] = {}
     status = "failed"
     raw_result = None
+    history_result = None
     try:
         if not duration:
             result = execution.step(
@@ -113,7 +122,7 @@ def run_cleanup_workflow(
                         reference_date,
                         run_id,
                         CleanupBudget(
-                            min(budget.deadline, monotonic() + 900), cancelled=lost.is_set
+                            min(budget.deadline - 600, monotonic() + 900), cancelled=lost.is_set
                         ),
                     ),
                 )
@@ -121,10 +130,31 @@ def run_cleanup_workflow(
                 result = execution.step(
                     "archive_auction_quality",
                     3,
-                    lambda: service.run(reference_date, run_id, budget),
+                    lambda: service.run(
+                        reference_date,
+                        run_id,
+                        CleanupBudget(
+                            min(budget.deadline - 600, monotonic() + 300), cancelled=lost.is_set
+                        ),
+                    ),
                 )
+                report["quality"] = result.report()
+                history_result = execution.step(
+                    "archive_history_results",
+                    4,
+                    lambda: HistoryCleanupService(
+                        HistoryRetentionPersistence(engine), settings.raw_data_root
+                    ).run(
+                        reference_date,
+                        run_id,
+                        CleanupBudget(
+                            min(budget.deadline, monotonic() + 600), cancelled=lost.is_set
+                        ),
+                    ),
+                )
+                report["history"] = history_result.report()
         report["quality"] = result.report()
-        combined = CleanupWorkflowResult(result, raw_result)
+        combined = CleanupWorkflowResult(result, raw_result, history_result)
         # Reporting must not restart a global scan after work or budget expiry.
         report["remaining"] = {"counts_complete": False, "has_more": combined.partial}
         status = "partial" if combined.partial else "succeeded"

@@ -1629,7 +1629,11 @@ def _dragon_tiger_provider(provider_code: str) -> DragonTigerProvider:
 
 def _run_cleanup_command(args: Namespace) -> None:
     from market_data_center.cleanup_workflow import run_cleanup_workflow
+    from market_data_center.history_retention import month_cutoff
     from market_data_center.operations_service import WorkflowExecutionService
+    from market_data_center.persistence.history_retention_postgres import (
+        HistoryRetentionPersistence,
+    )
     from market_data_center.persistence.operations_postgres import PostgreSQLOperationsPersistence
     from market_data_center.persistence.quality_archive_postgres import QualityArchivePersistence
     from market_data_center.persistence.raw_compression_postgres import RawCompressionPersistence
@@ -1670,6 +1674,9 @@ def _run_cleanup_command(args: Namespace) -> None:
                         "quality": service.preview(now.date()),
                         "raw": RawCompressionPersistence(engine).preview(raw_cutoff(now.date())),
                         "snapshots": repo.snapshot_preview(now.date()),
+                        "history": HistoryRetentionPersistence(engine).preview(
+                            month_cutoff(now.date())
+                        ),
                     },
                     sort_keys=True,
                 )

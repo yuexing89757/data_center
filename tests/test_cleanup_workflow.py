@@ -82,6 +82,15 @@ def test_workflow_window_shared_lock_and_reports(
             calls.append("snapshots")
             return SimpleNamespace(deleted_rows=0, history_deleted_rows=0)
 
+    class History:
+        def __init__(self, repo, root):
+            pass
+
+        def run(self, day, run_id, budget):
+            budget.checkpoint()
+            calls.append("history")
+            return module.HistoryCleanupResult()
+
     class Execution:
         run = SimpleNamespace(workflow_run_id=uuid4())
 
@@ -90,6 +99,7 @@ def test_workflow_window_shared_lock_and_reports(
                 "cleanup_call_auction_market_series_snapshots": 1,
                 "compress_raw": 2,
                 "archive_auction_quality": 3,
+                "archive_history_results": 4,
             }
             assert sequence == expected[code]
             calls.append(code)
@@ -102,6 +112,8 @@ def test_workflow_window_shared_lock_and_reports(
         ("DataCleanupService", Snapshots),
         ("RawCompressionPersistence", Repo),
         ("RawCleanupService", Raw),
+        ("HistoryRetentionPersistence", Repo),
+        ("HistoryCleanupService", History),
     ]:
         monkeypatch.setattr(module, name, fake)
 
@@ -130,6 +142,8 @@ def test_workflow_window_shared_lock_and_reports(
             "raw",
             "archive_auction_quality",
             "quality",
+            "archive_history_results",
+            "history",
             "unlock",
             "partial" if raw_partial else "succeeded",
         ]
