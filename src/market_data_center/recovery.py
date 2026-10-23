@@ -208,6 +208,8 @@ def backup_application_data(
         "--data-only",
         "--no-owner",
         "--no-privileges",
+        # Fixed migration-owned catalog is already populated in a restored schema.
+        "--exclude-table-data=audit.history_retention_catalog",
         "--file",
         str(output_path),
     ]
