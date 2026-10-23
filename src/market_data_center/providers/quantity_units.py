@@ -214,16 +214,28 @@ def _rules() -> dict[QuantityIdentity, QuantityUnitRule]:
     add(
         "pytdx_hq",
         "standard_series_archive",
-        (
-            "market_data_center.call_auction_market_series.raw.v1",
-            "market_data_center.call_auction_market_series.raw.v2",
-        ),
+        ("market_data_center.call_auction_market_series.raw.v1",),
         (
             "cumulative_volume",
             *(f"{side}_levels.{level}.volume" for side in ("bid", "ask") for level in range(1, 6)),
         ),
         "share",
-        "Standard domain record archive; v1/v2 already contain shares, never source lots",
+        "v1 standard domain record archive already contains shares",
+    )
+    add(
+        "pytdx_hq",
+        "security_quotes_envelope",
+        ("market_data_center.call_auction_market_series.raw.v2",),
+        (
+            "provider_raw_json.volume_lots",
+            *(
+                f"provider_raw_json.{side}_vol{level}"
+                for side in ("bid", "ask")
+                for level in range(1, 6)
+            ),
+        ),
+        "lot",
+        "v2 envelopes preserve pytdx_hq.security_quotes.v1 native lots; adapter converts to shares",
     )
     add(
         "tencent_quote",
@@ -359,6 +371,14 @@ QUANTITY_FIELD_GROUP_FIELDS: Mapping[str, Mapping[str, tuple[str, ...]]] = Mappi
             "stock/details/get": ("volume_lots",)
         },
         "call_auction_market_series.quantities": {
+            "security_quotes_envelope": (
+                "provider_raw_json.volume_lots",
+                *(
+                    f"provider_raw_json.{side}_vol{level}"
+                    for side in ("bid", "ask")
+                    for level in range(1, 6)
+                ),
+            ),
             "standard_series_archive": (
                 "cumulative_volume",
                 *(

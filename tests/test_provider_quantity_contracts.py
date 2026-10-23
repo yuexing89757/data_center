@@ -134,15 +134,17 @@ def test_binary32_amount_rejects_invalid_source_value(bits: int) -> None:
         _binary32_amount(bits)
 
 
-@pytest.mark.parametrize("version", ["v1", "v2"])
-def test_standard_series_archive_group_already_contains_shares(version: str) -> None:
+@pytest.mark.parametrize("version,unit", [("v1", "share"), ("v2", "lot")])
+def test_series_archive_units_follow_envelope_version(version: str, unit: str) -> None:
     rules = quantity_group_rules(
         provider="pytdx_hq",
         schema_version=f"market_data_center.call_auction_market_series.raw.{version}",
         field_group="call_auction_market_series.quantities",
     )
     assert len(rules) == 11
-    assert {rule.source_unit for _, rule in rules} == {"share"}
+    assert {rule.source_unit for _, rule in rules} == {unit}
+    if version == "v2":
+        assert all(identity[4].startswith("provider_raw_json.") for identity, _ in rules)
 
 
 def test_source_limit_up_funds_reject_nonfinite_amount() -> None:

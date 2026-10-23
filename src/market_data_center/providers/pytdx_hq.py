@@ -397,3 +397,20 @@ def _price(cents: int) -> Decimal:
 
 def _raw_row(row: Mapping[str, object]) -> Mapping[str, str]:
     return {key: str(value) for key, value in row.items()}
+
+
+def normalize_raw_security_quote(
+    row: Mapping[str, str], *, schema_version: str, observed_at: datetime
+) -> FiveLevelQuoteSnapshotRecord:
+    """Read the native immutable v1 payload, using the live adapter's unit rules."""
+    if schema_version != "pytdx_hq.security_quotes.v1":
+        raise ValueError("unsupported native quote Raw schema")
+    symbol = _standard_symbol(int(row["market"]), row["code"])
+    prices = ("price", "last_close", "open", "high", "low", "amount")
+    decoded: dict[str, object] = {key: Decimal(row[key]) for key in prices}
+    decoded["volume_lots"] = int(row["volume_lots"])
+    for side in ("bid", "ask"):
+        for level in range(1, 6):
+            decoded[f"{side}{level}"] = Decimal(row[f"{side}{level}"])
+            decoded[f"{side}_vol{level}"] = int(row[f"{side}_vol{level}"])
+    return _record(symbol, decoded, observed_at)

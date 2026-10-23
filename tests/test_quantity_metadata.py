@@ -138,9 +138,9 @@ def test_new_batch_cannot_certify_conflicting_metadata(metadata):
             "pytdx_hq",
             "market_data_center.call_auction_market_series.raw.v2",
             {
-                "source_quantity_unit": "share",
+                "source_quantity_unit": "lot",
                 "standard_quantity_unit": "share",
-                "volume_lot_size": 1,
+                "volume_lot_size": 100,
             },
         ),
         (
@@ -164,7 +164,7 @@ def test_share_archive_cannot_claim_live_lots():
     with pytest.raises(ProviderError, match=r"quantity.*metadata"):
         quantity_units.validate_quantity_metadata(
             provider="pytdx_hq",
-            schema_version="market_data_center.call_auction_market_series.raw.v2",
+            schema_version="market_data_center.call_auction_market_series.raw.v1",
             request_params={"source_quantity_unit": "lot"},
             replay=True,
         )

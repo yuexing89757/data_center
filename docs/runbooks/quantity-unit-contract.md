@@ -28,6 +28,11 @@
 
 认证绑定 ingestion 与当前 Raw 哈希集合。哈希缺失、发生变化、字段组不匹配或证书隔离时，不接受旧证书。股票量额、可转债张数/金额/剩余规模、配股基准股数/募集额分别判断；一个字段组的证据不外推到其他字段。
 
+竞价序列Raw v1是股的标准归档；v2是原生TDX手数量的包络，Provider精确转股。
+已存正确事实可以经过完整尝试及热/历史副本Raw投影证明后恢复认证，操作边界见
+[当日竞价恢复手册](auction-quantity-recovery-2026-10-23.md)。此路径不修改事实、
+不启用通用回放，也不消除缺失/重复来源造成的partial状态。
+
 来源单位缺失或矛盾时，新采集和 replay 记录失败批次及 ERROR 质量事实，
 `details.quantity_reason` 为 `quantity_units_unverified` 或 `quantity_metadata_conflict`，
 附单位契约版本；不复制原始异常值或路径。Worker 既有失败任务/质量检查据此告警，
