@@ -26,7 +26,7 @@ class Client:
         return self.rows
 
 
-def test_full_catalog_source_fields_and_raw_replay():
+def test_full_catalog_source_fields_and_raw_replay(synthetic_quantity_contract):
     row = source_row()
     row.update(
         ema_qfq_10="12.34567890123456789",
@@ -87,7 +87,7 @@ def test_invalid_cells_abort(field, value):
         _ = batch.records
 
 
-def test_structure_date_duplicates_and_caps():
+def test_structure_date_duplicates_and_caps(synthetic_quantity_contract):
     row = source_row()
     for rows in (
         [],
@@ -108,7 +108,7 @@ def test_structure_date_duplicates_and_caps():
         normalize_technical_factor_raw(batch.raw_rows, "unknown")
 
 
-def test_transient_retries_paced_and_permission_not_retried():
+def test_transient_retries_paced_and_permission_not_retried(synthetic_quantity_contract):
     class Flaky(Client):
         def query(self, api_name, *, params, fields):
             self.calls.append(api_name)
@@ -169,7 +169,7 @@ def test_invalid_request_pacing_is_rejected(interval):
         TushareTechnicalFactorProvider(Client([]), request_interval_seconds=interval)
 
 
-def test_replay_rejects_malformed_structure_and_preserves_bse():
+def test_replay_rejects_malformed_structure_and_preserves_bse(synthetic_quantity_contract):
     with pytest.raises(ProviderError):
         normalize_technical_factor_raw([None], "tushare.stock_technical_factor.v1")
     row = source_row()
@@ -206,8 +206,17 @@ def test_source_date_requires_exact_ascii_digits(value):
         normalize_technical_factor_raw(batch.raw_rows, batch.schema_version)
 
 
-def test_replay_deduplicates_equal_records():
+def test_replay_deduplicates_equal_records(synthetic_quantity_contract):
     row = source_row()
     records = normalize_technical_factor_raw([row, dict(row)], "tushare.stock_technical_factor.v1")
     assert len(records) == 1
     assert records[0].symbol == "SZSE:000001"
+
+
+@pytest.fixture
+def synthetic_quantity_contract(monkeypatch):
+    """Isolate parsing/retry tests; real unverified-source blocking has separate regressions."""
+    monkeypatch.setattr(
+        "market_data_center.providers.tushare_technical_factor.quantity_unit_rule",
+        lambda **kwargs: None,
+    )

@@ -75,6 +75,13 @@
 - `core.daily_bar` is an unadjusted daily fact keyed by `(symbol, trade_date)`. Volume is in
   shares and amount is in CNY. Do not fabricate bars, forward-fill gaps, or overwrite Core
   with adjusted prices.
+- ADR-0068 requires source-specific quantity evidence and `stock-quantity.v1` certification.
+  Stock quantities are integral shares; source conversion belongs only in providers. Old
+  remote TDX v1 replay must normalize correctly or fail, never republish lots as shares.
+  Preserve immutable Raw and zero/null distinctions; unknown units fail standard writes.
+  Historical repair is evidence-bound preview/CAS with new lineage and restricted audit;
+  partial previews must not revoke complete prior certificates. Read/compute gates and
+  immutable replacements follow the [quantity remediation runbook](docs/stock-quantity-unit-remediation-2026-10-23.md).
 - Use `Decimal` for prices, ratios, and amounts. Never route market values through `float`.
   Preserve `None` as missing data; zero and missing have different meanings.
 - Domain records never contain `ingestion_id` or `calculation_id`. The pipeline attaches

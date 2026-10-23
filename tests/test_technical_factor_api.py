@@ -41,9 +41,10 @@ def test_query_is_authenticated_bounded_read_only_and_decimal_safe():
     assert response.status_code == 200, response.text
     assert response.json() == raw
     statement, parameters = connection.execute.call_args.args
-    assert str(statement).strip() == (
+    assert (
         "select api_v1.query_stock_technical_factors_by_codes(:codes, :trade_date) as payload"
-    )
+    ) in str(statement)
+    assert "api_v1.quantity_unit_contract_version()" in str(statement)
     assert parameters == {"codes": ["000001", "999999"], "trade_date": date(2026, 10, 9)}
 
 
@@ -95,6 +96,9 @@ def test_openapi_describes_exact_bounded_request_and_decimal_string_maps():
     request = models["StockTechnicalFactorQuery"]
     assert set(request["required"]) == {"codes", "trade_date"}
     assert request["properties"]["codes"]["maxItems"] == 100
+    assert request["examples"] == [
+        {"trade_date": "2026-10-15", "codes": ["601188", "000001", "600000"]}
+    ]
     item = models["StockTechnicalFactorItem"]
     for name in ("unadjusted", "forward_adjusted", "backward_adjusted"):
         values = item["properties"][name]["additionalProperties"]["anyOf"]

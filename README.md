@@ -9,8 +9,14 @@ A phase-one A-share daily market data pipeline using Python 3.12 and PostgreSQL.
 Remote Daily Bars keep category 9 and the standard TDX protocol. The reviewed candidate catalog
 supplements pytdx's legacy list; probes and collection share strict Decimal decoding and reject
 empty-shell or truncated pages. New remote Raw v2 retains source lot volumes and normalizes them
-to shares; legacy Raw replay and stored history remain unchanged. See
+to shares. Under ADR-0068, legacy remote v1 replay also normalizes source lots to shares;
+immutable Raw stays unchanged and stored history changes only through approved repair. See
 [Daily Bar validation and remote diagnostics](docs/DailyBar数据质量验收.md).
+
+Stock quantity contracts, evidence-bound repair/rollback, historical certification limits
+and blocked snapshot rebuild dependencies are recorded in the
+[quantity remediation delivery runbook](docs/stock-quantity-unit-remediation-2026-10-23.md).
+Local implementation does not certify production history or authorize production operations.
 
 The three Regulation benchmark indices use Tushare `index_daily` (ADR-0048 clarification,
 Issue #69); this does not change ordinary stock routing or replace existing historical Raw.
@@ -184,12 +190,16 @@ market-data-center --provider tushare stock-daily-indicators-daily
 ```
 
 Professional technical factors are collected separately through Tushare `stk_factor_pro`.
-The Worker registers `stock-technical-factor-daily` for 21:00 Asia/Shanghai on weekdays,
+The Worker registers `stock-technical-factor-daily` for 21:00, 22:00 and 23:00 Asia/Shanghai on weekdays,
 checks the actual trading calendar, and preserves all 226 factor values and their adjustment
 bases. Existing daily indicators keep their original behavior. The authenticated
 `POST /v1/stock-technical-factors/query` reads up to 100 codes for an exact trading date.
 See the [technical-factor runbook](docs/runbooks/stock-technical-factor.md) for migration
 prerequisites, single-day retries, Raw replay and missing-data behavior.
+`stock-technical-factor-catchup` retries the exact previous Shanghai date at 08:30 daily;
+closed dates are skipped and incomplete source snapshots remain failed. The API request body is
+`{"trade_date":"2026-10-15","codes":["601188","000001","600000"]}`; codes remain strings,
+and unavailable records are reported in `missing_codes` without substituting a different date.
 
 Run the unified cross-platform collection Worker as the single supervised application process:
 

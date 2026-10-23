@@ -72,7 +72,9 @@ class LiveFakeClient(FakeClient):
         return self.payloads[year]
 
 
-def test_explicit_board_directory_and_daily_bar_preserve_decimal_precision() -> None:
+def test_explicit_board_directory_and_daily_bar_preserve_decimal_precision(
+    synthetic_quantity_contract,
+) -> None:
     provider = AKShareTHSProvider(FakeClient(), today=lambda: TODAY)
 
     directory = provider.fetch_board_indexes()
@@ -102,7 +104,7 @@ def test_provider_refuses_to_forge_historical_constituent_snapshot() -> None:
         provider.fetch_board_index_constituents(THS_BOARD_ID, date(2026, 7, 28))
 
 
-def test_raw_replay_uses_request_identity_and_schema_version() -> None:
+def test_raw_replay_uses_request_identity_and_schema_version(synthetic_quantity_contract) -> None:
     rows = FakeClient().board_index_daily_bars("883423", TODAY, TODAY)
     raw_rows = [{key: str(value) for key, value in row.items()} for row in rows]
 
@@ -135,7 +137,9 @@ def test_ths_payload_parsers_reject_no_data_and_parse_full_pages() -> None:
         _parse_daily_payload("not-json", TODAY, TODAY)
 
 
-def test_live_history_preserves_exact_bytes_and_skips_previous_year_at_34_rows() -> None:
+def test_live_history_preserves_exact_bytes_and_skips_previous_year_at_34_rows(
+    synthetic_quantity_contract,
+) -> None:
     payload = _payload(date(2026, 1, 1), 34)
     client = LiveFakeClient({2026: payload})
     fetched_at = datetime(2026, 8, 15, 1, 2, 3, tzinfo=UTC)
@@ -155,7 +159,9 @@ def test_live_history_preserves_exact_bytes_and_skips_previous_year_at_34_rows()
     assert batch.fetched_at == fetched_at
 
 
-def test_live_history_reads_previous_year_and_deduplicates_dates() -> None:
+def test_live_history_reads_previous_year_and_deduplicates_dates(
+    synthetic_quantity_contract,
+) -> None:
     current = _payload(date(2026, 1, 1), 2)
     previous = _payload(date(2025, 11, 28), 34)
     client = LiveFakeClient({2025: previous, 2026: current})
@@ -175,7 +181,7 @@ def test_live_history_reads_previous_year_and_deduplicates_dates() -> None:
     assert batch.records[0].trade_date == date(2025, 11, 28)
 
 
-def test_live_history_rejects_insufficient_two_year_history() -> None:
+def test_live_history_rejects_insufficient_two_year_history(synthetic_quantity_contract) -> None:
     client = LiveFakeClient(
         {
             2025: _payload(date(2025, 12, 30), 2),
@@ -214,3 +220,11 @@ def test_http_client_uses_configured_timeout(monkeypatch: pytest.MonkeyPatch) ->
 
     assert content.startswith(b"quotebridge")
     assert observed == {"timeout": 5}
+
+
+@pytest.fixture
+def synthetic_quantity_contract(monkeypatch):
+    """Isolate parsing/retry tests; real unverified-source blocking has separate regressions."""
+    monkeypatch.setattr(
+        "market_data_center.providers.akshare_ths.quantity_unit_rule", lambda **kwargs: None
+    )

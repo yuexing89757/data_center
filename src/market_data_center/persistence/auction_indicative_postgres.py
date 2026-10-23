@@ -6,6 +6,7 @@ from sqlalchemy import Engine, text
 
 from market_data_center.domain.auction_indicative import CallAuctionIndicativeDetailRecord
 from market_data_center.domain.ingestion import IngestionRun, QualityResult, RawManifest
+from market_data_center.quantity_certification import certify_quantity_batch
 
 
 class PostgreSQLAuctionIndicativePersistence:
@@ -77,6 +78,7 @@ class PostgreSQLAuctionIndicativePersistence:
                     "schema": manifest.schema_version,
                 },
             )
+            certify_quantity_batch(connection, run, manifest)
             connection.execute(
                 text("""insert into realtime.call_auction_indicative_snapshot
                 (ingestion_id,raw_id,symbol,trade_date,version,status,source_code,record_count)

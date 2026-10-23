@@ -17,8 +17,8 @@ from market_data_center.domain.derived import (
 )
 
 CALCULATION_CODE = "cn_a_share_daily_derived"
-DEFAULT_ALGORITHM_VERSION = "1.1.0"
-SUPPORTED_ALGORITHM_VERSIONS = frozenset({"1.0.0", "1.1.0"})
+DEFAULT_ALGORITHM_VERSION = "1.2.0"
+SUPPORTED_ALGORITHM_VERSIONS = frozenset({"1.2.0"})
 
 
 class DerivedPersistence(Protocol):
@@ -133,7 +133,7 @@ class DerivationService:
                     inputs,
                     start_date=start_date,
                     end_date=end_date,
-                    defer_missing_events=algorithm_version == "1.1.0",
+                    defer_missing_events=True,
                 )
                 output_rows = _output_rows(output)
                 completed = run.succeeded(finished_at=self._clock(), output_rows=output_rows)

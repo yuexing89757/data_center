@@ -18,6 +18,7 @@ from market_data_center.domain.today_limit_up import (
     TodayLimitUpSnapshotStatus,
     UpstreamState,
 )
+from market_data_center.quantity_certification import certify_quantity_batch
 
 EMPTY_HASH = sha256(b"").hexdigest()
 RULE_VERSION = "cn_a_mainboard_limit_up_v1"
@@ -222,13 +223,13 @@ left join derived.price_limit_event ple on ple.calculation_id=s.calculation_id
  and ple.symbol=m.symbol and ple.trade_date=s.basis_trade_date and ple.direction='up'
 left join derived.daily_price_limit dpl on dpl.calculation_id=s.calculation_id
  and dpl.symbol=m.symbol and dpl.trade_date=s.basis_trade_date
-left join core.daily_bar db on db.symbol=m.symbol and db.trade_date=s.basis_trade_date
-left join core.stock_daily_indicator ind on ind.symbol=m.symbol
+left join audit.unit_safe_daily_bar db on db.symbol=m.symbol and db.trade_date=s.basis_trade_date
+left join audit.unit_safe_stock_daily_indicator ind on ind.symbol=m.symbol
  and ind.trade_date=s.basis_trade_date
 left join core.security_name_history nh on nh.symbol=m.symbol
  and nh.effective_from<=s.basis_trade_date
  and (nh.effective_to is null or nh.effective_to>=s.basis_trade_date)
-left join realtime.eod_quote_snapshot e on e.symbol=m.symbol
+left join audit.unit_safe_eod_quote_snapshot e on e.symbol=m.symbol
  and e.trade_date=s.basis_trade_date
 where m.snapshot_id=:snapshot_id and m.direction='up'
 order by m.symbol
@@ -413,6 +414,7 @@ insert into ingestion.raw_manifest (
                 "schema": manifest.schema_version,
             },
         )
+        certify_quantity_batch(connection, run, manifest)
         observations = [record for record in records if record.symbol in supported_symbols]
         if observations:
             execute(

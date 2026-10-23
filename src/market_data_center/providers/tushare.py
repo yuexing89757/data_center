@@ -59,6 +59,14 @@ from market_data_center.providers.contracts import (
     ProviderRequestUnavailable,
     RawRow,
 )
+from market_data_center.providers.quantity_units import (
+    normalize_bond_quantity,
+    normalize_source_stock_quantity,
+    normalize_stock_quantity,
+    quantity_unit_metadata,
+    quantity_unit_rule,
+    stock_instrument_type,
+)
 from market_data_center.settings import TushareSettings
 
 SECURITY_FIELDS = (
@@ -182,7 +190,6 @@ CB_DAILY_FIELDS = (
     "convert_value",
     "convert_pct",
     "convert_price",
-    "remain_size",
 )
 
 
@@ -441,6 +448,7 @@ class TushareProvider(AbstractContextManager["TushareProvider"]):
             "start_date": start_date.strftime("%Y%m%d"),
             "end_date": end_date.strftime("%Y%m%d"),
             "adjust": "none",
+            **(quantity_unit_metadata(source_unit="lot") if not is_index else {}),
         }
         return ProviderBatch(
             raw_rows=rows,
@@ -481,6 +489,7 @@ class TushareProvider(AbstractContextManager["TushareProvider"]):
                 "source_symbol": ts_code,
                 "start_date": start_date.strftime("%Y%m%d"),
                 "end_date": end_date.strftime("%Y%m%d"),
+                **quantity_unit_metadata(source_unit="ten_thousand_share"),
             },
             schema_version="tushare.stock_daily_indicator.v1",
             record_factory=lambda: [_map_stock_daily_indicator(row) for row in rows],
@@ -501,7 +510,10 @@ class TushareProvider(AbstractContextManager["TushareProvider"]):
         rows.sort(key=lambda row: row["ts_code"])
         return ProviderBatch(
             raw_rows=rows,
-            request_params={"trade_date": trade_date.strftime("%Y%m%d")},
+            request_params={
+                "trade_date": trade_date.strftime("%Y%m%d"),
+                **quantity_unit_metadata(source_unit="ten_thousand_share"),
+            },
             schema_version="tushare.stock_daily_indicator.v1",
             record_factory=lambda: _complete_stock_daily_indicator_snapshot(rows),
         )
@@ -658,6 +670,7 @@ class TushareProvider(AbstractContextManager["TushareProvider"]):
                 "ann_date": params["ann_date"],
                 "period": period,
                 "source_symbol": ts_code,
+                **quantity_unit_metadata(source_unit="share"),
             },
             schema_version="tushare.top10_float_holder.v1",
             record_factory=lambda: _top10_float_holder_records(rows),
@@ -694,7 +707,7 @@ class TushareProvider(AbstractContextManager["TushareProvider"]):
         rows = _rows(result, CB_BASIC_FIELDS, "cb_basic")
         return ProviderBatch(
             raw_rows=rows,
-            request_params={},
+            request_params={"source_amount_unit": "cny", "standard_amount_unit": "cny"},
             schema_version="tushare.convertible_bond.v1",
             record_factory=lambda: [_map_cb_basic(row) for row in rows],
         )
@@ -720,7 +733,13 @@ class TushareProvider(AbstractContextManager["TushareProvider"]):
         rows.sort(key=lambda row: row["trade_date"])
         return ProviderBatch(
             raw_rows=rows,
-            request_params={"ts_code": ts_code},
+            request_params={
+                "ts_code": ts_code,
+                "source_quantity_unit": "bond_lot",
+                "standard_quantity_unit": "bond",
+                "source_amount_unit": "ten_thousand_cny",
+                "standard_amount_unit": "cny",
+            },
             schema_version="tushare.convertible_bond_daily_bar.v1",
             record_factory=lambda: [_map_cb_daily_bar(row) for row in rows],
         )
@@ -932,6 +951,13 @@ def _calendar_records(
 def _index_daily_records(
     rows: Sequence[Mapping[str, str]], request_params: Mapping[str, object]
 ) -> list[DailyBarRecord]:
+    quantity_unit_rule(
+        provider="tushare",
+        endpoint="index_daily",
+        schema_version="tushare.index_daily.v1",
+        instrument_type="index",
+        field="vol",
+    )
     requested_symbol = request_params.get("source_symbol")
     if not isinstance(requested_symbol, str):
         raise ProviderError("Tushare index_daily request source_symbol is missing")
@@ -954,12 +980,14 @@ def _index_daily_records(
 
 def _map_daily_bar(row: Mapping[str, str]) -> DailyBarRecord:
     _, _, symbol = _normalize_symbol(row["ts_code"])
-    volume_lots = _decimal(row.get("vol"))
-    volume_shares = volume_lots * 100 if volume_lots is not None else None
-    if volume_shares is not None and volume_shares != volume_shares.to_integral_value():
-        raise ProviderError(
-            f"Tushare volume cannot be normalized to whole shares: {row.get('vol')}"
-        )
+    volume_shares = normalize_source_stock_quantity(
+        row.get("vol"),
+        provider="tushare",
+        endpoint="daily",
+        schema_version="tushare.daily_bar.v1",
+        instrument_type=stock_instrument_type(symbol),
+        field="vol",
+    )
     amount_thousand = _decimal(row.get("amount"))
     return DailyBarRecord(
         symbol=symbol,
@@ -970,7 +998,7 @@ def _map_daily_bar(row: Mapping[str, str]) -> DailyBarRecord:
         low=_decimal(row.get("low")),
         close=_decimal(row.get("close")),
         previous_close=_decimal(row.get("pre_close")),
-        volume=int(volume_shares) if volume_shares is not None else None,
+        volume=volume_shares,
         amount=amount_thousand * 1000 if amount_thousand is not None else None,
         trade_status=TradeStatus.TRADING,
         is_st=None,
@@ -1002,7 +1030,12 @@ def _map_cb_basic(row: Mapping[str, str]) -> ConvertibleBondBasicRecord:
         underlying_symbol=underlying_symbol,
         exchange=symbol.split(":")[0],
         par_value=_decimal(row.get("par")) or Decimal("100"),
-        issue_size=_decimal(row.get("issue_size")),
+        issue_size=_bond_money(
+            row.get("issue_size"),
+            endpoint="cb_basic",
+            schema="tushare.convertible_bond.v1",
+            field="issue_size",
+        ),
         issue_date=None,
         value_date=_optional_date(row.get("value_date")),
         maturity_years=_optional_int(row.get("maturity")),
@@ -1022,11 +1055,22 @@ def _map_cb_basic(row: Mapping[str, str]) -> ConvertibleBondBasicRecord:
 def _map_cb_daily_bar(row: Mapping[str, str]) -> ConvertibleBondDailyBarRecord:
     _, _, symbol = _normalize_symbol(row["ts_code"])
     # Tushare cb_daily.vol is in lots (1 lot = 10 bonds); normalize to 张.
-    volume_lots = _decimal(row.get("vol"))
-    volume = int(volume_lots * 10) if volume_lots is not None else None
-    # Tushare amount is in thousands of CNY.
-    amount_thousand = _decimal(row.get("amount"))
-    amount = amount_thousand * 1000 if amount_thousand is not None else None
+    volume = normalize_bond_quantity(row.get("vol"), context="Tushare cb_daily.vol (bonds)")
+    amount = _bond_money(
+        row.get("amount"),
+        endpoint="cb_daily",
+        schema="tushare.convertible_bond_daily_bar.v1",
+        field="amount",
+    )
+    remaining = row.get("remain_size")
+    if remaining is not None and remaining.strip():
+        quantity_unit_rule(
+            provider="tushare",
+            endpoint="cb_daily",
+            schema_version="tushare.convertible_bond_daily_bar.v1",
+            instrument_type="convertible_bond",
+            field="remain_size",
+        )
     return ConvertibleBondDailyBarRecord(
         symbol=symbol,
         trade_date=_parse_date(row["trade_date"]),
@@ -1042,10 +1086,31 @@ def _map_cb_daily_bar(row: Mapping[str, str]) -> ConvertibleBondDailyBarRecord:
         convert_value=_decimal(row.get("convert_value")),
         convert_premium_pct=_decimal(row.get("convert_pct")),
         convert_price=_decimal(row.get("convert_price")),
-        remain_size=_decimal(row.get("remain_size")),
+        remain_size=None,
         trade_status="trading",
         source_code="tushare",
     )
+
+
+def _bond_money(value: str | None, *, endpoint: str, schema: str, field: str) -> Decimal | None:
+    rule = quantity_unit_rule(
+        provider="tushare",
+        endpoint=endpoint,
+        schema_version=schema,
+        instrument_type="convertible_bond",
+        field=field,
+    )
+    scales = {"cny": 0, "ten_thousand_cny": 4}
+    if rule.source_unit not in scales:
+        raise ProviderError(f"unsupported convertible bond amount unit for {field}")
+    number = _decimal(value)
+    if number is None:
+        return None
+    if not number.is_finite() or number < 0:
+        raise ProviderError(f"Tushare convertible bond {field} must be finite and nonnegative")
+    parts = number.as_tuple()
+    assert isinstance(parts.exponent, int)
+    return Decimal((parts.sign, parts.digits, parts.exponent + scales[rule.source_unit]))
 
 
 def _map_stock_daily_indicator(
@@ -1204,7 +1269,7 @@ def _top10_float_holder_records(
                     hold_amount=_share_count(row["hold_amount"], "hold_amount"),
                     hold_ratio=_decimal(row["hold_ratio"]),
                     hold_float_ratio=_decimal(row["hold_float_ratio"]),
-                    hold_change=_optional_int(row["hold_change"]),
+                    hold_change=_signed_share_change(row["hold_change"]),
                     holder_type=(row["holder_type"].strip() or None),
                     source_code="tushare",
                 )
@@ -1320,9 +1385,26 @@ def _optional_int(value: str | None) -> int | None:
     if value is None or not value.strip():
         return None
     try:
-        return int(float(value))
-    except ValueError as error:
+        number = Decimal(value)
+        if not number.is_finite() or number != number.to_integral_value():
+            raise ValueError("integer must be finite and exact")
+        return int(number)
+    except (InvalidOperation, ValueError) as error:
         raise ProviderError(f"invalid Tushare integer: {value}") from error
+
+
+def _signed_share_change(value: str | None) -> int | None:
+    quantity_unit_rule(
+        provider="tushare",
+        endpoint="top10_floatholders",
+        schema_version="tushare.top10_float_holder.v1",
+        instrument_type="stock",
+        field="hold_change",
+    )
+    change = _optional_int(value)
+    if change is not None and not -(2**63) <= change < 2**63:
+        raise ProviderError("Tushare hold_change exceeds signed bigint shares")
+    return change
 
 
 _SHARE_COUNT_PATTERN = re.compile(r"[+-]?[0-9]+(?:\.0+)?\Z")
@@ -1334,7 +1416,13 @@ def _share_count(value: str | None, field_name: str) -> int:
     candidate = value.strip() if value is not None else ""
     if not _SHARE_COUNT_PATTERN.fullmatch(candidate):
         raise ProviderError(f"invalid Tushare {field_name}: {value}")
-    return int(Decimal(candidate))
+    if field_name == "holder_num":
+        return int(Decimal(candidate))
+    count = normalize_stock_quantity(
+        candidate, source_unit="share", context=f"Tushare {field_name}"
+    )
+    assert count is not None
+    return count
 
 
 def _decimal(value: str | None) -> Decimal | None:
@@ -1352,12 +1440,14 @@ def _scaled_decimal(value: str | None) -> Decimal | None:
 
 
 def _scaled_integer(value: str | None, field_name: str) -> int | None:
-    scaled = _scaled_decimal(value)
-    if scaled is None:
-        return None
-    if scaled != scaled.to_integral_value():
-        raise ProviderError(f"Tushare {field_name} cannot be normalized to whole shares")
-    return int(scaled)
+    return normalize_source_stock_quantity(
+        value,
+        provider="tushare",
+        endpoint="daily_basic",
+        schema_version="tushare.stock_daily_indicator.v1",
+        instrument_type="stock",
+        field=field_name,
+    )
 
 
 def _price_limit_status(value: str | None) -> PriceLimitStatus:

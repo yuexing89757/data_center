@@ -98,10 +98,14 @@ SQL migration 扩展数据集约束、operations 工作流约束、RLS、Worker 
 
 ## 每日更新
 
-新增 Worker 目录任务 `stock-technical-factor-daily`，默认周一至周五 21:00
-Asia/Shanghai，由 APScheduler 在 Worker 进程内执行。21:00 是初始运维选择，
-不是来源承诺的数据就绪时间。先同步并确认当日真实交易日；休市跳过；
-只采集当天，不自动用上一日数据冒充当日更新。
+2026-10-16运维修正见ADR-0066：既有21:00入口增加22:00、23:00机会，
+另在08:30显式补采上海昨日。两类入口继续使用同一工作流与单日完整批次，
+不会将前一日数据当作当天发布；实际生产启用以runbook部署记录为准。
+
+Worker 目录任务 `stock-technical-factor-daily` 默认周一至周五 21:00、22:00、23:00
+Asia/Shanghai 执行；`stock-technical-factor-catchup` 每日 08:30 补采上海前一日。
+两者由 APScheduler 在 Worker 进程内执行；上述时间不是来源承诺的数据就绪时间。
+先同步并确认目标日真实交易日；休市跳过；快照始终归属精确目标日。
 
 复用单实例、coalesce、misfire 配置、数据库锁与 operations 执行记录；
 Worker 本地只读任务页可见任务和执行状态。超过当日的延迟运行需按当前上海日期重新

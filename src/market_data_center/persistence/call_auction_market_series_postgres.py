@@ -26,6 +26,7 @@ from market_data_center.domain.ingestion import (
     QualityResult,
     RawManifest,
 )
+from market_data_center.quantity_certification import certify_quantity_batch
 
 
 class PostgreSQLCallAuctionMarketSeriesPersistence:
@@ -252,6 +253,7 @@ class PostgreSQLCallAuctionMarketSeriesPersistence:
                 """),
                 [_quality_parameters(result) for result in quality_results],
             )
+        certify_quantity_batch(connection, run, manifest)
         if records:
             connection.execute(
                 text("""

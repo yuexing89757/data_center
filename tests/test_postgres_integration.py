@@ -1,6 +1,6 @@
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from os import environ
@@ -121,6 +121,12 @@ from market_data_center.persistence.dragon_tiger_profile_postgres import (
 )
 from market_data_center.persistence.hot_money_postgres import PostgreSQLHotMoneyPersistence
 from market_data_center.persistence.operations_postgres import PostgreSQLOperationsPersistence
+from market_data_center.persistence.postgres import (
+    UPDATE_INGESTION_RUN,
+    UPSERT_DISTRIBUTION,
+    UPSERT_RIGHTS_ISSUE,
+    UPSERT_SHARE_CAPITAL,
+)
 from market_data_center.persistence.regulation_event_postgres import (
     PostgreSQLRegulationEventPersistence,
     RegulationEventContentConflict,
@@ -131,6 +137,7 @@ from market_data_center.persistence.regulation_postgres import (
 from market_data_center.persistence.today_limit_up_postgres import (
     PostgreSQLTodayLimitUpPersistence,
 )
+from market_data_center.providers.contracts import ProviderError
 from market_data_center.quality_audit import audit_daily_bars
 from market_data_center.recovery import (
     APPLICATION_SCHEMAS,
@@ -830,7 +837,9 @@ def test_latest_stock_daily_indicators_rpc_returns_each_symbol_latest_in_request
     ]
     persistence.commit_stock_daily_indicator_batch(
         _completed_run(indicator_run, len(indicators)),
-        _manifest(indicator_run.ingestion_id, "latest-indicators", len(indicators)),
+        _manifest(
+            indicator_run.ingestion_id, "latest-indicators", len(indicators), provider="tushare"
+        ),
         [IngestionEnvelope(indicator_run.ingestion_id, item) for item in indicators],
         [],
     )
@@ -2880,7 +2889,7 @@ def test_today_limit_up_fill_reads_ready_pool_with_append_only_worker_role(
     assert summary.member_count == 0
 
 
-def test_today_limit_up_fill_rejects_pool_members_missing_source_observation(
+def test_today_limit_up_fill_rejects_unverified_source_before_member_publication(
     migrated_database_url: str,
     database_engine: Engine,
 ) -> None:
@@ -3001,40 +3010,28 @@ insert into core.stock_daily_indicator (
                 consecutive_limit_up_days=1,
             ),
         )
-        summary = persistence.commit_snapshot(
-            trade_date=TRADE_DATE,
-            requested_status=TodayLimitUpSnapshotStatus.READY,
-            run=_completed_run(running, row_count=1),
-            manifest=_manifest(
-                running.ingestion_id,
-                "today_limit_up_source",
-                row_count=1,
-                provider="akshare",
-            ),
-            source_records=source_records,
-            ingestion_quality=(),
-        )
+        # Source-unit admission precedes publication, including missing-observation partials.
+        with pytest.raises(ProviderError, match="quantity unit contract"):
+            persistence.commit_snapshot(
+                trade_date=TRADE_DATE,
+                requested_status=TodayLimitUpSnapshotStatus.READY,
+                run=_completed_run(running, row_count=1),
+                manifest=_manifest(
+                    running.ingestion_id,
+                    "today_limit_up_source",
+                    row_count=1,
+                    provider="akshare",
+                ),
+                source_records=source_records,
+                ingestion_quality=(),
+            )
     finally:
         worker_engine.dispose()
 
-    assert summary.status == "partial"
-    assert summary.candidate_count == 2
-    assert summary.member_count == 1
-    assert summary.rejected_count == 1
-    with database_engine.connect() as connection:
-        members = (
-            connection.execute(text("select symbol from today_limit_up.member order by symbol"))
-            .scalars()
-            .all()
-        )
-        findings = connection.execute(
-            text("""
-select rule_code, symbol from today_limit_up.calculation_quality
-where rule_code='missing_source_observation'
-""")
-        ).all()
-    assert members == ["SSE:600000"]
-    assert findings == [("missing_source_observation", "SSE:600001")]
+    assert _scalar(database_engine, "select count(*) from today_limit_up.snapshot") == 0
+    assert _scalar(database_engine, "select count(*) from today_limit_up.member") == 0
+    assert _scalar(database_engine, "select count(*) from today_limit_up.calculation_quality") == 0
+    assert _scalar(database_engine, "select count(*) from ingestion.raw_manifest") == 0
 
 
 def test_daily_limit_down_rpc_exposes_deferred_snapshot_without_internal_grants(
@@ -3263,6 +3260,9 @@ insert into realtime.call_auction_market_series_round (
             "row_count": len(ordered_symbols),
             "ingestion_id": ingestion_id,
         },
+    )
+    _seed_quantity_fixture_proof(
+        connection, ingestion_id, ("call_auction_market_series.quantities",)
     )
     return session_id
 
@@ -4182,6 +4182,11 @@ insert into realtime.call_auction_market_series_snapshot (
                 "partial_observed": slots[0] + timedelta(seconds=1),
             },
         )
+
+        for fixture_id in (round_zero_ingestion_id, round_one_ingestion_id, partial_ingestion_id):
+            _seed_quantity_fixture_proof(
+                connection, fixture_id, ("call_auction_market_series.quantities",)
+            )
 
         assert connection.scalar(
             text("""
@@ -5529,7 +5534,8 @@ def test_capital_facts_are_idempotent_revision_aware_and_exposed_by_views(
             source_code="akshare",
         ),
     ]
-    persistence.commit_capital_batch(
+    _seed_historical_capital_fixture(
+        persistence._engine,
         _completed_run(capital_run, row_count=3),
         _manifest(capital_run.ingestion_id, "capital"),
         _envelopes(capital_run.ingestion_id, records),
@@ -5542,7 +5548,8 @@ def test_capital_facts_are_idempotent_revision_aware_and_exposed_by_views(
         total_shares=1_100_000,
         change_reason="revised",
     )
-    persistence.commit_capital_batch(
+    _seed_historical_capital_fixture(
+        persistence._engine,
         _completed_run(revision_run),
         _manifest(revision_run.ingestion_id, "capital-revision"),
         _envelopes(revision_run.ingestion_id, [revised_share_capital]),
@@ -6212,7 +6219,8 @@ def test_derived_calculation_is_versioned_idempotent_and_revision_aware(
     persistence = PostgreSQLPersistence(database_engine)
     capital_run = _running_run(DatasetCode.CAPITAL)
     persistence.create_ingestion_run(capital_run)
-    persistence.commit_capital_batch(
+    _seed_historical_capital_fixture(
+        persistence._engine,
         _completed_run(capital_run),
         _manifest(capital_run.ingestion_id, "derived-capital"),
         _envelopes(
@@ -6347,7 +6355,7 @@ def test_postgrest_query_contracts_are_bounded_version_coherent_and_as_of(
             text("""
                 select trade_date, adjustment_type, calculation_id
                 from api_v1.query_adjusted_daily_bars(
-                    :symbol, :start_date, :end_date, 'forward', '1.1.0', null, 100
+                    :symbol, :start_date, :end_date, 'forward', '1.2.0', null, 100
                 )
             """),
             {
@@ -6359,7 +6367,7 @@ def test_postgrest_query_contracts_are_bounded_version_coherent_and_as_of(
         snapshot = connection.execute(
             text("""
                 select symbol, calculation_id
-                from api_v1.query_market_snapshot(:trade_date, '1.1.0', null, 100)
+                from api_v1.query_market_snapshot(:trade_date, '1.2.0', null, 100)
             """),
             {"trade_date": date(2026, 7, 28)},
         ).one()
@@ -6959,6 +6967,7 @@ def test_api_v1_contract_supports_symbol_and_closed_date_range(
         "amount",
         "trade_status",
         "is_st",
+        "quantity_quality",
     ]
 
 
@@ -7045,6 +7054,39 @@ def test_worker_has_only_ingestion_permissions(
         ("ingestion", "raw_manifest", "INSERT"),
         ("ingestion", "raw_manifest", "SELECT"),
     }
+    expected.update(
+        ("audit", table, privilege)
+        for table in (
+            "quantity_unit_certification",
+            "quantity_unit_repair_run",
+            "quantity_unit_repair_item",
+        )
+        for privilege in ("SELECT", "INSERT", "UPDATE")
+    )
+    expected.update(
+        ("audit", "unit_safe_" + relation, "SELECT")
+        for relation in (
+            "daily_bar",
+            "share_capital",
+            "rights_issue",
+            "stock_daily_indicator",
+            "top10_float_holder",
+            "board_index_daily_bar",
+            "convertible_bond",
+            "convertible_bond_daily_bar",
+            "stock_quote_snapshot",
+            "five_level_quote_snapshot",
+            "call_auction_indicative_detail",
+            "call_auction_market_snapshot",
+            "call_auction_market_series_snapshot",
+            "call_auction_market_series_snapshot_history",
+            "eod_quote_snapshot",
+            "auction_quote_metric",
+            "stock_technical_factor_snapshot",
+            "today_limit_up_snapshot",
+            "today_limit_down_snapshot",
+        )
+    )
     with psycopg.connect(migrated_database_url, autocommit=True) as connection:
         privileges = {
             (cast(str, schema), cast(str, table), cast(str, privilege))
@@ -7070,6 +7112,9 @@ def test_worker_has_only_ingestion_permissions(
 
 def test_internal_tables_have_rls_with_worker_only_policies(database_engine: Engine) -> None:
     expected_tables = {
+        ("audit", "quantity_unit_certification"),
+        ("audit", "quantity_unit_repair_run"),
+        ("audit", "quantity_unit_repair_item"),
         ("audit", "quality_archive"),
         ("audit", "quality_result"),
         ("core", "daily_bar"),
@@ -8566,12 +8611,108 @@ def _completed_run(run: IngestionRun, row_count: int = 1) -> IngestionRun:
     )
 
 
+def _seed_quantity_fixture_proof(
+    connection: Connection, ingestion_id: UUID, field_groups: tuple[str, ...]
+) -> None:
+    """Certify explicitly standard synthetic historical fixtures, never source payloads."""
+    connection.execute(
+        text("""
+        insert into ingestion.raw_manifest
+            (raw_id,ingestion_id,object_path,file_format,content_sha256,
+             byte_size,row_count,schema_version)
+        select :raw_id,:id,:path,'jsonl',:hash,0,0,'test.standard_fixture.v1'
+        where not exists (select 1 from ingestion.raw_manifest where ingestion_id=:id)
+    """),
+        {
+            "raw_id": uuid4(),
+            "id": ingestion_id,
+            "path": f"test-fixtures/standard/{ingestion_id}.jsonl",
+            "hash": "f" * 64,
+        },
+    )
+    for group in field_groups:
+        connection.execute(
+            text("""
+            insert into audit.quantity_unit_certification
+                (ingestion_id,unit_contract_version,field_group,status,raw_hashes,
+                 normalizer_version,evidence_hash)
+            select :id,'stock-quantity.v1',:group,'certified',
+                jsonb_agg(distinct content_sha256),'test.standard-fixture-proof.v1',:evidence
+            from ingestion.raw_manifest where ingestion_id=:id
+            on conflict (ingestion_id,unit_contract_version,field_group) do nothing
+        """),
+            {"id": ingestion_id, "group": group, "evidence": ingestion_id.hex * 2},
+        )
+
+
+def _seed_historical_capital_fixture(
+    engine: Engine,
+    run: IngestionRun,
+    manifest: RawManifest,
+    records: list[IngestionEnvelope[CapitalRecord]],
+    quality_results: list[QualityResult],
+) -> None:
+    """Exercise existing SQL revision keys with known-share legacy test facts.
+
+    Current unknown AKShare ShareCapital admission stays blocked. These synthetic
+    historical fixtures have an explicit test-only proof independent of that source.
+    """
+    assert not quality_results
+    persistence = PostgreSQLPersistence(engine)
+    statements = {
+        ShareCapitalRecord: UPSERT_SHARE_CAPITAL,
+        DistributionRecord: UPSERT_DISTRIBUTION,
+        RightsIssueRecord: UPSERT_RIGHTS_ISSUE,
+    }
+    with engine.begin() as connection:
+        persistence._insert_manifest(connection, manifest)
+        for envelope in records:
+            connection.execute(
+                statements[type(envelope.record)],
+                {**asdict(envelope.record), "ingestion_id": envelope.ingestion_id},
+            )
+        connection.execute(UPDATE_INGESTION_RUN, persistence._run_update_parameters(run))
+        _seed_quantity_fixture_proof(
+            connection,
+            run.ingestion_id,
+            ("capital.shares", "capital.rights_issue.quantities", "capital.rights_issue.proceeds"),
+        )
+
+
 def _manifest(
     ingestion_id: UUID,
     dataset: str,
     row_count: int = 1,
     provider: str = "baostock",
 ) -> RawManifest:
+    # These fixtures contain explicitly standard records, not provider-native
+    # payloads. Give them their real source/archive identity for unit admission.
+    daily_fixtures = {
+        "daily_bar",
+        "daily-bar",
+        "daily-bar-first",
+        "daily-bar-second",
+        "resume-first-bar",
+        "resume-second-bar",
+        "api-daily-bar",
+        "derived-daily-revision",
+        "top-gainers-bars",
+        "new-high-bars",
+        "new-high-bars-revision",
+    }
+    schema_version = f"{dataset}.v1"
+    if dataset in daily_fixtures:
+        schema_version = (
+            "pytdx.local_daily_bar.v2" if provider == "pytdx" else "baostock.daily_bar.v1"
+        )
+    elif dataset == "latest-indicators":
+        schema_version = "tushare.stock_daily_indicator.v1"
+    elif dataset.startswith("top10-holder-"):
+        schema_version = "tushare.top10_float_holder.v1"
+    elif dataset.startswith("market-series-"):
+        schema_version = "market_data_center.call_auction_market_series.raw.v2"
+    elif dataset.startswith("call-auction-market-"):
+        schema_version = "market_data_center.call_auction_market_snapshot.raw.v1"
     return RawManifest(
         raw_id=uuid4(),
         ingestion_id=ingestion_id,
@@ -8580,7 +8721,7 @@ def _manifest(
         content_sha256="0" * 64,
         byte_size=10,
         row_count=row_count,
-        schema_version=f"{dataset}.v1",
+        schema_version=schema_version,
     )
 
 
@@ -8767,7 +8908,8 @@ def _prepare_query_contract_data(engine: Engine) -> UUID:
     persistence = PostgreSQLPersistence(engine)
     capital_run = _running_run(DatasetCode.CAPITAL)
     persistence.create_ingestion_run(capital_run)
-    persistence.commit_capital_batch(
+    _seed_historical_capital_fixture(
+        persistence._engine,
         _completed_run(capital_run),
         _manifest(capital_run.ingestion_id, "query-contract-capital"),
         _envelopes(

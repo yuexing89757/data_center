@@ -2,6 +2,7 @@ from contextlib import contextmanager
 from dataclasses import replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from types import SimpleNamespace
 from typing import Any, cast
 from uuid import uuid4
 
@@ -31,8 +32,22 @@ class RecordingConnection:
     def __init__(self) -> None:
         self.executions: list[tuple[object, object]] = []
 
-    def execute(self, statement: object, parameters: object) -> None:
+    def execute(self, statement: object, parameters: object) -> Any:
         self.executions.append((statement, parameters))
+        if "from ingestion.raw_manifest where raw_id" in str(statement):
+            row = {
+                "raw_id": parameters["raw_id"],
+                "ingestion_id": uuid4(),
+                "object_path": "synthetic-replay.jsonl",
+                "file_format": "jsonl",
+                "content_sha256": "0" * 64,
+                "byte_size": 100,
+                "row_count": 1,
+                "schema_version": "tushare.top10_float_holder.v1",
+                "storage_backend": "local",
+            }
+            return SimpleNamespace(mappings=lambda: SimpleNamespace(one=lambda: row))
+        return None
 
 
 class RecordingEngine:
@@ -119,8 +134,8 @@ def test_multi_request_commit_uses_one_transaction() -> None:
     persistence.commit_top10_float_holder_batches(batches)
 
     assert engine.begin_count == 1
-    assert len(engine.connection.executions) == 3
-    insert_parameters = cast(list[dict[str, object]], engine.connection.executions[1][1])
+    assert len(engine.connection.executions) == 4
+    insert_parameters = cast(list[dict[str, object]], engine.connection.executions[2][1])
     assert insert_parameters[0]["symbol"] == "SSE:600000"
     assert insert_parameters[0]["hold_amount"] == 7_086_834_641
     assert insert_parameters[1]["symbol"] == "SZSE:000001"
@@ -133,7 +148,11 @@ def test_commit_accepts_replay_without_copying_manifest() -> None:
     persistence.commit_top10_float_holder_batches((_prepared(manifest=False),))
 
     assert engine.begin_count == 1
-    assert len(engine.connection.executions) == 2
+    assert len(engine.connection.executions) == 4
+    assert not any(
+        "insert into ingestion.raw_manifest" in str(sql).lower()
+        for sql, _ in engine.connection.executions
+    )
 
 
 def test_commit_rejects_duplicate_natural_keys_before_transaction() -> None:

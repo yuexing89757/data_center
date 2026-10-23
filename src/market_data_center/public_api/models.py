@@ -48,6 +48,30 @@ class ApiModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class QuantityFieldQuality(ApiModel):
+    status: str = Field(description="该数量字段组的认证或完整性状态。")
+    reason: str = Field(description="状态的稳定机器可读原因。")
+
+
+class QuantityQuality(ApiModel):
+    unit_contract_version: Literal["stock-quantity.v1"] = Field(
+        description="股票数量单位契约版本。"
+    )
+    status: str = Field(description="数量认证状态; 未认证数量不得作为股公开。")
+    reason: str = Field(description="数量认证或缺失的稳定原因。")
+    field_groups: dict[str, QuantityFieldQuality] = Field(
+        description="各业务数量字段组的状态与原因。"
+    )
+
+
+class QuantityAwareModel(ApiModel):
+    quantity_quality: QuantityQuality | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+        description="数量单位认证与完整性状态; 未知单位数量为null, 不能解释为零。",
+    )
+
+
 class RegulationCoverage(ApiModel):
     expected_count: int = Field(ge=0)
     complete_count: int = Field(ge=0)
@@ -249,7 +273,7 @@ class SecuritySearchResponse(ApiModel):
     items: list[SecurityItem]
 
 
-class DailyBarItem(ApiModel):
+class DailyBarItem(QuantityAwareModel):
     symbol: str
     trade_date: date
     open: Decimal | None
@@ -257,13 +281,19 @@ class DailyBarItem(ApiModel):
     low: Decimal | None
     close: Decimal | None
     previous_close: Decimal | None
-    volume: int | None
-    amount: Decimal | None
+    volume: int | None = Field(
+        description="股票本交易日成交股数; 100表示100股, 不是100手; 缺失为null。",
+        examples=[100],
+        json_schema_extra={"x-unit": "share", "x-business": "stock_traded_volume"},
+    )
+    amount: Decimal | None = Field(
+        description="本交易日成交金额, 人民币元; 缺失为null。", json_schema_extra={"x-unit": "CNY"}
+    )
     trade_status: TradeStatus
     is_st: bool | None
 
 
-class DailyBarResponse(ApiModel):
+class DailyBarResponse(QuantityAwareModel):
     code: str = Field(pattern=r"^[0-9]{6}$")
     symbol: str
     trade_date: date
@@ -412,11 +442,11 @@ class ClassificationMembersResponse(ApiModel):
     members: list[str]
 
 
-class LimitUpPoolItem(ApiModel):
+class LimitUpPoolItem(QuantityAwareModel):
     symbol: str
     code: str
     name: str
-    free_float_market_cap_cny: Decimal
+    free_float_market_cap_cny: Decimal | None
 
 
 class LimitUpPoolOmissionReasons(ApiModel):
@@ -425,7 +455,7 @@ class LimitUpPoolOmissionReasons(ApiModel):
     missing_free_float_shares: int = Field(ge=0)
 
 
-class LimitUpPoolResponse(ApiModel):
+class LimitUpPoolResponse(QuantityAwareModel):
     snapshot_id: UUID
     calculation_id: UUID
     trade_date: date
@@ -444,7 +474,7 @@ class LimitUpPoolResponse(ApiModel):
     items: list[LimitUpPoolItem]
 
 
-class DailyLimitUpListItem(ApiModel):
+class DailyLimitUpListItem(QuantityAwareModel):
     symbol: str
     code: str
     name: str
@@ -453,7 +483,7 @@ class DailyLimitUpListItem(ApiModel):
     limit_price: Decimal
     change_percent: Decimal
     free_float_shares: int = Field(gt=0)
-    free_float_market_cap_cny: Decimal
+    free_float_market_cap_cny: Decimal | None
     first_limit_up_at: ApiTimestamp | None = Field(
         json_schema_extra={"example": "2026-09-18 09:35:00"}
     )
@@ -493,7 +523,7 @@ class DailyLimitUpQualitySummary(ApiModel):
     by_rule: dict[str, int]
 
 
-class DailyLimitUpListResponse(ApiModel):
+class DailyLimitUpListResponse(QuantityAwareModel):
     snapshot_id: UUID
     calculation_id: UUID | None
     trade_date: date
@@ -514,7 +544,7 @@ class DailyLimitUpListResponse(ApiModel):
     items: list[DailyLimitUpListItem]
 
 
-class DailyLimitDownListItem(ApiModel):
+class DailyLimitDownListItem(QuantityAwareModel):
     symbol: str
     code: str
     name: str
@@ -523,7 +553,7 @@ class DailyLimitDownListItem(ApiModel):
     limit_price: Decimal
     change_percent: Decimal
     free_float_shares: int = Field(gt=0)
-    free_float_market_cap_cny: Decimal
+    free_float_market_cap_cny: Decimal | None
     first_limit_down_at: ApiTimestamp | None = None
     last_limit_down_at: ApiTimestamp | None = None
     open_count: int | None = Field(default=None, ge=0)
@@ -556,7 +586,7 @@ class DailyLimitDownQualitySummary(ApiModel):
     by_rule: dict[str, int]
 
 
-class DailyLimitDownListResponse(ApiModel):
+class DailyLimitDownListResponse(QuantityAwareModel):
     snapshot_id: UUID
     calculation_id: UUID | None
     trade_date: date
@@ -616,7 +646,7 @@ class StockQuoteLevel(ApiModel):
     volume_shares: int | None = Field(default=None, ge=0)
 
 
-class LatestStockQuoteItem(ApiModel):
+class LatestStockQuoteItem(QuantityAwareModel):
     symbol: str
     code: SixDigitCode
     name: str
@@ -634,7 +664,7 @@ class LatestStockQuoteItem(ApiModel):
     ask_levels: list[StockQuoteLevel] = Field(min_length=5, max_length=5)
 
 
-class LatestStockQuoteResponse(ApiModel):
+class LatestStockQuoteResponse(QuantityAwareModel):
     max_age_seconds: int = Field(ge=1, le=86400)
     requested_count: int = Field(ge=0, le=500)
     found_count: int = Field(ge=0, le=500)
@@ -642,7 +672,7 @@ class LatestStockQuoteResponse(ApiModel):
     items: list[LatestStockQuoteItem] = Field(max_length=500)
 
 
-class LatestStockDailyIndicatorItem(ApiModel):
+class LatestStockDailyIndicatorItem(QuantityAwareModel):
     symbol: str
     code: SixDigitCode
     trade_date: date
@@ -674,14 +704,14 @@ class LatestStockDailyIndicatorItem(ApiModel):
     ]
 
 
-class LatestStockDailyIndicatorResponse(ApiModel):
+class LatestStockDailyIndicatorResponse(QuantityAwareModel):
     requested_count: int = Field(ge=1, le=500)
     found_count: int = Field(ge=0, le=500)
     missing_codes: list[SixDigitCode]
     items: list[LatestStockDailyIndicatorItem]
 
 
-class _CallAuctionMarketSnapshotBaseItem(ApiModel):
+class _CallAuctionMarketSnapshotBaseItem(QuantityAwareModel):
     symbol: str
     code: SixDigitCode
     observed_at: ApiTimestamp
@@ -717,7 +747,7 @@ class CallAuctionMarketSnapshotItem(_CallAuctionMarketSnapshotBaseItem):
     seal_amount: Decimal | None = None
 
 
-class CallAuctionMarketSnapshotResponse(ApiModel):
+class CallAuctionMarketSnapshotResponse(QuantityAwareModel):
     trade_date: date
     ingestion_id: UUID
     ingestion_status: Literal["succeeded", "partial"]
@@ -756,7 +786,7 @@ class CallAuctionMarketSeriesSnapshotItem(_CallAuctionMarketSnapshotBaseItem):
     ask5_volume: int | None = Field(default=None, ge=0)
 
 
-class CallAuctionMarketSeriesRound(ApiModel):
+class CallAuctionMarketSeriesRound(QuantityAwareModel):
     sample_seq: int = Field(ge=0, le=31)
     scheduled_at: ApiTimestamp
     collected_at: ApiTimestamp
@@ -768,7 +798,7 @@ class CallAuctionMarketSeriesRound(ApiModel):
     items: list[CallAuctionMarketSeriesSnapshotItem]
 
 
-class CallAuctionMarketSeriesSnapshotResponse(ApiModel):
+class CallAuctionMarketSeriesSnapshotResponse(QuantityAwareModel):
     trade_date: date
     session_id: UUID
     session_status: Literal["succeeded", "partial"]
@@ -861,7 +891,7 @@ class BoardIndexBiasResponse(ApiModel):
     fetched_at: ApiTimestamp
 
 
-class AuctionOnePriceLimitItem(ApiModel):
+class AuctionOnePriceLimitItem(QuantityAwareModel):
     symbol: str
     code: SixDigitCode
     name: str
@@ -878,7 +908,7 @@ class AuctionOnePriceLimitItem(ApiModel):
     seal_amount: Decimal | None = Field(default=None, ge=0)
 
 
-class AuctionOnePriceLimitResponse(ApiModel):
+class AuctionOnePriceLimitResponse(QuantityAwareModel):
     trade_date: date
     ingestion_id: UUID
     ingestion_status: Literal["succeeded", "partial"]
@@ -895,7 +925,7 @@ class AuctionOnePriceLimitResponse(ApiModel):
     down: list[AuctionOnePriceLimitItem]
 
 
-class CallAuctionOnePricePatternItem(ApiModel):
+class CallAuctionOnePricePatternItem(QuantityAwareModel):
     symbol: str
     code: SixDigitCode
     name: str | None
@@ -906,7 +936,7 @@ class CallAuctionOnePricePatternItem(ApiModel):
     sample_count: Literal[29]
 
 
-class CallAuctionOnePricePatternResponse(ApiModel):
+class CallAuctionOnePricePatternResponse(QuantityAwareModel):
     trade_date: date
     session_id: UUID
     session_status: Literal["succeeded", "partial"]
@@ -917,7 +947,7 @@ class CallAuctionOnePricePatternResponse(ApiModel):
     items: list[CallAuctionOnePricePatternItem]
 
 
-class CallAuctionGrabLineItem(ApiModel):
+class CallAuctionGrabLineItem(QuantityAwareModel):
     code: SixDigitCode = Field(description="六位股票代码。")
     name: str | None = Field(description="请求交易日有效的股票名称; 缺失时为 null。")
     grab_line_pct: Decimal = Field(
@@ -929,7 +959,7 @@ class CallAuctionGrabLineItem(ApiModel):
     trade_date: date = Field(description="交易日, 格式为 YYYY-MM-DD。")
 
 
-class CallAuctionGrabLineResponse(ApiModel):
+class CallAuctionGrabLineResponse(QuantityAwareModel):
     trade_date: date = Field(description="查询交易日, 格式为 YYYY-MM-DD。")
     session_id: UUID = Field(description="被选择的单一集合竞价序列会话标识。")
     session_status: Literal["succeeded", "partial"] = Field(description="序列会话状态。")
@@ -947,14 +977,14 @@ class CallAuctionGrabLineResponse(ApiModel):
     items: list[CallAuctionGrabLineItem] = Field(description="按抢筹线从高到低排列的结果。")
 
 
-class AuctionIndicativeDetailItem(ApiModel):
+class AuctionIndicativeDetailItem(QuantityAwareModel):
     observed_at: ApiTimestamp = Field(
         description="Asia/Shanghai wall-clock time formatted as YYYY-MM-DD HH:mm:ss",
         examples=["2026-08-14 09:15:05"],
     )
     source_sequence: int = Field(ge=0)
     indicative_price: Decimal
-    displayed_volume_shares: int = Field(ge=0)
+    displayed_volume_shares: int | None = Field(default=None, ge=0)
     source_display_classification: Literal["internal", "external", "unknown"]
 
 
@@ -967,7 +997,7 @@ class AuctionIndicativeQuality(ApiModel):
     database_persistence: Literal["queued", "persisted"]
 
 
-class AuctionIndicativeDetailResponse(ApiModel):
+class AuctionIndicativeDetailResponse(QuantityAwareModel):
     symbol: str
     trade_date: date
     fetched_at: ApiTimestamp = Field(

@@ -109,11 +109,13 @@ class ClassificationDailyMetricRecord:
     advancing_count: int
     declining_count: int
     unchanged_count: int
-    total_volume: int
-    total_amount: Decimal
+    total_volume: int | None
+    total_amount: Decimal | None
     equal_weight_return: Decimal | None
     total_market_cap: Decimal | None
     market_cap_member_count: int
+    volume_member_count: int
+    amount_member_count: int
 
     def __post_init__(self) -> None:
         counts = (
@@ -122,13 +124,21 @@ class ClassificationDailyMetricRecord:
             self.advancing_count,
             self.declining_count,
             self.unchanged_count,
-            self.total_volume,
             self.market_cap_member_count,
+            self.volume_member_count,
+            self.amount_member_count,
         )
         if any(value < 0 for value in counts):
             raise ValueError("classification metric counts must not be negative")
         if self.priced_member_count > self.member_count:
             raise ValueError("priced_member_count must not exceed member_count")
+        for field in ("volume_member_count", "amount_member_count"):
+            if getattr(self, field) > self.member_count:
+                raise ValueError(f"{field} must not exceed member_count")
+        for field in ("total_volume", "total_amount"):
+            value = getattr(self, field)
+            if value is not None and value < 0:
+                raise ValueError(f"{field} must not be negative")
         if self.advancing_count + self.declining_count + self.unchanged_count != (
             self.priced_member_count
         ):

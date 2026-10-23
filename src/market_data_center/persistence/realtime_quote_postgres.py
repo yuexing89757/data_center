@@ -9,6 +9,7 @@ from sqlalchemy.engine import Connection
 
 from market_data_center.domain.ingestion import IngestionRun, QualityResult, RawManifest
 from market_data_center.domain.realtime_quote import FiveLevelQuoteSnapshotRecord
+from market_data_center.quantity_certification import certify_quantity_batch
 
 
 class PostgreSQLRealtimeQuotePersistence:
@@ -75,6 +76,7 @@ class PostgreSQLRealtimeQuotePersistence:
                     "schema": manifest.schema_version,
                 },
             )
+            certify_quantity_batch(connection, run, manifest)
             if records:
                 connection.execute(
                     text("""insert into realtime.stock_quote_snapshot (

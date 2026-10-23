@@ -7,18 +7,20 @@ import pytest
 
 from market_data_center.domain.ingestion import (
     DatasetCode,
+    IngestionStatus,
     ProviderCode,
     RawFileFormat,
     RawManifest,
     ReplaySource,
 )
+from market_data_center.providers.contracts import ProviderError
 from market_data_center.providers.tushare_technical_factor import TECHNICAL_FACTOR_FIELDS
 from market_data_center.raw_store import LocalRawStore
 from market_data_center.reliability import RawReplayService
 
 
 @pytest.mark.parametrize("dry_run", [True, False])
-def test_technical_factor_raw_replay_uses_same_mapping_and_exact_date(tmp_path, dry_run):
+def test_technical_factor_raw_replay_rejects_unknown_units_and_retains_raw(tmp_path, dry_run):
     raw_store = LocalRawStore(tmp_path)
     original_id = uuid4()
     day = date(2026, 10, 9)
@@ -55,21 +57,26 @@ def test_technical_factor_raw_replay_uses_same_mapping_and_exact_date(tmp_path, 
     persistence.replay_source.return_value = source
     persistence.technical_factor_securities.return_value = {"SZSE:000001"}
     persistence.known_trading_dates.return_value = {day}
-    summary = RawReplayService(raw_store=raw_store, persistence=persistence).replay(
-        original_id, dry_run=dry_run
-    )
-    assert summary.accepted_rows == 1
-    assert summary.fetched_rows == 2
-    persistence.task_lock.assert_called_once_with("tushare:stock_technical_factor:2026-10-09")
+    original_bytes = (tmp_path / stored.object_path).read_bytes()
+    with pytest.raises(ProviderError, match="quantity unit contract unverified"):
+        RawReplayService(raw_store=raw_store, persistence=persistence).replay(
+            original_id, dry_run=dry_run
+        )
+    persistence.commit_technical_factor_batch.assert_not_called()
     if dry_run:
         persistence.create_ingestion_run.assert_not_called()
-        persistence.commit_technical_factor_batch.assert_not_called()
+        persistence.commit_rejected_batch.assert_not_called()
     else:
-        run, copied_manifest, records, quality = (
-            persistence.commit_technical_factor_batch.call_args.args
-        )
+        persistence.create_ingestion_run.assert_called_once()
+        persistence.commit_rejected_batch.assert_called_once()
+        run, copied_manifest, quality = persistence.commit_rejected_batch.call_args.args
         assert copied_manifest is None
+        assert run.status is IngestionStatus.FAILED
+        assert run.accepted_rows == 0
         assert run.replayed_from_raw_id == manifest.raw_id
-        assert str(records[0].record.forward_adjusted["macd"]) == "-0.123456789123456789"
-        assert not quality
+        assert run.request_params["provider_schema_version"] == "tushare.stock_technical_factor.v1"
+        assert quality[0].rule_code == "stock_technical_factor.raw_replay"
+        assert quality[0].blocks_core_write
+    assert raw_store.read_jsonl(manifest) == (row, row)
+    assert (tmp_path / stored.object_path).read_bytes() == original_bytes
     assert len(list(tmp_path.rglob("*.jsonl"))) == 1

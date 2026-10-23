@@ -6,16 +6,21 @@ from decimal import Decimal
 from typing import Annotated, cast
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import Field, field_validator
+from pydantic import ConfigDict, Field, field_validator
 from sqlalchemy import text
 
-from market_data_center.public_api.models import ApiModel, ErrorResponse
+from market_data_center.public_api.models import ApiModel, ErrorResponse, QuantityAwareModel
 from market_data_center.public_api.queries import PostgreSQLPublicQueryService, PublicQueryInvalid
 
 StockCode = Annotated[str, Field(pattern=r"^[0-9]{6}$")]
 
 
 class StockTechnicalFactorQuery(ApiModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [{"trade_date": "2026-10-15", "codes": ["601188", "000001", "600000"]}]
+        }
+    )
     codes: list[StockCode] = Field(
         min_length=1, max_length=100, description="六位股票代码集合, 最多100个, 重复代码去重"
     )
@@ -27,13 +32,18 @@ class StockTechnicalFactorQuery(ApiModel):
         return list(dict.fromkeys(codes))
 
 
-class StockTechnicalFactorItem(ApiModel):
+class StockTechnicalFactorItem(QuantityAwareModel):
     symbol: str = Field(description="标准证券代码")
     code: StockCode = Field(description="六位股票代码")
     name: str = Field(description="证券名称")
     trade_date: date = Field(description="来源快照的交易日")
     source_code: str = Field(description="快照来源代码")
-    factor_catalog_version: str = Field(description="受控技术因子目录版本")
+    factor_catalog_version: str = Field(description="对外技术因子目录版本; v2隔离未认证数量叶子。")
+    source_factor_catalog_version: str | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+        description="不可变来源快照的原始因子目录版本。",
+    )
     unadjusted: Mapping[str, Decimal | None] = Field(
         description="不复权技术因子, 十进制字符串或空值"
     )

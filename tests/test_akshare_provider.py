@@ -2,6 +2,8 @@ from collections.abc import Mapping, Sequence
 from datetime import date
 from decimal import Decimal
 
+import pytest
+
 from market_data_center.domain import (
     ClassificationCatalogSnapshotRecord,
     ClassificationMemberSnapshotRecord,
@@ -16,6 +18,7 @@ from market_data_center.domain import (
 )
 from market_data_center.providers import AKShareProvider
 from market_data_center.providers.akshare import TabularResult
+from market_data_center.providers.contracts import ProviderError
 
 
 class FakeFrame:
@@ -192,7 +195,7 @@ def test_standard_symbol_maps_to_akshare_source_symbol() -> None:
     assert AKShareProvider(FakeClient()).source_symbol("SSE:600000") == "600000"
 
 
-def test_capital_mapping_normalizes_units_and_record_types() -> None:
+def test_capital_mapping_normalizes_units_and_record_types(synthetic_quantity_contract) -> None:
     batch = AKShareProvider(FakeClient()).fetch_capital("SSE:600000")
 
     assert len(batch.raw_rows) == 3
@@ -209,7 +212,9 @@ def test_capital_mapping_normalizes_units_and_record_types() -> None:
     assert rights_issue.rights_price == Decimal("8.5")
 
 
-def test_capital_mapping_accepts_an_empty_optional_rights_table() -> None:
+def test_capital_mapping_accepts_an_empty_optional_rights_table(
+    synthetic_quantity_contract,
+) -> None:
     records = AKShareProvider(EmptyRightsFakeClient()).fetch_capital("600000").records
 
     assert [type(record).__name__ for record in records] == [
@@ -218,7 +223,9 @@ def test_capital_mapping_accepts_an_empty_optional_rights_table() -> None:
     ]
 
 
-def test_capital_mapping_treats_zero_optional_base_shares_as_unknown() -> None:
+def test_capital_mapping_treats_zero_optional_base_shares_as_unknown(
+    synthetic_quantity_contract,
+) -> None:
     records = AKShareProvider(ZeroBaseSharesFakeClient()).fetch_capital("000001").records
 
     rights_issue = records[-1]
@@ -226,7 +233,9 @@ def test_capital_mapping_treats_zero_optional_base_shares_as_unknown() -> None:
     assert rights_issue.base_shares is None
 
 
-def test_capital_mapping_treats_akshare_missing_distribution_as_empty() -> None:
+def test_capital_mapping_treats_akshare_missing_distribution_as_empty(
+    synthetic_quantity_contract,
+) -> None:
     records = AKShareProvider(MissingDistributionFakeClient()).fetch_capital("688031").records
 
     assert [type(record).__name__ for record in records] == [
@@ -248,3 +257,19 @@ def test_classification_catalog_and_members_are_complete_snapshots() -> None:
     assert catalog.definitions[0].name == "银行"
     assert isinstance(members, ClassificationMemberSnapshotRecord)
     assert members.members == ("SSE:600000",)
+
+
+@pytest.fixture
+def synthetic_quantity_contract(monkeypatch):
+    """Exercise existing parsers with synthetic proof; production gates remain active."""
+    monkeypatch.setattr(
+        "market_data_center.providers.akshare.quantity_unit_rule", lambda **kwargs: None
+    )
+
+
+def test_capital_unknown_source_unit_keeps_raw_and_blocks_standard_batch():
+    batch = AKShareProvider(FakeClient()).fetch_capital("SSE:600000")
+    assert len(batch.raw_rows) == 3
+    assert batch.raw_rows[0]["总股本"] == "1000000"
+    with pytest.raises(ProviderError, match="quantity unit contract"):
+        _ = batch.records

@@ -249,7 +249,7 @@ def test_remote_daily_bars_crop_sort_normalize_and_capture_endpoint(tmp_path: Pa
     assert isinstance(replayed[0], DailyBarRecord)
 
 
-def test_legacy_remote_raw_replay_preserves_original_volume() -> None:
+def test_legacy_remote_raw_replay_corrects_lots_without_mutating_raw() -> None:
     rows = (
         {
             "date": "20261022",
@@ -274,7 +274,7 @@ def test_legacy_remote_raw_replay_preserves_original_volume() -> None:
         rows,
         {"source_symbol": "sh.600000"},
     )
-    assert legacy[0].volume == 1234
+    assert legacy[0].volume == 123_400
     assert current[0].volume == 123_400
 
 
@@ -362,7 +362,7 @@ def test_local_only_mode_without_endpoints(tmp_path: Path) -> None:
     assert len(batch.records) == 1
     assert batch.records[0].close == Decimal("9.25")
     assert batch.records[0].previous_close is None
-    assert batch.schema_version == "pytdx.local_daily_bar.v2"
+    assert batch.schema_version == "pytdx.local_daily_bar.v3"
 
 
 def test_local_only_mode_missing_file_is_visible_gap(tmp_path: Path) -> None:
@@ -436,7 +436,7 @@ def test_other_fractional_volumes_are_not_silently_rounded(tmp_path: Path, value
     row = {**_bar("2026-09-21"), "vol": value}
     with _provider(tmp_path, FakeClient({0: [row]})) as provider:
         batch = provider.fetch_daily_bars("sh.601059", date(2026, 9, 21), date(2026, 9, 21))
-    with pytest.raises(ProviderError, match="integer volume"):
+    with pytest.raises(ProviderError, match=r"integer volume|finite and nonnegative"):
         _ = batch.records
 
 
@@ -485,6 +485,25 @@ def test_read_local_day_file_parses_and_filters(tmp_path: Path) -> None:
 def test_read_local_day_file_returns_none_when_absent(tmp_path: Path) -> None:
     rows = _read_local_day_file(str(tmp_path), "sh", "999999", date(2026, 8, 5), date(2026, 8, 7))
     assert rows is None
+
+
+def test_local_v3_preserves_binary32_fractional_amount_and_share_volume(tmp_path: Path) -> None:
+    _write_day_file(tmp_path, "sh", "600000", [(20261022, 100, 100, 100, 100, 1.25, 37)])
+    provider = PytdxProvider(
+        PytdxDailyBarSettings(pytdx_vipdoc_path=str(tmp_path), _env_file=None),
+        pool_settings=PytdxPoolSettings(pytdx_pool_path=tmp_path / "missing.json", _env_file=None),
+        client_factory=FakeClient,
+    )
+    with provider:
+        batch = provider.fetch_daily_bars("sh.600000", date(2026, 10, 22), date(2026, 10, 22))
+    assert batch.schema_version == "pytdx.local_daily_bar.v3"
+    assert Decimal(batch.raw_rows[0]["amount"]) == Decimal("1.25")
+    assert batch.records[0].amount == Decimal("1.25")
+    assert batch.records[0].volume == 37
+    assert batch.request_params["source_quantity_unit"] == "share"
+    assert normalize_pytdx_raw(
+        DatasetCode.DAILY_BAR, batch.schema_version, batch.raw_rows, batch.request_params
+    ) == tuple(batch.records)
 
 
 @pytest.mark.parametrize(
@@ -599,4 +618,4 @@ def test_local_daily_bar_takes_priority_over_remote(tmp_path: Path) -> None:
         provider.__exit__(None, None, None)
     assert len(batch.records) == 1
     assert batch.records[0].close == Decimal("9.25")
-    assert batch.schema_version == "pytdx.local_daily_bar.v2"
+    assert batch.schema_version == "pytdx.local_daily_bar.v3"

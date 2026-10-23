@@ -167,6 +167,18 @@ type ConvertibleBondRecord = (
 - `ts_code`（`113527.SH`）→ 标准 `symbol`（`SSE:113527`）
 - `stock_ts_code`（`600030.SH`）→ `underlying_symbol`（`SSE:600030`）
 - `vol`（手）→ `volume`（张，1 手 = 10 张，需 ×10）
+- `cb_daily.amount` 来源单位为**万元**，精确 ×10000 转为元；与普通股票 `daily.amount`
+  的千元规则独立，不得复用 ×1000。[Tushare 官方 cb_daily 字段表](https://tushare.pro/document/2?doc_id=187)
+  （2026-10-23 核验）。零仍为零，缺失仍为 null，不经 float 或 Decimal 上下文舍入。
+- `cb_basic.issue_size` 来源已是元，不换算。[Tushare 官方 cb_basic 字段表](https://tushare.pro/document/2?doc_id=185)
+  （2026-10-23 核验）。独立使用 `convertible_bond.bond.quantities` 证据组。
+- 当前官方 `cb_daily` 字段表没有 `remain_size` 的独立来源单位证明。新请求不要求该字段；
+  新采集及旧 `tushare.convertible_bond_daily_bar.v1` Raw replay 若该字段缺失/空白/null，
+  标准值保持 null；若来源存在任何非空值（包括0），整批标准化明确失败，不冒称元。
+- 可转债日 K 的成交张数与成交额分别认证为 `convertible_bond_daily_bar.volume`、
+  `convertible_bond_daily_bar.amount`。剩余规模 `convertible_bond_daily_bar.remain_size`
+  保持未认证。旧 Raw 不修改，重放按上述正确元规则转换或因未知剩余规模失败；
+  此代码纠错不代表既有数据库金额已修复或历史已认证。
 - `pct_chg`/`convert_pct` 保持 Decimal
 - `schema_version = "tushare.convertible_bond.v1"`
 

@@ -1,0 +1,3181 @@
+{
+  "scope": "Static candidate inventory, not proof of unit correctness. JSON technical-factor leaves require a separate catalog.",
+  "domain_quantity_and_ratio_fields": [
+    {
+      "path": "src/market_data_center/domain/auction.py",
+      "class": "AuctionQuoteMetric",
+      "field": "bid_depth_5",
+      "type": "int | None",
+      "line": 167
+    },
+    {
+      "path": "src/market_data_center/domain/auction.py",
+      "class": "AuctionQuoteMetric",
+      "field": "ask_depth_5",
+      "type": "int | None",
+      "line": 168
+    },
+    {
+      "path": "src/market_data_center/domain/auction.py",
+      "class": "AuctionQuoteMetric",
+      "field": "seal_amount",
+      "type": "Decimal | None",
+      "line": 170
+    },
+    {
+      "path": "src/market_data_center/domain/auction_indicative.py",
+      "class": "CallAuctionIndicativeDetailRecord",
+      "field": "displayed_volume_shares",
+      "type": "int",
+      "line": 26
+    },
+    {
+      "path": "src/market_data_center/domain/board_index.py",
+      "class": "BoardIndexDailyBarRecord",
+      "field": "volume",
+      "type": "int",
+      "line": 53
+    },
+    {
+      "path": "src/market_data_center/domain/board_index.py",
+      "class": "BoardIndexDailyBarRecord",
+      "field": "amount",
+      "type": "Decimal",
+      "line": 54
+    },
+    {
+      "path": "src/market_data_center/domain/board_moneyflow.py",
+      "class": "BoardMoneyflowRecord",
+      "field": "net_amount",
+      "type": "Decimal",
+      "line": 25
+    },
+    {
+      "path": "src/market_data_center/domain/board_moneyflow.py",
+      "class": "BoardMoneyflowRecord",
+      "field": "net_amount_rate",
+      "type": "Decimal | None",
+      "line": 26
+    },
+    {
+      "path": "src/market_data_center/domain/board_moneyflow.py",
+      "class": "BoardMoneyflowRecord",
+      "field": "extra_large_amount",
+      "type": "Decimal | None",
+      "line": 27
+    },
+    {
+      "path": "src/market_data_center/domain/board_moneyflow.py",
+      "class": "BoardMoneyflowRecord",
+      "field": "large_amount",
+      "type": "Decimal | None",
+      "line": 29
+    },
+    {
+      "path": "src/market_data_center/domain/board_moneyflow.py",
+      "class": "BoardMoneyflowRecord",
+      "field": "medium_amount",
+      "type": "Decimal | None",
+      "line": 31
+    },
+    {
+      "path": "src/market_data_center/domain/board_moneyflow.py",
+      "class": "BoardMoneyflowRecord",
+      "field": "small_amount",
+      "type": "Decimal | None",
+      "line": 33
+    },
+    {
+      "path": "src/market_data_center/domain/call_auction_market_series.py",
+      "class": "MarketSeriesSnapshotRecord",
+      "field": "cumulative_volume",
+      "type": "int | None",
+      "line": 237
+    },
+    {
+      "path": "src/market_data_center/domain/call_auction_market_series.py",
+      "class": "MarketSeriesSnapshotRecord",
+      "field": "cumulative_amount",
+      "type": "Decimal | None",
+      "line": 238
+    },
+    {
+      "path": "src/market_data_center/domain/convertible_bond.py",
+      "class": "ConvertibleBondDailyBarRecord",
+      "field": "volume",
+      "type": "int | None",
+      "line": 101
+    },
+    {
+      "path": "src/market_data_center/domain/convertible_bond.py",
+      "class": "ConvertibleBondDailyBarRecord",
+      "field": "amount",
+      "type": "Decimal | None",
+      "line": 102
+    },
+    {
+      "path": "src/market_data_center/domain/derived.py",
+      "class": "ClassificationDailyMetricRecord",
+      "field": "total_volume",
+      "type": "int",
+      "line": 112
+    },
+    {
+      "path": "src/market_data_center/domain/derived.py",
+      "class": "ClassificationDailyMetricRecord",
+      "field": "total_amount",
+      "type": "Decimal",
+      "line": 113
+    },
+    {
+      "path": "src/market_data_center/domain/dragon_tiger.py",
+      "class": "SeatTradeRecord",
+      "field": "buy_amount",
+      "type": "Decimal | None",
+      "line": 121
+    },
+    {
+      "path": "src/market_data_center/domain/dragon_tiger.py",
+      "class": "SeatTradeRecord",
+      "field": "sell_amount",
+      "type": "Decimal | None",
+      "line": 122
+    },
+    {
+      "path": "src/market_data_center/domain/dragon_tiger.py",
+      "class": "DragonTigerEventDraft",
+      "field": "amount_period",
+      "type": "DragonTigerAmountPeriod",
+      "line": 221
+    },
+    {
+      "path": "src/market_data_center/domain/dragon_tiger.py",
+      "class": "DragonTigerEventDraft",
+      "field": "turnover_amount",
+      "type": "Decimal | None",
+      "line": 226
+    },
+    {
+      "path": "src/market_data_center/domain/dragon_tiger.py",
+      "class": "DragonTigerEventDraft",
+      "field": "turnover_rate",
+      "type": "Decimal | None",
+      "line": 227
+    },
+    {
+      "path": "src/market_data_center/domain/dragon_tiger.py",
+      "class": "DragonTigerEventDraft",
+      "field": "lhb_buy_amount",
+      "type": "Decimal | None",
+      "line": 229
+    },
+    {
+      "path": "src/market_data_center/domain/dragon_tiger.py",
+      "class": "DragonTigerEventDraft",
+      "field": "lhb_sell_amount",
+      "type": "Decimal | None",
+      "line": 230
+    },
+    {
+      "path": "src/market_data_center/domain/dragon_tiger.py",
+      "class": "DragonTigerEventRecord",
+      "field": "amount_period",
+      "type": "DragonTigerAmountPeriod",
+      "line": 295
+    },
+    {
+      "path": "src/market_data_center/domain/dragon_tiger.py",
+      "class": "DragonTigerEventRecord",
+      "field": "turnover_amount",
+      "type": "Decimal | None",
+      "line": 300
+    },
+    {
+      "path": "src/market_data_center/domain/dragon_tiger.py",
+      "class": "DragonTigerEventRecord",
+      "field": "turnover_rate",
+      "type": "Decimal | None",
+      "line": 301
+    },
+    {
+      "path": "src/market_data_center/domain/dragon_tiger.py",
+      "class": "DragonTigerEventRecord",
+      "field": "lhb_buy_amount",
+      "type": "Decimal | None",
+      "line": 303
+    },
+    {
+      "path": "src/market_data_center/domain/dragon_tiger.py",
+      "class": "DragonTigerEventRecord",
+      "field": "lhb_sell_amount",
+      "type": "Decimal | None",
+      "line": 304
+    },
+    {
+      "path": "src/market_data_center/domain/kaipanla_auction.py",
+      "class": "KaipanlaAuctionItem",
+      "field": "limit_up_bid_amount_cny",
+      "type": "Decimal | None",
+      "line": 17
+    },
+    {
+      "path": "src/market_data_center/domain/kaipanla_auction.py",
+      "class": "KaipanlaAuctionItem",
+      "field": "auction_net_amount_cny",
+      "type": "Decimal | None",
+      "line": 19
+    },
+    {
+      "path": "src/market_data_center/domain/kaipanla_auction.py",
+      "class": "KaipanlaAuctionItem",
+      "field": "auction_turnover_rate_pct",
+      "type": "Decimal | None",
+      "line": 20
+    },
+    {
+      "path": "src/market_data_center/domain/kaipanla_auction.py",
+      "class": "KaipanlaAuctionItem",
+      "field": "auction_amount_cny",
+      "type": "Decimal | None",
+      "line": 21
+    },
+    {
+      "path": "src/market_data_center/domain/kaipanla_boards.py",
+      "class": "KaipanlaBoardItem",
+      "field": "amount_cny",
+      "type": "Decimal | None",
+      "line": 18
+    },
+    {
+      "path": "src/market_data_center/domain/kaipanla_boards.py",
+      "class": "KaipanlaBoardItem",
+      "field": "main_net_amount_cny",
+      "type": "Decimal | None",
+      "line": 19
+    },
+    {
+      "path": "src/market_data_center/domain/kaipanla_boards.py",
+      "class": "KaipanlaBoardItem",
+      "field": "volume_ratio",
+      "type": "Decimal | None",
+      "line": 20
+    },
+    {
+      "path": "src/market_data_center/domain/kaipanla_boards.py",
+      "class": "KaipanlaBoardItem",
+      "field": "large_order_net_amount_cny",
+      "type": "Decimal | None",
+      "line": 21
+    },
+    {
+      "path": "src/market_data_center/domain/kaipanla_boards.py",
+      "class": "KaipanlaBoardMember",
+      "field": "amount_cny",
+      "type": "Decimal | None",
+      "line": 38
+    },
+    {
+      "path": "src/market_data_center/domain/kaipanla_boards.py",
+      "class": "KaipanlaBoardMember",
+      "field": "main_buy_amount_cny",
+      "type": "Decimal | None",
+      "line": 40
+    },
+    {
+      "path": "src/market_data_center/domain/kaipanla_boards.py",
+      "class": "KaipanlaBoardMember",
+      "field": "main_sell_amount_cny",
+      "type": "Decimal | None",
+      "line": 41
+    },
+    {
+      "path": "src/market_data_center/domain/kaipanla_boards.py",
+      "class": "KaipanlaBoardMember",
+      "field": "main_net_amount_cny",
+      "type": "Decimal | None",
+      "line": 42
+    },
+    {
+      "path": "src/market_data_center/domain/kaipanla_boards.py",
+      "class": "KaipanlaBoardMember",
+      "field": "volume_ratio",
+      "type": "Decimal | None",
+      "line": 45
+    },
+    {
+      "path": "src/market_data_center/domain/kaipanla_boards.py",
+      "class": "KaipanlaBoardMember",
+      "field": "close_limit_bid_amount_cny",
+      "type": "Decimal | None",
+      "line": 48
+    },
+    {
+      "path": "src/market_data_center/domain/kaipanla_boards.py",
+      "class": "KaipanlaBoardMember",
+      "field": "max_limit_bid_amount_cny",
+      "type": "Decimal | None",
+      "line": 49
+    },
+    {
+      "path": "src/market_data_center/domain/kaipanla_boards.py",
+      "class": "KaipanlaBoardMember",
+      "field": "large_order_net_amount_cny",
+      "type": "Decimal | None",
+      "line": 53
+    },
+    {
+      "path": "src/market_data_center/domain/kaipanla_market_history.py",
+      "class": "AuctionHistoryItem",
+      "field": "limit_up_bid_amount_cny",
+      "type": "Decimal | None",
+      "line": 17
+    },
+    {
+      "path": "src/market_data_center/domain/kaipanla_market_history.py",
+      "class": "AuctionHistoryItem",
+      "field": "auction_net_amount_cny",
+      "type": "Decimal | None",
+      "line": 20
+    },
+    {
+      "path": "src/market_data_center/domain/kaipanla_market_history.py",
+      "class": "AuctionHistoryItem",
+      "field": "auction_turnover_rate_pct",
+      "type": "Decimal | None",
+      "line": 22
+    },
+    {
+      "path": "src/market_data_center/domain/kaipanla_market_history.py",
+      "class": "AuctionHistoryItem",
+      "field": "auction_amount_cny",
+      "type": "Decimal | None",
+      "line": 23
+    },
+    {
+      "path": "src/market_data_center/domain/kaipanla_market_history.py",
+      "class": "LimitDownHistoryItem",
+      "field": "sealed_amount_cny",
+      "type": "Decimal | None",
+      "line": 42
+    },
+    {
+      "path": "src/market_data_center/domain/realtime_quote.py",
+      "class": "OrderBookLevel",
+      "field": "volume",
+      "type": "int | None",
+      "line": 27
+    },
+    {
+      "path": "src/market_data_center/domain/realtime_quote.py",
+      "class": "FiveLevelQuoteSnapshotRecord",
+      "field": "cumulative_volume",
+      "type": "int | None",
+      "line": 55
+    },
+    {
+      "path": "src/market_data_center/domain/realtime_quote.py",
+      "class": "FiveLevelQuoteSnapshotRecord",
+      "field": "cumulative_amount",
+      "type": "Decimal | None",
+      "line": 56
+    },
+    {
+      "path": "src/market_data_center/domain/realtime_quote.py",
+      "class": "FiveLevelQuoteMetric",
+      "field": "bid_depth_5",
+      "type": "int | None",
+      "line": 105
+    },
+    {
+      "path": "src/market_data_center/domain/realtime_quote.py",
+      "class": "FiveLevelQuoteMetric",
+      "field": "ask_depth_5",
+      "type": "int | None",
+      "line": 106
+    },
+    {
+      "path": "src/market_data_center/domain/realtime_quote.py",
+      "class": "EodQuoteSnapshotRecord",
+      "field": "bid1_volume",
+      "type": "int | None",
+      "line": 335
+    },
+    {
+      "path": "src/market_data_center/domain/realtime_quote.py",
+      "class": "EodQuoteSnapshotRecord",
+      "field": "bid2_volume",
+      "type": "int | None",
+      "line": 337
+    },
+    {
+      "path": "src/market_data_center/domain/realtime_quote.py",
+      "class": "EodQuoteSnapshotRecord",
+      "field": "bid3_volume",
+      "type": "int | None",
+      "line": 339
+    },
+    {
+      "path": "src/market_data_center/domain/realtime_quote.py",
+      "class": "EodQuoteSnapshotRecord",
+      "field": "bid4_volume",
+      "type": "int | None",
+      "line": 341
+    },
+    {
+      "path": "src/market_data_center/domain/realtime_quote.py",
+      "class": "EodQuoteSnapshotRecord",
+      "field": "bid5_volume",
+      "type": "int | None",
+      "line": 343
+    },
+    {
+      "path": "src/market_data_center/domain/realtime_quote.py",
+      "class": "EodQuoteSnapshotRecord",
+      "field": "ask1_volume",
+      "type": "int | None",
+      "line": 345
+    },
+    {
+      "path": "src/market_data_center/domain/realtime_quote.py",
+      "class": "EodQuoteSnapshotRecord",
+      "field": "ask2_volume",
+      "type": "int | None",
+      "line": 347
+    },
+    {
+      "path": "src/market_data_center/domain/realtime_quote.py",
+      "class": "EodQuoteSnapshotRecord",
+      "field": "ask3_volume",
+      "type": "int | None",
+      "line": 349
+    },
+    {
+      "path": "src/market_data_center/domain/realtime_quote.py",
+      "class": "EodQuoteSnapshotRecord",
+      "field": "ask4_volume",
+      "type": "int | None",
+      "line": 351
+    },
+    {
+      "path": "src/market_data_center/domain/realtime_quote.py",
+      "class": "EodQuoteSnapshotRecord",
+      "field": "ask5_volume",
+      "type": "int | None",
+      "line": 353
+    },
+    {
+      "path": "src/market_data_center/domain/realtime_quote.py",
+      "class": "EodQuoteSnapshotRecord",
+      "field": "seal_amount",
+      "type": "Decimal | None",
+      "line": 354
+    },
+    {
+      "path": "src/market_data_center/domain/realtime_quote.py",
+      "class": "CallAuctionSnapshotRecord",
+      "field": "cumulative_volume",
+      "type": "int | None",
+      "line": 372
+    },
+    {
+      "path": "src/market_data_center/domain/realtime_quote.py",
+      "class": "CallAuctionSnapshotRecord",
+      "field": "cumulative_amount",
+      "type": "Decimal | None",
+      "line": 373
+    },
+    {
+      "path": "src/market_data_center/domain/realtime_quote.py",
+      "class": "CallAuctionMarketSnapshotRecord",
+      "field": "cumulative_volume",
+      "type": "int | None",
+      "line": 398
+    },
+    {
+      "path": "src/market_data_center/domain/realtime_quote.py",
+      "class": "CallAuctionMarketSnapshotRecord",
+      "field": "cumulative_amount",
+      "type": "Decimal | None",
+      "line": 399
+    },
+    {
+      "path": "src/market_data_center/domain/realtime_quote.py",
+      "class": "CallAuctionMarketSnapshotRecord",
+      "field": "seal_amount",
+      "type": "Decimal | None",
+      "line": 402
+    },
+    {
+      "path": "src/market_data_center/domain/records.py",
+      "class": "DailyBarRecord",
+      "field": "volume",
+      "type": "int | None",
+      "line": 104
+    },
+    {
+      "path": "src/market_data_center/domain/records.py",
+      "class": "DailyBarRecord",
+      "field": "amount",
+      "type": "Decimal | None",
+      "line": 105
+    },
+    {
+      "path": "src/market_data_center/domain/records.py",
+      "class": "ShareCapitalRecord",
+      "field": "total_shares",
+      "type": "int",
+      "line": 136
+    },
+    {
+      "path": "src/market_data_center/domain/records.py",
+      "class": "ShareCapitalRecord",
+      "field": "restricted_shares",
+      "type": "int | None",
+      "line": 137
+    },
+    {
+      "path": "src/market_data_center/domain/records.py",
+      "class": "ShareCapitalRecord",
+      "field": "circulating_shares",
+      "type": "int | None",
+      "line": 138
+    },
+    {
+      "path": "src/market_data_center/domain/records.py",
+      "class": "ShareCapitalRecord",
+      "field": "listed_a_shares",
+      "type": "int | None",
+      "line": 139
+    },
+    {
+      "path": "src/market_data_center/domain/records.py",
+      "class": "DistributionRecord",
+      "field": "bonus_share_ratio",
+      "type": "Decimal | None",
+      "line": 161
+    },
+    {
+      "path": "src/market_data_center/domain/records.py",
+      "class": "DistributionRecord",
+      "field": "transfer_share_ratio",
+      "type": "Decimal | None",
+      "line": 162
+    },
+    {
+      "path": "src/market_data_center/domain/records.py",
+      "class": "RightsIssueRecord",
+      "field": "rights_ratio",
+      "type": "Decimal",
+      "line": 187
+    },
+    {
+      "path": "src/market_data_center/domain/records.py",
+      "class": "RightsIssueRecord",
+      "field": "base_shares",
+      "type": "int | None",
+      "line": 189
+    },
+    {
+      "path": "src/market_data_center/domain/regulation.py",
+      "class": "RegulationRule",
+      "field": "ratio_threshold",
+      "type": "Decimal | None",
+      "line": 141
+    },
+    {
+      "path": "src/market_data_center/domain/regulation.py",
+      "class": "RegulationDailyReturn",
+      "field": "turnover_rate_pct",
+      "type": "Decimal | None",
+      "line": 368
+    },
+    {
+      "path": "src/market_data_center/domain/regulation.py",
+      "class": "RegulationWarningResult",
+      "field": "price_limit_ratio",
+      "type": "Decimal | None",
+      "line": 526
+    },
+    {
+      "path": "src/market_data_center/domain/regulation.py",
+      "class": "MonitorState",
+      "field": "turnover_missing_dates",
+      "type": "tuple[date, ...] | None",
+      "line": 663
+    },
+    {
+      "path": "src/market_data_center/domain/stock_daily_indicator.py",
+      "class": "StockDailyIndicatorSnapshotRecord",
+      "field": "turnover_rate_pct",
+      "type": "Decimal | None",
+      "line": 29
+    },
+    {
+      "path": "src/market_data_center/domain/stock_daily_indicator.py",
+      "class": "StockDailyIndicatorSnapshotRecord",
+      "field": "free_float_turnover_rate_pct",
+      "type": "Decimal | None",
+      "line": 30
+    },
+    {
+      "path": "src/market_data_center/domain/stock_daily_indicator.py",
+      "class": "StockDailyIndicatorSnapshotRecord",
+      "field": "volume_ratio",
+      "type": "Decimal | None",
+      "line": 31
+    },
+    {
+      "path": "src/market_data_center/domain/stock_daily_indicator.py",
+      "class": "StockDailyIndicatorSnapshotRecord",
+      "field": "total_shares",
+      "type": "int | None",
+      "line": 39
+    },
+    {
+      "path": "src/market_data_center/domain/stock_daily_indicator.py",
+      "class": "StockDailyIndicatorSnapshotRecord",
+      "field": "circulating_shares",
+      "type": "int | None",
+      "line": 40
+    },
+    {
+      "path": "src/market_data_center/domain/stock_daily_indicator.py",
+      "class": "StockDailyIndicatorSnapshotRecord",
+      "field": "free_float_shares",
+      "type": "int | None",
+      "line": 41
+    },
+    {
+      "path": "src/market_data_center/domain/stock_pool.py",
+      "class": "PriceLimitRule",
+      "field": "regular_ratio",
+      "type": "Decimal",
+      "line": 42
+    },
+    {
+      "path": "src/market_data_center/domain/stock_pool.py",
+      "class": "PriceLimitRule",
+      "field": "st_ratio",
+      "type": "Decimal",
+      "line": 43
+    },
+    {
+      "path": "src/market_data_center/domain/stock_pool.py",
+      "class": "StockPoolCandidate",
+      "field": "free_float_turnover_rate_pct",
+      "type": "Decimal | None",
+      "line": 151
+    },
+    {
+      "path": "src/market_data_center/domain/stock_pool.py",
+      "class": "StockPoolCandidate",
+      "field": "free_float_shares",
+      "type": "int | None",
+      "line": 152
+    },
+    {
+      "path": "src/market_data_center/domain/stock_pool.py",
+      "class": "DailyPriceLimit",
+      "field": "limit_ratio",
+      "type": "Decimal",
+      "line": 174
+    },
+    {
+      "path": "src/market_data_center/domain/stock_pool.py",
+      "class": "PriceLimitSealSummary",
+      "field": "seal_amount",
+      "type": "Decimal",
+      "line": 210
+    },
+    {
+      "path": "src/market_data_center/domain/today_limit_down.py",
+      "class": "TodayLimitDownMember",
+      "field": "free_float_shares",
+      "type": "int",
+      "line": 79
+    },
+    {
+      "path": "src/market_data_center/domain/today_limit_down.py",
+      "class": "TodayLimitDownMember",
+      "field": "limit_down_duration_seconds",
+      "type": "int | None",
+      "line": 85
+    },
+    {
+      "path": "src/market_data_center/domain/today_limit_down.py",
+      "class": "TodayLimitDownMember",
+      "field": "duration_semantics",
+      "type": "DurationSemantics",
+      "line": 86
+    },
+    {
+      "path": "src/market_data_center/domain/today_limit_down.py",
+      "class": "TodayLimitDownMember",
+      "field": "closing_ask1_volume_shares",
+      "type": "int | None",
+      "line": 89
+    },
+    {
+      "path": "src/market_data_center/domain/today_limit_down.py",
+      "class": "TodayLimitDownMember",
+      "field": "closing_ask2_volume_shares",
+      "type": "int | None",
+      "line": 91
+    },
+    {
+      "path": "src/market_data_center/domain/today_limit_down.py",
+      "class": "TodayLimitDownMember",
+      "field": "closing_ask3_volume_shares",
+      "type": "int | None",
+      "line": 93
+    },
+    {
+      "path": "src/market_data_center/domain/today_limit_down.py",
+      "class": "TodayLimitDownMember",
+      "field": "closing_ask4_volume_shares",
+      "type": "int | None",
+      "line": 95
+    },
+    {
+      "path": "src/market_data_center/domain/today_limit_down.py",
+      "class": "TodayLimitDownMember",
+      "field": "closing_ask5_volume_shares",
+      "type": "int | None",
+      "line": 97
+    },
+    {
+      "path": "src/market_data_center/domain/today_limit_down.py",
+      "class": "TodayLimitDownMember",
+      "field": "closing_ask1_sealing_amount_cny",
+      "type": "Decimal | None",
+      "line": 98
+    },
+    {
+      "path": "src/market_data_center/domain/today_limit_up.py",
+      "class": "TodayLimitUpMember",
+      "field": "free_float_shares",
+      "type": "int",
+      "line": 83
+    },
+    {
+      "path": "src/market_data_center/domain/today_limit_up.py",
+      "class": "TodayLimitUpMember",
+      "field": "limit_up_duration_seconds",
+      "type": "int | None",
+      "line": 88
+    },
+    {
+      "path": "src/market_data_center/domain/today_limit_up.py",
+      "class": "TodayLimitUpMember",
+      "field": "duration_semantics",
+      "type": "DurationSemantics",
+      "line": 89
+    },
+    {
+      "path": "src/market_data_center/domain/today_limit_up.py",
+      "class": "TodayLimitUpMember",
+      "field": "closing_bid1_volume_shares",
+      "type": "int | None",
+      "line": 92
+    },
+    {
+      "path": "src/market_data_center/domain/today_limit_up.py",
+      "class": "TodayLimitUpMember",
+      "field": "closing_bid1_sealing_amount_cny",
+      "type": "Decimal | None",
+      "line": 93
+    },
+    {
+      "path": "src/market_data_center/domain/today_limit_up.py",
+      "class": "TodayLimitUpMember",
+      "field": "volume",
+      "type": "int | None",
+      "line": 94
+    },
+    {
+      "path": "src/market_data_center/domain/today_limit_up.py",
+      "class": "TodayLimitUpMember",
+      "field": "amount_cny",
+      "type": "Decimal | None",
+      "line": 95
+    },
+    {
+      "path": "src/market_data_center/domain/today_limit_up.py",
+      "class": "TodayLimitUpMember",
+      "field": "free_float_turnover_rate_pct",
+      "type": "Decimal | None",
+      "line": 96
+    },
+    {
+      "path": "src/market_data_center/domain/top10_float_holder.py",
+      "class": "Top10FloatHolderRecord",
+      "field": "hold_amount",
+      "type": "int",
+      "line": 16
+    },
+    {
+      "path": "src/market_data_center/domain/top10_float_holder.py",
+      "class": "Top10FloatHolderRecord",
+      "field": "hold_ratio",
+      "type": "Decimal | None",
+      "line": 17
+    },
+    {
+      "path": "src/market_data_center/domain/top10_float_holder.py",
+      "class": "Top10FloatHolderRecord",
+      "field": "hold_float_ratio",
+      "type": "Decimal | None",
+      "line": 18
+    }
+  ],
+  "fastapi_schemas": {
+    "AuctionHistoryItem": {
+      "auction_amount_cny": {
+        "description": "来源竞价成交额，单位元；不是委买额或净额；未提供精确撮合时点。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "来源竞价成交额，单位元；不是委买额或净额；未提供精确撮合时点。",
+          "title": "Auction Amount Cny"
+        }
+      },
+      "auction_net_amount_cny": {
+        "description": "来源竞价净额，单位元，可负；不是成交额。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "来源竞价净额，单位元，可负；不是成交额。",
+          "title": "Auction Net Amount Cny"
+        }
+      },
+      "auction_turnover_rate_pct": {
+        "description": "来源竞价换手率，单位百分比；0.23表示0.23%；未提供精确撮合时点。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "来源竞价换手率，单位百分比；0.23表示0.23%；未提供精确撮合时点。",
+          "title": "Auction Turnover Rate Pct"
+        }
+      },
+      "limit_up_bid_amount_cny": {
+        "description": "涨停委买额，单位元。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "涨停委买额，单位元。",
+          "title": "Limit Up Bid Amount Cny"
+        }
+      }
+    },
+    "AuctionIndicativeDetailItem": {
+      "displayed_volume_shares": {
+        "description": "来源页面展示的竞价匹配量，单位为股。",
+        "schema": {
+          "description": "来源页面展示的竞价匹配量，单位为股。",
+          "minimum": 0.0,
+          "title": "Displayed Volume Shares",
+          "type": "integer"
+        }
+      }
+    },
+    "AuctionOnePriceLimitItem": {
+      "cumulative_amount": {
+        "description": "截至快照时点的累计金额，单位为人民币元。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "截至快照时点的累计金额，单位为人民币元。",
+          "title": "Cumulative Amount"
+        }
+      },
+      "cumulative_volume": {
+        "description": "截至快照时点的累计数量，单位为股。",
+        "schema": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "截至快照时点的累计数量，单位为股。",
+          "title": "Cumulative Volume"
+        }
+      },
+      "seal_amount": {
+        "description": "竞价封单额，按买一价乘以买一量计算，单位为人民币元。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "竞价封单额，按买一价乘以买一量计算，单位为人民币元。",
+          "title": "Seal Amount"
+        }
+      }
+    },
+    "CallAuctionMarketSeriesSnapshotItem": {
+      "ask1_volume": {
+        "description": "卖一量，单位为股；价格为空或为零时仍保留来源返回的数量。",
+        "schema": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "卖一量，单位为股；价格为空或为零时仍保留来源返回的数量。",
+          "title": "Ask1 Volume"
+        }
+      },
+      "ask2_volume": {
+        "description": "卖二量，单位为股；价格为空或为零时仍保留来源返回的数量。",
+        "schema": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "卖二量，单位为股；价格为空或为零时仍保留来源返回的数量。",
+          "title": "Ask2 Volume"
+        }
+      },
+      "ask3_volume": {
+        "description": "卖三量，单位为股；价格为空或为零时仍保留来源返回的数量。",
+        "schema": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "卖三量，单位为股；价格为空或为零时仍保留来源返回的数量。",
+          "title": "Ask3 Volume"
+        }
+      },
+      "ask4_volume": {
+        "description": "卖四量，单位为股；价格为空或为零时仍保留来源返回的数量。",
+        "schema": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "卖四量，单位为股；价格为空或为零时仍保留来源返回的数量。",
+          "title": "Ask4 Volume"
+        }
+      },
+      "ask5_volume": {
+        "description": "卖五量，单位为股；价格为空或为零时仍保留来源返回的数量。",
+        "schema": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "卖五量，单位为股；价格为空或为零时仍保留来源返回的数量。",
+          "title": "Ask5 Volume"
+        }
+      },
+      "bid1_volume": {
+        "description": "买一量，单位为股；价格为空或为零时仍保留来源返回的数量。",
+        "schema": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "买一量，单位为股；价格为空或为零时仍保留来源返回的数量。",
+          "title": "Bid1 Volume"
+        }
+      },
+      "bid2_volume": {
+        "description": "买二量，单位为股；价格为空或为零时仍保留来源返回的数量。",
+        "schema": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "买二量，单位为股；价格为空或为零时仍保留来源返回的数量。",
+          "title": "Bid2 Volume"
+        }
+      },
+      "bid3_volume": {
+        "description": "买三量，单位为股；价格为空或为零时仍保留来源返回的数量。",
+        "schema": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "买三量，单位为股；价格为空或为零时仍保留来源返回的数量。",
+          "title": "Bid3 Volume"
+        }
+      },
+      "bid4_volume": {
+        "description": "买四量，单位为股；价格为空或为零时仍保留来源返回的数量。",
+        "schema": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "买四量，单位为股；价格为空或为零时仍保留来源返回的数量。",
+          "title": "Bid4 Volume"
+        }
+      },
+      "bid5_volume": {
+        "description": "买五量，单位为股；价格为空或为零时仍保留来源返回的数量。",
+        "schema": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "买五量，单位为股；价格为空或为零时仍保留来源返回的数量。",
+          "title": "Bid5 Volume"
+        }
+      },
+      "cumulative_amount": {
+        "description": "截至快照时点的累计金额，单位为人民币元。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "截至快照时点的累计金额，单位为人民币元。",
+          "title": "Cumulative Amount"
+        }
+      },
+      "cumulative_volume": {
+        "description": "截至快照时点的累计数量，单位为股。",
+        "schema": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "截至快照时点的累计数量，单位为股。",
+          "title": "Cumulative Volume"
+        }
+      }
+    },
+    "CallAuctionMarketSnapshotItem": {
+      "ask1_volume": {
+        "description": "卖一量，单位为股；价格为空或为零时仍保留来源返回的数量。",
+        "schema": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "卖一量，单位为股；价格为空或为零时仍保留来源返回的数量。",
+          "title": "Ask1 Volume"
+        }
+      },
+      "ask2_volume": {
+        "description": "卖二量，单位为股；价格为空或为零时仍保留来源返回的数量。",
+        "schema": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "卖二量，单位为股；价格为空或为零时仍保留来源返回的数量。",
+          "title": "Ask2 Volume"
+        }
+      },
+      "ask3_volume": {
+        "description": "卖三量，单位为股；价格为空或为零时仍保留来源返回的数量。",
+        "schema": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "卖三量，单位为股；价格为空或为零时仍保留来源返回的数量。",
+          "title": "Ask3 Volume"
+        }
+      },
+      "ask4_volume": {
+        "description": "卖四量，单位为股；价格为空或为零时仍保留来源返回的数量。",
+        "schema": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "卖四量，单位为股；价格为空或为零时仍保留来源返回的数量。",
+          "title": "Ask4 Volume"
+        }
+      },
+      "ask5_volume": {
+        "description": "卖五量，单位为股；价格为空或为零时仍保留来源返回的数量。",
+        "schema": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "卖五量，单位为股；价格为空或为零时仍保留来源返回的数量。",
+          "title": "Ask5 Volume"
+        }
+      },
+      "bid1_volume": {
+        "description": "买一量，单位为股；价格为空或为零时仍保留来源返回的数量。",
+        "schema": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "买一量，单位为股；价格为空或为零时仍保留来源返回的数量。",
+          "title": "Bid1 Volume"
+        }
+      },
+      "bid2_volume": {
+        "description": "买二量，单位为股；价格为空或为零时仍保留来源返回的数量。",
+        "schema": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "买二量，单位为股；价格为空或为零时仍保留来源返回的数量。",
+          "title": "Bid2 Volume"
+        }
+      },
+      "bid3_volume": {
+        "description": "买三量，单位为股；价格为空或为零时仍保留来源返回的数量。",
+        "schema": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "买三量，单位为股；价格为空或为零时仍保留来源返回的数量。",
+          "title": "Bid3 Volume"
+        }
+      },
+      "bid4_volume": {
+        "description": "买四量，单位为股；价格为空或为零时仍保留来源返回的数量。",
+        "schema": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "买四量，单位为股；价格为空或为零时仍保留来源返回的数量。",
+          "title": "Bid4 Volume"
+        }
+      },
+      "bid5_volume": {
+        "description": "买五量，单位为股；价格为空或为零时仍保留来源返回的数量。",
+        "schema": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "买五量，单位为股；价格为空或为零时仍保留来源返回的数量。",
+          "title": "Bid5 Volume"
+        }
+      },
+      "cumulative_amount": {
+        "description": "截至快照时点的累计金额，单位为人民币元。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "截至快照时点的累计金额，单位为人民币元。",
+          "title": "Cumulative Amount"
+        }
+      },
+      "cumulative_volume": {
+        "description": "截至快照时点的累计数量，单位为股。",
+        "schema": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "截至快照时点的累计数量，单位为股。",
+          "title": "Cumulative Volume"
+        }
+      },
+      "seal_amount": {
+        "description": "竞价封单额，按买一价乘以买一量计算，单位为人民币元。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "竞价封单额，按买一价乘以买一量计算，单位为人民币元。",
+          "title": "Seal Amount"
+        }
+      }
+    },
+    "DailyBarItem": {
+      "amount": {
+        "description": "成交金额，单位为人民币元。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "成交金额，单位为人民币元。",
+          "title": "Amount"
+        }
+      },
+      "volume": {
+        "description": "成交量，单位为股。",
+        "schema": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "成交量，单位为股。",
+          "title": "Volume"
+        }
+      }
+    },
+    "DailyLimitDownListItem": {
+      "closing_ask1_sealing_amount_cny": {
+        "description": "按收盘卖一价和卖一量计算的跌停封单额，单位为人民币元。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "按收盘卖一价和卖一量计算的跌停封单额，单位为人民币元。",
+          "title": "Closing Ask1 Sealing Amount Cny"
+        }
+      },
+      "closing_ask1_volume_shares": {
+        "description": "收盘卖一量，单位为股。",
+        "schema": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "收盘卖一量，单位为股。",
+          "title": "Closing Ask1 Volume Shares"
+        }
+      },
+      "closing_ask2_volume_shares": {
+        "description": "收盘卖二量，单位为股。",
+        "schema": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "收盘卖二量，单位为股。",
+          "title": "Closing Ask2 Volume Shares"
+        }
+      },
+      "closing_ask3_volume_shares": {
+        "description": "收盘卖三量，单位为股。",
+        "schema": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "收盘卖三量，单位为股。",
+          "title": "Closing Ask3 Volume Shares"
+        }
+      },
+      "closing_ask4_volume_shares": {
+        "description": "收盘卖四量，单位为股。",
+        "schema": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "收盘卖四量，单位为股。",
+          "title": "Closing Ask4 Volume Shares"
+        }
+      },
+      "closing_ask5_volume_shares": {
+        "description": "收盘卖五量，单位为股。",
+        "schema": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "收盘卖五量，单位为股。",
+          "title": "Closing Ask5 Volume Shares"
+        }
+      },
+      "duration_semantics": {
+        "description": "封板持续时间字段的统计口径。",
+        "schema": {
+          "description": "封板持续时间字段的统计口径。",
+          "title": "Duration Semantics",
+          "type": "string"
+        }
+      },
+      "free_float_shares": {
+        "description": "自由流通股本，单位为股。",
+        "schema": {
+          "description": "自由流通股本，单位为股。",
+          "exclusiveMinimum": 0.0,
+          "title": "Free Float Shares",
+          "type": "integer"
+        }
+      },
+      "limit_down_duration_seconds": {
+        "description": "当日跌停累计封板时长；无事件流时为空。",
+        "schema": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "当日跌停累计封板时长；无事件流时为空。",
+          "title": "Limit Down Duration Seconds"
+        }
+      }
+    },
+    "DailyLimitUpListItem": {
+      "amount_cny": {
+        "description": "成交金额，单位为人民币元。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "成交金额，单位为人民币元。",
+          "title": "Amount Cny"
+        }
+      },
+      "closing_bid1_sealing_amount_cny": {
+        "description": "按收盘买一价和买一量计算的封单额，单位为人民币元。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "按收盘买一价和买一量计算的封单额，单位为人民币元。",
+          "title": "Closing Bid1 Sealing Amount Cny"
+        }
+      },
+      "closing_bid1_volume_shares": {
+        "description": "收盘买一量，单位为股。",
+        "schema": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "收盘买一量，单位为股。",
+          "title": "Closing Bid1 Volume Shares"
+        }
+      },
+      "closing_bid2_volume_shares": {
+        "description": "收盘买二量，单位为股。",
+        "schema": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "收盘买二量，单位为股。",
+          "title": "Closing Bid2 Volume Shares"
+        }
+      },
+      "closing_bid3_volume_shares": {
+        "description": "收盘买三量，单位为股。",
+        "schema": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "收盘买三量，单位为股。",
+          "title": "Closing Bid3 Volume Shares"
+        }
+      },
+      "closing_bid4_volume_shares": {
+        "description": "收盘买四量，单位为股。",
+        "schema": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "收盘买四量，单位为股。",
+          "title": "Closing Bid4 Volume Shares"
+        }
+      },
+      "closing_bid5_volume_shares": {
+        "description": "收盘买五量，单位为股。",
+        "schema": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "收盘买五量，单位为股。",
+          "title": "Closing Bid5 Volume Shares"
+        }
+      },
+      "duration_semantics": {
+        "description": "封板持续时间字段的统计口径。",
+        "schema": {
+          "description": "封板持续时间字段的统计口径。",
+          "title": "Duration Semantics",
+          "type": "string"
+        }
+      },
+      "free_float_shares": {
+        "description": "自由流通股本，单位为股。",
+        "schema": {
+          "description": "自由流通股本，单位为股。",
+          "exclusiveMinimum": 0.0,
+          "title": "Free Float Shares",
+          "type": "integer"
+        }
+      },
+      "free_float_turnover_rate_pct": {
+        "description": "自由流通换手率，单位为百分比。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "自由流通换手率，单位为百分比。",
+          "title": "Free Float Turnover Rate Pct"
+        }
+      },
+      "limit_up_duration_seconds": {
+        "description": "当日涨停持续时间，单位为秒。",
+        "schema": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "当日涨停持续时间，单位为秒。",
+          "title": "Limit Up Duration Seconds"
+        }
+      },
+      "volume": {
+        "description": "成交量，单位为股。",
+        "schema": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "成交量，单位为股。",
+          "title": "Volume"
+        }
+      }
+    },
+    "DragonTigerCapitalMetricsItem": {
+      "amount_period_verified": {
+        "description": "金额统计区间是否已由来源信息可靠确认。",
+        "schema": {
+          "description": "金额统计区间是否已由来源信息可靠确认。",
+          "title": "Amount Period Verified",
+          "type": "boolean"
+        }
+      },
+      "institution_buy_amount": {
+        "description": "机构席位可完整计算的买入合计，单位为人民币元；披露不完整时为空。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "机构席位可完整计算的买入合计，单位为人民币元；披露不完整时为空。",
+          "title": "Institution Buy Amount"
+        }
+      },
+      "institution_net_amount": {
+        "description": "机构席位可完整计算的买卖净额，单位为人民币元；披露不完整时为空。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "机构席位可完整计算的买卖净额，单位为人民币元；披露不完整时为空。",
+          "title": "Institution Net Amount"
+        }
+      },
+      "institution_sell_amount": {
+        "description": "机构席位可完整计算的卖出合计，单位为人民币元；披露不完整时为空。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "机构席位可完整计算的卖出合计，单位为人民币元；披露不完整时为空。",
+          "title": "Institution Sell Amount"
+        }
+      },
+      "net_amount": {
+        "description": "净买入金额，单位为人民币元。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "净买入金额，单位为人民币元。",
+          "title": "Net Amount"
+        }
+      },
+      "northbound_buy_amount": {
+        "description": "北向专用席位可完整计算的买入合计，单位为人民币元；披露不完整时为空。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "北向专用席位可完整计算的买入合计，单位为人民币元；披露不完整时为空。",
+          "title": "Northbound Buy Amount"
+        }
+      },
+      "northbound_net_amount": {
+        "description": "北向专用席位可完整计算的买卖净额，单位为人民币元；披露不完整时为空。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "北向专用席位可完整计算的买卖净额，单位为人民币元；披露不完整时为空。",
+          "title": "Northbound Net Amount"
+        }
+      },
+      "northbound_sell_amount": {
+        "description": "北向专用席位可完整计算的卖出合计，单位为人民币元；披露不完整时为空。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "北向专用席位可完整计算的卖出合计，单位为人民币元；披露不完整时为空。",
+          "title": "Northbound Sell Amount"
+        }
+      },
+      "top1_buy_concentration": {
+        "description": "买入榜第一名金额占龙虎榜买入合计的比例。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "买入榜第一名金额占龙虎榜买入合计的比例。",
+          "title": "Top1 Buy Concentration"
+        }
+      },
+      "top1_sell_concentration": {
+        "description": "卖出榜第一名金额占龙虎榜卖出合计的比例。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "卖出榜第一名金额占龙虎榜卖出合计的比例。",
+          "title": "Top1 Sell Concentration"
+        }
+      },
+      "top3_buy_concentration": {
+        "description": "买入榜前三名金额占龙虎榜买入合计的比例。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "买入榜前三名金额占龙虎榜买入合计的比例。",
+          "title": "Top3 Buy Concentration"
+        }
+      },
+      "top3_sell_concentration": {
+        "description": "卖出榜前三名金额占龙虎榜卖出合计的比例。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "卖出榜前三名金额占龙虎榜卖出合计的比例。",
+          "title": "Top3 Sell Concentration"
+        }
+      },
+      "top5_buy_concentration": {
+        "description": "买入榜前五名金额占龙虎榜买入合计的比例。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "买入榜前五名金额占龙虎榜买入合计的比例。",
+          "title": "Top5 Buy Concentration"
+        }
+      },
+      "top5_sell_concentration": {
+        "description": "卖出榜前五名金额占龙虎榜卖出合计的比例。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "卖出榜前五名金额占龙虎榜卖出合计的比例。",
+          "title": "Top5 Sell Concentration"
+        }
+      }
+    },
+    "DragonTigerEventItem": {
+      "amount_period_basis": {
+        "description": "金额统计区间口径；无法可靠确定时为 SOURCE_UNSPECIFIED。",
+        "schema": {
+          "description": "金额统计区间口径；无法可靠确定时为 SOURCE_UNSPECIFIED。",
+          "enum": [
+            "MARKET_SESSIONS",
+            "SECURITY_TRADED_SESSIONS",
+            "SOURCE_UNSPECIFIED"
+          ],
+          "title": "Amount Period Basis",
+          "type": "string"
+        }
+      },
+      "amount_period_end_date": {
+        "description": "金额统计区间结束交易日；未披露时为空。",
+        "schema": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "金额统计区间结束交易日；未披露时为空。",
+          "title": "Amount Period End Date"
+        }
+      },
+      "amount_period_sessions": {
+        "description": "金额统计区间包含的交易会话数；未披露时为空。",
+        "schema": {
+          "anyOf": [
+            {
+              "minimum": 1.0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "金额统计区间包含的交易会话数；未披露时为空。",
+          "title": "Amount Period Sessions"
+        }
+      },
+      "amount_period_start_date": {
+        "description": "金额统计区间开始交易日；未披露时为空。",
+        "schema": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "金额统计区间开始交易日；未披露时为空。",
+          "title": "Amount Period Start Date"
+        }
+      },
+      "lhb_buy_amount": {
+        "description": "龙虎榜披露的买入合计，单位为人民币元。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "龙虎榜披露的买入合计，单位为人民币元。",
+          "title": "Lhb Buy Amount"
+        }
+      },
+      "lhb_sell_amount": {
+        "description": "龙虎榜披露的卖出合计，单位为人民币元。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "龙虎榜披露的卖出合计，单位为人民币元。",
+          "title": "Lhb Sell Amount"
+        }
+      },
+      "net_amount": {
+        "description": "净买入金额，单位为人民币元。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "净买入金额，单位为人民币元。",
+          "title": "Net Amount"
+        }
+      },
+      "turnover_amount": {
+        "description": "证券在统计周期内的成交金额，单位为人民币元。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "证券在统计周期内的成交金额，单位为人民币元。",
+          "title": "Turnover Amount"
+        }
+      },
+      "turnover_rate": {
+        "description": "证券在统计周期内的换手率，单位为百分比。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "证券在统计周期内的换手率，单位为百分比。",
+          "title": "Turnover Rate"
+        }
+      }
+    },
+    "DragonTigerSeatTradeItem": {
+      "buy_amount": {
+        "description": "买入金额，单位为人民币元。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "买入金额，单位为人民币元。",
+          "title": "Buy Amount"
+        }
+      },
+      "net_amount": {
+        "description": "净买入金额，单位为人民币元。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "净买入金额，单位为人民币元。",
+          "title": "Net Amount"
+        }
+      },
+      "sell_amount": {
+        "description": "卖出金额，单位为人民币元。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "卖出金额，单位为人民币元。",
+          "title": "Sell Amount"
+        }
+      }
+    },
+    "DragonTigerSeatTradeOccurrenceItem": {
+      "amount_period_basis": {
+        "description": "金额统计区间口径；无法可靠确定时为 SOURCE_UNSPECIFIED。",
+        "schema": {
+          "description": "金额统计区间口径；无法可靠确定时为 SOURCE_UNSPECIFIED。",
+          "enum": [
+            "MARKET_SESSIONS",
+            "SECURITY_TRADED_SESSIONS",
+            "SOURCE_UNSPECIFIED"
+          ],
+          "title": "Amount Period Basis",
+          "type": "string"
+        }
+      },
+      "amount_period_end_date": {
+        "description": "金额统计区间结束交易日；未披露时为空。",
+        "schema": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "金额统计区间结束交易日；未披露时为空。",
+          "title": "Amount Period End Date"
+        }
+      },
+      "amount_period_sessions": {
+        "description": "金额统计区间包含的交易会话数；未披露时为空。",
+        "schema": {
+          "anyOf": [
+            {
+              "minimum": 1.0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "金额统计区间包含的交易会话数；未披露时为空。",
+          "title": "Amount Period Sessions"
+        }
+      },
+      "amount_period_start_date": {
+        "description": "金额统计区间开始交易日；未披露时为空。",
+        "schema": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "金额统计区间开始交易日；未披露时为空。",
+          "title": "Amount Period Start Date"
+        }
+      },
+      "buy_amount": {
+        "description": "买入金额，单位为人民币元。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "买入金额，单位为人民币元。",
+          "title": "Buy Amount"
+        }
+      },
+      "net_amount": {
+        "description": "净买入金额，单位为人民币元。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "净买入金额，单位为人民币元。",
+          "title": "Net Amount"
+        }
+      },
+      "sell_amount": {
+        "description": "卖出金额，单位为人民币元。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "卖出金额，单位为人民币元。",
+          "title": "Sell Amount"
+        }
+      }
+    },
+    "HotMoneyActionItem": {
+      "buy_amount": {
+        "description": "买入金额，单位为人民币元。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "买入金额，单位为人民币元。",
+          "title": "Buy Amount"
+        }
+      },
+      "net_amount": {
+        "description": "净买入金额，单位为人民币元。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "净买入金额，单位为人民币元。",
+          "title": "Net Amount"
+        }
+      },
+      "sell_amount": {
+        "description": "卖出金额，单位为人民币元。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "卖出金额，单位为人民币元。",
+          "title": "Sell Amount"
+        }
+      }
+    },
+    "KaipanlaAuctionItem": {
+      "auction_amount_cny": {
+        "description": "竞价成交额，单位元。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "竞价成交额，单位元。",
+          "title": "Auction Amount Cny"
+        }
+      },
+      "auction_net_amount_cny": {
+        "description": "竞价净额，单位元；允许负值。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "竞价净额，单位元；允许负值。",
+          "title": "Auction Net Amount Cny"
+        }
+      },
+      "auction_turnover_rate_pct": {
+        "description": "竞价换手率，单位百分比；0.23 表示 0.23%。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "竞价换手率，单位百分比；0.23 表示 0.23%。",
+          "title": "Auction Turnover Rate Pct"
+        }
+      },
+      "limit_up_bid_amount_cny": {
+        "description": "涨停委买额，单位元；不是竞价成交额。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "涨停委买额，单位元；不是竞价成交额。",
+          "title": "Limit Up Bid Amount Cny"
+        }
+      }
+    },
+    "KaipanlaBoardItem": {
+      "amount_cny": {
+        "description": "成交额，单位元。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "成交额，单位元。",
+          "title": "Amount Cny"
+        }
+      },
+      "large_order_net_amount_cny": {
+        "description": "来源大单净额，单位元；允许负值。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "来源大单净额，单位元；允许负值。",
+          "title": "Large Order Net Amount Cny"
+        }
+      },
+      "main_net_amount_cny": {
+        "description": "来源主力净额，单位元；允许负值。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "来源主力净额，单位元；允许负值。",
+          "title": "Main Net Amount Cny"
+        }
+      },
+      "volume_ratio": {
+        "description": "来源量比，倍数。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "来源量比，倍数。",
+          "title": "Volume Ratio"
+        }
+      }
+    },
+    "KaipanlaBoardMember": {
+      "amount_cny": {
+        "description": "成交额，单位元。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "成交额，单位元。",
+          "title": "Amount Cny"
+        }
+      },
+      "close_limit_bid_amount_cny": {
+        "description": "来源收盘封单金额，单位元。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "来源收盘封单金额，单位元。",
+          "title": "Close Limit Bid Amount Cny"
+        }
+      },
+      "large_order_net_amount_cny": {
+        "description": "来源大单净额，单位元。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "来源大单净额，单位元。",
+          "title": "Large Order Net Amount Cny"
+        }
+      },
+      "main_buy_amount_cny": {
+        "description": "主力买入金额，单位元。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "主力买入金额，单位元。",
+          "title": "Main Buy Amount Cny"
+        }
+      },
+      "main_net_amount_cny": {
+        "description": "主力净额，单位元。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "主力净额，单位元。",
+          "title": "Main Net Amount Cny"
+        }
+      },
+      "main_sell_amount_cny": {
+        "description": "主力卖出金额，单位元；保留来源负号。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "主力卖出金额，单位元；保留来源负号。",
+          "title": "Main Sell Amount Cny"
+        }
+      },
+      "max_limit_bid_amount_cny": {
+        "description": "来源最大封单金额，单位元。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "来源最大封单金额，单位元。",
+          "title": "Max Limit Bid Amount Cny"
+        }
+      },
+      "volume_ratio": {
+        "description": "来源量比，倍数。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "来源量比，倍数。",
+          "title": "Volume Ratio"
+        }
+      }
+    },
+    "LatestStockDailyIndicatorItem": {
+      "circulating_shares": {
+        "description": "流通股本，单位为股。",
+        "schema": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "流通股本，单位为股。",
+          "title": "Circulating Shares"
+        }
+      },
+      "free_float_shares": {
+        "description": "自由流通股本，单位为股。",
+        "schema": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "自由流通股本，单位为股。",
+          "title": "Free Float Shares"
+        }
+      },
+      "free_float_turnover_rate_pct": {
+        "description": "自由流通换手率，单位为百分比。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "自由流通换手率，单位为百分比。",
+          "title": "Free Float Turnover Rate Pct"
+        }
+      },
+      "total_shares": {
+        "description": "总股本，单位为股。",
+        "schema": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "总股本，单位为股。",
+          "title": "Total Shares"
+        }
+      },
+      "turnover_rate_pct": {
+        "description": "换手率，单位为百分比。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "换手率，单位为百分比。",
+          "title": "Turnover Rate Pct"
+        }
+      },
+      "volume_ratio": {
+        "description": "量比，无量纲。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "量比，无量纲。",
+          "title": "Volume Ratio"
+        }
+      }
+    },
+    "LatestStockQuoteItem": {
+      "cumulative_amount_cny": {
+        "description": "截至快照时点的累计成交金额，单位为人民币元。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "截至快照时点的累计成交金额，单位为人民币元。",
+          "title": "Cumulative Amount Cny"
+        }
+      },
+      "cumulative_volume_shares": {
+        "description": "截至快照时点的累计成交量，单位为股。",
+        "schema": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "截至快照时点的累计成交量，单位为股。",
+          "title": "Cumulative Volume Shares"
+        }
+      }
+    },
+    "LimitDownHistoryItem": {
+      "sealed_amount_cny": {
+        "description": "来源封单金额，单位元。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "来源封单金额，单位元。",
+          "title": "Sealed Amount Cny"
+        }
+      }
+    },
+    "LimitUpPoolOmissionReasons": {
+      "missing_free_float_shares": {
+        "description": "因缺少自由流通股本而省略的记录数。",
+        "schema": {
+          "description": "因缺少自由流通股本而省略的记录数。",
+          "minimum": 0.0,
+          "title": "Missing Free Float Shares",
+          "type": "integer"
+        }
+      }
+    },
+    "MonitorStock": {
+      "calculated_turnover_count_10d": {
+        "description": "近十个交易日系统测算的换手异动次数，与价格次数分开。",
+        "schema": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "近十个交易日系统测算的换手异动次数，与价格次数分开。",
+          "title": "Calculated Turnover Count 10D"
+        }
+      }
+    },
+    "SourceBarItem": {
+      "amount_cny": {
+        "description": "来源成交额，单位人民币元；腾讯及新浪未提供时为空，不推算。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "来源成交额，单位人民币元；腾讯及新浪未提供时为空，不推算。",
+          "title": "Amount Cny"
+        }
+      },
+      "volume_shares": {
+        "description": "该周期来源成交量，单位股；东财/腾讯手乘100，新浪直接读股。",
+        "schema": {
+          "description": "该周期来源成交量，单位股；东财/腾讯手乘100，新浪直接读股。",
+          "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+          "title": "Volume Shares",
+          "type": "string"
+        }
+      }
+    },
+    "SourceMinuteItem": {
+      "cumulative_amount_cny": {
+        "description": "来源累计成交额，单位人民币元；缺失为空，不使用0代替。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "来源累计成交额，单位人民币元；缺失为空，不使用0代替。",
+          "title": "Cumulative Amount Cny"
+        }
+      },
+      "cumulative_volume_shares": {
+        "description": "来源累计成交量，单位股；逐行手乘100，不再次累加。",
+        "schema": {
+          "description": "来源累计成交量，单位股；逐行手乘100，不再次累加。",
+          "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+          "title": "Cumulative Volume Shares",
+          "type": "string"
+        }
+      }
+    },
+    "SourcePoolItem": {
+      "sealing_amount_cny": {
+        "description": "来源封单金额，单位人民币元。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "来源封单金额，单位人民币元。",
+          "title": "Sealing Amount Cny"
+        }
+      }
+    },
+    "SourceQuoteItem": {
+      "amount_cny": {
+        "description": "累计成交金额，单位人民币元。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "累计成交金额，单位人民币元。",
+          "title": "Amount Cny"
+        }
+      },
+      "turnover_rate_pct": {
+        "description": "换手率，单位百分比。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "换手率，单位百分比。",
+          "title": "Turnover Rate Pct"
+        }
+      },
+      "volume_ratio": {
+        "description": "来源量比，缺失为空。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "来源量比，缺失为空。",
+          "title": "Volume Ratio"
+        }
+      },
+      "volume_shares": {
+        "description": "截至来源时点的累计成交量，单位股，来源手乘100。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "截至来源时点的累计成交量，单位股，来源手乘100。",
+          "title": "Volume Shares"
+        }
+      }
+    },
+    "SourceThemeStockItem": {
+      "main_net_amount_cny": {
+        "description": "来源f62主力净流入，单位人民币元，允许负数。",
+        "schema": {
+          "anyOf": [
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "来源f62主力净流入，单位人民币元，允许负数。",
+          "title": "Main Net Amount Cny"
+        }
+      }
+    },
+    "StockQuoteLevel": {
+      "volume_shares": {
+        "description": "盘口档位数量，单位为股。",
+        "schema": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "盘口档位数量，单位为股。",
+          "title": "Volume Shares"
+        }
+      }
+    }
+  },
+  "fastapi_routes": [
+    {
+      "method": "get",
+      "path": "/api/v1/call-auction-indicative-details",
+      "schemas": [
+        "AuctionIndicativeDetailItem"
+      ]
+    },
+    {
+      "method": "post",
+      "path": "/api/v1/call-auction-market-series-snapshots/query",
+      "schemas": [
+        "CallAuctionMarketSeriesSnapshotItem"
+      ]
+    },
+    {
+      "method": "post",
+      "path": "/api/v1/call-auction-market-snapshots/query",
+      "schemas": [
+        "CallAuctionMarketSnapshotItem"
+      ]
+    },
+    {
+      "method": "get",
+      "path": "/api/v1/call-auction-one-price-limits",
+      "schemas": [
+        "AuctionOnePriceLimitItem"
+      ]
+    },
+    {
+      "method": "get",
+      "path": "/api/v1/daily-bars/{symbol}",
+      "schemas": [
+        "DailyBarItem"
+      ]
+    },
+    {
+      "method": "get",
+      "path": "/api/v1/daily-limit-down-list",
+      "schemas": [
+        "DailyLimitDownListItem"
+      ]
+    },
+    {
+      "method": "get",
+      "path": "/api/v1/daily-limit-up-list",
+      "schemas": [
+        "DailyLimitUpListItem"
+      ]
+    },
+    {
+      "method": "get",
+      "path": "/api/v1/dragon-tiger/events/by-date",
+      "schemas": [
+        "DragonTigerEventItem",
+        "DragonTigerSeatTradeItem"
+      ]
+    },
+    {
+      "method": "get",
+      "path": "/api/v1/dragon-tiger/events/by-symbol/{code}",
+      "schemas": [
+        "DragonTigerEventItem",
+        "DragonTigerSeatTradeItem"
+      ]
+    },
+    {
+      "method": "get",
+      "path": "/api/v1/dragon-tiger/events/{event_id}/metrics",
+      "schemas": [
+        "DragonTigerCapitalMetricsItem"
+      ]
+    },
+    {
+      "method": "get",
+      "path": "/api/v1/dragon-tiger/seats/{seat_id}/trades",
+      "schemas": [
+        "DragonTigerSeatTradeOccurrenceItem"
+      ]
+    },
+    {
+      "method": "get",
+      "path": "/api/v1/limit-up-pool",
+      "schemas": [
+        "LimitUpPoolOmissionReasons"
+      ]
+    },
+    {
+      "method": "post",
+      "path": "/api/v1/realtime-quotes/latest/query",
+      "schemas": [
+        "LatestStockQuoteItem",
+        "StockQuoteLevel"
+      ]
+    },
+    {
+      "method": "get",
+      "path": "/api/v1/realtime/eastmoney/broken-limit",
+      "schemas": [
+        "SourcePoolItem"
+      ]
+    },
+    {
+      "method": "get",
+      "path": "/api/v1/realtime/eastmoney/klines",
+      "schemas": [
+        "SourceBarItem"
+      ]
+    },
+    {
+      "method": "get",
+      "path": "/api/v1/realtime/eastmoney/limit-down",
+      "schemas": [
+        "SourcePoolItem"
+      ]
+    },
+    {
+      "method": "get",
+      "path": "/api/v1/realtime/eastmoney/limit-up",
+      "schemas": [
+        "SourcePoolItem"
+      ]
+    },
+    {
+      "method": "get",
+      "path": "/api/v1/realtime/eastmoney/quotes",
+      "schemas": [
+        "SourceQuoteItem"
+      ]
+    },
+    {
+      "method": "get",
+      "path": "/api/v1/realtime/eastmoney/themes/{theme_code}/stocks",
+      "schemas": [
+        "SourceThemeStockItem"
+      ]
+    },
+    {
+      "method": "get",
+      "path": "/api/v1/realtime/kaipanla/auction-pool",
+      "schemas": [
+        "KaipanlaAuctionItem"
+      ]
+    },
+    {
+      "method": "get",
+      "path": "/api/v1/realtime/kaipanla/boards",
+      "schemas": [
+        "KaipanlaBoardItem"
+      ]
+    },
+    {
+      "method": "get",
+      "path": "/api/v1/realtime/kaipanla/boards/history",
+      "schemas": [
+        "KaipanlaBoardItem"
+      ]
+    },
+    {
+      "method": "get",
+      "path": "/api/v1/realtime/kaipanla/boards/{board_code}/members/history",
+      "schemas": [
+        "KaipanlaBoardMember"
+      ]
+    },
+    {
+      "method": "get",
+      "path": "/api/v1/realtime/kaipanla/market-emotion/stocks/auction",
+      "schemas": [
+        "AuctionHistoryItem"
+      ]
+    },
+    {
+      "method": "get",
+      "path": "/api/v1/realtime/kaipanla/market-emotion/stocks/limit-down",
+      "schemas": [
+        "LimitDownHistoryItem"
+      ]
+    },
+    {
+      "method": "get",
+      "path": "/api/v1/realtime/sina/klines",
+      "schemas": [
+        "SourceBarItem"
+      ]
+    },
+    {
+      "method": "get",
+      "path": "/api/v1/realtime/tencent/klines",
+      "schemas": [
+        "SourceBarItem"
+      ]
+    },
+    {
+      "method": "get",
+      "path": "/api/v1/realtime/tencent/minute",
+      "schemas": [
+        "SourceMinuteItem"
+      ]
+    },
+    {
+      "method": "post",
+      "path": "/api/v1/regulation/monitor/query",
+      "schemas": [
+        "MonitorStock"
+      ]
+    },
+    {
+      "method": "post",
+      "path": "/api/v1/stock-daily-indicators/latest/query",
+      "schemas": [
+        "LatestStockDailyIndicatorItem"
+      ]
+    },
+    {
+      "method": "get",
+      "path": "/api/v1/trading-billboard/hot-money-actions",
+      "schemas": [
+        "HotMoneyActionItem"
+      ]
+    }
+  ],
+  "postgrest_paths": [
+    "/rpc/query_adjusted_daily_bars",
+    "/rpc/query_auction_quotes",
+    "/rpc/query_board_index_bias_latest",
+    "/rpc/query_call_auction_market_series_snapshots",
+    "/rpc/query_call_auction_market_snapshots",
+    "/rpc/query_classification_members_as_of",
+    "/rpc/query_close_price_new_highs_120d",
+    "/rpc/query_daily_bars",
+    "/rpc/query_deducted_profits_as_of",
+    "/rpc/query_dragon_tiger_event_metrics",
+    "/rpc/query_dragon_tiger_events_by_date",
+    "/rpc/query_dragon_tiger_events_by_symbol",
+    "/rpc/query_dragon_tiger_trades_by_seat",
+    "/rpc/query_hot_money_actions_by_date",
+    "/rpc/query_market_snapshot",
+    "/rpc/query_regulation_monitor_candidates",
+    "/rpc/query_regulation_monitor_inputs",
+    "/rpc/query_regulation_recent_event_next_triggers",
+    "/rpc/query_regulation_symbol_trigger",
+    "/rpc/query_regulation_triggers",
+    "/rpc/query_securities",
+    "/rpc/query_shareholder_count_history_as_of",
+    "/rpc/query_shareholder_count_history_latest",
+    "/rpc/query_shareholder_counts_as_of",
+    "/rpc/query_stock_pool_snapshot",
+    "/rpc/query_stock_technical_factors",
+    "/rpc/query_stock_technical_factors_by_codes"
+  ],
+  "database_quantity_read_functions_missing_from_checked_in_contract": [
+    "query_auction_one_price_limits",
+    "query_call_auction_grab_lines",
+    "query_call_auction_indicative_details",
+    "query_call_auction_one_price_patterns",
+    "query_daily_limit_down_list",
+    "query_daily_limit_up_list",
+    "query_limit_up_pool",
+    "query_recent_daily_bars"
+  ],
+  "manual_json_factor_review": {
+    "route": "POST /v1/stock-technical-factors/query",
+    "rpcs": [
+      "query_stock_technical_factors",
+      "query_stock_technical_factors_by_codes"
+    ],
+    "groups": [
+      "unadjusted",
+      "forward_adjusted",
+      "backward_adjusted"
+    ],
+    "quantity_sensitive_candidates": [
+      "obv",
+      "emv",
+      "maemv"
+    ],
+    "ratio_candidates": [
+      "mfi",
+      "vr"
+    ],
+    "status": "source units/formulas unverified; list does not certify other catalog leaves"
+  },
+  "external_consumers": {
+    "known_repository_mentions": [
+      "nine-in-one consumer application",
+      "apiServer technical factor client",
+      "research scripts"
+    ],
+    "deployment_versions_and_compensating_scaling": "unverified; no downstream notifications sent"
+  }
+}

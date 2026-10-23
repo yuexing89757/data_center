@@ -117,6 +117,33 @@ def test_factor_provider_error_records_failed_run(tmp_path):
     assert persistence.fail_ingestion_run.call_args.args[0].status is IngestionStatus.FAILED
 
 
+def test_source_becoming_ready_is_a_new_complete_batch_not_a_partial_merge(tmp_path):
+    service, provider, persistence = setup_service(tmp_path)
+    persistence.technical_factor_coverage_floor.return_value = 2
+    persistence.technical_factor_securities.return_value = {"SZSE:000001", "SZSE:000002"}
+    early = service.ingest_snapshot(DAY)
+    assert early.status is IngestionStatus.FAILED and early.accepted_rows == 0
+    persistence.commit_technical_factor_batch.assert_not_called()
+    prior_raw = next(tmp_path.rglob("*.jsonl"))
+    original = prior_raw.read_bytes()
+    ready = replace(record(), common=dict.fromkeys(COMMON_FACTOR_NAMES, 1))
+    provider.fetch_snapshot.return_value = ProviderBatch(
+        raw_rows=[
+            {"ts_code": code, "trade_date": "20261009"} for code in ["000001.SZ", "000002.SZ"]
+        ],
+        request_params={"trade_date": "20261009"},
+        schema_version="tushare.stock_technical_factor.v1",
+        records=[ready, replace(ready, symbol="SZSE:000002")],
+    )
+    completed = service.ingest_snapshot(DAY)
+    assert completed.status is IngestionStatus.SUCCEEDED and completed.accepted_rows == 2
+    assert completed.ingestion_id != early.ingestion_id
+    envelopes = persistence.commit_technical_factor_batch.call_args.args[2]
+    assert all(e.ingestion_id == completed.ingestion_id for e in envelopes)
+    assert all(e.record.common["down_days"] == 1 for e in envelopes)
+    assert prior_raw.read_bytes() == original
+
+
 def test_malformed_factor_response_keeps_raw_manifest_and_failure(tmp_path):
     service, _, persistence = setup_service(tmp_path)
     row = dict.fromkeys(TECHNICAL_FACTOR_FIELDS, "")

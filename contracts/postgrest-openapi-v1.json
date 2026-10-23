@@ -42,9 +42,21 @@
         },
         "responses": {
           "200": {
-            "description": "Unadjusted bars ordered by trade date"
+            "description": "Unadjusted bars ordered by trade date",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "maxItems": 5000,
+                  "items": {
+                    "$ref": "#/components/schemas/DailyBarRow"
+                  }
+                }
+              }
+            }
           }
-        }
+        },
+        "description": " Quantity contract stock-quantity.v1: stock quantities are integer shares (100 means 100 shares, not 100 lots); amounts are CNY. Unverified/missing quantities are null and explicit zero remains zero; quantity_quality exposes independent field-group status/reason. No calculator or SQL unit guessing is permitted."
       }
     },
     "/rpc/query_adjusted_daily_bars": {
@@ -73,12 +85,24 @@
         },
         "responses": {
           "200": {
-            "description": "Raw close, objective metrics and market cap"
+            "description": "Raw close, objective metrics and market cap",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "maxItems": 5000,
+                  "items": {
+                    "$ref": "#/components/schemas/MarketSnapshotRow"
+                  }
+                }
+              }
+            }
           },
           "404": {
             "description": "No compatible successful calculation exists"
           }
-        }
+        },
+        "description": " Quantity contract stock-quantity.v1: stock quantities are integer shares (100 means 100 shares, not 100 lots); amounts are CNY. Unverified/missing quantities are null and explicit zero remains zero; quantity_quality exposes independent field-group status/reason. No calculator or SQL unit guessing is permitted."
       }
     },
     "/rpc/query_classification_members_as_of": {
@@ -126,7 +150,8 @@
           "404": {
             "description": "No exact ready snapshot exists; no date fallback"
           }
-        }
+        },
+        "description": " Quantity contract stock-quantity.v1: stock quantities are integer shares (100 means 100 shares, not 100 lots); amounts are CNY. Unverified/missing quantities are null and explicit zero remains zero; quantity_quality exposes independent field-group status/reason. No calculator or SQL unit guessing is permitted."
       }
     },
     "/rpc/query_auction_quotes": {
@@ -143,9 +168,21 @@
         },
         "responses": {
           "200": {
-            "description": "Authenticated quote samples and safe metrics"
+            "description": "Authenticated quote samples and safe metrics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "maxItems": 5000,
+                  "items": {
+                    "$ref": "#/components/schemas/AuctionQuoteRow"
+                  }
+                }
+              }
+            }
           }
-        }
+        },
+        "description": " Quantity contract stock-quantity.v1: stock quantities are integer shares (100 means 100 shares, not 100 lots); amounts are CNY. Unverified/missing quantities are null and explicit zero remains zero; quantity_quality exposes independent field-group status/reason. No calculator or SQL unit guessing is permitted."
       }
     },
     "/rpc/query_call_auction_market_snapshots": {
@@ -162,12 +199,20 @@
         },
         "responses": {
           "200": {
-            "description": "One succeeded or partial 09:25:20 series attempt with explicit missing codes"
+            "description": "One succeeded or partial 09:25:20 series attempt with explicit missing codes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallAuctionMarketSnapshotResponse"
+                }
+              }
+            }
           },
           "404": {
             "description": "No eligible batch exists for the exact date"
           }
-        }
+        },
+        "description": " Quantity contract stock-quantity.v1: stock quantities are integer shares (100 means 100 shares, not 100 lots); amounts are CNY. Unverified/missing quantities are null and explicit zero remains zero; quantity_quality exposes independent field-group status/reason. No calculator or SQL unit guessing is permitted."
       }
     },
     "/rpc/query_call_auction_market_series_snapshots": {
@@ -184,12 +229,20 @@
         },
         "responses": {
           "200": {
-            "description": "One succeeded or partial session with time-ordered rounds, batch codes, and bid/ask five-level price-volume facts"
+            "description": "One succeeded or partial session with time-ordered rounds, batch codes, and bid/ask five-level price-volume facts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallAuctionMarketSeriesSnapshotResponse"
+                }
+              }
+            }
           },
           "404": {
             "description": "No eligible session exists for the exact date"
           }
-        }
+        },
+        "description": " Quantity contract stock-quantity.v1: stock quantities are integer shares (100 means 100 shares, not 100 lots); amounts are CNY. Unverified/missing quantities are null and explicit zero remains zero; quantity_quality exposes independent field-group status/reason. No calculator or SQL unit guessing is permitted."
       }
     },
     "/rpc/query_close_price_new_highs_120d": {
@@ -777,6 +830,337 @@
             }
           }
         }
+      }
+    },
+    "/rpc/query_recent_daily_bars": {
+      "post": {
+        "operationId": "query_recent_daily_bars",
+        "summary": "Read recent stored unadjusted bars, newest first; quantities are shares/CNY, missing or unverified values null; source zero stays zero.",
+        "description": "Requires an existing permitted API role; documenting this read does not expand database grants. PostgREST timestamps retain timestamptz/ISO date-time semantics. Quantity contract stock-quantity.v1: stock quantities are integer shares (100 means 100 shares, not 100 lots); amounts are CNY. Unverified/missing quantities are null and explicit zero remains zero; quantity_quality exposes independent field-group status/reason. No calculator or SQL unit guessing is permitted.",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/RecentDailyBars"
+        },
+        "responses": {
+          "200": {
+            "description": "Read recent stored unadjusted bars, newest first; quantities are shares/CNY, missing or unverified values null; source zero stays zero.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DailyBarResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid date, symbol or bounds (SQLSTATE 22023)."
+          },
+          "404": {
+            "description": "No compatible exact-date publication (SQLSTATE P0002); no silent older-date fallback."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/rpc/query_latest_stock_daily_indicators": {
+      "post": {
+        "operationId": "query_latest_stock_daily_indicators",
+        "summary": "Read at most 500 latest stock indicator facts; share-capital quantities and market values require independent evidence. Source-reported ratios retain their existing windows and denominators.",
+        "description": "Requires an existing permitted API role; documenting this read does not expand database grants. PostgREST timestamps retain timestamptz/ISO date-time semantics. Quantity contract stock-quantity.v1: stock quantities are integer shares (100 means 100 shares, not 100 lots); amounts are CNY. Unverified/missing quantities are null and explicit zero remains zero; quantity_quality exposes independent field-group status/reason. No calculator or SQL unit guessing is permitted.",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/LatestStockDailyIndicators"
+        },
+        "responses": {
+          "200": {
+            "description": "Read at most 500 latest stock indicator facts; share-capital quantities and market values require independent evidence. Source-reported ratios retain their existing windows and denominators.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LatestStockDailyIndicatorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid date, symbol or bounds (SQLSTATE 22023)."
+          },
+          "404": {
+            "description": "No compatible exact-date publication (SQLSTATE P0002); no silent older-date fallback."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/rpc/query_limit_up_pool": {
+      "post": {
+        "operationId": "query_limit_up_pool",
+        "summary": "Read the exact-date previous-day limit-up pool and independently admitted free-float capital facts; no older-date fallback.",
+        "description": "Requires an existing permitted API role; documenting this read does not expand database grants. PostgREST timestamps retain timestamptz/ISO date-time semantics. Quantity contract stock-quantity.v1: stock quantities are integer shares (100 means 100 shares, not 100 lots); amounts are CNY. Unverified/missing quantities are null and explicit zero remains zero; quantity_quality exposes independent field-group status/reason. No calculator or SQL unit guessing is permitted.",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/LimitUpPool"
+        },
+        "responses": {
+          "200": {
+            "description": "Read the exact-date previous-day limit-up pool and independently admitted free-float capital facts; no older-date fallback.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LimitUpPoolResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid date, symbol or bounds (SQLSTATE 22023)."
+          },
+          "404": {
+            "description": "No compatible exact-date publication (SQLSTATE P0002); no silent older-date fallback."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/rpc/query_daily_limit_up_list": {
+      "post": {
+        "operationId": "query_daily_limit_up_list",
+        "summary": "Read exact-date immutable daily limit-up snapshots. Unverified default versions return deferred with empty items; explicit rejected versions return quantity_units_unverified (PT409).",
+        "description": "Requires an existing permitted API role; documenting this read does not expand database grants. PostgREST timestamps retain timestamptz/ISO date-time semantics. Quantity contract stock-quantity.v1: stock quantities are integer shares (100 means 100 shares, not 100 lots); amounts are CNY. Unverified/missing quantities are null and explicit zero remains zero; quantity_quality exposes independent field-group status/reason. No calculator or SQL unit guessing is permitted.",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/DailyLimitUpList"
+        },
+        "responses": {
+          "200": {
+            "description": "Read exact-date immutable daily limit-up snapshots. Unverified default versions return deferred with empty items; explicit rejected versions return quantity_units_unverified (PT409).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DailyLimitUpListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid date, symbol or bounds (SQLSTATE 22023)."
+          },
+          "404": {
+            "description": "No compatible exact-date publication (SQLSTATE P0002); no silent older-date fallback."
+          },
+          "409": {
+            "description": "quantity_units_unverified (SQLSTATE PT409): explicit immutable version contains unverified or superseded quantity inputs; the audit object is preserved."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/rpc/query_daily_limit_down_list": {
+      "post": {
+        "operationId": "query_daily_limit_down_list",
+        "summary": "Read exact-date immutable daily limit-down snapshots. Unverified default versions return deferred with empty items; explicit rejected versions return quantity_units_unverified (PT409).",
+        "description": "Requires an existing permitted API role; documenting this read does not expand database grants. PostgREST timestamps retain timestamptz/ISO date-time semantics. Quantity contract stock-quantity.v1: stock quantities are integer shares (100 means 100 shares, not 100 lots); amounts are CNY. Unverified/missing quantities are null and explicit zero remains zero; quantity_quality exposes independent field-group status/reason. No calculator or SQL unit guessing is permitted.",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/DailyLimitDownList"
+        },
+        "responses": {
+          "200": {
+            "description": "Read exact-date immutable daily limit-down snapshots. Unverified default versions return deferred with empty items; explicit rejected versions return quantity_units_unverified (PT409).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DailyLimitDownListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid date, symbol or bounds (SQLSTATE 22023)."
+          },
+          "404": {
+            "description": "No compatible exact-date publication (SQLSTATE P0002); no silent older-date fallback."
+          },
+          "409": {
+            "description": "quantity_units_unverified (SQLSTATE PT409): explicit immutable version contains unverified or superseded quantity inputs; the audit object is preserved."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/rpc/query_call_auction_indicative_details": {
+      "post": {
+        "operationId": "query_call_auction_indicative_details",
+        "summary": "Read bounded current-day auction displayed matching quantities in shares; these are indicative matching observations, not exchange trade ticks. Unverified quantities remain null.",
+        "description": "Requires an existing permitted API role; documenting this read does not expand database grants. PostgREST timestamps retain timestamptz/ISO date-time semantics. Quantity contract stock-quantity.v1: stock quantities are integer shares (100 means 100 shares, not 100 lots); amounts are CNY. Unverified/missing quantities are null and explicit zero remains zero; quantity_quality exposes independent field-group status/reason. No calculator or SQL unit guessing is permitted.",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/CallAuctionIndicativeDetails"
+        },
+        "responses": {
+          "200": {
+            "description": "Read bounded current-day auction displayed matching quantities in shares; these are indicative matching observations, not exchange trade ticks. Unverified quantities remain null.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuctionIndicativeDetailResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid date, symbol or bounds (SQLSTATE 22023)."
+          },
+          "404": {
+            "description": "No compatible exact-date publication (SQLSTATE P0002); no silent older-date fallback."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/rpc/query_auction_one_price_limits": {
+      "post": {
+        "operationId": "query_auction_one_price_limits",
+        "summary": "Read 09:25:20 final-series one-price limit facts; cumulative or indicative quantities use declared value semantics and certified shares/CNY.",
+        "description": "Requires an existing permitted API role; documenting this read does not expand database grants. PostgREST timestamps retain timestamptz/ISO date-time semantics. Quantity contract stock-quantity.v1: stock quantities are integer shares (100 means 100 shares, not 100 lots); amounts are CNY. Unverified/missing quantities are null and explicit zero remains zero; quantity_quality exposes independent field-group status/reason. No calculator or SQL unit guessing is permitted.",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/AuctionOnePriceLimits"
+        },
+        "responses": {
+          "200": {
+            "description": "Read 09:25:20 final-series one-price limit facts; cumulative or indicative quantities use declared value semantics and certified shares/CNY.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuctionOnePriceLimitResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid date, symbol or bounds (SQLSTATE 22023)."
+          },
+          "404": {
+            "description": "No compatible exact-date publication (SQLSTATE P0002); no silent older-date fallback."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/rpc/query_call_auction_one_price_patterns": {
+      "post": {
+        "operationId": "query_call_auction_one_price_patterns",
+        "summary": "Read the bounded 29-round auction one-price pattern window; price-only results do not change due to quantity normalization.",
+        "description": "Requires an existing permitted API role; documenting this read does not expand database grants. PostgREST timestamps retain timestamptz/ISO date-time semantics. Quantity contract stock-quantity.v1: stock quantities are integer shares (100 means 100 shares, not 100 lots); amounts are CNY. Unverified/missing quantities are null and explicit zero remains zero; quantity_quality exposes independent field-group status/reason. No calculator or SQL unit guessing is permitted.",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/CallAuctionOnePricePatterns"
+        },
+        "responses": {
+          "200": {
+            "description": "Read the bounded 29-round auction one-price pattern window; price-only results do not change due to quantity normalization.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallAuctionOnePricePatternResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid date, symbol or bounds (SQLSTATE 22023)."
+          },
+          "404": {
+            "description": "No compatible exact-date publication (SQLSTATE P0002); no silent older-date fallback."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/rpc/query_call_auction_grab_lines": {
+      "post": {
+        "operationId": "query_call_auction_grab_lines",
+        "summary": "Read exact-date bounded 09:24:53 auction grab-line percentages; bounds use percentage points and preserve the existing price-only calculation.",
+        "description": "Requires an existing permitted API role; documenting this read does not expand database grants. PostgREST timestamps retain timestamptz/ISO date-time semantics. Quantity contract stock-quantity.v1: stock quantities are integer shares (100 means 100 shares, not 100 lots); amounts are CNY. Unverified/missing quantities are null and explicit zero remains zero; quantity_quality exposes independent field-group status/reason. No calculator or SQL unit guessing is permitted.",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/CallAuctionGrabLines"
+        },
+        "responses": {
+          "200": {
+            "description": "Read exact-date bounded 09:24:53 auction grab-line percentages; bounds use percentage points and preserve the existing price-only calculation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallAuctionGrabLineResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid date, symbol or bounds (SQLSTATE 22023)."
+          },
+          "404": {
+            "description": "No compatible exact-date publication (SQLSTATE P0002); no silent older-date fallback."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/rpc/quantity_unit_contract_version": {
+      "post": {
+        "operationId": "quantity_unit_contract_version",
+        "summary": "Read the deployed quantity contract version before consuming quantity facts",
+        "description": "Read-only, no inputs; permitted API/authenticated roles only. No collection, repair, restart or migration is triggered.",
+        "responses": {
+          "200": {
+            "description": "The active SQL read gate contract",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "const": "stock-quantity.v1",
+                  "examples": [
+                    "stock-quantity.v1"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     }
   },
@@ -3787,7 +4171,9 @@
           "unadjusted",
           "forward_adjusted",
           "backward_adjusted",
-          "common"
+          "common",
+          "source_factor_catalog_version",
+          "quantity_quality"
         ],
         "properties": {
           "symbol": {
@@ -3807,7 +4193,9 @@
             "type": "string"
           },
           "factor_catalog_version": {
-            "type": "string"
+            "type": "string",
+            "const": "stock-technical-factor.v2",
+            "description": "Public quantity-safe factor catalog; source bytes/catalog are unchanged."
           },
           "unadjusted": {
             "type": "object",
@@ -3817,7 +4205,8 @@
                 "null"
               ],
               "pattern": "^-?[0-9]+(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$"
-            }
+            },
+            "description": "Decimal strings or null. Unverified obv/emv/maemv leaves retain their keys with null values. No uniform ×100 scaling; other factors retain their independent formulas and dimensions."
           },
           "forward_adjusted": {
             "type": "object",
@@ -3827,7 +4216,8 @@
                 "null"
               ],
               "pattern": "^-?[0-9]+(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$"
-            }
+            },
+            "description": "Decimal strings or null. Unverified obv/emv/maemv leaves retain their keys with null values. No uniform ×100 scaling; other factors retain their independent formulas and dimensions."
           },
           "backward_adjusted": {
             "type": "object",
@@ -3837,7 +4227,8 @@
                 "null"
               ],
               "pattern": "^-?[0-9]+(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$"
-            }
+            },
+            "description": "Decimal strings or null. Unverified obv/emv/maemv leaves retain their keys with null values. No uniform ×100 scaling; other factors retain their independent formulas and dimensions."
           },
           "common": {
             "type": "object",
@@ -3848,6 +4239,14 @@
               ],
               "minimum": 0
             }
+          },
+          "source_factor_catalog_version": {
+            "type": "string",
+            "const": "stock-technical-factor.v1",
+            "description": "Original immutable source catalog, not relabeled as v2."
+          },
+          "quantity_quality": {
+            "$ref": "#/components/schemas/QuantityQuality"
           }
         }
       },
@@ -3908,6 +4307,5253 @@
             }
           }
         }
+      },
+      "DailyBarItem": {
+        "additionalProperties": false,
+        "properties": {
+          "quantity_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantityQuality"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "数量单位认证与完整性状态; 未知单位数量为null, 不能解释为零。"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "open": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Open"
+          },
+          "high": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "High"
+          },
+          "low": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Low"
+          },
+          "close": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Close"
+          },
+          "previous_close": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Close"
+          },
+          "volume": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "股票本交易日成交股数; 100表示100股, 不是100手; 缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Volume",
+            "x-business": "stock_traded_volume",
+            "x-unit": "share"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "本交易日成交金额, 人民币元; 缺失为null。",
+            "title": "Amount",
+            "x-unit": "CNY",
+            "x-business": "traded_or_order_value"
+          },
+          "trade_status": {
+            "$ref": "#/components/schemas/TradeStatus"
+          },
+          "is_st": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is St"
+          }
+        },
+        "required": [
+          "symbol",
+          "trade_date",
+          "open",
+          "high",
+          "low",
+          "close",
+          "previous_close",
+          "volume",
+          "amount",
+          "trade_status",
+          "is_st"
+        ],
+        "title": "DailyBarItem",
+        "type": "object"
+      },
+      "QuantityFieldQuality": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "description": "该数量字段组的认证或完整性状态。",
+            "title": "Status",
+            "type": "string"
+          },
+          "reason": {
+            "description": "状态的稳定机器可读原因。",
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "reason"
+        ],
+        "title": "QuantityFieldQuality",
+        "type": "object"
+      },
+      "QuantityQuality": {
+        "additionalProperties": false,
+        "properties": {
+          "unit_contract_version": {
+            "const": "stock-quantity.v1",
+            "description": "股票数量单位契约版本。",
+            "title": "Unit Contract Version",
+            "type": "string"
+          },
+          "status": {
+            "description": "数量认证状态; 未认证数量不得作为股公开。",
+            "title": "Status",
+            "type": "string",
+            "enum": [
+              "certified",
+              "incomplete",
+              "unverified",
+              "guarded"
+            ]
+          },
+          "reason": {
+            "description": "数量认证或缺失的稳定原因。",
+            "title": "Reason",
+            "type": "string"
+          },
+          "field_groups": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/QuantityFieldQuality"
+            },
+            "description": "各业务数量字段组的状态与原因。",
+            "title": "Field Groups",
+            "type": "object"
+          }
+        },
+        "required": [
+          "unit_contract_version",
+          "status",
+          "reason",
+          "field_groups"
+        ],
+        "title": "QuantityQuality",
+        "type": "object",
+        "description": "Unit evidence and coverage for independent business field groups. Missing or unverified quantities stay null; explicit source zero stays zero. Contains no source file paths or credentials."
+      },
+      "TradeStatus": {
+        "enum": [
+          "trading",
+          "suspended",
+          "unknown"
+        ],
+        "title": "TradeStatus",
+        "type": "string"
+      },
+      "DailyBarResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "quantity_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantityQuality"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "数量单位认证与完整性状态; 未知单位数量为null, 不能解释为零。"
+          },
+          "code": {
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "limit": {
+            "maximum": 5000,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "count": {
+            "minimum": 0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DailyBarRow"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "code",
+          "symbol",
+          "trade_date",
+          "limit",
+          "count",
+          "items"
+        ],
+        "title": "DailyBarResponse",
+        "type": "object"
+      },
+      "LatestStockDailyIndicatorItem": {
+        "additionalProperties": false,
+        "properties": {
+          "quantity_quality": {
+            "$ref": "#/components/schemas/QuantityQuality"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "code": {
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "close": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Close"
+          },
+          "turnover_rate_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turnover Rate Pct",
+            "x-unit": "percentage_point"
+          },
+          "free_float_turnover_rate_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Free Float Turnover Rate Pct",
+            "x-unit": "percentage_point"
+          },
+          "volume_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume Ratio",
+            "x-unit": "ratio",
+            "x-business": "source_reported_volume_ratio"
+          },
+          "pe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pe"
+          },
+          "pe_ttm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pe Ttm"
+          },
+          "pb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pb"
+          },
+          "ps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ps"
+          },
+          "ps_ttm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ps Ttm"
+          },
+          "dividend_yield_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dividend Yield Pct",
+            "x-unit": "percentage_point"
+          },
+          "dividend_yield_ttm_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dividend Yield Ttm Pct",
+            "x-unit": "percentage_point"
+          },
+          "total_shares": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Shares",
+            "x-unit": "share",
+            "x-business": "share_capital",
+            "description": "字段指定口径的股本股数；流通与自由流通口径不可互换，缺失或未认证为null。"
+          },
+          "circulating_shares": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Circulating Shares",
+            "x-unit": "share",
+            "x-business": "share_capital",
+            "description": "字段指定口径的股本股数；流通与自由流通口径不可互换，缺失或未认证为null。"
+          },
+          "free_float_shares": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Free Float Shares",
+            "x-unit": "share",
+            "x-business": "share_capital",
+            "description": "字段指定口径的股本股数；流通与自由流通口径不可互换，缺失或未认证为null。"
+          },
+          "total_market_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Market Value",
+            "x-unit": "CNY",
+            "x-business": "traded_or_order_value",
+            "description": "业务数量或金额；单位见x-unit；缺失或未认证为null，显式0保持0。"
+          },
+          "circulating_market_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Circulating Market Value",
+            "x-unit": "CNY",
+            "x-business": "traded_or_order_value",
+            "description": "业务数量或金额；单位见x-unit；缺失或未认证为null，显式0保持0。"
+          },
+          "price_limit_status": {
+            "enum": [
+              "flat",
+              "rise",
+              "limit_up",
+              "one_price_limit_up",
+              "fall",
+              "limit_down",
+              "one_price_limit_down",
+              "unknown"
+            ],
+            "title": "Price Limit Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "code",
+          "trade_date",
+          "close",
+          "turnover_rate_pct",
+          "free_float_turnover_rate_pct",
+          "volume_ratio",
+          "pe",
+          "pe_ttm",
+          "pb",
+          "ps",
+          "ps_ttm",
+          "dividend_yield_pct",
+          "dividend_yield_ttm_pct",
+          "total_shares",
+          "circulating_shares",
+          "free_float_shares",
+          "total_market_value",
+          "circulating_market_value",
+          "price_limit_status",
+          "quantity_quality"
+        ],
+        "title": "LatestStockDailyIndicatorItem",
+        "type": "object"
+      },
+      "LatestStockDailyIndicatorResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "quantity_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantityQuality"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "数量单位认证与完整性状态; 未知单位数量为null, 不能解释为零。"
+          },
+          "requested_count": {
+            "maximum": 500,
+            "minimum": 1,
+            "title": "Requested Count",
+            "type": "integer"
+          },
+          "found_count": {
+            "maximum": 500,
+            "minimum": 0,
+            "title": "Found Count",
+            "type": "integer"
+          },
+          "missing_codes": {
+            "items": {
+              "pattern": "^[0-9]{6}$",
+              "type": "string"
+            },
+            "title": "Missing Codes",
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LatestStockDailyIndicatorItem"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "requested_count",
+          "found_count",
+          "missing_codes",
+          "items"
+        ],
+        "title": "LatestStockDailyIndicatorResponse",
+        "type": "object"
+      },
+      "LimitUpPoolItem": {
+        "additionalProperties": false,
+        "properties": {
+          "quantity_quality": {
+            "$ref": "#/components/schemas/QuantityQuality"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "free_float_market_cap_cny": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Free Float Market Cap Cny",
+            "x-unit": "CNY",
+            "x-business": "traded_or_order_value",
+            "description": "业务数量或金额；单位见x-unit；缺失或未认证为null，显式0保持0。"
+          }
+        },
+        "required": [
+          "symbol",
+          "code",
+          "name",
+          "free_float_market_cap_cny",
+          "quantity_quality"
+        ],
+        "title": "LimitUpPoolItem",
+        "type": "object"
+      },
+      "LimitUpPoolOmissionReasons": {
+        "additionalProperties": false,
+        "properties": {
+          "missing_name": {
+            "minimum": 0,
+            "title": "Missing Name",
+            "type": "integer"
+          },
+          "missing_close": {
+            "minimum": 0,
+            "title": "Missing Close",
+            "type": "integer"
+          },
+          "missing_free_float_shares": {
+            "minimum": 0,
+            "title": "Missing Free Float Shares",
+            "type": "integer",
+            "x-unit": "share",
+            "x-business": "share_capital",
+            "description": "字段指定口径的股本股数；流通与自由流通口径不可互换，缺失或未认证为null。"
+          }
+        },
+        "required": [
+          "missing_name",
+          "missing_close",
+          "missing_free_float_shares"
+        ],
+        "title": "LimitUpPoolOmissionReasons",
+        "type": "object"
+      },
+      "LimitUpPoolResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "quantity_quality": {
+            "$ref": "#/components/schemas/QuantityQuality"
+          },
+          "snapshot_id": {
+            "format": "uuid",
+            "title": "Snapshot Id",
+            "type": "string"
+          },
+          "calculation_id": {
+            "format": "uuid",
+            "title": "Calculation Id",
+            "type": "string"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "effective_trade_date": {
+            "format": "date",
+            "title": "Effective Trade Date",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1,
+            "title": "Version",
+            "type": "integer"
+          },
+          "rule_version": {
+            "title": "Rule Version",
+            "type": "string"
+          },
+          "algorithm_version": {
+            "title": "Algorithm Version",
+            "type": "string"
+          },
+          "input_hash": {
+            "title": "Input Hash",
+            "type": "string"
+          },
+          "generated_at": {
+            "title": "Generated At",
+            "type": "string",
+            "format": "date-time"
+          },
+          "total_candidate_count": {
+            "minimum": 0,
+            "title": "Total Candidate Count",
+            "type": "integer"
+          },
+          "valid_count": {
+            "minimum": 0,
+            "title": "Valid Count",
+            "type": "integer"
+          },
+          "returned_count": {
+            "minimum": 0,
+            "title": "Returned Count",
+            "type": "integer"
+          },
+          "omitted_count": {
+            "minimum": 0,
+            "title": "Omitted Count",
+            "type": "integer"
+          },
+          "has_more": {
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "omission_reasons": {
+            "$ref": "#/components/schemas/LimitUpPoolOmissionReasons"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LimitUpPoolItem"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "snapshot_id",
+          "calculation_id",
+          "trade_date",
+          "effective_trade_date",
+          "version",
+          "rule_version",
+          "algorithm_version",
+          "input_hash",
+          "generated_at",
+          "total_candidate_count",
+          "valid_count",
+          "returned_count",
+          "omitted_count",
+          "has_more",
+          "omission_reasons",
+          "items",
+          "quantity_quality"
+        ],
+        "title": "LimitUpPoolResponse",
+        "type": "object"
+      },
+      "DailyLimitUpListItem": {
+        "additionalProperties": false,
+        "properties": {
+          "quantity_quality": {
+            "$ref": "#/components/schemas/QuantityQuality"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "previous_close": {
+            "title": "Previous Close",
+            "type": "number"
+          },
+          "close": {
+            "title": "Close",
+            "type": "number"
+          },
+          "limit_price": {
+            "title": "Limit Price",
+            "type": "number"
+          },
+          "change_percent": {
+            "title": "Change Percent",
+            "type": "number",
+            "x-unit": "percentage_point",
+            "description": "业务数量或金额；单位见x-unit；缺失或未认证为null，显式0保持0。"
+          },
+          "free_float_shares": {
+            "exclusiveMinimum": 0,
+            "title": "Free Float Shares",
+            "type": "integer",
+            "x-unit": "share",
+            "x-business": "share_capital",
+            "description": "字段指定口径的股本股数；流通与自由流通口径不可互换，缺失或未认证为null。"
+          },
+          "free_float_market_cap_cny": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Free Float Market Cap Cny",
+            "x-unit": "CNY",
+            "x-business": "traded_or_order_value",
+            "description": "业务数量或金额；单位见x-unit；缺失或未认证为null，显式0保持0。"
+          },
+          "first_limit_up_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "2026-09-18 09:35:00",
+            "title": "First Limit Up At"
+          },
+          "last_limit_up_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "2026-09-18 14:57:00",
+            "title": "Last Limit Up At"
+          },
+          "open_count": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Open Count"
+          },
+          "limit_up_duration_seconds": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Limit Up Duration Seconds"
+          },
+          "duration_semantics": {
+            "title": "Duration Semantics",
+            "type": "string"
+          },
+          "source_reported_sealed_funds_cny": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Reported Sealed Funds Cny",
+            "x-unit": "CNY",
+            "x-business": "source_reported_sealed_funds",
+            "description": "业务数量或金额；单位见x-unit；缺失或未认证为null，显式0保持0。"
+          },
+          "closing_bid1_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closing Bid1 Price"
+          },
+          "closing_bid1_volume_shares": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Closing Bid1 Volume Shares",
+            "x-unit": "share",
+            "x-business": "order_book_order_quantity",
+            "description": "对应方向和档位的委托股数；缺失或未认证为null，显式0保持0。"
+          },
+          "closing_bid2_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closing Bid2 Price"
+          },
+          "closing_bid2_volume_shares": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Closing Bid2 Volume Shares",
+            "x-unit": "share",
+            "x-business": "order_book_order_quantity",
+            "description": "对应方向和档位的委托股数；缺失或未认证为null，显式0保持0。"
+          },
+          "closing_bid3_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closing Bid3 Price"
+          },
+          "closing_bid3_volume_shares": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Closing Bid3 Volume Shares",
+            "x-unit": "share",
+            "x-business": "order_book_order_quantity",
+            "description": "对应方向和档位的委托股数；缺失或未认证为null，显式0保持0。"
+          },
+          "closing_bid4_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closing Bid4 Price"
+          },
+          "closing_bid4_volume_shares": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Closing Bid4 Volume Shares",
+            "x-unit": "share",
+            "x-business": "order_book_order_quantity",
+            "description": "对应方向和档位的委托股数；缺失或未认证为null，显式0保持0。"
+          },
+          "closing_bid5_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closing Bid5 Price"
+          },
+          "closing_bid5_volume_shares": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Closing Bid5 Volume Shares",
+            "x-unit": "share",
+            "x-business": "order_book_order_quantity",
+            "description": "对应方向和档位的委托股数；缺失或未认证为null，显式0保持0。"
+          },
+          "closing_bid1_sealing_amount_cny": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closing Bid1 Sealing Amount Cny",
+            "x-unit": "CNY",
+            "x-business": "traded_or_order_value",
+            "description": "业务数量或金额；单位见x-unit；缺失或未认证为null，显式0保持0。"
+          },
+          "daily_bar_ingestion_id": {
+            "format": "uuid",
+            "title": "Daily Bar Ingestion Id",
+            "type": "string"
+          },
+          "indicator_ingestion_id": {
+            "format": "uuid",
+            "title": "Indicator Ingestion Id",
+            "type": "string"
+          },
+          "name_ingestion_id": {
+            "format": "uuid",
+            "title": "Name Ingestion Id",
+            "type": "string"
+          },
+          "pool_calculation_id": {
+            "format": "uuid",
+            "title": "Pool Calculation Id",
+            "type": "string"
+          },
+          "source_observation_ingestion_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Observation Ingestion Id"
+          },
+          "source_observation_raw_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Observation Raw Id"
+          },
+          "order_book_ingestion_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Book Ingestion Id"
+          },
+          "volume": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Volume",
+            "x-unit": "share",
+            "description": "业务数量或金额；单位见x-unit；缺失或未认证为null，显式0保持0。"
+          },
+          "amount_cny": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Cny",
+            "x-unit": "CNY",
+            "x-business": "traded_or_order_value",
+            "description": "业务数量或金额；单位见x-unit；缺失或未认证为null，显式0保持0。"
+          },
+          "free_float_turnover_rate_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Free Float Turnover Rate Pct",
+            "x-unit": "percentage_point"
+          },
+          "consecutive_limit_up_days": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Consecutive Limit Up Days"
+          }
+        },
+        "required": [
+          "symbol",
+          "code",
+          "name",
+          "previous_close",
+          "close",
+          "limit_price",
+          "change_percent",
+          "free_float_shares",
+          "free_float_market_cap_cny",
+          "first_limit_up_at",
+          "last_limit_up_at",
+          "duration_semantics",
+          "source_reported_sealed_funds_cny",
+          "closing_bid1_price",
+          "closing_bid2_price",
+          "closing_bid3_price",
+          "closing_bid4_price",
+          "closing_bid5_price",
+          "closing_bid1_sealing_amount_cny",
+          "daily_bar_ingestion_id",
+          "indicator_ingestion_id",
+          "name_ingestion_id",
+          "pool_calculation_id",
+          "source_observation_ingestion_id",
+          "source_observation_raw_id",
+          "order_book_ingestion_id",
+          "amount_cny",
+          "free_float_turnover_rate_pct",
+          "quantity_quality"
+        ],
+        "title": "DailyLimitUpListItem",
+        "type": "object"
+      },
+      "DailyLimitUpQualitySummary": {
+        "additionalProperties": false,
+        "properties": {
+          "total_findings": {
+            "minimum": 0,
+            "title": "Total Findings",
+            "type": "integer"
+          },
+          "by_rule": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Rule",
+            "type": "object"
+          }
+        },
+        "required": [
+          "total_findings",
+          "by_rule"
+        ],
+        "title": "DailyLimitUpQualitySummary",
+        "type": "object"
+      },
+      "DailyLimitUpListResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "quantity_quality": {
+            "$ref": "#/components/schemas/QuantityQuality"
+          },
+          "snapshot_id": {
+            "format": "uuid",
+            "title": "Snapshot Id",
+            "type": "string"
+          },
+          "calculation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calculation Id"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1,
+            "title": "Version",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "ready",
+              "partial",
+              "deferred",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "rule_version": {
+            "title": "Rule Version",
+            "type": "string"
+          },
+          "algorithm_version": {
+            "title": "Algorithm Version",
+            "type": "string"
+          },
+          "input_hash": {
+            "title": "Input Hash",
+            "type": "string"
+          },
+          "source_ingestion_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Ingestion Id"
+          },
+          "generated_at": {
+            "title": "Generated At",
+            "type": "string",
+            "format": "date-time"
+          },
+          "candidate_count": {
+            "minimum": 0,
+            "title": "Candidate Count",
+            "type": "integer"
+          },
+          "member_count": {
+            "minimum": 0,
+            "title": "Member Count",
+            "type": "integer"
+          },
+          "rejected_count": {
+            "minimum": 0,
+            "title": "Rejected Count",
+            "type": "integer"
+          },
+          "offset": {
+            "minimum": 0,
+            "title": "Offset",
+            "type": "integer"
+          },
+          "returned_count": {
+            "minimum": 0,
+            "title": "Returned Count",
+            "type": "integer"
+          },
+          "has_more": {
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/DailyLimitUpQualitySummary"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DailyLimitUpListItem"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "snapshot_id",
+          "calculation_id",
+          "trade_date",
+          "version",
+          "status",
+          "rule_version",
+          "algorithm_version",
+          "input_hash",
+          "source_ingestion_id",
+          "generated_at",
+          "candidate_count",
+          "member_count",
+          "rejected_count",
+          "offset",
+          "returned_count",
+          "has_more",
+          "quality",
+          "items",
+          "quantity_quality"
+        ],
+        "title": "DailyLimitUpListResponse",
+        "type": "object"
+      },
+      "DailyLimitDownListItem": {
+        "additionalProperties": false,
+        "properties": {
+          "quantity_quality": {
+            "$ref": "#/components/schemas/QuantityQuality"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "previous_close": {
+            "title": "Previous Close",
+            "type": "number"
+          },
+          "close": {
+            "title": "Close",
+            "type": "number"
+          },
+          "limit_price": {
+            "title": "Limit Price",
+            "type": "number"
+          },
+          "change_percent": {
+            "title": "Change Percent",
+            "type": "number",
+            "x-unit": "percentage_point",
+            "description": "业务数量或金额；单位见x-unit；缺失或未认证为null，显式0保持0。"
+          },
+          "free_float_shares": {
+            "exclusiveMinimum": 0,
+            "title": "Free Float Shares",
+            "type": "integer",
+            "x-unit": "share",
+            "x-business": "share_capital",
+            "description": "字段指定口径的股本股数；流通与自由流通口径不可互换，缺失或未认证为null。"
+          },
+          "free_float_market_cap_cny": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Free Float Market Cap Cny",
+            "x-unit": "CNY",
+            "x-business": "traded_or_order_value",
+            "description": "业务数量或金额；单位见x-unit；缺失或未认证为null，显式0保持0。"
+          },
+          "first_limit_down_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "First Limit Down At"
+          },
+          "last_limit_down_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Last Limit Down At"
+          },
+          "open_count": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Open Count"
+          },
+          "consecutive_limit_down_days": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Consecutive Limit Down Days"
+          },
+          "limit_down_duration_seconds": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Limit Down Duration Seconds"
+          },
+          "duration_semantics": {
+            "title": "Duration Semantics",
+            "type": "string"
+          },
+          "source_reported_sealed_funds_cny": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Reported Sealed Funds Cny",
+            "x-unit": "CNY",
+            "x-business": "source_reported_sealed_funds",
+            "description": "业务数量或金额；单位见x-unit；缺失或未认证为null，显式0保持0。"
+          },
+          "closing_ask1_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closing Ask1 Price"
+          },
+          "closing_ask1_volume_shares": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Closing Ask1 Volume Shares",
+            "x-unit": "share",
+            "x-business": "order_book_order_quantity",
+            "description": "对应方向和档位的委托股数；缺失或未认证为null，显式0保持0。"
+          },
+          "closing_ask2_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closing Ask2 Price"
+          },
+          "closing_ask2_volume_shares": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Closing Ask2 Volume Shares",
+            "x-unit": "share",
+            "x-business": "order_book_order_quantity",
+            "description": "对应方向和档位的委托股数；缺失或未认证为null，显式0保持0。"
+          },
+          "closing_ask3_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closing Ask3 Price"
+          },
+          "closing_ask3_volume_shares": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Closing Ask3 Volume Shares",
+            "x-unit": "share",
+            "x-business": "order_book_order_quantity",
+            "description": "对应方向和档位的委托股数；缺失或未认证为null，显式0保持0。"
+          },
+          "closing_ask4_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closing Ask4 Price"
+          },
+          "closing_ask4_volume_shares": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Closing Ask4 Volume Shares",
+            "x-unit": "share",
+            "x-business": "order_book_order_quantity",
+            "description": "对应方向和档位的委托股数；缺失或未认证为null，显式0保持0。"
+          },
+          "closing_ask5_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closing Ask5 Price"
+          },
+          "closing_ask5_volume_shares": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Closing Ask5 Volume Shares",
+            "x-unit": "share",
+            "x-business": "order_book_order_quantity",
+            "description": "对应方向和档位的委托股数；缺失或未认证为null，显式0保持0。"
+          },
+          "closing_ask1_sealing_amount_cny": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closing Ask1 Sealing Amount Cny",
+            "x-unit": "CNY",
+            "x-business": "traded_or_order_value",
+            "description": "业务数量或金额；单位见x-unit；缺失或未认证为null，显式0保持0。"
+          },
+          "daily_bar_ingestion_id": {
+            "format": "uuid",
+            "title": "Daily Bar Ingestion Id",
+            "type": "string"
+          },
+          "indicator_ingestion_id": {
+            "format": "uuid",
+            "title": "Indicator Ingestion Id",
+            "type": "string"
+          },
+          "name_ingestion_id": {
+            "format": "uuid",
+            "title": "Name Ingestion Id",
+            "type": "string"
+          },
+          "pool_calculation_id": {
+            "format": "uuid",
+            "title": "Pool Calculation Id",
+            "type": "string"
+          },
+          "source_observation_ingestion_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Observation Ingestion Id"
+          },
+          "source_observation_raw_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Observation Raw Id"
+          },
+          "order_book_ingestion_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Book Ingestion Id"
+          }
+        },
+        "required": [
+          "symbol",
+          "code",
+          "name",
+          "previous_close",
+          "close",
+          "limit_price",
+          "change_percent",
+          "free_float_shares",
+          "free_float_market_cap_cny",
+          "duration_semantics",
+          "source_reported_sealed_funds_cny",
+          "closing_ask1_price",
+          "closing_ask2_price",
+          "closing_ask3_price",
+          "closing_ask4_price",
+          "closing_ask5_price",
+          "closing_ask1_sealing_amount_cny",
+          "daily_bar_ingestion_id",
+          "indicator_ingestion_id",
+          "name_ingestion_id",
+          "pool_calculation_id",
+          "source_observation_ingestion_id",
+          "source_observation_raw_id",
+          "order_book_ingestion_id",
+          "quantity_quality"
+        ],
+        "title": "DailyLimitDownListItem",
+        "type": "object"
+      },
+      "DailyLimitDownQualitySummary": {
+        "additionalProperties": false,
+        "properties": {
+          "total_findings": {
+            "minimum": 0,
+            "title": "Total Findings",
+            "type": "integer"
+          },
+          "by_rule": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Rule",
+            "type": "object"
+          }
+        },
+        "required": [
+          "total_findings",
+          "by_rule"
+        ],
+        "title": "DailyLimitDownQualitySummary",
+        "type": "object"
+      },
+      "DailyLimitDownListResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "quantity_quality": {
+            "$ref": "#/components/schemas/QuantityQuality"
+          },
+          "snapshot_id": {
+            "format": "uuid",
+            "title": "Snapshot Id",
+            "type": "string"
+          },
+          "calculation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calculation Id"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1,
+            "title": "Version",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "ready",
+              "partial",
+              "deferred",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "rule_version": {
+            "title": "Rule Version",
+            "type": "string"
+          },
+          "algorithm_version": {
+            "title": "Algorithm Version",
+            "type": "string"
+          },
+          "input_hash": {
+            "title": "Input Hash",
+            "type": "string"
+          },
+          "source_ingestion_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Ingestion Id"
+          },
+          "generated_at": {
+            "title": "Generated At",
+            "type": "string",
+            "format": "date-time"
+          },
+          "candidate_count": {
+            "minimum": 0,
+            "title": "Candidate Count",
+            "type": "integer"
+          },
+          "member_count": {
+            "minimum": 0,
+            "title": "Member Count",
+            "type": "integer"
+          },
+          "rejected_count": {
+            "minimum": 0,
+            "title": "Rejected Count",
+            "type": "integer"
+          },
+          "offset": {
+            "minimum": 0,
+            "title": "Offset",
+            "type": "integer"
+          },
+          "returned_count": {
+            "minimum": 0,
+            "title": "Returned Count",
+            "type": "integer"
+          },
+          "has_more": {
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/DailyLimitDownQualitySummary"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DailyLimitDownListItem"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "snapshot_id",
+          "calculation_id",
+          "trade_date",
+          "version",
+          "status",
+          "rule_version",
+          "algorithm_version",
+          "input_hash",
+          "source_ingestion_id",
+          "generated_at",
+          "candidate_count",
+          "member_count",
+          "rejected_count",
+          "offset",
+          "returned_count",
+          "has_more",
+          "quality",
+          "items",
+          "quantity_quality"
+        ],
+        "title": "DailyLimitDownListResponse",
+        "type": "object"
+      },
+      "CallAuctionMarketSnapshotItem": {
+        "additionalProperties": false,
+        "properties": {
+          "quantity_quality": {
+            "$ref": "#/components/schemas/QuantityQuality"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "code": {
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "observed_at": {
+            "title": "Observed At",
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Price"
+          },
+          "previous_close": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Close"
+          },
+          "high_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "High Price"
+          },
+          "low_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Low Price"
+          },
+          "cumulative_volume": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cumulative Volume",
+            "x-unit": "share",
+            "x-business": "source_cumulative_or_indicative_quantity",
+            "description": "采样累计或竞价指示股数；按value_semantics/quote_semantics区分业务，不冒称实际逐笔成交量。缺失或未认证为null。"
+          },
+          "cumulative_amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cumulative Amount",
+            "x-unit": "CNY",
+            "x-business": "traded_or_order_value",
+            "description": "业务数量或金额；单位见x-unit；缺失或未认证为null，显式0保持0。"
+          },
+          "bid1_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Bid1 Price"
+          },
+          "bid1_volume": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Bid1 Volume",
+            "x-unit": "share",
+            "x-business": "order_book_order_quantity",
+            "description": "对应方向和档位的委托股数；缺失或未认证为null，显式0保持0。"
+          },
+          "bid2_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Bid2 Price"
+          },
+          "bid2_volume": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Bid2 Volume",
+            "x-unit": "share",
+            "x-business": "order_book_order_quantity",
+            "description": "对应方向和档位的委托股数；缺失或未认证为null，显式0保持0。"
+          },
+          "bid3_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Bid3 Price"
+          },
+          "bid3_volume": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Bid3 Volume",
+            "x-unit": "share",
+            "x-business": "order_book_order_quantity",
+            "description": "对应方向和档位的委托股数；缺失或未认证为null，显式0保持0。"
+          },
+          "bid4_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Bid4 Price"
+          },
+          "bid4_volume": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Bid4 Volume",
+            "x-unit": "share",
+            "x-business": "order_book_order_quantity",
+            "description": "对应方向和档位的委托股数；缺失或未认证为null，显式0保持0。"
+          },
+          "bid5_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Bid5 Price"
+          },
+          "bid5_volume": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Bid5 Volume",
+            "x-unit": "share",
+            "x-business": "order_book_order_quantity",
+            "description": "对应方向和档位的委托股数；缺失或未认证为null，显式0保持0。"
+          },
+          "ask1_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ask1 Price"
+          },
+          "ask1_volume": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ask1 Volume",
+            "x-unit": "share",
+            "x-business": "order_book_order_quantity",
+            "description": "对应方向和档位的委托股数；缺失或未认证为null，显式0保持0。"
+          },
+          "ask2_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ask2 Price"
+          },
+          "ask2_volume": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ask2 Volume",
+            "x-unit": "share",
+            "x-business": "order_book_order_quantity",
+            "description": "对应方向和档位的委托股数；缺失或未认证为null，显式0保持0。"
+          },
+          "ask3_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ask3 Price"
+          },
+          "ask3_volume": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ask3 Volume",
+            "x-unit": "share",
+            "x-business": "order_book_order_quantity",
+            "description": "对应方向和档位的委托股数；缺失或未认证为null，显式0保持0。"
+          },
+          "ask4_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ask4 Price"
+          },
+          "ask4_volume": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ask4 Volume",
+            "x-unit": "share",
+            "x-business": "order_book_order_quantity",
+            "description": "对应方向和档位的委托股数；缺失或未认证为null，显式0保持0。"
+          },
+          "ask5_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ask5 Price"
+          },
+          "ask5_volume": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ask5 Volume",
+            "x-unit": "share",
+            "x-business": "order_book_order_quantity",
+            "description": "对应方向和档位的委托股数；缺失或未认证为null，显式0保持0。"
+          },
+          "seal_amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Seal Amount",
+            "x-unit": "CNY",
+            "x-business": "traded_or_order_value",
+            "description": "业务数量或金额；单位见x-unit；缺失或未认证为null，显式0保持0。"
+          }
+        },
+        "required": [
+          "symbol",
+          "code",
+          "observed_at",
+          "last_price",
+          "previous_close",
+          "high_price",
+          "low_price",
+          "cumulative_amount",
+          "quantity_quality"
+        ],
+        "title": "CallAuctionMarketSnapshotItem",
+        "type": "object"
+      },
+      "CallAuctionMarketSnapshotResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "quantity_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantityQuality"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "数量单位认证与完整性状态; 未知单位数量为null, 不能解释为零。"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "ingestion_id": {
+            "format": "uuid",
+            "title": "Ingestion Id",
+            "type": "string"
+          },
+          "ingestion_status": {
+            "enum": [
+              "succeeded",
+              "partial"
+            ],
+            "title": "Ingestion Status",
+            "type": "string"
+          },
+          "requested_count": {
+            "maximum": 500,
+            "minimum": 1,
+            "title": "Requested Count",
+            "type": "integer"
+          },
+          "returned_count": {
+            "minimum": 0,
+            "title": "Returned Count",
+            "type": "integer"
+          },
+          "missing_codes": {
+            "items": {
+              "pattern": "^[0-9]{6}$",
+              "type": "string"
+            },
+            "title": "Missing Codes",
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CallAuctionMarketSnapshotItem"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "trade_date",
+          "ingestion_id",
+          "ingestion_status",
+          "requested_count",
+          "returned_count",
+          "missing_codes",
+          "items"
+        ],
+        "title": "CallAuctionMarketSnapshotResponse",
+        "type": "object"
+      },
+      "CallAuctionMarketSeriesRound": {
+        "additionalProperties": false,
+        "properties": {
+          "quantity_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantityQuality"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "数量单位认证与完整性状态; 未知单位数量为null, 不能解释为零。"
+          },
+          "sample_seq": {
+            "maximum": 31,
+            "minimum": 0,
+            "title": "Sample Seq",
+            "type": "integer"
+          },
+          "scheduled_at": {
+            "title": "Scheduled At",
+            "type": "string",
+            "format": "date-time"
+          },
+          "collected_at": {
+            "title": "Collected At",
+            "type": "string",
+            "format": "date-time"
+          },
+          "round_status": {
+            "enum": [
+              "succeeded",
+              "partial",
+              "failed"
+            ],
+            "title": "Round Status",
+            "type": "string"
+          },
+          "selected_ingestion_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Ingestion Id"
+          },
+          "requested_count": {
+            "maximum": 500,
+            "minimum": 1,
+            "title": "Requested Count",
+            "type": "integer"
+          },
+          "returned_count": {
+            "minimum": 0,
+            "title": "Returned Count",
+            "type": "integer"
+          },
+          "missing_codes": {
+            "items": {
+              "pattern": "^[0-9]{6}$",
+              "type": "string"
+            },
+            "title": "Missing Codes",
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CallAuctionMarketSeriesSnapshotItem"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "sample_seq",
+          "scheduled_at",
+          "collected_at",
+          "round_status",
+          "selected_ingestion_id",
+          "requested_count",
+          "returned_count",
+          "missing_codes",
+          "items"
+        ],
+        "title": "CallAuctionMarketSeriesRound",
+        "type": "object"
+      },
+      "CallAuctionMarketSeriesSnapshotItem": {
+        "additionalProperties": false,
+        "properties": {
+          "quantity_quality": {
+            "$ref": "#/components/schemas/QuantityQuality"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "code": {
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "observed_at": {
+            "title": "Observed At",
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Price"
+          },
+          "previous_close": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Close"
+          },
+          "high_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "High Price"
+          },
+          "low_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Low Price"
+          },
+          "cumulative_volume": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cumulative Volume",
+            "x-unit": "share",
+            "x-business": "source_cumulative_or_indicative_quantity",
+            "description": "采样累计或竞价指示股数；按value_semantics/quote_semantics区分业务，不冒称实际逐笔成交量。缺失或未认证为null。"
+          },
+          "cumulative_amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cumulative Amount",
+            "x-unit": "CNY",
+            "x-business": "traded_or_order_value",
+            "description": "业务数量或金额；单位见x-unit；缺失或未认证为null，显式0保持0。"
+          },
+          "batch_code": {
+            "pattern": "^[0-9]{6}$",
+            "title": "Batch Code",
+            "type": "string"
+          },
+          "value_semantics": {
+            "enum": [
+              "auction_indicative",
+              "opening_trade",
+              "legacy_source_quote"
+            ],
+            "title": "Value Semantics",
+            "type": "string"
+          },
+          "bid1_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Bid1 Price"
+          },
+          "bid1_volume": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Bid1 Volume",
+            "x-unit": "share",
+            "x-business": "order_book_order_quantity",
+            "description": "对应方向和档位的委托股数；缺失或未认证为null，显式0保持0。"
+          },
+          "bid2_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Bid2 Price"
+          },
+          "bid2_volume": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Bid2 Volume",
+            "x-unit": "share",
+            "x-business": "order_book_order_quantity",
+            "description": "对应方向和档位的委托股数；缺失或未认证为null，显式0保持0。"
+          },
+          "bid3_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Bid3 Price"
+          },
+          "bid3_volume": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Bid3 Volume",
+            "x-unit": "share",
+            "x-business": "order_book_order_quantity",
+            "description": "对应方向和档位的委托股数；缺失或未认证为null，显式0保持0。"
+          },
+          "bid4_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Bid4 Price"
+          },
+          "bid4_volume": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Bid4 Volume",
+            "x-unit": "share",
+            "x-business": "order_book_order_quantity",
+            "description": "对应方向和档位的委托股数；缺失或未认证为null，显式0保持0。"
+          },
+          "bid5_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Bid5 Price"
+          },
+          "bid5_volume": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Bid5 Volume",
+            "x-unit": "share",
+            "x-business": "order_book_order_quantity",
+            "description": "对应方向和档位的委托股数；缺失或未认证为null，显式0保持0。"
+          },
+          "ask1_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ask1 Price"
+          },
+          "ask1_volume": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ask1 Volume",
+            "x-unit": "share",
+            "x-business": "order_book_order_quantity",
+            "description": "对应方向和档位的委托股数；缺失或未认证为null，显式0保持0。"
+          },
+          "ask2_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ask2 Price"
+          },
+          "ask2_volume": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ask2 Volume",
+            "x-unit": "share",
+            "x-business": "order_book_order_quantity",
+            "description": "对应方向和档位的委托股数；缺失或未认证为null，显式0保持0。"
+          },
+          "ask3_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ask3 Price"
+          },
+          "ask3_volume": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ask3 Volume",
+            "x-unit": "share",
+            "x-business": "order_book_order_quantity",
+            "description": "对应方向和档位的委托股数；缺失或未认证为null，显式0保持0。"
+          },
+          "ask4_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ask4 Price"
+          },
+          "ask4_volume": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ask4 Volume",
+            "x-unit": "share",
+            "x-business": "order_book_order_quantity",
+            "description": "对应方向和档位的委托股数；缺失或未认证为null，显式0保持0。"
+          },
+          "ask5_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ask5 Price"
+          },
+          "ask5_volume": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ask5 Volume",
+            "x-unit": "share",
+            "x-business": "order_book_order_quantity",
+            "description": "对应方向和档位的委托股数；缺失或未认证为null，显式0保持0。"
+          }
+        },
+        "required": [
+          "symbol",
+          "code",
+          "observed_at",
+          "last_price",
+          "previous_close",
+          "high_price",
+          "low_price",
+          "cumulative_amount",
+          "batch_code",
+          "value_semantics",
+          "quantity_quality"
+        ],
+        "title": "CallAuctionMarketSeriesSnapshotItem",
+        "type": "object"
+      },
+      "CallAuctionMarketSeriesSnapshotResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "quantity_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantityQuality"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "数量单位认证与完整性状态; 未知单位数量为null, 不能解释为零。"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "session_status": {
+            "enum": [
+              "succeeded",
+              "partial"
+            ],
+            "title": "Session Status",
+            "type": "string"
+          },
+          "expected_rounds": {
+            "const": 32,
+            "title": "Expected Rounds",
+            "type": "integer"
+          },
+          "returned_rounds": {
+            "maximum": 32,
+            "minimum": 0,
+            "title": "Returned Rounds",
+            "type": "integer"
+          },
+          "requested_count": {
+            "maximum": 500,
+            "minimum": 1,
+            "title": "Requested Count",
+            "type": "integer"
+          },
+          "rounds": {
+            "items": {
+              "$ref": "#/components/schemas/CallAuctionMarketSeriesRound"
+            },
+            "title": "Rounds",
+            "type": "array"
+          }
+        },
+        "required": [
+          "trade_date",
+          "session_id",
+          "session_status",
+          "expected_rounds",
+          "returned_rounds",
+          "requested_count",
+          "rounds"
+        ],
+        "title": "CallAuctionMarketSeriesSnapshotResponse",
+        "type": "object"
+      },
+      "AuctionOnePriceLimitItem": {
+        "additionalProperties": false,
+        "properties": {
+          "quantity_quality": {
+            "$ref": "#/components/schemas/QuantityQuality"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "code": {
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "direction": {
+            "enum": [
+              "up",
+              "down"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
+          "observed_at": {
+            "description": "上海时区行情观察时间。格式为 YYYY-MM-DD HH:mm:ss",
+            "title": "Observed At",
+            "type": "string",
+            "format": "date-time"
+          },
+          "indicated_price": {
+            "title": "Indicated Price",
+            "type": "number"
+          },
+          "limit_price": {
+            "title": "Limit Price",
+            "type": "number"
+          },
+          "previous_close": {
+            "title": "Previous Close",
+            "type": "number"
+          },
+          "cumulative_volume": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cumulative Volume",
+            "x-unit": "share",
+            "x-business": "source_cumulative_or_indicative_quantity",
+            "description": "采样累计或竞价指示股数；按value_semantics/quote_semantics区分业务，不冒称实际逐笔成交量。缺失或未认证为null。"
+          },
+          "cumulative_amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cumulative Amount",
+            "x-unit": "CNY",
+            "x-business": "traded_or_order_value",
+            "description": "业务数量或金额；单位见x-unit；缺失或未认证为null，显式0保持0。"
+          },
+          "seal_amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Seal Amount",
+            "x-unit": "CNY",
+            "x-business": "traded_or_order_value",
+            "description": "业务数量或金额；单位见x-unit；缺失或未认证为null，显式0保持0。"
+          }
+        },
+        "required": [
+          "symbol",
+          "code",
+          "name",
+          "direction",
+          "observed_at",
+          "indicated_price",
+          "limit_price",
+          "previous_close",
+          "cumulative_amount",
+          "quantity_quality"
+        ],
+        "title": "AuctionOnePriceLimitItem",
+        "type": "object"
+      },
+      "AuctionOnePriceLimitResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "quantity_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantityQuality"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "数量单位认证与完整性状态; 未知单位数量为null, 不能解释为零。"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "ingestion_id": {
+            "format": "uuid",
+            "title": "Ingestion Id",
+            "type": "string"
+          },
+          "ingestion_status": {
+            "enum": [
+              "succeeded",
+              "partial"
+            ],
+            "title": "Ingestion Status",
+            "type": "string"
+          },
+          "price_limit_calculation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Limit Calculation Id"
+          },
+          "price_limit_rule_version": {
+            "const": "CN_MAINBOARD_2026_07_06",
+            "title": "Price Limit Rule Version",
+            "type": "string"
+          },
+          "price_limit_algorithm_version": {
+            "const": "1.0.0",
+            "title": "Price Limit Algorithm Version",
+            "type": "string"
+          },
+          "calculation_mode": {
+            "const": "realtime_read",
+            "title": "Calculation Mode",
+            "type": "string"
+          },
+          "snapshot_window": {
+            "const": "09:25:20-09:25:39 Asia/Shanghai",
+            "title": "Snapshot Window",
+            "type": "string"
+          },
+          "candidate_count": {
+            "minimum": 0,
+            "title": "Candidate Count",
+            "type": "integer"
+          },
+          "omitted_incomplete_count": {
+            "minimum": 0,
+            "title": "Omitted Incomplete Count",
+            "type": "integer"
+          },
+          "up_count": {
+            "minimum": 0,
+            "title": "Up Count",
+            "type": "integer"
+          },
+          "down_count": {
+            "minimum": 0,
+            "title": "Down Count",
+            "type": "integer"
+          },
+          "up": {
+            "items": {
+              "$ref": "#/components/schemas/AuctionOnePriceLimitItem"
+            },
+            "title": "Up",
+            "type": "array"
+          },
+          "down": {
+            "items": {
+              "$ref": "#/components/schemas/AuctionOnePriceLimitItem"
+            },
+            "title": "Down",
+            "type": "array"
+          }
+        },
+        "required": [
+          "trade_date",
+          "ingestion_id",
+          "ingestion_status",
+          "price_limit_calculation_id",
+          "price_limit_rule_version",
+          "price_limit_algorithm_version",
+          "calculation_mode",
+          "snapshot_window",
+          "candidate_count",
+          "omitted_incomplete_count",
+          "up_count",
+          "down_count",
+          "up",
+          "down"
+        ],
+        "title": "AuctionOnePriceLimitResponse",
+        "type": "object"
+      },
+      "CallAuctionOnePricePatternItem": {
+        "additionalProperties": false,
+        "properties": {
+          "quantity_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantityQuality"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "数量单位认证与完整性状态; 未知单位数量为null, 不能解释为零。"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "code": {
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "exchange": {
+            "enum": [
+              "SSE",
+              "SZSE"
+            ],
+            "title": "Exchange",
+            "type": "string"
+          },
+          "one_price": {
+            "title": "One Price",
+            "type": "number"
+          },
+          "previous_close": {
+            "title": "Previous Close",
+            "type": "number"
+          },
+          "change_pct": {
+            "title": "Change Pct",
+            "type": "number",
+            "x-unit": "percentage_point"
+          },
+          "sample_count": {
+            "const": 29,
+            "title": "Sample Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "symbol",
+          "code",
+          "name",
+          "exchange",
+          "one_price",
+          "previous_close",
+          "change_pct",
+          "sample_count"
+        ],
+        "title": "CallAuctionOnePricePatternItem",
+        "type": "object"
+      },
+      "CallAuctionOnePricePatternResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "quantity_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantityQuality"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "数量单位认证与完整性状态; 未知单位数量为null, 不能解释为零。"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "session_status": {
+            "enum": [
+              "succeeded",
+              "partial"
+            ],
+            "title": "Session Status",
+            "type": "string"
+          },
+          "window_start": {
+            "title": "Window Start",
+            "type": "string",
+            "format": "date-time"
+          },
+          "window_end": {
+            "title": "Window End",
+            "type": "string",
+            "format": "date-time"
+          },
+          "round_count": {
+            "const": 29,
+            "title": "Round Count",
+            "type": "integer"
+          },
+          "candidate_count": {
+            "minimum": 0,
+            "title": "Candidate Count",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CallAuctionOnePricePatternItem"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "trade_date",
+          "session_id",
+          "session_status",
+          "window_start",
+          "window_end",
+          "round_count",
+          "candidate_count",
+          "items"
+        ],
+        "title": "CallAuctionOnePricePatternResponse",
+        "type": "object"
+      },
+      "CallAuctionGrabLineItem": {
+        "additionalProperties": false,
+        "properties": {
+          "quantity_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantityQuality"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "数量单位认证与完整性状态; 未知单位数量为null, 不能解释为零。"
+          },
+          "code": {
+            "description": "六位股票代码。",
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "请求交易日有效的股票名称; 缺失时为 null。",
+            "title": "Name"
+          },
+          "grab_line_pct": {
+            "description": "抢筹线百分比, 即 (09:25:20价格 - 09:24:53价格) / 昨收价 * 100。",
+            "title": "Grab Line Pct",
+            "type": "number",
+            "x-unit": "percentage_point"
+          },
+          "change_pct_092520": {
+            "description": "09:25:20 涨跌幅, 即 (09:25:20价格 - 昨收价) / 昨收价 * 100。",
+            "title": "Change Pct 092520",
+            "type": "number"
+          },
+          "trade_date": {
+            "description": "交易日, 格式为 YYYY-MM-DD。",
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "grab_line_pct",
+          "change_pct_092520",
+          "trade_date"
+        ],
+        "title": "CallAuctionGrabLineItem",
+        "type": "object"
+      },
+      "CallAuctionGrabLineResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "quantity_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantityQuality"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "数量单位认证与完整性状态; 未知单位数量为null, 不能解释为零。"
+          },
+          "trade_date": {
+            "description": "查询交易日, 格式为 YYYY-MM-DD。",
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "被选择的单一集合竞价序列会话标识。",
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "session_status": {
+            "description": "序列会话状态。",
+            "enum": [
+              "succeeded",
+              "partial"
+            ],
+            "title": "Session Status",
+            "type": "string"
+          },
+          "min_grab_line_pct": {
+            "description": "抢筹线开区间最小值, 单位为百分比。",
+            "title": "Min Grab Line Pct",
+            "type": "number",
+            "x-unit": "percentage_point"
+          },
+          "max_grab_line_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "抢筹线开区间最大值, 单位为百分比; null 表示不限制。",
+            "title": "Max Grab Line Pct",
+            "x-unit": "percentage_point"
+          },
+          "min_change_pct": {
+            "description": "09:25:20 涨跌幅开区间最小值。",
+            "title": "Min Change Pct",
+            "type": "number",
+            "x-unit": "percentage_point"
+          },
+          "max_change_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "09:25:20 涨跌幅开区间最大值; null 表示不限制。",
+            "title": "Max Change Pct",
+            "x-unit": "percentage_point"
+          },
+          "first_batch_code": {
+            "const": "092453",
+            "description": "起始比较批次。",
+            "title": "First Batch Code",
+            "type": "string"
+          },
+          "final_batch_code": {
+            "const": "092520",
+            "description": "结束比较批次。",
+            "title": "Final Batch Code",
+            "type": "string"
+          },
+          "count": {
+            "description": "返回股票数量。",
+            "maximum": 10000,
+            "minimum": 0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "items": {
+            "description": "按抢筹线从高到低排列的结果。",
+            "items": {
+              "$ref": "#/components/schemas/CallAuctionGrabLineItem"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "trade_date",
+          "session_id",
+          "session_status",
+          "min_grab_line_pct",
+          "max_grab_line_pct",
+          "min_change_pct",
+          "max_change_pct",
+          "first_batch_code",
+          "final_batch_code",
+          "count",
+          "items"
+        ],
+        "title": "CallAuctionGrabLineResponse",
+        "type": "object"
+      },
+      "AuctionIndicativeDetailItem": {
+        "additionalProperties": false,
+        "properties": {
+          "quantity_quality": {
+            "$ref": "#/components/schemas/QuantityQuality"
+          },
+          "observed_at": {
+            "description": "Asia/Shanghai wall-clock time formatted as YYYY-MM-DD HH:mm:ss",
+            "title": "Observed At",
+            "type": "string",
+            "format": "date-time"
+          },
+          "source_sequence": {
+            "minimum": 0,
+            "title": "Source Sequence",
+            "type": "integer"
+          },
+          "indicative_price": {
+            "title": "Indicative Price",
+            "type": "number"
+          },
+          "displayed_volume_shares": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Displayed Volume Shares",
+            "x-unit": "share",
+            "x-business": "auction_displayed_matching_quantity",
+            "description": "集合竞价展示匹配股数；不是实际逐笔成交量。缺失或未认证为null，显式0保持0。"
+          },
+          "source_display_classification": {
+            "enum": [
+              "internal",
+              "external",
+              "unknown"
+            ],
+            "title": "Source Display Classification",
+            "type": "string"
+          }
+        },
+        "required": [
+          "observed_at",
+          "source_sequence",
+          "indicative_price",
+          "source_display_classification",
+          "quantity_quality"
+        ],
+        "title": "AuctionIndicativeDetailItem",
+        "type": "object"
+      },
+      "AuctionIndicativeQuality": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "enum": [
+              "complete",
+              "partial"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "source_row_count": {
+            "maximum": 5000,
+            "minimum": 0,
+            "title": "Source Row Count",
+            "type": "integer"
+          },
+          "accepted_auction_row_count": {
+            "exclusiveMaximum": 5000,
+            "minimum": 0,
+            "title": "Accepted Auction Row Count",
+            "type": "integer"
+          },
+          "source_display_classification_trusted": {
+            "const": false,
+            "title": "Source Display Classification Trusted",
+            "type": "boolean"
+          },
+          "raw_captured": {
+            "const": true,
+            "title": "Raw Captured",
+            "type": "boolean"
+          },
+          "database_persistence": {
+            "enum": [
+              "queued",
+              "persisted"
+            ],
+            "title": "Database Persistence",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "source_row_count",
+          "accepted_auction_row_count",
+          "source_display_classification_trusted",
+          "raw_captured",
+          "database_persistence"
+        ],
+        "title": "AuctionIndicativeQuality",
+        "type": "object"
+      },
+      "AuctionIndicativeDetailResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "quantity_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantityQuality"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "数量单位认证与完整性状态; 未知单位数量为null, 不能解释为零。"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "fetched_at": {
+            "description": "Asia/Shanghai wall-clock time formatted as YYYY-MM-DD HH:mm:ss",
+            "title": "Fetched At",
+            "type": "string",
+            "format": "date-time"
+          },
+          "source": {
+            "const": "eastmoney",
+            "title": "Source",
+            "type": "string"
+          },
+          "live_provider_derived": {
+            "const": true,
+            "title": "Live Provider Derived",
+            "type": "boolean"
+          },
+          "data_origin": {
+            "enum": [
+              "database",
+              "eastmoney_live"
+            ],
+            "title": "Data Origin",
+            "type": "string"
+          },
+          "cache_hit": {
+            "title": "Cache Hit",
+            "type": "boolean"
+          },
+          "persistence_status": {
+            "enum": [
+              "queued",
+              "persisted"
+            ],
+            "title": "Persistence Status",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Version"
+          },
+          "ingestion_status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "succeeded",
+                  "partial"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ingestion Status"
+          },
+          "ingestion_id": {
+            "format": "uuid",
+            "title": "Ingestion Id",
+            "type": "string"
+          },
+          "raw_id": {
+            "format": "uuid",
+            "title": "Raw Id",
+            "type": "string"
+          },
+          "input_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Input Hash",
+            "type": "string"
+          },
+          "semantics": {
+            "const": "auction_virtual_indicative_matching_detail",
+            "title": "Semantics",
+            "type": "string"
+          },
+          "is_exchange_trade_tick": {
+            "const": false,
+            "title": "Is Exchange Trade Tick",
+            "type": "boolean"
+          },
+          "is_order_by_order": {
+            "const": false,
+            "title": "Is Order By Order",
+            "type": "boolean"
+          },
+          "total_count": {
+            "minimum": 0,
+            "title": "Total Count",
+            "type": "integer"
+          },
+          "offset": {
+            "minimum": 0,
+            "title": "Offset",
+            "type": "integer"
+          },
+          "returned_count": {
+            "maximum": 500,
+            "minimum": 0,
+            "title": "Returned Count",
+            "type": "integer"
+          },
+          "has_more": {
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/AuctionIndicativeQuality"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AuctionIndicativeDetailItem"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "symbol",
+          "trade_date",
+          "fetched_at",
+          "source",
+          "live_provider_derived",
+          "data_origin",
+          "cache_hit",
+          "persistence_status",
+          "ingestion_id",
+          "raw_id",
+          "input_hash",
+          "semantics",
+          "is_exchange_trade_tick",
+          "is_order_by_order",
+          "total_count",
+          "offset",
+          "returned_count",
+          "has_more",
+          "quality",
+          "items"
+        ],
+        "title": "AuctionIndicativeDetailResponse",
+        "type": "object"
+      },
+      "DailyBarRow": {
+        "additionalProperties": false,
+        "properties": {
+          "quantity_quality": {
+            "$ref": "#/components/schemas/QuantityQuality"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "open": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Open"
+          },
+          "high": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "High"
+          },
+          "low": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Low"
+          },
+          "close": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Close"
+          },
+          "previous_close": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Close"
+          },
+          "volume": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "股票本交易日实际成交股数；100就是100股，不是100手；缺失或未认证为null，显式0保持0。",
+            "x-unit": "share",
+            "x-business": "stock_traded_volume",
+            "examples": [
+              100
+            ]
+          },
+          "amount": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "本交易日实际成交金额，人民币元；缺失或未认证为null，独立于成交量认证。",
+            "x-unit": "CNY",
+            "x-business": "stock_traded_amount"
+          },
+          "trade_status": {
+            "$ref": "#/components/schemas/TradeStatus"
+          },
+          "is_st": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is St"
+          }
+        },
+        "required": [
+          "symbol",
+          "trade_date",
+          "open",
+          "high",
+          "low",
+          "close",
+          "previous_close",
+          "volume",
+          "amount",
+          "trade_status",
+          "is_st",
+          "quantity_quality"
+        ],
+        "title": "DailyBarItem",
+        "type": "object"
+      },
+      "ClassificationDailyMetricRow": {
+        "type": "object",
+        "properties": {
+          "namespace": {
+            "type": "string"
+          },
+          "classification_type": {
+            "type": "string",
+            "enum": [
+              "industry",
+              "concept",
+              "index"
+            ]
+          },
+          "classification_code": {
+            "type": "string"
+          },
+          "membership_snapshot_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "trade_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "member_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "priced_member_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "advancing_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "declining_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "unchanged_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "market_cap_member_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "total_volume": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "股票数量，整数股；缺失或未认证为null，显式0保持0。",
+            "x-unit": "share",
+            "x-business": "complete_classification_traded_volume"
+          },
+          "total_amount": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "股票数量，整数股；缺失或未认证为null，显式0保持0。",
+            "x-unit": "CNY",
+            "x-business": "complete_classification_traded_amount"
+          },
+          "equal_weight_return": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "x-unit": "ratio",
+            "description": "可用收益率成员的等权收益率；数量缺失不改变其分母。"
+          },
+          "total_market_cap": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "股票数量，整数股；缺失或未认证为null，显式0保持0。",
+            "x-unit": "CNY",
+            "x-business": "classification_available_market_cap"
+          },
+          "calculation_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "algorithm_version": {
+            "type": "string"
+          },
+          "calculation_start_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "calculation_end_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "input_hash": {
+            "type": "string"
+          },
+          "calculated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "volume_member_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "完整active成员中相应字段非null的覆盖数；显式0计入。旧算法未知覆盖保持null；不按停牌或生命周期剔除成员。",
+            "x-unit": "member"
+          },
+          "amount_member_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "完整active成员中相应字段非null的覆盖数；显式0计入。旧算法未知覆盖保持null；不按停牌或生命周期剔除成员。",
+            "x-unit": "member"
+          },
+          "quantity_quality": {
+            "$ref": "#/components/schemas/QuantityQuality"
+          }
+        },
+        "required": [
+          "namespace",
+          "classification_type",
+          "classification_code",
+          "membership_snapshot_date",
+          "trade_date",
+          "member_count",
+          "priced_member_count",
+          "advancing_count",
+          "declining_count",
+          "unchanged_count",
+          "market_cap_member_count",
+          "total_volume",
+          "total_amount",
+          "equal_weight_return",
+          "total_market_cap",
+          "calculation_id",
+          "algorithm_version",
+          "calculation_start_date",
+          "calculation_end_date",
+          "input_hash",
+          "calculated_at",
+          "volume_member_count",
+          "amount_member_count",
+          "quantity_quality"
+        ],
+        "description": "1.2.0 retains all active members; a missing whole bar or missing volume/amount makes its respective total null. Independent coverage counts must not exceed member_count. Prices, returns and their denominators do not change. Legacy totals and market caps are null/unverified; persisted audit objects remain unchanged.",
+        "x-invariants": [
+          "0 <= volume_member_count <= member_count",
+          "0 <= amount_member_count <= member_count"
+        ]
+      },
+      "ConvertibleBondDailyBarRow": {
+        "type": "object",
+        "properties": {
+          "open": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "high": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "low": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "close": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "previous_close": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "pct_chg": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "convert_value": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "convert_premium_pct": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "convert_price": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "symbol": {
+            "$ref": "#/components/schemas/StandardSymbol"
+          },
+          "trade_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "volume": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "可转债本交易日成交张数；按独立来源契约认证，不使用股票股数证书或股票×100规则。未认证为null。",
+            "x-unit": "bond",
+            "x-business": "convertible_bond_traded_quantity"
+          },
+          "amount": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "股票数量，整数股；缺失或未认证为null，显式0保持0。",
+            "x-unit": "CNY",
+            "x-business": "convertible_bond_traded_amount"
+          },
+          "remain_size": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "股票数量，整数股；缺失或未认证为null，显式0保持0。",
+            "x-unit": "CNY",
+            "x-business": "convertible_bond_remaining_face_amount"
+          },
+          "trade_status": {
+            "type": "string"
+          },
+          "quantity_quality": {
+            "$ref": "#/components/schemas/QuantityQuality"
+          }
+        },
+        "required": [
+          "open",
+          "high",
+          "low",
+          "close",
+          "previous_close",
+          "pct_chg",
+          "convert_value",
+          "convert_premium_pct",
+          "convert_price",
+          "symbol",
+          "trade_date",
+          "volume",
+          "amount",
+          "remain_size",
+          "trade_status",
+          "quantity_quality"
+        ]
+      },
+      "ShareCapitalRow": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "$ref": "#/components/schemas/StandardSymbol"
+          },
+          "effective_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "total_shares": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "股票数量，整数股；缺失或未认证为null，显式0保持0。",
+            "x-unit": "share",
+            "x-business": "total_shares"
+          },
+          "restricted_shares": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "股票数量，整数股；缺失或未认证为null，显式0保持0。",
+            "x-unit": "share",
+            "x-business": "restricted_shares"
+          },
+          "circulating_shares": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "股票数量，整数股；缺失或未认证为null，显式0保持0。",
+            "x-unit": "share",
+            "x-business": "circulating_shares"
+          },
+          "listed_a_shares": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "股票数量，整数股；缺失或未认证为null，显式0保持0。",
+            "x-unit": "share",
+            "x-business": "listed_a_shares"
+          },
+          "change_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "quantity_quality": {
+            "$ref": "#/components/schemas/QuantityQuality"
+          }
+        },
+        "required": [
+          "symbol",
+          "effective_date",
+          "total_shares",
+          "restricted_shares",
+          "circulating_shares",
+          "listed_a_shares",
+          "change_reason",
+          "quantity_quality"
+        ]
+      },
+      "BoardIndexDailyBarRow": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string"
+          },
+          "trade_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "market": {
+            "type": "string"
+          },
+          "open": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "high": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "low": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "close": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "volume": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "指数/THS按独立来源契约认证的原生数量；量纲未确认返回null，不推断为股票股数。",
+            "x-unit": "source-native",
+            "x-business": "independent_index_native_quantity"
+          },
+          "amount": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "股票数量，整数股；缺失或未认证为null，显式0保持0。",
+            "x-unit": "CNY",
+            "x-business": "independent_index_traded_amount"
+          },
+          "quantity_quality": {
+            "$ref": "#/components/schemas/QuantityQuality"
+          }
+        },
+        "required": [
+          "board_id",
+          "trade_date",
+          "market",
+          "open",
+          "high",
+          "low",
+          "close",
+          "volume",
+          "amount",
+          "quantity_quality"
+        ]
+      },
+      "AuctionQuoteRow": {
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "pool_snapshot_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "trade_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "symbol": {
+            "$ref": "#/components/schemas/StandardSymbol"
+          },
+          "sample_seq": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "scheduled_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "collected_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "source_timestamp": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "phase": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "quote_semantics": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "quote_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "metric_algorithm_version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_price": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "previous_close": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "spread": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "mid_price": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "cumulative_volume": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "股票数量，整数股；缺失或未认证为null，显式0保持0。",
+            "x-unit": "share",
+            "x-business": "source_cumulative_or_indicative_quantity"
+          },
+          "bid_depth_5": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "股票数量，整数股；缺失或未认证为null，显式0保持0。",
+            "x-unit": "share",
+            "x-business": "order_book_depth"
+          },
+          "ask_depth_5": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "股票数量，整数股；缺失或未认证为null，显式0保持0。",
+            "x-unit": "share",
+            "x-business": "order_book_depth"
+          },
+          "cumulative_amount": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "股票数量，整数股；缺失或未认证为null，显式0保持0。",
+            "x-unit": "CNY",
+            "x-business": "source_cumulative_or_indicative_amount"
+          },
+          "seal_amount": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "股票数量，整数股；缺失或未认证为null，显式0保持0。",
+            "x-unit": "CNY",
+            "x-business": "order_book_sealing_value"
+          },
+          "imbalance_5": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "x-unit": "ratio",
+            "description": "(bid_depth_5-ask_depth_5)/(bid_depth_5+ask_depth_5); zero/missing denominator or unverified inputs produce null."
+          },
+          "bid_levels": {
+            "type": "array",
+            "minItems": 5,
+            "maxItems": 5,
+            "items": {
+              "type": "object",
+              "properties": {
+                "level": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 5
+                },
+                "price": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "volume": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "description": "股票数量，整数股；缺失或未认证为null，显式0保持0。",
+                  "x-unit": "share",
+                  "x-business": "order_book_order_quantity"
+                }
+              },
+              "required": [
+                "level",
+                "price",
+                "volume"
+              ]
+            }
+          },
+          "ask_levels": {
+            "type": "array",
+            "minItems": 5,
+            "maxItems": 5,
+            "items": {
+              "type": "object",
+              "properties": {
+                "level": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 5
+                },
+                "price": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "volume": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "description": "股票数量，整数股；缺失或未认证为null，显式0保持0。",
+                  "x-unit": "share",
+                  "x-business": "order_book_order_quantity"
+                }
+              },
+              "required": [
+                "level",
+                "price",
+                "volume"
+              ]
+            }
+          },
+          "quantity_quality": {
+            "$ref": "#/components/schemas/QuantityQuality"
+          }
+        },
+        "required": [
+          "session_id",
+          "pool_snapshot_id",
+          "trade_date",
+          "symbol",
+          "sample_seq",
+          "scheduled_at",
+          "collected_at",
+          "source_timestamp",
+          "phase",
+          "quote_semantics",
+          "quote_status",
+          "metric_algorithm_version",
+          "last_price",
+          "previous_close",
+          "spread",
+          "mid_price",
+          "cumulative_volume",
+          "bid_depth_5",
+          "ask_depth_5",
+          "cumulative_amount",
+          "seal_amount",
+          "imbalance_5",
+          "bid_levels",
+          "ask_levels",
+          "quantity_quality"
+        ]
+      },
+      "MarketSnapshotRow": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "$ref": "#/components/schemas/StandardSymbol"
+          },
+          "trade_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "raw_close": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "total_return_1d": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "moving_average_5": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "moving_average_10": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "moving_average_20": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "total_market_cap": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "股票数量，整数股；缺失或未认证为null，显式0保持0。",
+            "x-unit": "CNY",
+            "x-business": "total_market_cap"
+          },
+          "circulating_market_cap": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "股票数量，整数股；缺失或未认证为null，显式0保持0。",
+            "x-unit": "CNY",
+            "x-business": "circulating_market_cap"
+          },
+          "calculation_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "algorithm_version": {
+            "type": "string"
+          },
+          "input_hash": {
+            "type": "string"
+          },
+          "calculated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "quantity_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantityQuality"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null if no certified-capital calculation row exists; this never means certified zero capital."
+          }
+        },
+        "required": [
+          "symbol",
+          "trade_date",
+          "raw_close",
+          "total_return_1d",
+          "moving_average_5",
+          "moving_average_10",
+          "moving_average_20",
+          "total_market_cap",
+          "circulating_market_cap",
+          "calculation_id",
+          "algorithm_version",
+          "input_hash",
+          "calculated_at",
+          "quantity_quality"
+        ]
+      },
+      "StockDailyIndicatorRow": {
+        "additionalProperties": false,
+        "properties": {
+          "quantity_quality": {
+            "$ref": "#/components/schemas/QuantityQuality"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "close": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Close"
+          },
+          "turnover_rate_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turnover Rate Pct",
+            "x-unit": "percentage_point"
+          },
+          "free_float_turnover_rate_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Free Float Turnover Rate Pct",
+            "x-unit": "percentage_point"
+          },
+          "volume_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume Ratio",
+            "x-unit": "ratio",
+            "x-business": "source_reported_volume_ratio"
+          },
+          "pe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pe"
+          },
+          "pe_ttm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pe Ttm"
+          },
+          "pb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pb"
+          },
+          "ps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ps"
+          },
+          "ps_ttm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ps Ttm"
+          },
+          "dividend_yield_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dividend Yield Pct",
+            "x-unit": "percentage_point"
+          },
+          "dividend_yield_ttm_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dividend Yield Ttm Pct",
+            "x-unit": "percentage_point"
+          },
+          "total_shares": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Shares",
+            "x-unit": "share",
+            "x-business": "share_capital",
+            "description": "字段指定口径的股本股数；流通与自由流通口径不可互换，缺失或未认证为null。"
+          },
+          "circulating_shares": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Circulating Shares",
+            "x-unit": "share",
+            "x-business": "share_capital",
+            "description": "字段指定口径的股本股数；流通与自由流通口径不可互换，缺失或未认证为null。"
+          },
+          "free_float_shares": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Free Float Shares",
+            "x-unit": "share",
+            "x-business": "share_capital",
+            "description": "字段指定口径的股本股数；流通与自由流通口径不可互换，缺失或未认证为null。"
+          },
+          "total_market_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Market Value",
+            "x-unit": "CNY",
+            "x-business": "traded_or_order_value",
+            "description": "业务数量或金额；单位见x-unit；缺失或未认证为null，显式0保持0。"
+          },
+          "circulating_market_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Circulating Market Value",
+            "x-unit": "CNY",
+            "x-business": "traded_or_order_value",
+            "description": "业务数量或金额；单位见x-unit；缺失或未认证为null，显式0保持0。"
+          },
+          "price_limit_status": {
+            "enum": [
+              "flat",
+              "rise",
+              "limit_up",
+              "one_price_limit_up",
+              "fall",
+              "limit_down",
+              "one_price_limit_down",
+              "unknown"
+            ],
+            "title": "Price Limit Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "quantity_quality",
+          "symbol",
+          "trade_date",
+          "close",
+          "turnover_rate_pct",
+          "free_float_turnover_rate_pct",
+          "volume_ratio",
+          "pe",
+          "pe_ttm",
+          "pb",
+          "ps",
+          "ps_ttm",
+          "dividend_yield_pct",
+          "dividend_yield_ttm_pct",
+          "total_shares",
+          "circulating_shares",
+          "free_float_shares",
+          "total_market_value",
+          "circulating_market_value",
+          "price_limit_status"
+        ],
+        "title": "LatestStockDailyIndicatorItem",
+        "type": "object"
+      },
+      "MarketCapitalizationRow": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "$ref": "#/components/schemas/StandardSymbol"
+          },
+          "trade_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "total_market_cap": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "股票数量，整数股；缺失或未认证为null，显式0保持0。",
+            "x-unit": "CNY",
+            "x-business": "total_market_cap"
+          },
+          "circulating_market_cap": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "股票数量，整数股；缺失或未认证为null，显式0保持0。",
+            "x-unit": "CNY",
+            "x-business": "circulating_market_cap"
+          },
+          "calculation_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "algorithm_version": {
+            "type": "string"
+          },
+          "calculation_start_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "calculation_end_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "input_hash": {
+            "type": "string"
+          },
+          "calculated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "quantity_quality": {
+            "$ref": "#/components/schemas/QuantityQuality"
+          }
+        },
+        "required": [
+          "symbol",
+          "trade_date",
+          "total_market_cap",
+          "circulating_market_cap",
+          "calculation_id",
+          "algorithm_version",
+          "calculation_start_date",
+          "calculation_end_date",
+          "input_hash",
+          "calculated_at",
+          "quantity_quality"
+        ]
+      },
+      "RightsIssueRow": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "$ref": "#/components/schemas/StandardSymbol"
+          },
+          "record_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "announcement_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "ex_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "payment_start_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "payment_end_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "listing_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "rights_ratio": {
+            "type": "number",
+            "x-unit": "ratio"
+          },
+          "rights_price": {
+            "type": "number",
+            "x-unit": "CNY/share"
+          },
+          "base_shares": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "股票数量，整数股；缺失或未认证为null，显式0保持0。",
+            "x-unit": "share",
+            "x-business": "rights_issue_base_shares"
+          },
+          "proceeds": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "股票数量，整数股；缺失或未认证为null，显式0保持0。",
+            "x-unit": "CNY",
+            "x-business": "rights_issue_proceeds"
+          },
+          "quantity_quality": {
+            "$ref": "#/components/schemas/QuantityQuality"
+          }
+        },
+        "required": [
+          "symbol",
+          "record_date",
+          "announcement_date",
+          "ex_date",
+          "payment_start_date",
+          "payment_end_date",
+          "listing_date",
+          "rights_ratio",
+          "rights_price",
+          "base_shares",
+          "proceeds",
+          "quantity_quality"
+        ]
+      },
+      "ConvertibleBondRow": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "bond_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "bond_short_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "bond_full_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "underlying_symbol": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "exchange": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "redeem_clause": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sell_back_clause": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lifecycle_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "issue_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "value_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "maturity_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "convert_start_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "convert_end_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "par_value": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "convert_price_initial": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "convert_price": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "coupon_rate": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "maturity_years": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "issue_size": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "股票数量，整数股；缺失或未认证为null，显式0保持0。",
+            "x-unit": "CNY",
+            "x-business": "convertible_bond_issue_face_amount"
+          },
+          "quantity_quality": {
+            "$ref": "#/components/schemas/QuantityQuality"
+          }
+        },
+        "required": [
+          "symbol",
+          "bond_code",
+          "bond_short_name",
+          "bond_full_name",
+          "underlying_symbol",
+          "exchange",
+          "redeem_clause",
+          "sell_back_clause",
+          "lifecycle_status",
+          "issue_date",
+          "value_date",
+          "maturity_date",
+          "convert_start_date",
+          "convert_end_date",
+          "par_value",
+          "convert_price_initial",
+          "convert_price",
+          "coupon_rate",
+          "maturity_years",
+          "issue_size",
+          "quantity_quality"
+        ]
       }
     },
     "requestBodies": {
@@ -4635,7 +10281,320 @@
             }
           }
         }
+      },
+      "RecentDailyBars": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "p_code",
+                "p_trade_date"
+              ],
+              "properties": {
+                "p_code": {
+                  "type": "string",
+                  "pattern": "^[0-9]{6}$"
+                },
+                "p_trade_date": {
+                  "type": "string",
+                  "format": "date"
+                },
+                "p_limit": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 5000,
+                  "default": 20
+                }
+              }
+            }
+          }
+        }
+      },
+      "LatestStockDailyIndicators": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "p_codes"
+              ],
+              "properties": {
+                "p_codes": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 500,
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[0-9]{6}$"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "LimitUpPool": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "p_trade_date"
+              ],
+              "properties": {
+                "p_trade_date": {
+                  "type": "string",
+                  "format": "date"
+                },
+                "p_version": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 1,
+                  "default": null
+                },
+                "p_limit": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 5000,
+                  "default": 5000
+                }
+              }
+            }
+          }
+        }
+      },
+      "DailyLimitUpList": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "p_trade_date"
+              ],
+              "properties": {
+                "p_trade_date": {
+                  "type": "string",
+                  "format": "date"
+                },
+                "p_version": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 1,
+                  "default": null
+                },
+                "p_offset": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 50000,
+                  "default": 0
+                },
+                "p_limit": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 500,
+                  "default": 500
+                }
+              }
+            }
+          }
+        }
+      },
+      "DailyLimitDownList": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "p_trade_date"
+              ],
+              "properties": {
+                "p_trade_date": {
+                  "type": "string",
+                  "format": "date"
+                },
+                "p_version": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 1,
+                  "default": null
+                },
+                "p_offset": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 50000,
+                  "default": 0
+                },
+                "p_limit": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 500,
+                  "default": 200
+                }
+              }
+            }
+          }
+        }
+      },
+      "CallAuctionIndicativeDetails": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "p_symbol",
+                "p_trade_date"
+              ],
+              "properties": {
+                "p_symbol": {
+                  "type": "string",
+                  "pattern": "^(SSE|SZSE):[0-9]{6}$"
+                },
+                "p_trade_date": {
+                  "type": "string",
+                  "format": "date"
+                },
+                "p_offset": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 5000,
+                  "default": 0
+                },
+                "p_limit": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 500,
+                  "default": 200
+                }
+              }
+            }
+          }
+        }
+      },
+      "AuctionOnePriceLimits": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [],
+              "properties": {
+                "p_trade_date": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date",
+                  "default": null
+                }
+              }
+            }
+          }
+        }
+      },
+      "CallAuctionOnePricePatterns": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [],
+              "properties": {
+                "p_trade_date": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date",
+                  "default": null
+                }
+              }
+            }
+          }
+        }
+      },
+      "CallAuctionGrabLines": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "p_trade_date"
+              ],
+              "properties": {
+                "p_trade_date": {
+                  "type": "string",
+                  "format": "date"
+                },
+                "p_min_grab_line_pct": {
+                  "type": "number",
+                  "default": 0
+                },
+                "p_max_grab_line_pct": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "default": null
+                },
+                "p_min_change_pct": {
+                  "type": "number",
+                  "default": 0
+                },
+                "p_max_change_pct": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "default": null
+                }
+              }
+            }
+          }
+        }
       }
     }
+  },
+  "x-read-view-schemas": {
+    "daily_bars": "DailyBarRow",
+    "share_capital": "ShareCapitalRow",
+    "board_index_daily_bars": "BoardIndexDailyBarRow",
+    "convertible_bond_daily_bars": "ConvertibleBondDailyBarRow",
+    "classification_daily_metrics": "ClassificationDailyMetricRow",
+    "stock_daily_indicators": "StockDailyIndicatorRow",
+    "market_capitalizations": "MarketCapitalizationRow",
+    "rights_issues": "RightsIssueRow",
+    "convertible_bonds": "ConvertibleBondRow"
+  },
+  "x-quantity-unit-contract-version": "stock-quantity.v1",
+  "x-quantity-policy": {
+    "stock_quantity": "Integer shares; 100 shares remains 100 shares. Provider conversions require explicit source evidence.",
+    "convertible_bond_quantity": "Independent integer bonds (张); never infer units or money/face amounts from a stock or bond-volume certificate.",
+    "index_quantity": "Independent source-native quantity; unverified scales remain null.",
+    "missing_and_zero": "Missing or unverified quantities remain null. Explicit source zero remains zero.",
+    "snapshot_version": "Default unverified exact-day copied snapshots return deferred/empty items; explicit rejected versions return PT409 quantity_units_unverified. No older-date fallback.",
+    "factor_catalog": "Public v2 masks unverified obv/emv/maemv leaves without relabeling immutable source v1 or uniformly rescaling factors."
   }
 }

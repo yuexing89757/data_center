@@ -151,10 +151,22 @@
         "additionalProperties": false,
         "properties": {
           "displayed_volume_shares": {
-            "description": "来源页面展示的竞价匹配量，单位为股。",
-            "minimum": 0.0,
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源页面展示的竞价匹配量，单位为股。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
             "title": "Displayed Volume Shares",
-            "type": "integer"
+            "x-business": "stock_auction_displayed_matching_quantity",
+            "x-unit": "share"
           },
           "indicative_price": {
             "description": "竞价虚拟匹配价格。",
@@ -171,6 +183,17 @@
             "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
             "title": "Observed At",
             "type": "string"
+          },
+          "quantity_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantityQuality"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "数量单位认证与完整性状态; 未知单位数量为null, 不能解释为零。"
           },
           "source_display_classification": {
             "description": "来源页面展示的分类；不代表成交方向。",
@@ -193,7 +216,6 @@
           "observed_at",
           "source_sequence",
           "indicative_price",
-          "displayed_volume_shares",
           "source_display_classification"
         ],
         "title": "AuctionIndicativeDetailItem",
@@ -303,6 +325,17 @@
           "quality": {
             "$ref": "#/components/schemas/AuctionIndicativeQuality",
             "description": "数据质量摘要。"
+          },
+          "quantity_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantityQuality"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "数量单位认证与完整性状态; 未知单位数量为null, 不能解释为零。"
           },
           "raw_id": {
             "description": "不可变原始数据对象标识。",
@@ -464,7 +497,9 @@
               }
             ],
             "description": "截至快照时点的累计金额，单位为人民币元。",
-            "title": "Cumulative Amount"
+            "title": "Cumulative Amount",
+            "x-business": "stock_monetary_amount",
+            "x-unit": "CNY"
           },
           "cumulative_volume": {
             "anyOf": [
@@ -476,8 +511,13 @@
                 "type": "null"
               }
             ],
-            "description": "截至快照时点的累计数量，单位为股。",
-            "title": "Cumulative Volume"
+            "description": "截至快照时点的累计数量，单位为股。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Cumulative Volume",
+            "x-business": "stock_traded_volume",
+            "x-unit": "share"
           },
           "direction": {
             "description": "涨停或跌停方向。",
@@ -521,6 +561,17 @@
             "title": "Previous Close",
             "type": "string"
           },
+          "quantity_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantityQuality"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "数量单位认证与完整性状态; 未知单位数量为null, 不能解释为零。"
+          },
           "seal_amount": {
             "anyOf": [
               {
@@ -532,7 +583,9 @@
               }
             ],
             "description": "竞价封单额，按买一价乘以买一量计算，单位为人民币元。",
-            "title": "Seal Amount"
+            "title": "Seal Amount",
+            "x-business": "stock_monetary_amount",
+            "x-unit": "CNY"
           },
           "symbol": {
             "description": "带交易所前缀的标准证券代码。",
@@ -628,6 +681,17 @@
             "description": "涨跌停价格规则版本。",
             "title": "Price Limit Rule Version",
             "type": "string"
+          },
+          "quantity_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantityQuality"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "数量单位认证与完整性状态; 未知单位数量为null, 不能解释为零。"
           },
           "snapshot_window": {
             "const": "09:25:20-09:25:39 Asia/Shanghai",
@@ -1006,6 +1070,17 @@
             "description": "请求交易日有效的股票名称; 缺失时为 null。",
             "title": "Name"
           },
+          "quantity_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantityQuality"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "数量单位认证与完整性状态; 未知单位数量为null, 不能解释为零。"
+          },
           "trade_date": {
             "description": "交易日, 格式为 YYYY-MM-DD。",
             "format": "date",
@@ -1091,6 +1166,17 @@
             "title": "Min Grab Line Pct",
             "type": "string"
           },
+          "quantity_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantityQuality"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "数量单位认证与完整性状态; 未知单位数量为null, 不能解释为零。"
+          },
           "session_id": {
             "description": "被选择的单一集合竞价序列会话标识。",
             "format": "uuid",
@@ -1155,6 +1241,17 @@
             },
             "title": "Missing Codes",
             "type": "array"
+          },
+          "quantity_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantityQuality"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "数量单位认证与完整性状态; 未知单位数量为null, 不能解释为零。"
           },
           "requested_count": {
             "description": "请求的股票代码数量。",
@@ -1247,8 +1344,13 @@
                 "type": "null"
               }
             ],
-            "description": "卖一量，单位为股；价格为空或为零时仍保留来源返回的数量。",
-            "title": "Ask1 Volume"
+            "description": "卖一量，单位为股；价格为空或为零时仍保留来源返回的数量。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Ask1 Volume",
+            "x-business": "stock_order_book",
+            "x-unit": "share"
           },
           "ask2_price": {
             "anyOf": [
@@ -1273,8 +1375,13 @@
                 "type": "null"
               }
             ],
-            "description": "卖二量，单位为股；价格为空或为零时仍保留来源返回的数量。",
-            "title": "Ask2 Volume"
+            "description": "卖二量，单位为股；价格为空或为零时仍保留来源返回的数量。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Ask2 Volume",
+            "x-business": "stock_order_book",
+            "x-unit": "share"
           },
           "ask3_price": {
             "anyOf": [
@@ -1299,8 +1406,13 @@
                 "type": "null"
               }
             ],
-            "description": "卖三量，单位为股；价格为空或为零时仍保留来源返回的数量。",
-            "title": "Ask3 Volume"
+            "description": "卖三量，单位为股；价格为空或为零时仍保留来源返回的数量。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Ask3 Volume",
+            "x-business": "stock_order_book",
+            "x-unit": "share"
           },
           "ask4_price": {
             "anyOf": [
@@ -1325,8 +1437,13 @@
                 "type": "null"
               }
             ],
-            "description": "卖四量，单位为股；价格为空或为零时仍保留来源返回的数量。",
-            "title": "Ask4 Volume"
+            "description": "卖四量，单位为股；价格为空或为零时仍保留来源返回的数量。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Ask4 Volume",
+            "x-business": "stock_order_book",
+            "x-unit": "share"
           },
           "ask5_price": {
             "anyOf": [
@@ -1351,8 +1468,13 @@
                 "type": "null"
               }
             ],
-            "description": "卖五量，单位为股；价格为空或为零时仍保留来源返回的数量。",
-            "title": "Ask5 Volume"
+            "description": "卖五量，单位为股；价格为空或为零时仍保留来源返回的数量。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Ask5 Volume",
+            "x-business": "stock_order_book",
+            "x-unit": "share"
           },
           "batch_code": {
             "description": "采集批次代码，格式为 HHMMSS。",
@@ -1383,8 +1505,13 @@
                 "type": "null"
               }
             ],
-            "description": "买一量，单位为股；价格为空或为零时仍保留来源返回的数量。",
-            "title": "Bid1 Volume"
+            "description": "买一量，单位为股；价格为空或为零时仍保留来源返回的数量。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Bid1 Volume",
+            "x-business": "stock_order_book",
+            "x-unit": "share"
           },
           "bid2_price": {
             "anyOf": [
@@ -1409,8 +1536,13 @@
                 "type": "null"
               }
             ],
-            "description": "买二量，单位为股；价格为空或为零时仍保留来源返回的数量。",
-            "title": "Bid2 Volume"
+            "description": "买二量，单位为股；价格为空或为零时仍保留来源返回的数量。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Bid2 Volume",
+            "x-business": "stock_order_book",
+            "x-unit": "share"
           },
           "bid3_price": {
             "anyOf": [
@@ -1435,8 +1567,13 @@
                 "type": "null"
               }
             ],
-            "description": "买三量，单位为股；价格为空或为零时仍保留来源返回的数量。",
-            "title": "Bid3 Volume"
+            "description": "买三量，单位为股；价格为空或为零时仍保留来源返回的数量。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Bid3 Volume",
+            "x-business": "stock_order_book",
+            "x-unit": "share"
           },
           "bid4_price": {
             "anyOf": [
@@ -1461,8 +1598,13 @@
                 "type": "null"
               }
             ],
-            "description": "买四量，单位为股；价格为空或为零时仍保留来源返回的数量。",
-            "title": "Bid4 Volume"
+            "description": "买四量，单位为股；价格为空或为零时仍保留来源返回的数量。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Bid4 Volume",
+            "x-business": "stock_order_book",
+            "x-unit": "share"
           },
           "bid5_price": {
             "anyOf": [
@@ -1487,8 +1629,13 @@
                 "type": "null"
               }
             ],
-            "description": "买五量，单位为股；价格为空或为零时仍保留来源返回的数量。",
-            "title": "Bid5 Volume"
+            "description": "买五量，单位为股；价格为空或为零时仍保留来源返回的数量。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Bid5 Volume",
+            "x-business": "stock_order_book",
+            "x-unit": "share"
           },
           "code": {
             "description": "不含交易所前缀的六位股票代码。",
@@ -1507,7 +1654,9 @@
               }
             ],
             "description": "截至快照时点的累计金额，单位为人民币元。",
-            "title": "Cumulative Amount"
+            "title": "Cumulative Amount",
+            "x-business": "stock_monetary_amount",
+            "x-unit": "CNY"
           },
           "cumulative_volume": {
             "anyOf": [
@@ -1519,8 +1668,13 @@
                 "type": "null"
               }
             ],
-            "description": "截至快照时点的累计数量，单位为股。",
-            "title": "Cumulative Volume"
+            "description": "截至快照时点的累计数量，单位为股。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Cumulative Volume",
+            "x-business": "stock_traded_volume",
+            "x-unit": "share"
           },
           "high_price": {
             "anyOf": [
@@ -1580,6 +1734,17 @@
             ],
             "description": "上一交易日收盘价。",
             "title": "Previous Close"
+          },
+          "quantity_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantityQuality"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "数量单位认证与完整性状态; 未知单位数量为null, 不能解释为零。"
           },
           "symbol": {
             "description": "带交易所前缀的标准证券代码。",
@@ -1661,6 +1826,17 @@
             "description": "竞价序列应包含的采集轮次数。",
             "title": "Expected Rounds",
             "type": "integer"
+          },
+          "quantity_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantityQuality"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "数量单位认证与完整性状态; 未知单位数量为null, 不能解释为零。"
           },
           "requested_count": {
             "description": "请求的股票代码数量。",
@@ -1744,8 +1920,13 @@
                 "type": "null"
               }
             ],
-            "description": "卖一量，单位为股；价格为空或为零时仍保留来源返回的数量。",
-            "title": "Ask1 Volume"
+            "description": "卖一量，单位为股；价格为空或为零时仍保留来源返回的数量。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Ask1 Volume",
+            "x-business": "stock_order_book",
+            "x-unit": "share"
           },
           "ask2_price": {
             "anyOf": [
@@ -1770,8 +1951,13 @@
                 "type": "null"
               }
             ],
-            "description": "卖二量，单位为股；价格为空或为零时仍保留来源返回的数量。",
-            "title": "Ask2 Volume"
+            "description": "卖二量，单位为股；价格为空或为零时仍保留来源返回的数量。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Ask2 Volume",
+            "x-business": "stock_order_book",
+            "x-unit": "share"
           },
           "ask3_price": {
             "anyOf": [
@@ -1796,8 +1982,13 @@
                 "type": "null"
               }
             ],
-            "description": "卖三量，单位为股；价格为空或为零时仍保留来源返回的数量。",
-            "title": "Ask3 Volume"
+            "description": "卖三量，单位为股；价格为空或为零时仍保留来源返回的数量。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Ask3 Volume",
+            "x-business": "stock_order_book",
+            "x-unit": "share"
           },
           "ask4_price": {
             "anyOf": [
@@ -1822,8 +2013,13 @@
                 "type": "null"
               }
             ],
-            "description": "卖四量，单位为股；价格为空或为零时仍保留来源返回的数量。",
-            "title": "Ask4 Volume"
+            "description": "卖四量，单位为股；价格为空或为零时仍保留来源返回的数量。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Ask4 Volume",
+            "x-business": "stock_order_book",
+            "x-unit": "share"
           },
           "ask5_price": {
             "anyOf": [
@@ -1848,8 +2044,13 @@
                 "type": "null"
               }
             ],
-            "description": "卖五量，单位为股；价格为空或为零时仍保留来源返回的数量。",
-            "title": "Ask5 Volume"
+            "description": "卖五量，单位为股；价格为空或为零时仍保留来源返回的数量。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Ask5 Volume",
+            "x-business": "stock_order_book",
+            "x-unit": "share"
           },
           "bid1_price": {
             "anyOf": [
@@ -1874,8 +2075,13 @@
                 "type": "null"
               }
             ],
-            "description": "买一量，单位为股；价格为空或为零时仍保留来源返回的数量。",
-            "title": "Bid1 Volume"
+            "description": "买一量，单位为股；价格为空或为零时仍保留来源返回的数量。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Bid1 Volume",
+            "x-business": "stock_order_book",
+            "x-unit": "share"
           },
           "bid2_price": {
             "anyOf": [
@@ -1900,8 +2106,13 @@
                 "type": "null"
               }
             ],
-            "description": "买二量，单位为股；价格为空或为零时仍保留来源返回的数量。",
-            "title": "Bid2 Volume"
+            "description": "买二量，单位为股；价格为空或为零时仍保留来源返回的数量。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Bid2 Volume",
+            "x-business": "stock_order_book",
+            "x-unit": "share"
           },
           "bid3_price": {
             "anyOf": [
@@ -1926,8 +2137,13 @@
                 "type": "null"
               }
             ],
-            "description": "买三量，单位为股；价格为空或为零时仍保留来源返回的数量。",
-            "title": "Bid3 Volume"
+            "description": "买三量，单位为股；价格为空或为零时仍保留来源返回的数量。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Bid3 Volume",
+            "x-business": "stock_order_book",
+            "x-unit": "share"
           },
           "bid4_price": {
             "anyOf": [
@@ -1952,8 +2168,13 @@
                 "type": "null"
               }
             ],
-            "description": "买四量，单位为股；价格为空或为零时仍保留来源返回的数量。",
-            "title": "Bid4 Volume"
+            "description": "买四量，单位为股；价格为空或为零时仍保留来源返回的数量。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Bid4 Volume",
+            "x-business": "stock_order_book",
+            "x-unit": "share"
           },
           "bid5_price": {
             "anyOf": [
@@ -1978,8 +2199,13 @@
                 "type": "null"
               }
             ],
-            "description": "买五量，单位为股；价格为空或为零时仍保留来源返回的数量。",
-            "title": "Bid5 Volume"
+            "description": "买五量，单位为股；价格为空或为零时仍保留来源返回的数量。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Bid5 Volume",
+            "x-business": "stock_order_book",
+            "x-unit": "share"
           },
           "code": {
             "description": "不含交易所前缀的六位股票代码。",
@@ -1998,7 +2224,9 @@
               }
             ],
             "description": "截至快照时点的累计金额，单位为人民币元。",
-            "title": "Cumulative Amount"
+            "title": "Cumulative Amount",
+            "x-business": "stock_monetary_amount",
+            "x-unit": "CNY"
           },
           "cumulative_volume": {
             "anyOf": [
@@ -2010,8 +2238,13 @@
                 "type": "null"
               }
             ],
-            "description": "截至快照时点的累计数量，单位为股。",
-            "title": "Cumulative Volume"
+            "description": "截至快照时点的累计数量，单位为股。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Cumulative Volume",
+            "x-business": "stock_traded_volume",
+            "x-unit": "share"
           },
           "high_price": {
             "anyOf": [
@@ -2072,6 +2305,17 @@
             "description": "上一交易日收盘价。",
             "title": "Previous Close"
           },
+          "quantity_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantityQuality"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "数量单位认证与完整性状态; 未知单位数量为null, 不能解释为零。"
+          },
           "seal_amount": {
             "anyOf": [
               {
@@ -2083,7 +2327,9 @@
               }
             ],
             "description": "竞价封单额，按买一价乘以买一量计算，单位为人民币元。",
-            "title": "Seal Amount"
+            "title": "Seal Amount",
+            "x-business": "stock_monetary_amount",
+            "x-unit": "CNY"
           },
           "symbol": {
             "description": "带交易所前缀的标准证券代码。",
@@ -2167,6 +2413,17 @@
             "title": "Missing Codes",
             "type": "array"
           },
+          "quantity_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantityQuality"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "数量单位认证与完整性状态; 未知单位数量为null, 不能解释为零。"
+          },
           "requested_count": {
             "description": "请求的股票代码数量。",
             "maximum": 500.0,
@@ -2247,6 +2504,17 @@
             "title": "Previous Close",
             "type": "string"
           },
+          "quantity_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantityQuality"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "数量单位认证与完整性状态; 未知单位数量为null, 不能解释为零。"
+          },
           "sample_count": {
             "const": 29,
             "description": "该股票参与形态判定的有效采样数，固定为二十九。",
@@ -2288,6 +2556,17 @@
             },
             "title": "Items",
             "type": "array"
+          },
+          "quantity_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantityQuality"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "数量单位认证与完整性状态; 未知单位数量为null, 不能解释为零。"
           },
           "round_count": {
             "const": 29,
@@ -2567,8 +2846,10 @@
                 "type": "null"
               }
             ],
-            "description": "成交金额，单位为人民币元。",
-            "title": "Amount"
+            "description": "本交易日成交金额, 人民币元; 缺失为null。",
+            "title": "Amount",
+            "x-business": "stock_monetary_amount",
+            "x-unit": "CNY"
           },
           "close": {
             "anyOf": [
@@ -2647,6 +2928,17 @@
             "description": "上一交易日收盘价。",
             "title": "Previous Close"
           },
+          "quantity_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantityQuality"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "数量单位认证与完整性状态; 未知单位数量为null, 不能解释为零。"
+          },
           "symbol": {
             "description": "带交易所前缀的标准证券代码。",
             "title": "Symbol",
@@ -2671,8 +2963,13 @@
                 "type": "null"
               }
             ],
-            "description": "成交量，单位为股。",
-            "title": "Volume"
+            "description": "股票本交易日成交股数; 100表示100股, 不是100手; 缺失为null。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Volume",
+            "x-business": "stock_traded_volume",
+            "x-unit": "share"
           }
         },
         "required": [
@@ -2720,6 +3017,17 @@
             "minimum": 1.0,
             "title": "Limit",
             "type": "integer"
+          },
+          "quantity_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantityQuality"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "数量单位认证与完整性状态; 未知单位数量为null, 不能解释为零。"
           },
           "symbol": {
             "description": "带交易所前缀的标准证券代码。",
@@ -2783,7 +3091,9 @@
               }
             ],
             "description": "按收盘卖一价和卖一量计算的跌停封单额，单位为人民币元。",
-            "title": "Closing Ask1 Sealing Amount Cny"
+            "title": "Closing Ask1 Sealing Amount Cny",
+            "x-business": "stock_monetary_amount",
+            "x-unit": "CNY"
           },
           "closing_ask1_volume_shares": {
             "anyOf": [
@@ -2795,8 +3105,13 @@
                 "type": "null"
               }
             ],
-            "description": "收盘卖一量，单位为股。",
-            "title": "Closing Ask1 Volume Shares"
+            "description": "收盘卖一量，单位为股。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Closing Ask1 Volume Shares",
+            "x-business": "stock_order_book",
+            "x-unit": "share"
           },
           "closing_ask2_price": {
             "anyOf": [
@@ -2821,8 +3136,13 @@
                 "type": "null"
               }
             ],
-            "description": "收盘卖二量，单位为股。",
-            "title": "Closing Ask2 Volume Shares"
+            "description": "收盘卖二量，单位为股。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Closing Ask2 Volume Shares",
+            "x-business": "stock_order_book",
+            "x-unit": "share"
           },
           "closing_ask3_price": {
             "anyOf": [
@@ -2847,8 +3167,13 @@
                 "type": "null"
               }
             ],
-            "description": "收盘卖三量，单位为股。",
-            "title": "Closing Ask3 Volume Shares"
+            "description": "收盘卖三量，单位为股。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Closing Ask3 Volume Shares",
+            "x-business": "stock_order_book",
+            "x-unit": "share"
           },
           "closing_ask4_price": {
             "anyOf": [
@@ -2873,8 +3198,13 @@
                 "type": "null"
               }
             ],
-            "description": "收盘卖四量，单位为股。",
-            "title": "Closing Ask4 Volume Shares"
+            "description": "收盘卖四量，单位为股。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Closing Ask4 Volume Shares",
+            "x-business": "stock_order_book",
+            "x-unit": "share"
           },
           "closing_ask5_price": {
             "anyOf": [
@@ -2899,8 +3229,13 @@
                 "type": "null"
               }
             ],
-            "description": "收盘卖五量，单位为股。",
-            "title": "Closing Ask5 Volume Shares"
+            "description": "收盘卖五量，单位为股。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Closing Ask5 Volume Shares",
+            "x-business": "stock_order_book",
+            "x-unit": "share"
           },
           "code": {
             "description": "不含交易所前缀的六位股票代码。",
@@ -2946,16 +3281,30 @@
             "title": "First Limit Down At"
           },
           "free_float_market_cap_cny": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "description": "流通市值，单位为人民币元。",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Free Float Market Cap Cny",
-            "type": "string"
+            "x-business": "stock_monetary_amount",
+            "x-unit": "CNY"
           },
           "free_float_shares": {
-            "description": "自由流通股本，单位为股。",
+            "description": "自由流通股本，单位为股。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
             "exclusiveMinimum": 0.0,
             "title": "Free Float Shares",
-            "type": "integer"
+            "type": "integer",
+            "x-business": "stock_share_capital",
+            "x-unit": "share"
           },
           "indicator_ingestion_id": {
             "description": "指标来源采集批次标识。",
@@ -3045,6 +3394,17 @@
             "title": "Previous Close",
             "type": "string"
           },
+          "quantity_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantityQuality"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "数量单位认证与完整性状态; 未知单位数量为null, 不能解释为零。"
+          },
           "source_observation_ingestion_id": {
             "anyOf": [
               {
@@ -3082,7 +3442,9 @@
               }
             ],
             "description": "数据源报告的封单资金，单位为人民币元。",
-            "title": "Source Reported Sealed Funds Cny"
+            "title": "Source Reported Sealed Funds Cny",
+            "x-business": "stock_monetary_amount",
+            "x-unit": "CNY"
           },
           "symbol": {
             "description": "带交易所前缀的标准证券代码。",
@@ -3186,6 +3548,17 @@
           "quality": {
             "$ref": "#/components/schemas/DailyLimitDownQualitySummary",
             "description": "数据质量摘要。"
+          },
+          "quantity_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantityQuality"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "数量单位认证与完整性状态; 未知单位数量为null, 不能解释为零。"
           },
           "rejected_count": {
             "description": "未通过校验的候选记录数。",
@@ -3309,7 +3682,9 @@
               }
             ],
             "description": "成交金额，单位为人民币元。",
-            "title": "Amount Cny"
+            "title": "Amount Cny",
+            "x-business": "stock_monetary_amount",
+            "x-unit": "CNY"
           },
           "change_percent": {
             "description": "涨跌幅，单位为百分比。",
@@ -3347,7 +3722,9 @@
               }
             ],
             "description": "按收盘买一价和买一量计算的封单额，单位为人民币元。",
-            "title": "Closing Bid1 Sealing Amount Cny"
+            "title": "Closing Bid1 Sealing Amount Cny",
+            "x-business": "stock_monetary_amount",
+            "x-unit": "CNY"
           },
           "closing_bid1_volume_shares": {
             "anyOf": [
@@ -3359,8 +3736,13 @@
                 "type": "null"
               }
             ],
-            "description": "收盘买一量，单位为股。",
-            "title": "Closing Bid1 Volume Shares"
+            "description": "收盘买一量，单位为股。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Closing Bid1 Volume Shares",
+            "x-business": "stock_order_book",
+            "x-unit": "share"
           },
           "closing_bid2_price": {
             "anyOf": [
@@ -3385,8 +3767,13 @@
                 "type": "null"
               }
             ],
-            "description": "收盘买二量，单位为股。",
-            "title": "Closing Bid2 Volume Shares"
+            "description": "收盘买二量，单位为股。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Closing Bid2 Volume Shares",
+            "x-business": "stock_order_book",
+            "x-unit": "share"
           },
           "closing_bid3_price": {
             "anyOf": [
@@ -3411,8 +3798,13 @@
                 "type": "null"
               }
             ],
-            "description": "收盘买三量，单位为股。",
-            "title": "Closing Bid3 Volume Shares"
+            "description": "收盘买三量，单位为股。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Closing Bid3 Volume Shares",
+            "x-business": "stock_order_book",
+            "x-unit": "share"
           },
           "closing_bid4_price": {
             "anyOf": [
@@ -3437,8 +3829,13 @@
                 "type": "null"
               }
             ],
-            "description": "收盘买四量，单位为股。",
-            "title": "Closing Bid4 Volume Shares"
+            "description": "收盘买四量，单位为股。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Closing Bid4 Volume Shares",
+            "x-business": "stock_order_book",
+            "x-unit": "share"
           },
           "closing_bid5_price": {
             "anyOf": [
@@ -3463,8 +3860,13 @@
                 "type": "null"
               }
             ],
-            "description": "收盘买五量，单位为股。",
-            "title": "Closing Bid5 Volume Shares"
+            "description": "收盘买五量，单位为股。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Closing Bid5 Volume Shares",
+            "x-business": "stock_order_book",
+            "x-unit": "share"
           },
           "code": {
             "description": "不含交易所前缀的六位股票代码。",
@@ -3511,16 +3913,30 @@
             "title": "First Limit Up At"
           },
           "free_float_market_cap_cny": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "description": "流通市值，单位为人民币元。",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Free Float Market Cap Cny",
-            "type": "string"
+            "x-business": "stock_monetary_amount",
+            "x-unit": "CNY"
           },
           "free_float_shares": {
-            "description": "自由流通股本，单位为股。",
+            "description": "自由流通股本，单位为股。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
             "exclusiveMinimum": 0.0,
             "title": "Free Float Shares",
-            "type": "integer"
+            "type": "integer",
+            "x-business": "stock_share_capital",
+            "x-unit": "share"
           },
           "free_float_turnover_rate_pct": {
             "anyOf": [
@@ -3532,8 +3948,10 @@
                 "type": "null"
               }
             ],
-            "description": "自由流通换手率，单位为百分比。",
-            "title": "Free Float Turnover Rate Pct"
+            "description": "自由流通换手率，单位为百分比。 成交股数/自由流通股数×100%，分子分母均为股。",
+            "title": "Free Float Turnover Rate Pct",
+            "x-business": "stock_turnover_rate",
+            "x-unit": "percent"
           },
           "indicator_ingestion_id": {
             "description": "指标来源采集批次标识。",
@@ -3624,6 +4042,17 @@
             "title": "Previous Close",
             "type": "string"
           },
+          "quantity_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantityQuality"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "数量单位认证与完整性状态; 未知单位数量为null, 不能解释为零。"
+          },
           "source_observation_ingestion_id": {
             "anyOf": [
               {
@@ -3661,7 +4090,9 @@
               }
             ],
             "description": "数据源报告的封单资金，单位为人民币元。",
-            "title": "Source Reported Sealed Funds Cny"
+            "title": "Source Reported Sealed Funds Cny",
+            "x-business": "stock_monetary_amount",
+            "x-unit": "CNY"
           },
           "symbol": {
             "description": "带交易所前缀的标准证券代码。",
@@ -3678,8 +4109,13 @@
                 "type": "null"
               }
             ],
-            "description": "成交量，单位为股。",
-            "title": "Volume"
+            "description": "成交量，单位为股。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Volume",
+            "x-business": "stock_traded_volume",
+            "x-unit": "share"
           }
         },
         "required": [
@@ -3782,6 +4218,17 @@
           "quality": {
             "$ref": "#/components/schemas/DailyLimitUpQualitySummary",
             "description": "数据质量摘要。"
+          },
+          "quantity_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantityQuality"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "数量单位认证与完整性状态; 未知单位数量为null, 不能解释为零。"
           },
           "rejected_count": {
             "description": "未通过校验的候选记录数。",
@@ -7521,7 +7968,9 @@
               }
             ],
             "description": "流通市值，单位为人民币元。",
-            "title": "Circulating Market Value"
+            "title": "Circulating Market Value",
+            "x-business": "stock_monetary_amount",
+            "x-unit": "CNY"
           },
           "circulating_shares": {
             "anyOf": [
@@ -7532,8 +7981,13 @@
                 "type": "null"
               }
             ],
-            "description": "流通股本，单位为股。",
-            "title": "Circulating Shares"
+            "description": "流通股本，单位为股。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Circulating Shares",
+            "x-business": "stock_share_capital",
+            "x-unit": "share"
           },
           "close": {
             "anyOf": [
@@ -7589,8 +8043,13 @@
                 "type": "null"
               }
             ],
-            "description": "自由流通股本，单位为股。",
-            "title": "Free Float Shares"
+            "description": "自由流通股本，单位为股。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Free Float Shares",
+            "x-business": "stock_share_capital",
+            "x-unit": "share"
           },
           "free_float_turnover_rate_pct": {
             "anyOf": [
@@ -7602,8 +8061,10 @@
                 "type": "null"
               }
             ],
-            "description": "自由流通换手率，单位为百分比。",
-            "title": "Free Float Turnover Rate Pct"
+            "description": "自由流通换手率，单位为百分比。 成交股数/自由流通股数×100%，分子分母均为股。",
+            "title": "Free Float Turnover Rate Pct",
+            "x-business": "stock_turnover_rate",
+            "x-unit": "percent"
           },
           "pb": {
             "anyOf": [
@@ -7685,6 +8146,17 @@
             "description": "滚动市销率，倍数。",
             "title": "Ps Ttm"
           },
+          "quantity_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantityQuality"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "数量单位认证与完整性状态; 未知单位数量为null, 不能解释为零。"
+          },
           "symbol": {
             "description": "带交易所前缀的标准证券代码。",
             "title": "Symbol",
@@ -7701,7 +8173,9 @@
               }
             ],
             "description": "总市值，单位为人民币元。",
-            "title": "Total Market Value"
+            "title": "Total Market Value",
+            "x-business": "stock_monetary_amount",
+            "x-unit": "CNY"
           },
           "total_shares": {
             "anyOf": [
@@ -7712,8 +8186,13 @@
                 "type": "null"
               }
             ],
-            "description": "总股本，单位为股。",
-            "title": "Total Shares"
+            "description": "总股本，单位为股。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Total Shares",
+            "x-business": "stock_share_capital",
+            "x-unit": "share"
           },
           "trade_date": {
             "description": "交易日。",
@@ -7731,8 +8210,10 @@
                 "type": "null"
               }
             ],
-            "description": "换手率，单位为百分比。",
-            "title": "Turnover Rate Pct"
+            "description": "换手率，单位为百分比。 成交股数/流通股数×100%，分子分母均为股。",
+            "title": "Turnover Rate Pct",
+            "x-business": "stock_turnover_rate",
+            "x-unit": "percent"
           },
           "volume_ratio": {
             "anyOf": [
@@ -7744,8 +8225,10 @@
                 "type": "null"
               }
             ],
-            "description": "量比，无量纲。",
-            "title": "Volume Ratio"
+            "description": "量比，无量纲。 无量纲，读取来源发布值；来源窗口和盘中折算公式不由本库日线代算，不得将本字段当作未定义的本地均量之比。",
+            "title": "Volume Ratio",
+            "x-business": "provider_volume_ratio",
+            "x-unit": "dimensionless"
           }
         },
         "required": [
@@ -7821,6 +8304,17 @@
             "title": "Missing Codes",
             "type": "array"
           },
+          "quantity_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantityQuality"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "数量单位认证与完整性状态; 未知单位数量为null, 不能解释为零。"
+          },
           "requested_count": {
             "description": "请求的股票代码数量。",
             "maximum": 500.0,
@@ -7878,7 +8372,9 @@
               }
             ],
             "description": "截至快照时点的累计成交金额，单位为人民币元。",
-            "title": "Cumulative Amount Cny"
+            "title": "Cumulative Amount Cny",
+            "x-business": "stock_monetary_amount",
+            "x-unit": "CNY"
           },
           "cumulative_volume_shares": {
             "anyOf": [
@@ -7890,8 +8386,13 @@
                 "type": "null"
               }
             ],
-            "description": "截至快照时点的累计成交量，单位为股。",
-            "title": "Cumulative Volume Shares"
+            "description": "截至快照时点的累计成交量，单位为股。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Cumulative Volume Shares",
+            "x-business": "stock_traded_volume",
+            "x-unit": "share"
           },
           "high": {
             "anyOf": [
@@ -7969,6 +8470,17 @@
             ],
             "description": "上一交易日收盘价。",
             "title": "Previous Close"
+          },
+          "quantity_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantityQuality"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "数量单位认证与完整性状态; 未知单位数量为null, 不能解释为零。"
           },
           "quote_status": {
             "description": "来源行情状态。",
@@ -8077,6 +8589,17 @@
             "maxItems": 500,
             "title": "Missing Codes",
             "type": "array"
+          },
+          "quantity_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantityQuality"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "数量单位认证与完整性状态; 未知单位数量为null, 不能解释为零。"
           },
           "requested_count": {
             "description": "请求的股票代码数量。",
@@ -8260,15 +8783,33 @@
             "type": "string"
           },
           "free_float_market_cap_cny": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "description": "流通市值，单位为人民币元。",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Free Float Market Cap Cny",
-            "type": "string"
+            "title": "Free Float Market Cap Cny"
           },
           "name": {
             "description": "证券或板块名称。",
             "title": "Name",
             "type": "string"
+          },
+          "quantity_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantityQuality"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "数量单位认证与完整性状态; 未知单位数量为null, 不能解释为零。"
           },
           "symbol": {
             "description": "带交易所前缀的标准证券代码。",
@@ -8369,6 +8910,17 @@
             "minimum": 0.0,
             "title": "Omitted Count",
             "type": "integer"
+          },
+          "quantity_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantityQuality"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "数量单位认证与完整性状态; 未知单位数量为null, 不能解释为零。"
           },
           "returned_count": {
             "description": "本次实际返回的记录数。",
@@ -9435,6 +9987,64 @@
           "missing_reason"
         ],
         "title": "MonitorThresholdView",
+        "type": "object"
+      },
+      "QuantityFieldQuality": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "description": "状态的稳定机器可读原因。",
+            "title": "Reason",
+            "type": "string"
+          },
+          "status": {
+            "description": "该数量字段组的认证或完整性状态。",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "reason"
+        ],
+        "title": "QuantityFieldQuality",
+        "type": "object"
+      },
+      "QuantityQuality": {
+        "additionalProperties": false,
+        "properties": {
+          "field_groups": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/QuantityFieldQuality"
+            },
+            "description": "各业务数量字段组的状态与原因。",
+            "title": "Field Groups",
+            "type": "object"
+          },
+          "reason": {
+            "description": "数量认证或缺失的稳定原因。",
+            "title": "Reason",
+            "type": "string"
+          },
+          "status": {
+            "description": "数量认证状态; 未认证数量不得作为股公开。",
+            "title": "Status",
+            "type": "string"
+          },
+          "unit_contract_version": {
+            "const": "stock-quantity.v1",
+            "description": "股票数量单位契约版本。",
+            "title": "Unit Contract Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "unit_contract_version",
+          "status",
+          "reason",
+          "field_groups"
+        ],
+        "title": "QuantityQuality",
         "type": "object"
       },
       "RegulationCoverage": {
@@ -10800,7 +11410,9 @@
               }
             ],
             "description": "来源成交额，单位人民币元；腾讯及新浪未提供时为空，不推算。",
-            "title": "Amount Cny"
+            "title": "Amount Cny",
+            "x-business": "stock_monetary_amount",
+            "x-unit": "CNY"
           },
           "close": {
             "description": "该周期收盘或当前价格，末条可能未完成，单位元。",
@@ -10833,10 +11445,15 @@
             "type": "string"
           },
           "volume_shares": {
-            "description": "该周期来源成交量，单位股；东财/腾讯手乘100，新浪直接读股。",
+            "description": "该周期来源成交量，单位股；东财/腾讯手乘100，新浪直接读股。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Volume Shares",
-            "type": "string"
+            "type": "string",
+            "x-business": "stock_traded_volume",
+            "x-unit": "share"
           }
         },
         "required": [
@@ -10936,13 +11553,20 @@
               }
             ],
             "description": "来源累计成交额，单位人民币元；缺失为空，不使用0代替。",
-            "title": "Cumulative Amount Cny"
+            "title": "Cumulative Amount Cny",
+            "x-business": "stock_monetary_amount",
+            "x-unit": "CNY"
           },
           "cumulative_volume_shares": {
-            "description": "来源累计成交量，单位股；逐行手乘100，不再次累加。",
+            "description": "来源累计成交量，单位股；逐行手乘100，不再次累加。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Cumulative Volume Shares",
-            "type": "string"
+            "type": "string",
+            "x-business": "stock_traded_volume",
+            "x-unit": "share"
           },
           "price": {
             "description": "来源分时价格，单位元。",
@@ -11079,7 +11703,9 @@
               }
             ],
             "description": "累计成交金额，单位人民币元。",
-            "title": "Amount Cny"
+            "title": "Amount Cny",
+            "x-business": "stock_monetary_amount",
+            "x-unit": "CNY"
           },
           "change_pct": {
             "anyOf": [
@@ -11122,7 +11748,9 @@
               }
             ],
             "description": "来源流通市值，单位人民币元。",
-            "title": "Float Market Value Cny"
+            "title": "Float Market Value Cny",
+            "x-business": "stock_monetary_amount",
+            "x-unit": "CNY"
           },
           "industry": {
             "anyOf": [
@@ -11216,7 +11844,9 @@
               }
             ],
             "description": "来源总市值，单位人民币元。",
-            "title": "Total Market Value Cny"
+            "title": "Total Market Value Cny",
+            "x-business": "stock_monetary_amount",
+            "x-unit": "CNY"
           },
           "turnover_rate_pct": {
             "anyOf": [
@@ -11228,8 +11858,10 @@
                 "type": "null"
               }
             ],
-            "description": "换手率，单位百分比。",
-            "title": "Turnover Rate Pct"
+            "description": "换手率，单位百分比。 成交股数/流通股数×100%，分子分母均为股。",
+            "title": "Turnover Rate Pct",
+            "x-business": "stock_turnover_rate",
+            "x-unit": "percent"
           },
           "volume_ratio": {
             "anyOf": [
@@ -11241,8 +11873,10 @@
                 "type": "null"
               }
             ],
-            "description": "来源量比，缺失为空。",
-            "title": "Volume Ratio"
+            "description": "来源量比，缺失为空。 无量纲，读取来源发布值；来源窗口和盘中折算公式不由本库日线代算，不得将本字段当作未定义的本地均量之比。",
+            "title": "Volume Ratio",
+            "x-business": "provider_volume_ratio",
+            "x-unit": "dimensionless"
           },
           "volume_shares": {
             "anyOf": [
@@ -11254,8 +11888,13 @@
                 "type": "null"
               }
             ],
-            "description": "截至来源时点的累计成交量，单位股，来源手乘100。",
-            "title": "Volume Shares"
+            "description": "截至来源时点的累计成交量，单位股，来源手乘100。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Volume Shares",
+            "x-business": "stock_traded_volume",
+            "x-unit": "share"
           }
         },
         "required": [
@@ -12595,8 +13234,13 @@
                 "type": "null"
               }
             ],
-            "description": "盘口档位数量，单位为股。",
-            "title": "Volume Shares"
+            "description": "盘口档位数量，单位为股。 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Volume Shares",
+            "x-business": "stock_order_book",
+            "x-unit": "share"
           }
         },
         "required": [
@@ -12647,7 +13291,7 @@
             "type": "object"
           },
           "factor_catalog_version": {
-            "description": "受控技术因子目录版本",
+            "description": "对外技术因子目录版本; v2隔离未认证数量叶子。",
             "title": "Factor Catalog Version",
             "type": "string"
           },
@@ -12672,10 +13316,33 @@
             "title": "Name",
             "type": "string"
           },
+          "quantity_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantityQuality"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "数量单位认证与完整性状态; 未知单位数量为null, 不能解释为零。"
+          },
           "source_code": {
             "description": "快照来源代码",
             "title": "Source Code",
             "type": "string"
+          },
+          "source_factor_catalog_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "不可变来源快照的原始因子目录版本。",
+            "title": "Source Factor Catalog Version"
           },
           "symbol": {
             "description": "标准证券代码",
@@ -12722,6 +13389,16 @@
       },
       "StockTechnicalFactorQuery": {
         "additionalProperties": false,
+        "examples": [
+          {
+            "codes": [
+              "601188",
+              "000001",
+              "600000"
+            ],
+            "trade_date": "2026-10-15"
+          }
+        ],
         "properties": {
           "codes": {
             "description": "六位股票代码集合, 最多100个, 重复代码去重",
@@ -13884,7 +14561,7 @@
     },
     "/api/v1/daily-limit-down-list": {
       "get": {
-        "description": "返回指定交易日最新或指定版本的沪深主板跌停快照，包含规范价格、来源末次封板、收盘卖一至卖五和卖一计算封单额、质量摘要及追溯信息。首次封板时间和累计时长在来源不可得时保持空值；不回退日期或填造缺失数据。",
+        "description": "返回指定交易日最新或指定版本的沪深主板跌停快照，包含规范价格、来源末次封板、收盘卖一至卖五和卖一计算封单额、质量摘要及追溯信息。首次封板时间和累计时长在来源不可得时保持空值；不回退日期或填造缺失数据。未认证的默认版本返回deferred和空成员；显式请求未认证旧版本返回409 quantity_units_unverified。",
         "operationId": "daily_limit_down_list_api_v1_daily_limit_down_list_get",
         "parameters": [
           {
@@ -13974,6 +14651,16 @@
             },
             "description": "Not Found"
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -14008,7 +14695,7 @@
     },
     "/api/v1/daily-limit-up-list": {
       "get": {
-        "description": "返回指定交易日最新或指定版本的涨停列表快照，包含不可变版本、状态、质量摘要、未复权价格事实、当日自由流通股本、来源封单事实、按收盘买一计算的封单额、可选五档买盘和来源追溯信息。不使用日期或数值回退；高精度数值序列化为字符串。",
+        "description": "返回指定交易日最新或指定版本的涨停列表快照，包含不可变版本、状态、质量摘要、未复权价格事实、当日自由流通股本、来源封单事实、按收盘买一计算的封单额、可选五档买盘和来源追溯信息。不使用日期或数值回退；高精度数值序列化为字符串。未认证的默认版本返回deferred和空成员；显式请求未认证旧版本返回409 quantity_units_unverified。",
         "operationId": "daily_limit_up_list_api_v1_daily_limit_up_list_get",
         "parameters": [
           {
@@ -14097,6 +14784,16 @@
               }
             },
             "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
           },
           "422": {
             "content": {

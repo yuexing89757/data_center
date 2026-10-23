@@ -351,6 +351,18 @@ def test_raw_replay_reuses_verified_raw_lineage_without_new_manifest(
     assert summary.status == "succeeded"
     assert persistence.created[0].replayed_from_raw_id == RAW_ID
     assert persistence.created[0].request_params["replay_source_requested_at"] == NOW.isoformat()
+    assert (
+        persistence.created[0].request_params["provider_schema_version"]
+        == source.manifest.schema_version
+    )
+    assert (
+        persistence.created[0].request_params["quantity_unit_contract_version"]
+        == "stock-quantity.v1"
+    )
+    assert (
+        persistence.created[0].request_params["quantity_normalizer_version"]
+        == "quantity-normalizer.v1"
+    )
     completed, replay_manifest, envelopes = persistence.security_commits[0]
     assert replay_manifest is None
     assert completed.ingestion_id == REPLAY_RUN_ID
@@ -673,7 +685,7 @@ def test_dragon_tiger_replay_keeps_missing_security_traded_start_as_quality(
     assert any(item.rule_code == "DT_TRIGGER_START_UNAVAILABLE" for item in findings)
 
 
-def test_raw_replay_normalizes_and_commits_capital_facts(tmp_path: Path) -> None:
+def test_raw_replay_rejects_uncertified_capital_and_retains_raw(tmp_path: Path) -> None:
     store = LocalRawStore(tmp_path)
     source = _source(
         store,
@@ -694,20 +706,28 @@ def test_raw_replay_normalizes_and_commits_capital_facts(tmp_path: Path) -> None
         request_params={"source_symbol": "600000", "mode": "backfill"},
     )
     persistence = StubReliabilityPersistence(source)
+    original_rows = store.read_jsonl(source.manifest)
+    original_bytes = (tmp_path / source.manifest.object_path).read_bytes()
+    with pytest.raises(ProviderError, match="quantity unit contract unverified"):
+        RawReplayService(
+            raw_store=store,
+            persistence=persistence,
+            clock=lambda: NOW,
+            uuid_factory=lambda: REPLAY_RUN_ID,
+        ).replay(SOURCE_RUN_ID)
 
-    summary = RawReplayService(
-        raw_store=store,
-        persistence=persistence,
-        clock=lambda: NOW,
-        uuid_factory=lambda: REPLAY_RUN_ID,
-    ).replay(SOURCE_RUN_ID)
-
-    assert summary.accepted_rows == 1
-    completed, replay_manifest, envelopes, findings = persistence.capital_commits[0]
-    assert completed.status is IngestionStatus.SUCCEEDED
+    assert persistence.capital_commits == []
+    failed, replay_manifest, findings = persistence.rejected_commits[0]
+    assert failed.status is IngestionStatus.FAILED
+    assert failed.accepted_rows == 0
+    assert failed.replayed_from_raw_id == source.manifest.raw_id
+    assert failed.request_params["provider_schema_version"] == "akshare.capital.v1"
     assert replay_manifest is None
-    assert findings == ()
-    assert envelopes[0].record.symbol == "SSE:600000"
+    assert findings[0].rule_code == "capital.raw_replay"
+    assert findings[0].blocks_core_write
+    assert store.read_jsonl(source.manifest) == original_rows
+    assert (tmp_path / source.manifest.object_path).read_bytes() == original_bytes
+    assert len(list(tmp_path.rglob("*.jsonl"))) == 1
 
 
 def test_raw_replay_normalizes_and_commits_shareholder_count_without_new_manifest(
@@ -943,6 +963,53 @@ def test_raw_replay_blocks_an_unsupported_schema_and_records_quality(tmp_path: P
         ).replay(SOURCE_RUN_ID)
 
     assert persistence.rejected_commits[0][2][0].details == {"error_type": "ProviderError"}
+
+
+@pytest.mark.parametrize("schema", ["pytdx.remote_daily_bar.v1", "pytdx.remote_daily_bar.v2"])
+def test_corrected_daily_replay_keeps_raw_version_and_records_new_normalizer(
+    tmp_path: Path, schema: str
+) -> None:
+    store = LocalRawStore(tmp_path)
+    source = _source(
+        store,
+        provider=ProviderCode.PYTDX,
+        dataset=DatasetCode.DAILY_BAR,
+        schema_version=schema,
+        rows=[
+            {
+                "date": "20260729",
+                "price_scale": "1",
+                "open": "10",
+                "high": "10",
+                "low": "10",
+                "close": "10",
+                "volume": "0.37",
+                "amount": "370",
+            }
+        ],
+        request_params={
+            "source_symbol": "sh.600000",
+            "quantity_normalizer_version": "legacy",
+            "source_quantity_unit": "lot",
+        },
+    )
+    persistence = StubReliabilityPersistence(source)
+    summary = RawReplayService(
+        raw_store=store,
+        persistence=persistence,
+        clock=lambda: NOW,
+        uuid_factory=lambda: REPLAY_RUN_ID,
+    ).replay(SOURCE_RUN_ID)
+    assert summary.status == "succeeded"
+    completed, replay_manifest, envelopes, _ = persistence.daily_commits[0]
+    assert replay_manifest is None
+    assert envelopes[0].record.volume == 37
+    assert completed.request_params["provider_schema_version"] == schema
+    assert completed.request_params["quantity_normalizer_version"] == "quantity-normalizer.v1"
+    assert completed.request_params["source_quantity_unit"] == "lot"
+    assert source.request_params["quantity_normalizer_version"] == "legacy"
+    assert source.manifest.schema_version == schema
+    assert store.read_jsonl(source.manifest)[0]["volume"] == "0.37"
 
 
 def test_stale_recovery_supports_dry_run_and_atomic_recovery(tmp_path: Path) -> None:

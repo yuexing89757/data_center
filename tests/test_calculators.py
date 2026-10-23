@@ -293,3 +293,73 @@ def test_security_type_remains_unrelated_to_classification() -> None:
     )
 
     assert security.security_type is SecurityType.STOCK
+
+
+@pytest.mark.parametrize(
+    ("missing", "volume", "amount", "volume_count", "amount_count"),
+    [
+        ("bar", None, None, 1, 1),
+        ("volume", None, Decimal("1025"), 1, 2),
+        ("amount", 137, None, 2, 1),
+        ("both", None, None, 1, 1),
+        ("zero", 100, Decimal("1000"), 2, 2),
+        ("none", 137, Decimal("1025"), 2, 2),
+    ],
+)
+def test_classification_totals_require_independent_full_member_coverage(
+    missing: str,
+    volume: int | None,
+    amount: Decimal | None,
+    volume_count: int,
+    amount_count: int,
+) -> None:
+    first = _bar(DAY_1, close="10", previous_close="10")
+    second = replace(
+        first,
+        symbol="SZSE:000001",
+        volume=None if missing in {"volume", "both"} else (0 if missing == "zero" else 37),
+        amount=None
+        if missing in {"amount", "both"}
+        else (Decimal(0) if missing == "zero" else Decimal("25")),
+        trade_status=TradeStatus.SUSPENDED,
+    )
+    inputs = replace(
+        _inputs(),
+        daily_bars=(first,) if missing == "bar" else (first, second),
+        distributions=(),
+        memberships=(replace(_inputs().memberships[0], members=(SYMBOL, second.symbol)),),
+    )
+
+    output = calculate_derived_facts(inputs, start_date=DAY_1, end_date=DAY_1)
+    metric = output.classification_metrics[0]
+
+    assert metric.member_count == 2
+    assert metric.total_volume == volume
+    assert metric.total_amount == amount
+    assert metric.volume_member_count == volume_count
+    assert metric.amount_member_count == amount_count
+    assert metric.priced_member_count == (1 if missing == "bar" else 2)
+    assert metric.equal_weight_return == Decimal(0)
+
+
+@pytest.mark.parametrize("field", ["volume_member_count", "amount_member_count"])
+@pytest.mark.parametrize("invalid", [-1, 2])
+def test_classification_quantity_coverage_cannot_exceed_members(field: str, invalid: int) -> None:
+    metric = calculate_derived_facts(
+        _inputs(), start_date=DAY_1, end_date=DAY_1
+    ).classification_metrics[0]
+
+    with pytest.raises(ValueError, match="count"):
+        replace(metric, **{field: invalid})
+
+
+def test_empty_classification_has_explicit_zero_totals_and_full_empty_coverage() -> None:
+    inputs = replace(_inputs(), memberships=(replace(_inputs().memberships[0], members=()),))
+    metric = calculate_derived_facts(
+        inputs, start_date=DAY_1, end_date=DAY_1
+    ).classification_metrics[0]
+
+    assert metric.member_count == 0
+    assert metric.total_volume == 0
+    assert metric.total_amount == Decimal(0)
+    assert metric.volume_member_count == metric.amount_member_count == 0

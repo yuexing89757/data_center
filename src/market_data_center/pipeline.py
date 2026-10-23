@@ -89,6 +89,13 @@ from market_data_center.providers.contracts import (
     ShareholderCountProvider,
     Top10FloatHoldersProvider,
 )
+from market_data_center.providers.quantity_units import (
+    NORMALIZER_VERSION,
+    UNIT_CONTRACT_VERSION,
+    quantity_failure_details,
+    validate_quantity_metadata,
+)
+from market_data_center.quantity_certification import check_standard_quantities
 from market_data_center.raw_store import LocalRawStore, StoredRawObject
 from market_data_center.shareholder_count_batch import (
     PreparedShareholderCountBatch,
@@ -289,7 +296,7 @@ class IngestionPipeline:
             run = self._start_run(DatasetCode.SECURITY, {})
             try:
                 batch = self._provider.fetch_securities()
-                manifest, records = self._stage_batch(run, batch)
+                run, manifest, records = self._stage_batch(run, batch)
                 completed = self._completed_run(run, len(batch.raw_rows), len(records), 0)
                 self._persistence.commit_security_batch(
                     completed, manifest, self._envelopes(run.ingestion_id, records)
@@ -310,7 +317,7 @@ class IngestionPipeline:
             try:
                 provider = cast(RegulationStSnapshotProvider, self._provider)
                 batch = provider.fetch_regulation_st_snapshot(trade_date)
-                manifest, records = self._stage_batch(run, batch)
+                run, manifest, records = self._stage_batch(run, batch)
                 if len(records) != 1 or records[0].trade_date != trade_date:
                     error = ProviderError(
                         "ST snapshot must contain one record for the requested day"
@@ -334,7 +341,7 @@ class IngestionPipeline:
             run = self._start_run(DatasetCode.TRADING_CALENDAR, params)
             try:
                 batch = self._provider.fetch_trading_calendar(start_date, end_date)
-                manifest, records = self._stage_batch(run, batch)
+                run, manifest, records = self._stage_batch(run, batch)
                 boundaries = self._persistence.trading_day_boundaries(start_date, end_date)
                 calculated = calculate_trading_day_links(
                     records,
@@ -383,7 +390,7 @@ class IngestionPipeline:
             run = self._start_run(DatasetCode.DAILY_BAR, params)
             try:
                 batch = self._provider.fetch_daily_bars(source_symbol, start_date, end_date)
-                manifest, normalized = self._stage_batch(run, batch)
+                run, manifest, normalized = self._stage_batch(run, batch)
                 records = list(normalized)
                 resolved_symbols = (
                     set(known_symbols)
@@ -454,7 +461,7 @@ class IngestionPipeline:
             run = self._start_run(DatasetCode.CAPITAL, params)
             try:
                 batch = self._provider.fetch_capital(source_symbol)
-                manifest, normalized = self._stage_batch(run, batch)
+                run, manifest, normalized = self._stage_batch(run, batch)
                 records = list(normalized)
                 known_symbols = self._persistence.known_symbols(
                     {record.symbol for record in records}
@@ -516,7 +523,7 @@ class IngestionPipeline:
                 provider = cast(ShareholderCountProvider, self._provider)
                 batch = provider.fetch_shareholder_counts(source_symbol, start_date, end_date)
                 fetched_rows = len(batch.raw_rows)
-                manifest, normalized = self._stage_batch(run, batch)
+                run, manifest, normalized = self._stage_batch(run, batch)
                 if any(not isinstance(record, ShareholderCountRecord) for record in normalized):
                     raise ProviderError(
                         "shareholder-count request normalized to an unexpected record"
@@ -611,7 +618,7 @@ class IngestionPipeline:
                     announcement_date, period=period, symbol=symbol
                 )
                 fetched_rows = len(batch.raw_rows)
-                manifest, normalized = self._stage_batch(run, batch)
+                run, manifest, normalized = self._stage_batch(run, batch)
                 if any(not isinstance(record, Top10FloatHolderRecord) for record in normalized):
                     raise ProviderError(
                         "top10 float-holder request normalized to an unexpected record"
@@ -665,7 +672,7 @@ class IngestionPipeline:
                 provider = cast(BoardMoneyflowProvider, self._provider)
                 batch = provider.fetch_board_moneyflows(trade_date)
                 fetched_rows = len(batch.raw_rows)
-                manifest, normalized = self._stage_batch(run, batch)
+                run, manifest, normalized = self._stage_batch(run, batch)
                 if any(not isinstance(record, BoardMoneyflowRecord) for record in normalized):
                     raise ProviderError(
                         "board money-flow request normalized to an unexpected record"
@@ -709,7 +716,7 @@ class IngestionPipeline:
             try:
                 provider = cast(ConvertibleBondProvider, self._provider)
                 batch = provider.fetch_convertible_bonds()
-                manifest, normalized = self._stage_batch(run, batch)
+                run, manifest, normalized = self._stage_batch(run, batch)
                 records = list(normalized)
                 known_symbols = self._persistence.known_symbols(
                     {record.symbol for record in records}
@@ -760,7 +767,7 @@ class IngestionPipeline:
                 batch = provider.fetch_convertible_bond_daily_bars(
                     source_symbol, start_date, end_date
                 )
-                manifest, normalized = self._stage_batch(run, batch)
+                run, manifest, normalized = self._stage_batch(run, batch)
                 records = list(normalized)
                 known_symbols = self._persistence.known_symbols(
                     {record.symbol for record in records}
@@ -841,7 +848,7 @@ class IngestionPipeline:
             try:
                 provider = cast(DeductedProfitProvider, self._provider)
                 batch = provider.fetch_deducted_profit_updates(as_of_date)
-                manifest, normalized = self._stage_batch(run, batch)
+                run, manifest, normalized = self._stage_batch(run, batch)
                 records = tuple(normalized)
                 validated = validate_deducted_profits(
                     records,
@@ -873,7 +880,7 @@ class IngestionPipeline:
             run = self._start_run(DatasetCode.STOCK_DAILY_INDICATOR, params)
             try:
                 batch = fetch()
-                manifest, normalized = self._stage_batch(run, batch)
+                run, manifest, normalized = self._stage_batch(run, batch)
                 records = list(normalized)
                 validation = validate_stock_daily_indicators(
                     records,
@@ -932,7 +939,7 @@ class IngestionPipeline:
                 batch = self._provider.fetch_classification_catalog(
                     classification_type, snapshot_date
                 )
-                manifest, normalized = self._stage_batch(run, batch)
+                run, manifest, normalized = self._stage_batch(run, batch)
                 if len(normalized) != 1 or not isinstance(
                     normalized[0], ClassificationCatalogSnapshotRecord
                 ):
@@ -984,7 +991,7 @@ class IngestionPipeline:
                 batch = self._provider.fetch_classification_members(
                     classification_type, classification_code, snapshot_date
                 )
-                manifest, normalized = self._stage_batch(run, batch)
+                run, manifest, normalized = self._stage_batch(run, batch)
                 if len(normalized) != 1 or not isinstance(
                     normalized[0], ClassificationMemberSnapshotRecord
                 ):
@@ -1071,15 +1078,22 @@ class IngestionPipeline:
 
     def _stage_batch[RecordT: ProviderRecord](
         self, run: IngestionRun, batch: ProviderBatch[RecordT]
-    ) -> tuple[RawManifest, tuple[RecordT, ...]]:
+    ) -> tuple[IngestionRun, RawManifest, tuple[RecordT, ...]]:
+        run = _provider_metadata_run(run, batch)
         manifest = self._store_raw(run, batch)
         try:
+            validate_quantity_metadata(
+                provider=self._provider.source_code,
+                schema_version=batch.schema_version,
+                request_params=batch.request_params,
+            )
             records = tuple(batch.records)
+            check_standard_quantities(records)
             self._ensure_record_source(records)
         except ProviderError as error:
             self._record_normalization_failure(run, manifest, len(batch.raw_rows), error)
             raise _RecordedProviderError(str(error)) from error
-        return manifest, records
+        return run, manifest, records
 
     def _ensure_record_source[RecordT: ProviderRecord](self, records: Sequence[RecordT]) -> None:
         mismatched = sum(record.source_code != self._provider.source_code for record in records)
@@ -1111,7 +1125,7 @@ class IngestionPipeline:
             severity=QualitySeverity.ERROR,
             status=QualityStatus.FAILED,
             message="provider response normalization failed",
-            details={"error_type": type(error).__name__},
+            details={"error_type": type(error).__name__, **quantity_failure_details(error)},
         )
         self._persistence.commit_rejected_batch(failed, manifest, [result])
 
@@ -1194,7 +1208,7 @@ class BoardIndexIngestionPipeline:
             run = self._start_run(DatasetCode.BOARD_INDEX, {})
             try:
                 batch = self._provider.fetch_board_indexes()
-                manifest, normalized = self._stage_batch(run, batch)
+                run, manifest, normalized = self._stage_batch(run, batch)
                 if not normalized or any(
                     not isinstance(record, BoardIndexRecord) for record in normalized
                 ):
@@ -1226,7 +1240,7 @@ class BoardIndexIngestionPipeline:
             run = self._start_run(DatasetCode.BOARD_INDEX_DAILY_BAR, params)
             try:
                 batch = self._provider.fetch_board_index_daily_bars(board_id, start_date, end_date)
-                manifest, normalized = self._stage_batch(run, batch)
+                run, manifest, normalized = self._stage_batch(run, batch)
                 if any(not isinstance(record, BoardIndexDailyBarRecord) for record in normalized):
                     raise ProviderError("board-index daily bars normalized to an unexpected record")
                 records = cast(tuple[BoardIndexDailyBarRecord, ...], normalized)
@@ -1272,7 +1286,7 @@ class BoardIndexIngestionPipeline:
             run = self._start_run(DatasetCode.BOARD_INDEX_CONSTITUENT_SNAPSHOT, params)
             try:
                 batch = self._provider.fetch_board_index_constituents(board_id, snapshot_date)
-                manifest, normalized = self._stage_batch(run, batch)
+                run, manifest, normalized = self._stage_batch(run, batch)
                 if len(normalized) != 1 or not isinstance(
                     normalized[0], BoardIndexConstituentSnapshotRecord
                 ):
@@ -1325,7 +1339,8 @@ class BoardIndexIngestionPipeline:
         self,
         run: IngestionRun,
         batch: ProviderBatch[BoardIndexProviderRecord],
-    ) -> tuple[RawManifest, tuple[BoardIndexProviderRecord, ...]]:
+    ) -> tuple[IngestionRun, RawManifest, tuple[BoardIndexProviderRecord, ...]]:
+        run = _provider_metadata_run(run, batch)
         stored = self._raw_store.write_jsonl(
             provider=run.provider_code.value,
             dataset=run.dataset_code.value,
@@ -1358,7 +1373,7 @@ class BoardIndexIngestionPipeline:
             provider_error = ProviderError("provider response normalization failed")
             self._record_normalization_failure(run, manifest, len(batch.raw_rows), provider_error)
             raise _RecordedProviderError(str(provider_error)) from error
-        return manifest, records
+        return run, manifest, records
 
     def _record_normalization_failure(
         self,
@@ -1440,3 +1455,18 @@ class BoardIndexIngestionPipeline:
             error_summary=f"{type(error).__name__}: ingestion failed",
         )
         self._persistence.fail_ingestion_run(failed)
+
+
+def _provider_metadata_run[RecordT: ProviderRecord](
+    run: IngestionRun, batch: ProviderBatch[RecordT]
+) -> IngestionRun:
+    return replace(
+        run,
+        request_params={
+            **run.request_params,
+            **batch.request_params,
+            "provider_schema_version": batch.schema_version,
+            "quantity_unit_contract_version": UNIT_CONTRACT_VERSION,
+            "quantity_normalizer_version": NORMALIZER_VERSION,
+        },
+    )

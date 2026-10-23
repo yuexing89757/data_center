@@ -16,6 +16,10 @@ from market_data_center.domain.auction_indicative import (
     SourceDisplayClassification,
 )
 from market_data_center.providers.contracts import ProviderBatch, ProviderError, RawRow
+from market_data_center.providers.quantity_units import (
+    normalize_source_stock_quantity,
+    quantity_unit_metadata,
+)
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 SCHEMA_VERSION = "eastmoney.call_auction_indicative_detail.v1"
@@ -83,7 +87,12 @@ class EastmoneyAuctionIndicativeProvider:
         raw_rows = tuple(_raw_row(value, index) for index, value in enumerate(details))
         return ProviderBatch(
             raw_rows=raw_rows,
-            request_params={"symbol": symbol, "trade_date": trade_date.isoformat(), "secid": secid},
+            request_params={
+                "symbol": symbol,
+                "trade_date": trade_date.isoformat(),
+                "secid": secid,
+                **quantity_unit_metadata(source_unit="lot"),
+            },
             schema_version=SCHEMA_VERSION,
             record_factory=lambda: _records(raw_rows, symbol, trade_date),
         )
@@ -157,9 +166,23 @@ def _records(
                 trade_date=trade_date,
                 observed_at=observed_at,
                 indicative_price=price,
-                displayed_volume_shares=int(lots) * 100,
+                displayed_volume_shares=_displayed_volume(row["volume_lots"]),
                 source_sequence=int(row["source_sequence"]),
                 source_display_classification=display,
             )
         )
     return tuple(result)
+
+
+def _displayed_volume(value: str) -> int:
+    shares = normalize_source_stock_quantity(
+        value,
+        provider="eastmoney",
+        endpoint="stock/details/get",
+        schema_version=SCHEMA_VERSION,
+        instrument_type="stock",
+        field="volume_lots",
+    )
+    if shares is None:
+        raise ProviderError("Eastmoney auction displayed volume is missing")
+    return shares

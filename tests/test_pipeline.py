@@ -43,7 +43,7 @@ from market_data_center.domain import (
 from market_data_center.domain.entities import CalculatedTradingDay
 from market_data_center.domain.records import RegulationStSnapshotRecord
 from market_data_center.pipeline import BoardIndexIngestionPipeline, IngestionPipeline
-from market_data_center.providers.contracts import ProviderBatch
+from market_data_center.providers.contracts import ProviderBatch, ProviderError
 from market_data_center.raw_store import LocalRawStore
 
 
@@ -1034,3 +1034,89 @@ def test_normalization_failure_keeps_raw_and_quality_evidence(tmp_path: Path) ->
     assert quality_results[0].rule_code == "security.provider_normalization"
     assert "sensitive detail" not in quality_results[0].message
     assert persistence.security_commits == []
+
+
+def test_provider_batch_metadata_survives_success_and_overrides_source_request(
+    tmp_path: Path,
+) -> None:
+    class MetadataProvider(StubProvider):
+        def fetch_daily_bars(self, source_symbol, start_date, end_date):
+            batch = super().fetch_daily_bars(source_symbol, start_date, end_date)
+            return ProviderBatch(
+                records=batch.records,
+                raw_rows=batch.raw_rows,
+                request_params={
+                    "endpoint": "query_history_k_data_plus",
+                    "source_quantity_unit": "share",
+                    "source_symbol": "sh.600000",
+                },
+                schema_version="baostock.daily_bar.v1",
+            )
+
+    persistence = StubPersistence()
+    run = _pipeline(tmp_path, MetadataProvider(), persistence).ingest_daily_bars(
+        "SSE:600000", date(2026, 7, 28), date(2026, 7, 28)
+    )
+    assert run.request_params["source_symbol"] == "sh.600000"
+    assert run.request_params["endpoint"] == "query_history_k_data_plus"
+    assert run.request_params["quantity_unit_contract_version"] == "stock-quantity.v1"
+    assert run.request_params["quantity_normalizer_version"] == "quantity-normalizer.v1"
+    assert run.request_params["provider_schema_version"] == "baostock.daily_bar.v1"
+    assert persistence.daily_commits[0][0].request_params == run.request_params
+
+
+@pytest.mark.parametrize("value", [True, Decimal("0.37")])
+def test_invalid_standard_quantity_is_failed_with_raw_and_metadata(tmp_path: Path, value) -> None:
+    from dataclasses import replace
+
+    class InvalidProvider(StubProvider):
+        def fetch_daily_bars(self, source_symbol, start_date, end_date):
+            return ProviderBatch(
+                records=[replace(_daily_bar(), volume=value)],
+                raw_rows=[{"volume": str(value)}],
+                request_params={"source_quantity_unit": "share"},
+                schema_version="baostock.daily_bar.v1",
+            )
+
+    persistence = StubPersistence()
+    with pytest.raises(ProviderError, match="standard quantity"):
+        _pipeline(tmp_path, InvalidProvider(), persistence).ingest_daily_bars(
+            "sh.600000", date(2026, 7, 28), date(2026, 7, 28)
+        )
+    run, manifest, findings = persistence.rejected_commits[0]
+    assert run.status is IngestionStatus.FAILED
+    assert run.request_params["source_quantity_unit"] == "share"
+    assert run.request_params["quantity_normalizer_version"] == "quantity-normalizer.v1"
+    assert LocalRawStore(tmp_path).read_jsonl(manifest) == ({"volume": str(value)},)
+    assert findings[0].blocks_core_write
+    assert not persistence.daily_commits
+
+
+def test_unknown_source_unit_fails_batch_with_raw_and_normalizer_metadata(tmp_path: Path) -> None:
+    from market_data_center.providers.quantity_units import normalize_stock_quantity
+
+    class UnknownUnitProvider(StubProvider):
+        def fetch_daily_bars(self, source_symbol, start_date, end_date):
+            def records():
+                normalize_stock_quantity("100", source_unit="unverified", context="fixture")
+                return [_daily_bar()]
+
+            return ProviderBatch(
+                record_factory=records,
+                raw_rows=[{"volume": "100"}],
+                request_params={"source_quantity_unit": "unverified"},
+                schema_version="baostock.daily_bar.v999",
+            )
+
+    persistence = StubPersistence()
+    with pytest.raises(ProviderError, match=r"quantity.*(unit|metadata)"):
+        _pipeline(tmp_path, UnknownUnitProvider(), persistence).ingest_daily_bars(
+            "sh.600000", date(2026, 7, 28), date(2026, 7, 28)
+        )
+    run, manifest, findings = persistence.rejected_commits[0]
+    assert run.request_params["provider_schema_version"] == "baostock.daily_bar.v999"
+    assert run.status is IngestionStatus.FAILED
+    assert findings[0].blocks_core_write
+    assert findings[0].details["quantity_reason"] == "quantity_metadata_conflict"
+    assert LocalRawStore(tmp_path).read_jsonl(manifest) == ({"volume": "100"},)
+    assert not persistence.daily_commits

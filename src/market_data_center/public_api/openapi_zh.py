@@ -441,8 +441,83 @@ def localize_openapi(schema: dict[str, Any]) -> dict[str, Any]:
         for field_name, field_schema in component.get("properties", {}).items():
             if not _contains_chinese(field_schema.get("description")):
                 field_schema["description"] = _description(field_name)
+            _quantity_contract(name, field_name, field_schema)
 
     return schema
+
+
+# Explicit stock response catalog: these rules must never annotate bond/index
+# quantities or count fields just because their names look similar.
+_STOCK_QUANTITY_MODELS = {
+    "DailyBarItem",
+    "DailyLimitUpListItem",
+    "DailyLimitDownListItem",
+    "StockQuoteLevel",
+    "LatestStockQuoteItem",
+    "LatestStockDailyIndicatorItem",
+    "CallAuctionMarketSnapshotItem",
+    "CallAuctionMarketSeriesSnapshotItem",
+    "AuctionOnePriceLimitItem",
+    "AuctionIndicativeDetailItem",
+    "SourceQuoteItem",
+    "SourceBarItem",
+    "SourceMinuteItem",
+}
+_STOCK_SHARE_FIELDS = {
+    "volume",
+    "volume_shares",
+    "cumulative_volume",
+    "cumulative_volume_shares",
+    "displayed_volume_shares",
+    "total_shares",
+    "circulating_shares",
+    "free_float_shares",
+    *(f"{side}{level}_volume" for side in ("bid", "ask") for level in range(1, 6)),
+    *(f"closing_{side}{level}_volume_shares" for side in ("bid", "ask") for level in range(1, 6)),
+}
+_STOCK_CNY_FIELDS = {
+    "amount",
+    "amount_cny",
+    "cumulative_amount",
+    "cumulative_amount_cny",
+    "seal_amount",
+    "closing_bid1_sealing_amount_cny",
+    "closing_ask1_sealing_amount_cny",
+    "source_reported_sealed_funds_cny",
+    "free_float_market_cap_cny",
+    "total_market_value",
+    "circulating_market_value",
+    "total_market_value_cny",
+    "float_market_value_cny",
+}
+
+
+def _quantity_contract(model: str, field: str, schema: dict[str, Any]) -> None:
+    if model not in _STOCK_QUANTITY_MODELS:
+        return
+    if field in _STOCK_SHARE_FIELDS:
+        if "bid" in field or "ask" in field or model == "StockQuoteLevel":
+            business = "stock_order_book"
+        elif field == "displayed_volume_shares":
+            business = "stock_auction_displayed_matching_quantity"
+        elif field in {"total_shares", "circulating_shares", "free_float_shares"}:
+            business = "stock_share_capital"
+        else:
+            business = "stock_traded_volume"
+        schema.update({"x-unit": "share", "x-business": business, "examples": [100]})
+        schema["description"] += " 成交量100股就是100股，不是100手；缺失为null。"
+    elif field in _STOCK_CNY_FIELDS:
+        schema.update({"x-unit": "CNY", "x-business": "stock_monetary_amount"})
+    elif field in {"turnover_rate_pct", "free_float_turnover_rate_pct"}:
+        denominator = "自由流通股数" if field.startswith("free_float") else "流通股数"
+        schema.update({"x-unit": "percent", "x-business": "stock_turnover_rate"})
+        schema["description"] += f" 成交股数/{denominator}×100%，分子分母均为股。"
+    elif field == "volume_ratio":
+        schema.update({"x-unit": "dimensionless", "x-business": "provider_volume_ratio"})
+        schema["description"] += (
+            " 无量纲，读取来源发布值；来源窗口和盘中折算公式不由本库日线代算，"
+            "不得将本字段当作未定义的本地均量之比。"
+        )
 
 
 def _description(field_name: str) -> str:

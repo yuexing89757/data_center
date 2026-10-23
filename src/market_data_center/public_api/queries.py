@@ -667,6 +667,15 @@ class PostgreSQLPublicQueryService:
         *,
         statement_timeout_ms: int | None = None,
     ) -> Sequence[RowMapping]:
+        # All SQL here is the controlled, bounded RPC catalog. A new reader must
+        # fail closed against a database that has not deployed the unit gates.
+        sql = str(statement).strip().rstrip(";")
+        public_read = "api_v1.query_" in sql
+        if public_read:
+            statement = text(
+                f"select quantity_read.* from ({sql}) as quantity_read "
+                "where api_v1.quantity_unit_contract_version() = 'stock-quantity.v1'"
+            )
         try:
             with self._engine.connect() as connection:
                 if statement_timeout_ms is not None:
@@ -674,7 +683,10 @@ class PostgreSQLPublicQueryService:
                         text("select set_config('statement_timeout', :statement_timeout, true)"),
                         {"statement_timeout": f"{statement_timeout_ms}ms"},
                     )
-                return connection.execute(statement, parameters).mappings().all()
+                rows = connection.execute(statement, parameters).mappings().all()
+                if public_read and not rows and " as payload" in sql.lower():
+                    raise PublicQueryUnavailable("quantity unit contract is unavailable")
+                return rows
         except DBAPIError as error:
             _raise_safe_query_error(error)
 
@@ -695,6 +707,8 @@ def _raise_safe_query_error(error: DBAPIError) -> Never:
         raise PublicQueryAmbiguous("stock code is ambiguous across exchanges") from error
     if sqlstate == "P0004":
         raise PublicQueryConflict("monitor batch/date conflict or superseded chain") from error
+    if sqlstate == "PT409":
+        raise PublicQueryConflict("quantity_units_unverified") from error
     if sqlstate == "P0002":
         raise PublicQueryNotFound("requested data was not found") from error
     if sqlstate == "57014":

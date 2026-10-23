@@ -277,6 +277,8 @@ def calculate_classification_metrics(
             returns: list[Decimal] = []
             total_volume = 0
             total_amount = ZERO
+            volume_member_count = 0
+            amount_member_count = 0
             total_market_cap = ZERO
             market_cap_count = 0
             for symbol in active.members:
@@ -284,8 +286,12 @@ def calculate_classification_metrics(
                 metric = daily_metrics_by_key.get((symbol, trade_date))
                 market_cap = market_cap_by_key.get((symbol, trade_date))
                 if bar is not None:
-                    total_volume += bar.volume or 0
-                    total_amount += bar.amount or ZERO
+                    if bar.volume is not None:
+                        total_volume += bar.volume
+                        volume_member_count += 1
+                    if bar.amount is not None:
+                        total_amount += bar.amount
+                        amount_member_count += 1
                 if metric is not None and metric.total_return_1d is not None:
                     returns.append(metric.total_return_1d)
                 if market_cap is not None:
@@ -306,11 +312,17 @@ def calculate_classification_metrics(
                     advancing_count=advancing,
                     declining_count=declining,
                     unchanged_count=unchanged,
-                    total_volume=total_volume,
-                    total_amount=total_amount,
+                    total_volume=(
+                        total_volume if volume_member_count == len(active.members) else None
+                    ),
+                    total_amount=(
+                        total_amount if amount_member_count == len(active.members) else None
+                    ),
                     equal_weight_return=(sum(returns, ZERO) / len(returns) if returns else None),
                     total_market_cap=total_market_cap if market_cap_count else None,
                     market_cap_member_count=market_cap_count,
+                    volume_member_count=volume_member_count,
+                    amount_member_count=amount_member_count,
                 )
             )
     return tuple(output)

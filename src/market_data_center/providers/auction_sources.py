@@ -16,6 +16,12 @@ from urllib.parse import urlencode
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 from zoneinfo import ZoneInfo
 
+from market_data_center.providers.contracts import ProviderError
+from market_data_center.providers.quantity_units import (
+    normalize_source_stock_quantity,
+    stock_instrument_type,
+)
+
 MAX_RESPONSE_BYTES = 8_000_000
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 Endpoint = Literal[
@@ -66,6 +72,17 @@ class AuctionSourcesUpstream(RuntimeError):
 
 class AuctionSourcesInvalid(ValueError):
     """Request parameters are outside the accepted bounded source contract."""
+
+
+def _source_quantity(value: object, *, provider: str, endpoint: str, field: str) -> int | None:
+    return normalize_source_stock_quantity(
+        value,
+        provider=provider,
+        endpoint=endpoint,
+        schema_version="auction_sources.v1",
+        instrument_type="stock",
+        field=field,
+    )
 
 
 class _NoRedirect(HTTPRedirectHandler):
@@ -132,7 +149,7 @@ def _code(value: object) -> str:
 def _symbol(code: str) -> str:
     if code.startswith("6"):
         return "SSE:" + code
-    if code.startswith(("0", "3")):
+    if code.startswith(("0", "30")):
         return "SZSE:" + code
     if code.startswith(("4", "8", "92")):
         return "BSE:" + code
@@ -145,6 +162,8 @@ def _identity(row: dict[str, Any], code_key: str, name_key: str) -> dict[str, An
 
 
 def _source_symbol(symbol: str) -> tuple[str, str]:
+    if stock_instrument_type(symbol) != "stock":
+        raise AuctionSourcesInvalid("source quantity contract supports stock instruments only")
     if not re.fullmatch(r"(?:SSE:6[0-9]{5}|SZSE:[03][0-9]{5})", symbol):
         raise AuctionSourcesInvalid("unsupported symbol")
     exchange, _, code = symbol.partition(":")
@@ -180,7 +199,9 @@ def _quote(row: dict[str, Any]) -> dict[str, Any]:
         "change_pct": _number(row.get("f3")),
         "open": _number(row.get("f17"), nonnegative=True),
         "previous_close": _number(row.get("f18"), nonnegative=True),
-        "volume_shares": volume * 100 if volume is not None else None,
+        "volume_shares": _source_quantity(
+            volume, provider="eastmoney", endpoint="quotes", field="f5"
+        ),
         "amount_cny": _number(row.get("f6"), nonnegative=True),
         "turnover_rate_pct": _number(row.get("f8"), nonnegative=True),
         "volume_ratio": _number(row.get("f10"), nonnegative=True),
@@ -203,6 +224,8 @@ def _pool(row: dict[str, Any], endpoint: Endpoint) -> dict[str, Any]:
 
 
 def _bar(parts: list[Any], volume_factor: int, *, eastmoney: bool = False) -> dict[str, Any]:
+    if volume_factor not in {1, 100}:
+        raise ValueError("unregistered source volume factor")
     if len(parts) < 6:
         raise ValueError("short bar")
     prices = [_number(p, nonnegative=True) for p in parts[1:5]]
@@ -220,7 +243,16 @@ def _bar(parts: list[Any], volume_factor: int, *, eastmoney: bool = False) -> di
         "close": close,
         "high": high,
         "low": low,
-        "volume_shares": vol * volume_factor,
+        "volume_shares": _source_quantity(
+            vol,
+            provider="eastmoney" if eastmoney else "sina" if volume_factor == 1 else "tencent",
+            endpoint="eastmoney_kline"
+            if eastmoney
+            else "sina_kline"
+            if volume_factor == 1
+            else "tencent_kline",
+            field="volume",
+        ),
         "amount_cny": _number(parts[6], nonnegative=True) if eastmoney and len(parts) > 6 else None,
     }
 
@@ -433,6 +465,7 @@ class AuctionSourcesProvider:
             IndexError,
             ArithmeticError,
             RecursionError,
+            ProviderError,
         ) as exc:
             raise AuctionSourcesUpstream("source request failed") from exc
         name, website = SOURCES[provider]
@@ -555,7 +588,9 @@ class AuctionSourcesProvider:
                     {
                         "time": minute_time,
                         "price": price,
-                        "cumulative_volume_shares": volume * 100,
+                        "cumulative_volume_shares": _source_quantity(
+                            volume, provider="tencent", endpoint="minute", field="cumulative_volume"
+                        ),
                         "cumulative_amount_cny": amount,
                     }
                 )

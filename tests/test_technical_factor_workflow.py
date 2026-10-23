@@ -11,17 +11,25 @@ from market_data_center.scheduling_catalog import job_definitions
 from market_data_center.settings import SchedulerSettings
 
 
-def test_technical_factor_job_is_independent_and_runs_at_21_shanghai() -> None:
+def test_technical_factor_job_has_bounded_evening_readiness_retries() -> None:
     jobs = {job.code: job for job in job_definitions(SchedulerSettings(_env_file=None))}
     job = jobs["stock-technical-factor-daily"]
     assert (job.day_of_week, job.hour, job.minute, job.timezone) == (
         "mon-fri",
-        21,
+        "21-23",
         0,
         "Asia/Shanghai",
     )
     assert job.enabled
     assert jobs["stock-daily-indicators-daily"].minute == 30
+    catchup = jobs["stock-technical-factor-catchup"]
+    assert (catchup.day_of_week, catchup.hour, catchup.minute, catchup.timezone) == (
+        "mon-sun",
+        8,
+        30,
+        "Asia/Shanghai",
+    )
+    assert catchup.workflow_code == job.workflow_code
 
 
 @pytest.mark.parametrize("is_open", [True, False])
@@ -81,3 +89,68 @@ def test_scheduler_registers_factor_runner(tmp_path) -> None:
     assert job.max_instances == 1
     assert job.coalesce
     assert job.misfire_grace_time == 21_600
+    catchup = scheduler.get_job("stock-technical-factor-catchup")
+    assert catchup is not None
+    assert catchup.func.__name__ == "run_stock_technical_factor_catchup_job"
+    assert catchup.max_instances == 1 and catchup.coalesce
+
+
+def test_catchup_pins_previous_shanghai_date_not_current_day(monkeypatch):
+    from datetime import datetime
+
+    from market_data_center import scheduler
+
+    run = Mock()
+    monkeypatch.setattr(scheduler, "_run_stock_technical_factor_job", run, raising=False)
+    monkeypatch.setattr(
+        scheduler,
+        "datetime",
+        SimpleNamespace(now=lambda zone: datetime(2026, 10, 17, 8, 30, tzinfo=zone)),
+    )
+    scheduler.run_stock_technical_factor_catchup_job()
+    run.assert_called_once_with("stock-technical-factor-catchup", "2026-10-16")
+
+
+@pytest.mark.parametrize("failed", [False, True])
+@pytest.mark.parametrize("day", [17, 18])
+def test_catchup_records_weekend_fire_time_and_disposes_resources(
+    monkeypatch, tmp_path, failed, day
+):
+    from datetime import UTC, datetime
+    from unittest.mock import MagicMock
+
+    from market_data_center import scheduler
+
+    engine, execution, service = MagicMock(), MagicMock(), MagicMock()
+    service.start.return_value = execution
+    monkeypatch.setattr(
+        scheduler,
+        "WorkerSettings",
+        lambda: SimpleNamespace(
+            database_url=SimpleNamespace(get_secret_value=lambda: "unused"), raw_data_root=tmp_path
+        ),
+    )
+    monkeypatch.setattr(scheduler, "sqlalchemy_url", lambda value: value)
+    monkeypatch.setattr(scheduler, "create_engine", Mock(return_value=engine))
+    monkeypatch.setattr(scheduler, "WorkflowExecutionService", Mock(return_value=service))
+
+    class Weekend(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 10, day, 8, 30, tzinfo=tz)
+
+    monkeypatch.setattr(scheduler, "datetime", Weekend)
+    workflow = Mock(side_effect=RuntimeError("not ready") if failed else None)
+    monkeypatch.setattr(scheduler, "run_stock_technical_factor_workflow", workflow)
+    if failed:
+        with pytest.raises(RuntimeError, match="not ready"):
+            scheduler.run_stock_technical_factor_catchup_job()
+        execution.fail.assert_called_once()
+        execution.succeed.assert_not_called()
+    else:
+        scheduler.run_stock_technical_factor_catchup_job()
+        execution.succeed.assert_called_once()
+    assert service.start.call_args.args[1] == datetime(2026, 10, day, 0, 30, tzinfo=UTC)
+    args = workflow.call_args.args[0]
+    assert args.provider == "tushare" and args.as_of_date == f"2026-10-{day - 1}"
+    engine.dispose.assert_called_once()

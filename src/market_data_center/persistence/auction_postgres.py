@@ -20,6 +20,7 @@ from market_data_center.domain.auction import (
 )
 from market_data_center.domain.ingestion import IngestionRun, QualityResult, RawManifest
 from market_data_center.domain.stock_pool import MAINBOARD_LIMIT_UP_POOL
+from market_data_center.quantity_certification import certify_quantity_batch
 
 
 class AuctionDependencyNotReady(RuntimeError):
@@ -188,6 +189,7 @@ insert into ingestion.raw_manifest (
 """),
                 _manifest_parameters(manifest),
             )
+            certify_quantity_batch(connection, run, manifest)
             if findings:
                 connection.execute(
                     text("""

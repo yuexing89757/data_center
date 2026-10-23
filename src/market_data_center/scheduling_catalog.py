@@ -7,6 +7,7 @@ from market_data_center.settings import SchedulerSettings
 DAILY_RUN_JOB_ID = "daily-run"
 STOCK_DAILY_INDICATOR_JOB_ID = "stock-daily-indicators-daily"
 STOCK_TECHNICAL_FACTOR_JOB_ID = "stock-technical-factor-daily"
+STOCK_TECHNICAL_FACTOR_CATCHUP_JOB_ID = "stock-technical-factor-catchup"
 STALE_RUN_RECOVERY_JOB_ID = "recover-stale-ingestion-runs"
 DEDUCTED_PROFIT_JOB_ID = "deducted-profit-daily"
 SHAREHOLDER_COUNT_DAILY_JOB_ID = "shareholder-count-daily"
@@ -238,14 +239,29 @@ def job_definitions(settings: SchedulerSettings) -> tuple[JobDefinition, ...]:
             "采集当日 stk_factor_pro 全市场技术因子。",
             "stock_technical_factor",
             "cron",
-            "周一至周五 21:00",
+            "周一至周五 21:00、22:00、23:00",
             timezone,
             True,
             timeout,
-            "失败保留缺口; 通过显式日期的单日命令重试",
+            "覆盖不足保留失败; 后续晚间轮次及次日补偿重新获取完整单日批次",
             day_of_week="mon-fri",
-            hour=21,
+            hour="21-23",
             minute=0,
+        ),
+        JobDefinition(
+            STOCK_TECHNICAL_FACTOR_CATCHUP_JOB_ID,
+            "专业版技术因子次日补偿",
+            "按上海昨日精确日期重新获取完整技术因子快照; 休市跳过。",
+            "stock_technical_factor",
+            "cron",
+            "每日 08:30, 补采昨日",
+            timezone,
+            True,
+            timeout,
+            "来源仍未就绪时保留失败与缺口; 可显式单日重试",
+            day_of_week="mon-sun",
+            hour=8,
+            minute=30,
         ),
         JobDefinition(
             DAILY_RUN_JOB_ID,

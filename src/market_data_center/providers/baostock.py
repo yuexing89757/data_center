@@ -29,6 +29,11 @@ from market_data_center.providers.contracts import (
     ProviderRequestUnavailable,
     RawRow,
 )
+from market_data_center.providers.quantity_units import (
+    normalize_source_stock_quantity,
+    quantity_unit_metadata,
+    stock_instrument_type,
+)
 
 DAILY_BAR_FIELDS = (
     "date",
@@ -180,6 +185,7 @@ class BaoStockProvider:
                 "end_date": end_date.isoformat(),
                 "frequency": "d",
                 "adjustflag": "3",
+                **quantity_unit_metadata(source_unit="share"),
             },
             schema_version="baostock.daily_bar.v1",
             record_factory=lambda: [_map_daily_bar(row) for row in raw_rows],
@@ -322,7 +328,14 @@ def _map_daily_bar(row: Mapping[str, str]) -> DailyBarRecord:
         low=_optional_decimal(row.get("low")),
         close=_optional_decimal(row.get("close")),
         previous_close=_optional_decimal(row.get("preclose")),
-        volume=_optional_int(row.get("volume")),
+        volume=normalize_source_stock_quantity(
+            row.get("volume"),
+            provider="baostock",
+            endpoint="query_history_k_data_plus",
+            schema_version="baostock.daily_bar.v1",
+            instrument_type=stock_instrument_type(symbol),
+            field="volume",
+        ),
         amount=_optional_decimal(row.get("amount")),
         trade_status=_trade_status(row.get("tradestatus", "")),
         is_st=_optional_bool(row.get("isST")),

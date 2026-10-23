@@ -49,7 +49,7 @@ class Client:
         )
 
 
-def test_provider_maps_down_source_and_replays_raw_rows() -> None:
+def test_provider_maps_down_source_and_replays_raw_rows(synthetic_quantity_contract) -> None:
     batch = AkshareCurrentDayLimitDownProvider(Client()).fetch_limit_down_pool(date(2026, 9, 18))
 
     assert batch.raw_rows[0]["代码"] == "000001"
@@ -64,7 +64,7 @@ def test_provider_maps_down_source_and_replays_raw_rows() -> None:
     assert (record.open_count, record.consecutive_limit_down_days) == (1, 2)
 
 
-def test_provider_rejects_negative_source_funds() -> None:
+def test_provider_rejects_negative_source_funds(synthetic_quantity_contract) -> None:
     class InvalidClient(Client):
         def stock_zt_pool_dtgc_em(self, *, date: str) -> object:
             frame = super().stock_zt_pool_dtgc_em(date=date)
@@ -249,3 +249,11 @@ def test_source_failure_is_recorded_as_failed_snapshot(tmp_path: Path) -> None:
 
     assert result.status == "failed"
     assert persistence.reason == "source_request_failed_RuntimeError"
+
+
+@pytest.fixture
+def synthetic_quantity_contract(monkeypatch):
+    """Isolate the parser; real unverified-source blocking is tested separately."""
+    monkeypatch.setattr(
+        "market_data_center.providers.akshare_limit_down.quantity_unit_rule", lambda **kwargs: None
+    )

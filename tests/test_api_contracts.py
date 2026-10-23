@@ -38,6 +38,16 @@ EXPECTED_ENDPOINTS = {
     "query_regulation_monitor_inputs",
     "query_stock_technical_factors",
     "query_stock_technical_factors_by_codes",
+    "query_auction_one_price_limits",
+    "query_call_auction_grab_lines",
+    "query_call_auction_indicative_details",
+    "query_call_auction_one_price_patterns",
+    "query_daily_limit_down_list",
+    "query_daily_limit_up_list",
+    "query_limit_up_pool",
+    "query_recent_daily_bars",
+    "query_latest_stock_daily_indicators",
+    "quantity_unit_contract_version",
 }
 
 
@@ -82,6 +92,45 @@ def test_agent_tools_are_bounded_strict_and_read_only() -> None:
             limit = properties["p_limit"]
             assert isinstance(limit, dict)
             assert int(limit["maximum"]) <= 5000
+
+
+def test_quantity_contract_keeps_zero_null_and_business_units_distinct() -> None:
+    schemas = _load("postgrest-openapi-v1.json")["components"]["schemas"]
+    stock = schemas["DailyBarRow"]["properties"]
+    bond = schemas["ConvertibleBondDailyBarRow"]["properties"]
+    aggregate = schemas["ClassificationDailyMetricRow"]["properties"]
+    assert stock["volume"]["type"] == ["integer", "null"]
+    assert stock["volume"]["x-unit"] == "share"
+    assert stock["volume"]["examples"] == [100]
+    assert stock["amount"]["x-unit"] == "CNY"
+    assert bond["volume"]["x-unit"] == "bond"
+    assert bond["volume"]["type"] == ["integer", "null"]
+    assert aggregate["volume_member_count"]["minimum"] == 0
+    assert aggregate["amount_member_count"]["minimum"] == 0
+    assert aggregate["total_volume"]["type"] == ["integer", "null"]
+    assert "quantity_quality" in stock
+
+
+def test_quantity_snapshot_conflict_and_deployment_preflight_are_public_read_contracts() -> None:
+    contract = _load("postgrest-openapi-v1.json")
+    for endpoint in ("query_daily_limit_up_list", "query_daily_limit_down_list"):
+        operation = contract["paths"]["/rpc/" + endpoint]["post"]
+        assert "PT409" in operation["responses"]["409"]["description"]
+        assert "quantity_units_unverified" in operation["responses"]["409"]["description"]
+    preflight = contract["paths"]["/rpc/quantity_unit_contract_version"]["post"]
+    assert preflight["responses"]["200"]["content"]["application/json"]["schema"]["const"] == (
+        "stock-quantity.v1"
+    )
+    assert not any("persist_" in path for path in contract["paths"])
+
+
+def test_factor_public_quantity_catalog_changes_without_relabeling_source() -> None:
+    item = _load("postgrest-openapi-v1.json")["components"]["schemas"]["StockTechnicalFactorItem"]
+    assert item["properties"]["factor_catalog_version"]["const"] == "stock-technical-factor.v2"
+    assert "source_factor_catalog_version" in item["properties"]
+    assert "quantity_quality" in item["properties"]
+    for group in ("unadjusted", "forward_adjusted", "backward_adjusted"):
+        assert "obv" in item["properties"][group]["description"]
 
 
 def test_shareholder_count_contracts_are_strict_bounded_and_decimal_safe() -> None:

@@ -38,6 +38,13 @@ from market_data_center.providers.contracts import (
     ProviderRequestUnavailable,
     RawRow,
 )
+from market_data_center.providers.quantity_units import (
+    normalize_source_stock_quantity,
+    normalize_stock_quantity,
+    quantity_unit_metadata,
+    quantity_unit_rule,
+    stock_instrument_type,
+)
 
 
 class TabularResult(Protocol):
@@ -148,8 +155,9 @@ class AKShareProvider(AbstractContextManager["AKShareProvider"]):
                 "end_date": end_date.strftime("%Y%m%d"),
                 "period": "daily",
                 "adjust": "",
+                **quantity_unit_metadata(source_unit="lot"),
             },
-            schema_version="akshare.daily_bar.v1",
+            schema_version="akshare.daily_bar.v2",
             record_factory=lambda: [_map_daily_bar(row) for row in rows],
         )
 
@@ -212,7 +220,7 @@ class AKShareProvider(AbstractContextManager["AKShareProvider"]):
         rows = [*capital_rows, *distribution_rows, *rights_rows]
         return ProviderBatch(
             raw_rows=rows,
-            request_params={"source_symbol": code},
+            request_params={"source_symbol": code, "quantity_unit_registration": "unverified"},
             schema_version="akshare.capital.v1",
             record_factory=lambda: list(_map_capital_rows(rows, code)),
         )
@@ -290,7 +298,9 @@ def normalize_akshare_raw(
         DatasetCode.CLASSIFICATION_CATALOG: "akshare.classification_catalog.v1",
         DatasetCode.CLASSIFICATION_MEMBERS: "akshare.classification_members.v1",
     }[dataset_code]
-    if schema_version != expected_schema:
+    if schema_version != expected_schema and not (
+        dataset_code is DatasetCode.DAILY_BAR and schema_version == "akshare.daily_bar.v2"
+    ):
         raise ProviderError(f"unsupported AKShare Raw schema: {schema_version}")
     if dataset_code is DatasetCode.SECURITY:
         return tuple(_map_security(row) for row in raw_rows)
@@ -314,7 +324,7 @@ def normalize_akshare_raw(
         if not isinstance(code, str) or not code.strip():
             raise ProviderError("AKShare replay request is missing classification_code")
         return (_map_classification_members(raw_rows, kind, code, snapshot_date),)
-    return tuple(_map_daily_bar(row) for row in raw_rows)
+    return tuple(_map_daily_bar(row, schema_version=schema_version) for row in raw_rows)
 
 
 def _classification_type(value: str) -> ClassificationType:
@@ -405,6 +415,14 @@ def _map_capital_rows(rows: Sequence[Mapping[str, str]], code: str) -> tuple[Cap
 
 
 def _map_share_capital(row: Mapping[str, str], symbol: str) -> ShareCapitalRecord:
+    for field in ("总股本", "流通受限股份", "已流通股份", "已上市流通A股"):
+        quantity_unit_rule(
+            provider="akshare",
+            endpoint="stock_zh_a_gbjg_em",
+            schema_version="akshare.capital.v1",
+            instrument_type=stock_instrument_type(symbol),
+            field=field,
+        )
     return ShareCapitalRecord(
         symbol=symbol,
         effective_date=_parse_date(row["变更日期"]),
@@ -452,7 +470,15 @@ def _map_rights_issue(row: Mapping[str, str], symbol: str) -> RightsIssueRecord:
         listing_date=_optional_date(row.get("配股上市日"), reject_placeholder=True),
         rights_ratio=_required_decimal(row.get("配股方案"), "配股方案") / Decimal(10),
         rights_price=_required_decimal(row.get("配股价格"), "配股价格"),
-        base_shares=_integer(row.get("基准股本")) or None,
+        base_shares=normalize_source_stock_quantity(
+            row.get("基准股本"),
+            provider="akshare",
+            endpoint="stock_history_dividend_detail",
+            schema_version="akshare.capital.v1",
+            instrument_type=stock_instrument_type(symbol),
+            field="基准股本",
+        )
+        or None,
         proceeds=_decimal(row.get("募集资金合计")),
         source_code="akshare",
     )
@@ -614,7 +640,9 @@ def _map_security(row: Mapping[str, str]) -> SecurityRecord:
     )
 
 
-def _map_daily_bar(row: Mapping[str, str]) -> DailyBarRecord:
+def _map_daily_bar(
+    row: Mapping[str, str], *, schema_version: str = "akshare.daily_bar.v2"
+) -> DailyBarRecord:
     _, _, symbol = _normalize_symbol(row["股票代码"])
     close = _decimal(row.get("收盘"))
     change = _decimal(row.get("涨跌额"))
@@ -628,7 +656,14 @@ def _map_daily_bar(row: Mapping[str, str]) -> DailyBarRecord:
         low=_decimal(row.get("最低")),
         close=close,
         previous_close=previous_close,
-        volume=_integer(row.get("成交量")),
+        volume=normalize_source_stock_quantity(
+            row.get("成交量"),
+            provider="akshare",
+            endpoint="stock_zh_a_hist",
+            schema_version=schema_version,
+            instrument_type=stock_instrument_type(symbol),
+            field="成交量",
+        ),
         amount=_decimal(row.get("成交额")),
         trade_status=TradeStatus.TRADING,
         is_st=None,
@@ -682,12 +717,7 @@ def _decimal(value: str | None) -> Decimal | None:
 
 
 def _integer(value: str | None) -> int | None:
-    number = _decimal(value)
-    if number is None:
-        return None
-    if number != number.to_integral_value():
-        raise ProviderError(f"invalid AKShare integer: {value}")
-    return int(number)
+    return normalize_stock_quantity(value, source_unit="share", context="AKShare shares")
 
 
 def _ensure_date_range(start_date: date, end_date: date) -> None:

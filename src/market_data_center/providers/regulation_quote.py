@@ -35,7 +35,12 @@ class MonitorQuote:
     volume_shares: Decimal | None
 
     def __post_init__(self) -> None:
-        _source_symbol(self.symbol)
+        if self.symbol in BENCHMARKS:
+            benchmark_source_symbol(self.symbol)
+            if self.volume_shares is not None:
+                raise ValueError("benchmark has no stock share-volume contract")
+        else:
+            _source_symbol(self.symbol)
         if self.observed_at.utcoffset() is None:
             raise ValueError("monitor quote timestamp must be timezone-aware")
         for value in (self.price, self.reference_price):

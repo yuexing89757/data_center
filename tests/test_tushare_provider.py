@@ -322,23 +322,14 @@ def test_regulation_index_daily_uses_exact_index_and_replays_units(symbol, ts_co
     batch = TushareProvider(IndexClient()).fetch_daily_bars(
         symbol, date(2026, 9, 30), date(2026, 9, 30)
     )
-    record = batch.records[0]
-    assert record.symbol == symbol
-    assert record.close == Decimal("101")
-    assert record.previous_close == Decimal("100")
-    assert record.volume == 1234
-    assert record.amount == Decimal("56789")
-    assert record.source_code == "tushare"
     assert batch.schema_version == "tushare.index_daily.v1"
-    assert normalize_tushare_raw(
-        DatasetCode.DAILY_BAR, batch.schema_version, batch.raw_rows, batch.request_params
-    ) == tuple(batch.records)
-    assert normalize_tushare_raw(
-        DatasetCode.DAILY_BAR,
-        batch.schema_version,
-        batch.raw_rows,
-        {"source_symbol": symbol, "start_date": "2026-09-30", "end_date": "2026-09-30"},
-    ) == tuple(batch.records)
+    assert batch.raw_rows[0]["vol"] == "12.34"
+    with pytest.raises(ProviderError, match="quantity unit contract"):
+        _ = batch.records
+    with pytest.raises(ProviderError, match="quantity unit contract"):
+        normalize_tushare_raw(
+            DatasetCode.DAILY_BAR, batch.schema_version, batch.raw_rows, batch.request_params
+        )
 
 
 @pytest.mark.parametrize("mutation", ["empty", "wrong_symbol", "wrong_date", "duplicate"])
@@ -392,13 +383,12 @@ def test_regulation_index_preserves_missing_values_and_source_error():
                 },
             )
 
-    record = (
-        TushareProvider(IndexClient())
-        .fetch_daily_bars("SZSE:399102", date(2026, 9, 30), date(2026, 9, 30))
-        .records[0]
+    batch = TushareProvider(IndexClient()).fetch_daily_bars(
+        "SZSE:399102", date(2026, 9, 30), date(2026, 9, 30)
     )
-    assert record.close is None and record.previous_close is None
-    assert record.volume is None and record.amount is None
+    assert batch.raw_rows[0]["vol"] == ""
+    with pytest.raises(ProviderError, match="quantity unit contract"):
+        _ = batch.records
 
     class FailedClient(FakeClient):
         def query(self, api_name, *, params, fields):
@@ -440,7 +430,8 @@ def test_daily_indicator_snapshot_queries_one_complete_trade_date() -> None:
 
     assert client.calls[0][0] == "daily_basic"
     assert client.calls[0][1] == {"trade_date": "20260731"}
-    assert batch.request_params == {"trade_date": "20260731"}
+    assert batch.request_params["trade_date"] == "20260731"
+    assert batch.request_params["source_quantity_unit"] == "ten_thousand_share"
     assert batch.records[0].symbol == "SSE:600000"
 
 
@@ -815,6 +806,48 @@ class Top10FloatHolderClient(FakeClient):
         return super().query(api_name, params=params, fields=fields)
 
 
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ("9223372036854775807", 9223372036854775807),
+        ("-9223372036854775808", -9223372036854775808),
+        ("-37", -37),
+        ("37.0", 37),
+        (None, None),
+        ("", None),
+    ],
+)
+def test_top10_signed_share_change_is_exact_in_adapter_and_replay(value, expected):
+    row = dict(TOP10_FLOAT_HOLDER_ROWS[0], hold_change=value)
+    batch = TushareProvider(Top10FloatHolderClient([row])).fetch_top10_float_holders(
+        date(2026, 8, 28)
+    )
+    assert batch.records[0].hold_change == expected
+    replayed = normalize_tushare_raw(
+        DatasetCode.TOP10_FLOAT_HOLDER, batch.schema_version, batch.raw_rows, batch.request_params
+    )
+    assert replayed[0].hold_change == expected
+    assert batch.raw_rows[0]["hold_change"] == ("" if value is None else value)
+
+
+@pytest.mark.parametrize(
+    "value", ["0.5", "NaN", "Infinity", "-Infinity", "9223372036854775808", "-9223372036854775809"]
+)
+def test_top10_invalid_signed_share_change_blocks_adapter_and_replay(value):
+    batch = TushareProvider(
+        Top10FloatHolderClient([dict(TOP10_FLOAT_HOLDER_ROWS[0], hold_change=value)])
+    ).fetch_top10_float_holders(date(2026, 8, 28))
+    with pytest.raises(ProviderError):
+        _ = batch.records
+    with pytest.raises(ProviderError):
+        normalize_tushare_raw(
+            DatasetCode.TOP10_FLOAT_HOLDER,
+            batch.schema_version,
+            batch.raw_rows,
+            batch.request_params,
+        )
+
+
 def test_top10_float_holders_derive_rank_by_amount_and_replay_raw() -> None:
     client = Top10FloatHolderClient(TOP10_FLOAT_HOLDER_ROWS)
 
@@ -835,7 +868,12 @@ def test_top10_float_holders_derive_rank_by_amount_and_replay_raw() -> None:
             "holder_type",
         ),
     )
-    assert batch.request_params == {"ann_date": "20260828", "period": None, "source_symbol": None}
+    assert {key: batch.request_params[key] for key in ("ann_date", "period", "source_symbol")} == {
+        "ann_date": "20260828",
+        "period": None,
+        "source_symbol": None,
+    }
+    assert batch.request_params["source_quantity_unit"] == "share"
     assert batch.schema_version == "tushare.top10_float_holder.v1"
 
     sse_records = [record for record in batch.records if record.symbol == "SSE:600000"]
@@ -887,7 +925,7 @@ def test_top10_float_holders_symbol_narrows_request_to_one_security() -> None:
         "period": "20260630",
         "ts_code": "000001.SZ",
     }
-    assert batch.request_params == {
+    assert {key: batch.request_params[key] for key in ("ann_date", "period", "source_symbol")} == {
         "ann_date": "20260828",
         "period": "20260630",
         "source_symbol": "000001.SZ",

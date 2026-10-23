@@ -4,6 +4,10 @@
 `core.daily_bar` 未复权客观事实；节点能力、网络 endpoint、TDX market 编号和响应字段只
 存在于 Provider、节点池与 Raw request metadata 边界。
 
+ADR-0068 接受后的数量契约、历史认证/CAS修复、5000行完整认证组与500行修复批次边界见
+[整改交付与操作说明](stock-quantity-unit-remediation-2026-10-23.md)及[来源单位目录](source-quantity-units.md)。
+旧 Raw 不变；静态 schema 规则不代替 ingestion/字段组证书，未认证数量由读/计算门禁隔离。
+
 ## 配置
 
 - `PYTDX_POOL_PATH`：版本化统一节点池路径；Windows 默认 `data/pytdx_pool.json`，Linux
@@ -33,12 +37,13 @@ Worker 取得全局 Scheduler advisory lock 后执行启动刷新，之后由 AP
 ## 本地优先与远程会话
 
 Provider 先按 symbol 定位本地 `.day` 文件。文件存在且产生目标区间记录时直接返回
-`pytdx.local_daily_bar.v2`，不读取池、不建立网络 client。文件缺失时，SSE、SZSE、BSE
+`pytdx.local_daily_bar.v3`，不读取池、不建立网络 client。文件缺失时，SSE、SZSE、BSE
 分别筛选 `daily_bar_sse`、`daily_bar_szse`、`daily_bar_bse` 节点。
 
 本地读取先按日期排序来源记录并计算 `previous_close`，再裁剪请求区间。区间外最近一条
 较早记录只提供昨收上下文，不进入返回记录和 Raw 行数；不存在较早记录时保留空值。
-新采集仍用本地 v2 Raw 显式保存该字段，已有 Raw 的空字段重放仍为空。恢复历史缺失字段
+新采集本地 v3 Raw 显式保存该字段，并从 binary32 位模式精确保留金额小数元；
+旧 v1/v2 Raw 已丢失的小数不能重放补回，数量仍均为股。已有 Raw 的空字段重放仍为空。恢复历史缺失字段
 需要显式重新采集，生成新的 Raw 和 ingestion lineage，不能编辑旧 Raw 或仅重放旧批次。
 
 Provider 为每个市场延迟建立一个固定会话。建立会话时按池顺序有限尝试；成功后该市场在
@@ -57,8 +62,9 @@ SSE 映射 market 1；SZSE 与现有 pytdx BSE 协议映射保持 Provider 边�
 symbol、日期范围、category、分页边界、`adjust=none`、`volume_unit=lot` 与
 `volume_lot_size=100`。价格与金额从线上的整数编码直接解为 Decimal；Raw 的成交量
 保持来源“手”值，v2 标准化时精确乘 100 转成股，不舍入非整数股。整手来源缺少的零股
-不能补造，可能与逐股的本地文件相差不足一手。旧远程 v1 与本地 v1/v2 Raw 保持原有重放
-行为，不通过新版本重放改变历史结果。Domain Record 只保留
+不能补造，可能与逐股的本地文件相差不足一手。ADR-0068 替代旧远程 v1 保留手值标准结果的决定：
+远程 v1/v2 Raw 均保留原手值，由独立 `quantity-normalizer.v1` 正确转换为股并记录新血缘。
+本地 v1/v2/v3 volume 已为股，不再转换；历史事实修复须受控预览/审核，不自动重写存量。Domain Record 只保留
 `source_code=pytdx`，不包含节点池或 endpoint 字段。
 
 协议页数量与实际字节必须一致，日期必须有效；2 字节空壳、截断和多余数据产生明确的

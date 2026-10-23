@@ -88,7 +88,7 @@ class TechnicalFactorIngestionService(IngestionPipeline):
             )
             try:
                 batch = self._factor_provider.fetch_snapshot(trade_date)
-                manifest, records = self._stage_batch(run, batch)
+                run, manifest, records = self._stage_batch(run, batch)
                 try:
                     accepted = validate_technical_factor_snapshot(
                         records,

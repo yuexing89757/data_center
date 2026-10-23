@@ -22,6 +22,10 @@ from market_data_center.providers.contracts import (
     RealtimeQuoteFetch,
     RealtimeQuoteNormalizationError,
 )
+from market_data_center.providers.quantity_units import (
+    normalize_source_stock_quantity,
+    stock_instrument_type,
+)
 from market_data_center.settings import TencentQuoteSettings
 
 ENDPOINT = "https://qt.gtimg.cn/q="
@@ -175,6 +179,7 @@ def normalize_tencent_quote_raw(
 
 
 def _record(symbol: str, payload: str, observed_at: datetime) -> FiveLevelQuoteSnapshotRecord:
+    _source_symbol(symbol)
     fields = payload.split("~")
     if len(fields) < 49:
         raise _RowError("schema_drift", "Tencent quote row has fewer than 49 fields")
@@ -208,7 +213,9 @@ def _record(symbol: str, payload: str, observed_at: datetime) -> FiveLevelQuoteS
 
 def _level(fields: Sequence[str], offset: int, level: int) -> OrderBookLevel:
     price = _optional_decimal(fields[offset])
-    volume = _optional_lots_to_shares(fields[offset + 1])
+    volume = _optional_lots_to_shares(
+        fields[offset + 1], field=f"{'bid' if offset < 19 else 'ask'}{level}"
+    )
     if price is None and volume == 0:
         volume = None
     return OrderBookLevel(level, price, volume)
@@ -231,14 +238,26 @@ def _nonnegative_decimal(value: str) -> Decimal:
     return result
 
 
-def _lots_to_shares(value: str) -> int:
+def _lots_to_shares(value: str, *, field: str = "cumulative_volume") -> int:
     if not fullmatch(r"[0-9]+", value):
         raise _RowError("invalid_quantity", "Tencent quote quantity is not an integer lot count")
-    return int(value) * 100
+    try:
+        shares = normalize_source_stock_quantity(
+            value,
+            provider="tencent_quote",
+            endpoint="qt.gtimg.cn",
+            schema_version=SCHEMA_VERSION,
+            instrument_type="stock",
+            field=field,
+        )
+    except ProviderError as error:
+        raise _RowError("invalid_quantity", "Tencent quote quantity is invalid") from error
+    assert shares is not None
+    return shares
 
 
-def _optional_lots_to_shares(value: str) -> int | None:
-    return None if value == "" else _lots_to_shares(value)
+def _optional_lots_to_shares(value: str, *, field: str = "cumulative_volume") -> int | None:
+    return None if value == "" else _lots_to_shares(value, field=field)
 
 
 def _source_timestamp(value: str) -> datetime:
@@ -248,6 +267,8 @@ def _source_timestamp(value: str) -> datetime:
 
 
 def _source_symbol(symbol: str) -> str:
+    if stock_instrument_type(symbol) != "stock":
+        raise ProviderError("Tencent quantity contract supports stock instruments only")
     exchange, separator, code = symbol.partition(":")
     if separator != ":" or fullmatch(r"[0-9]{6}", code) is None:
         raise ProviderError("Tencent quote symbol must use SSE:nnnnnn or SZSE:nnnnnn")

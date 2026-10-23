@@ -121,6 +121,7 @@ from market_data_center.public_api.openapi_zh import localize_openapi
 from market_data_center.public_api.queries import (
     PostgreSQLPublicQueryService,
     PublicQueryAmbiguous,
+    PublicQueryConflict,
     PublicQueryInvalid,
     PublicQueryNotFound,
     PublicQueryService,
@@ -681,6 +682,7 @@ def create_app(
         responses={
             401: {"model": ErrorResponse},
             404: {"model": ErrorResponse},
+            409: {"model": ErrorResponse},
             503: {"model": ErrorResponse},
         },
         tags=["市场数据"],
@@ -689,6 +691,8 @@ def create_app(
             "返回指定交易日最新或指定版本的涨停列表快照，包含不可变版本、状态、质量摘要、"
             "未复权价格事实、当日自由流通股本、来源封单事实、按收盘买一计算的封单额、"
             "可选五档买盘和来源追溯信息。不使用日期或数值回退；高精度数值序列化为字符串。"
+            "未认证的默认版本返回deferred和空成员；显式请求未认证旧版本返回409 "
+            "quantity_units_unverified。"
         ),
     )
     def daily_limit_up_list(
@@ -707,6 +711,7 @@ def create_app(
         responses={
             401: {"model": ErrorResponse},
             404: {"model": ErrorResponse},
+            409: {"model": ErrorResponse},
             503: {"model": ErrorResponse},
         },
         tags=["市场数据"],
@@ -715,6 +720,8 @@ def create_app(
             "返回指定交易日最新或指定版本的沪深主板跌停快照，包含规范价格、来源末次封板、"
             "收盘卖一至卖五和卖一计算封单额、质量摘要及追溯信息。首次封板时间和累计时长"
             "在来源不可得时保持空值；不回退日期或填造缺失数据。"
+            "未认证的默认版本返回deferred和空成员；显式请求未认证旧版本返回409 "
+            "quantity_units_unverified。"
         ),
     )
     def daily_limit_down_list(
@@ -1100,6 +1107,14 @@ def _install_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(PublicQueryNotFound)
     async def query_not_found(_: Request, __: PublicQueryNotFound) -> JSONResponse:
         return _error_response(404, "not_found", "requested data was not found")
+
+    @app.exception_handler(PublicQueryConflict)
+    async def query_conflict(_: Request, error: PublicQueryConflict) -> JSONResponse:
+        if str(error) == "quantity_units_unverified":
+            return _error_response(
+                409, "quantity_units_unverified", "snapshot units are unverified"
+            )
+        return _error_response(409, "query_conflict", "requested data conflicts with the query")
 
     @app.exception_handler(PublicQueryTimeout)
     async def query_timeout(_: Request, __: PublicQueryTimeout) -> JSONResponse:

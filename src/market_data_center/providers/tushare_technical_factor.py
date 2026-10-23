@@ -18,6 +18,7 @@ from market_data_center.domain.stock_technical_factor import (
     StockTechnicalFactorSnapshotRecord,
 )
 from market_data_center.providers.contracts import ProviderBatch, ProviderError, RawRow
+from market_data_center.providers.quantity_units import quantity_unit_rule
 from market_data_center.providers.tushare import TushareClient, TushareHttpClient
 from market_data_center.settings import TushareSettings
 
@@ -296,6 +297,14 @@ def normalize_technical_factor_raw(
         records[key] = record
     if len({record.trade_date for record in records.values()}) != 1:
         raise ProviderError("Tushare stk_factor_pro contains multiple trading dates")
+    # Formula parameters do not establish output scaling (including signed OBV).
+    quantity_unit_rule(
+        provider="tushare",
+        endpoint="stk_factor_pro",
+        schema_version=schema_version,
+        instrument_type="stock",
+        field="obv_bfq",
+    )
     return [records[key] for key in sorted(records)]
 
 

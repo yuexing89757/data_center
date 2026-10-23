@@ -84,6 +84,12 @@ from market_data_center.providers.eastmoney_dragon_tiger_normalizer import (
     normalize_eastmoney_dragon_tiger_raw,
 )
 from market_data_center.providers.pytdx import normalize_pytdx_raw
+from market_data_center.providers.quantity_units import (
+    NORMALIZER_VERSION,
+    UNIT_CONTRACT_VERSION,
+    quantity_failure_details,
+    validate_quantity_metadata,
+)
 from market_data_center.providers.sse_regulation import normalize_sse_regulation_raw
 from market_data_center.providers.szse_regulation import normalize_szse_regulation_raw
 from market_data_center.providers.tushare import normalize_tushare_raw
@@ -91,6 +97,7 @@ from market_data_center.providers.tushare_dragon_tiger import (
     normalize_tushare_dragon_tiger_raw,
 )
 from market_data_center.providers.tushare_technical_factor import normalize_technical_factor_raw
+from market_data_center.quantity_certification import check_standard_quantities
 from market_data_center.raw_store import LocalRawStore, RawIntegrityError
 from market_data_center.shareholder_count_batch import (
     PreparedShareholderCountBatch,
@@ -423,6 +430,12 @@ class RawReplayService:
     def _normalize(self, source: ReplaySource) -> _NormalizedReplay:
         if source.manifest is None:
             raise RawIntegrityError("ingestion run has no Raw manifest")
+        validate_quantity_metadata(
+            provider=source.provider_code.value,
+            schema_version=source.manifest.schema_version,
+            request_params=source.request_params,
+            replay=True,
+        )
         rows = self._raw_store.read_jsonl(source.manifest)
         if source.dataset_code in {DatasetCode.TRADING_BILLBOARD, DatasetCode.DRAGON_TIGER}:
             if source.provider_code is ProviderCode.EASTMONEY:
@@ -451,6 +464,7 @@ class RawReplayService:
                 source.request_params,
             )
             findings = ()
+        check_standard_quantities(records)
         mismatched = sum(record.source_code != source.provider_code.value for record in records)
         if mismatched:
             raise ProviderError(
@@ -1081,6 +1095,10 @@ class RawReplayService:
         request_params = dict(source.request_params)
         request_params["replay_source_ingestion_id"] = str(source.source_ingestion_id)
         request_params["replay_source_requested_at"] = source.requested_at.isoformat()
+        request_params["quantity_unit_contract_version"] = UNIT_CONTRACT_VERSION
+        request_params["quantity_normalizer_version"] = NORMALIZER_VERSION
+        if source.manifest is not None:
+            request_params["provider_schema_version"] = source.manifest.schema_version
         return IngestionRun(
             ingestion_id=self._uuid_factory(),
             provider_code=source.provider_code,
@@ -1272,7 +1290,7 @@ class RawReplayService:
             severity=QualitySeverity.ERROR,
             status=QualityStatus.FAILED,
             message="Raw replay failed integrity or normalization checks",
-            details={"error_type": type(error).__name__},
+            details={"error_type": type(error).__name__, **quantity_failure_details(error)},
         )
         self._persistence.commit_rejected_batch(failed, None, [quality])
 

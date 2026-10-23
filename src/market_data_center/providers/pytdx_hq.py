@@ -34,6 +34,10 @@ from market_data_center.providers.pytdx_pool import (
 from market_data_center.providers.pytdx_protocol import (
     decode_volume_decimal as _decode_volume_decimal,
 )
+from market_data_center.providers.quantity_units import (
+    normalize_source_stock_quantity,
+    stock_instrument_type,
+)
 from market_data_center.settings import PytdxHqSettings, PytdxPoolSettings
 
 
@@ -291,6 +295,7 @@ def _validate_deadline(deadline: datetime | None) -> None:
 def _record(
     symbol: str, row: Mapping[str, object], collected_at: datetime
 ) -> FiveLevelQuoteSnapshotRecord:
+    _source_identity(symbol)
     bids = tuple(_level(row, "bid", level) for level in range(1, 6))
     asks = tuple(_level(row, "ask", level) for level in range(1, 6))
     has_quote = any(level.price is not None for level in (*bids, *asks))
@@ -315,13 +320,15 @@ def _record(
 
 def _level(row: Mapping[str, object], side: str, level: int) -> OrderBookLevel:
     price = _optional_price(row[f"{side}{level}"])
-    volume: int | None = _lots_to_shares(row[f"{side}_vol{level}"])
+    volume: int | None = _lots_to_shares(row[f"{side}_vol{level}"], field=f"{side}_vol{level}")
     if price is None and volume == 0:
         volume = None
     return OrderBookLevel(level, price, volume)
 
 
 def _source_identity(symbol: str) -> tuple[int, str]:
+    if stock_instrument_type(symbol) != "stock":
+        raise ProviderError("pytdx_hq quantity contract supports stock instruments only")
     exchange, separator, code = symbol.partition(":")
     if separator != ":" or len(code) != 6 or not code.isdigit():
         raise ProviderError("invalid standard quote symbol")
@@ -350,12 +357,26 @@ def _optional_price(value: object) -> Decimal | None:
     return value if value > 0 else None
 
 
-def _lots_to_shares(value: object) -> int:
-    if not isinstance(value, int) or value < 0:
+def _lots_to_shares(value: object, *, field: str = "volume_lots") -> int:
+    if type(value) is not int or value < 0:
         raise _QuoteRowNormalizationError(
             "invalid_quantity", "pytdx_hq quantity is not a nonnegative integer"
         )
-    return value * 100
+    try:
+        shares = normalize_source_stock_quantity(
+            value,
+            provider="pytdx_hq",
+            endpoint="get_security_quotes",
+            schema_version="pytdx_hq.security_quotes.v1",
+            instrument_type="stock",
+            field=field,
+        )
+    except ProviderError as error:
+        raise _QuoteRowNormalizationError(
+            "invalid_quantity", "pytdx_hq quantity is invalid"
+        ) from error
+    assert shares is not None
+    return shares
 
 
 def _utc_worker_observation(value: datetime) -> datetime:

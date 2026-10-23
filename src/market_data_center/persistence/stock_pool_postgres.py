@@ -318,7 +318,7 @@ select s.symbol, s.code, s.exchange, s.security_type, s.status, s.ipo_date,
        i.free_float_turnover_rate_pct, i.free_float_shares, i.circulating_market_value
 from core.security s
 left join core.daily_bar b on b.symbol=s.symbol and b.trade_date=:basis
-left join core.stock_daily_indicator i on i.symbol=s.symbol and i.trade_date=:basis
+left join audit.unit_safe_stock_daily_indicator i on i.symbol=s.symbol and i.trade_date=:basis
 where s.exchange in ('SSE','SZSE') and s.security_type='stock' and s.status='listed'
   and (
       (s.exchange='SSE' and (

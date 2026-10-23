@@ -33,7 +33,7 @@
     },
     {
       "name": "market_daily_bars",
-      "description": "Read unadjusted daily bars for one standardized symbol and closed date range.",
+      "description": "Read unadjusted daily bars for one standardized symbol and closed date range. Quantities retain their business meaning and certified units; missing/unverified values are null, explicit zero is zero. Inspect quantity_quality; 100 stock shares means 100 shares, not 100 lots.",
       "endpoint": "query_daily_bars",
       "read_only": true,
       "input_schema": {
@@ -63,6 +63,13 @@
             "maximum": 5000,
             "default": 1000
           }
+        }
+      },
+      "output_schema": {
+        "type": "array",
+        "maxItems": 5000,
+        "items": {
+          "$ref": "postgrest-openapi-v1.json#/components/schemas/DailyBarRow"
         }
       }
     },
@@ -156,6 +163,13 @@
             "default": 5000
           }
         }
+      },
+      "output_schema": {
+        "type": "array",
+        "maxItems": 5000,
+        "items": {
+          "$ref": "postgrest-openapi-v1.json#/components/schemas/MarketSnapshotRow"
+        }
       }
     },
     {
@@ -240,7 +254,7 @@
     },
     {
       "name": "market_stock_pool_snapshot",
-      "description": "Read one exact immutable ready stock-pool snapshot; never falls back to another effective date.",
+      "description": "Read one exact immutable ready stock-pool snapshot; never falls back to another effective date. Quantities retain their business meaning and certified units; missing/unverified values are null, explicit zero is zero. Inspect quantity_quality; 100 stock shares means 100 shares, not 100 lots.",
       "endpoint": "query_stock_pool_snapshot",
       "read_only": true,
       "input_schema": {
@@ -281,7 +295,7 @@
     },
     {
       "name": "market_auction_quotes",
-      "description": "Read bounded authenticated opening-auction quote samples by exact trade date or session.",
+      "description": "Read bounded authenticated opening-auction quote samples by exact trade date or session. Quantities retain their business meaning and certified units; missing/unverified values are null, explicit zero is zero. Inspect quantity_quality; 100 stock shares means 100 shares, not 100 lots.",
       "endpoint": "query_auction_quotes",
       "read_only": true,
       "input_schema": {
@@ -342,11 +356,18 @@
             ]
           }
         ]
+      },
+      "output_schema": {
+        "type": "array",
+        "maxItems": 5000,
+        "items": {
+          "$ref": "postgrest-openapi-v1.json#/components/schemas/AuctionQuoteRow"
+        }
       }
     },
     {
       "name": "market_call_auction_snapshots",
-      "description": "Read the exact-date 09:25:20 final opening-auction series batch by six-digit codes; no earlier-round or legacy-table fallback.",
+      "description": "Read the exact-date 09:25:20 final opening-auction series batch by six-digit codes; no earlier-round or legacy-table fallback. Quantities retain their business meaning and certified units; missing/unverified values are null, explicit zero is zero. Inspect quantity_quality; 100 stock shares means 100 shares, not 100 lots.",
       "endpoint": "query_call_auction_market_snapshots",
       "read_only": true,
       "input_schema": {
@@ -371,11 +392,14 @@
             "maxItems": 500
           }
         }
+      },
+      "output_schema": {
+        "$ref": "postgrest-openapi-v1.json#/components/schemas/CallAuctionMarketSnapshotResponse"
       }
     },
     {
       "name": "market_call_auction_series_snapshots",
-      "description": "Read one exact-date opening-auction market series session by six-digit codes, including batch codes and bid/ask five-level price-volume facts.",
+      "description": "Read one exact-date opening-auction market series session by six-digit codes, including batch codes and bid/ask five-level price-volume facts. Quantities retain their business meaning and certified units; missing/unverified values are null, explicit zero is zero. Inspect quantity_quality; 100 stock shares means 100 shares, not 100 lots.",
       "endpoint": "query_call_auction_market_series_snapshots",
       "read_only": true,
       "input_schema": {
@@ -407,6 +431,9 @@
             "pattern": "^[0-9]{6}$"
           }
         }
+      },
+      "output_schema": {
+        "$ref": "postgrest-openapi-v1.json#/components/schemas/CallAuctionMarketSeriesSnapshotResponse"
       }
     },
     {
@@ -907,7 +934,7 @@
     },
     {
       "name": "market_stock_technical_factors",
-      "description": "Read up to 100 exact-date source technical factor snapshots without historical fallback. Adjustment variants use decimal strings/null; common counts use integers/null; missing identifiers are explicit.",
+      "description": "Read up to 100 exact-date source technical factor snapshots without historical fallback. Adjustment variants use decimal strings/null; common counts use integers/null; missing identifiers are explicit. Quantities retain their business meaning and certified units; missing/unverified values are null, explicit zero is zero. Inspect quantity_quality; 100 stock shares means 100 shares, not 100 lots. Factor response catalog is v2 while source catalog remains unchanged.",
       "endpoint": "query_stock_technical_factors",
       "read_only": true,
       "input_schema": {
@@ -932,11 +959,14 @@
             "format": "date"
           }
         }
+      },
+      "output_schema": {
+        "$ref": "postgrest-openapi-v1.json#/components/schemas/StockTechnicalFactorResponse"
       }
     },
     {
       "name": "market_stock_technical_factors_by_codes",
-      "description": "Read up to 100 exact-date source technical factor snapshots without historical fallback. Adjustment variants use decimal strings/null; common counts use integers/null; missing identifiers are explicit.",
+      "description": "Read up to 100 exact-date source technical factor snapshots without historical fallback. Adjustment variants use decimal strings/null; common counts use integers/null; missing identifiers are explicit. Quantities retain their business meaning and certified units; missing/unverified values are null, explicit zero is zero. Inspect quantity_quality; 100 stock shares means 100 shares, not 100 lots. Factor response catalog is v2 while source catalog remains unchanged.",
       "endpoint": "query_stock_technical_factors_by_codes",
       "read_only": true,
       "input_schema": {
@@ -961,7 +991,338 @@
             "format": "date"
           }
         }
+      },
+      "output_schema": {
+        "$ref": "postgrest-openapi-v1.json#/components/schemas/StockTechnicalFactorResponseByCodes"
+      }
+    },
+    {
+      "name": "market_recent_daily_bars",
+      "description": "Read recent stored unadjusted bars, newest first; quantities are shares/CNY, missing or unverified values null; source zero stays zero. Quantities retain their business meaning and certified units; missing/unverified values are null, explicit zero is zero. Inspect quantity_quality; 100 stock shares means 100 shares, not 100 lots.",
+      "endpoint": "query_recent_daily_bars",
+      "read_only": true,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "p_code",
+          "p_trade_date"
+        ],
+        "properties": {
+          "p_code": {
+            "type": "string",
+            "pattern": "^[0-9]{6}$"
+          },
+          "p_trade_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "p_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 20
+          }
+        }
+      },
+      "output_schema": {
+        "$ref": "postgrest-openapi-v1.json#/components/schemas/DailyBarResponse"
+      }
+    },
+    {
+      "name": "market_latest_stock_daily_indicators",
+      "description": "Read at most 500 latest stock indicator facts; share-capital quantities and market values require independent evidence. Source-reported ratios retain their existing windows and denominators. Quantities retain their business meaning and certified units; missing/unverified values are null, explicit zero is zero. Inspect quantity_quality; 100 stock shares means 100 shares, not 100 lots.",
+      "endpoint": "query_latest_stock_daily_indicators",
+      "read_only": true,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "p_codes"
+        ],
+        "properties": {
+          "p_codes": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 500,
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]{6}$"
+            }
+          }
+        }
+      },
+      "output_schema": {
+        "$ref": "postgrest-openapi-v1.json#/components/schemas/LatestStockDailyIndicatorResponse"
+      }
+    },
+    {
+      "name": "market_limit_up_pool",
+      "description": "Read the exact-date previous-day limit-up pool and independently admitted free-float capital facts; no older-date fallback. Quantities retain their business meaning and certified units; missing/unverified values are null, explicit zero is zero. Inspect quantity_quality; 100 stock shares means 100 shares, not 100 lots.",
+      "endpoint": "query_limit_up_pool",
+      "read_only": true,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "p_trade_date"
+        ],
+        "properties": {
+          "p_trade_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "p_version": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "default": null
+          },
+          "p_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 5000
+          }
+        }
+      },
+      "output_schema": {
+        "$ref": "postgrest-openapi-v1.json#/components/schemas/LimitUpPoolResponse"
+      }
+    },
+    {
+      "name": "market_daily_limit_up_list",
+      "description": "Read exact-date immutable daily limit-up snapshots. Unverified default versions return deferred with empty items; explicit rejected versions return quantity_units_unverified (PT409). Quantities retain their business meaning and certified units; missing/unverified values are null, explicit zero is zero. Inspect quantity_quality; 100 stock shares means 100 shares, not 100 lots.",
+      "endpoint": "query_daily_limit_up_list",
+      "read_only": true,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "p_trade_date"
+        ],
+        "properties": {
+          "p_trade_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "p_version": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "default": null
+          },
+          "p_offset": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 50000,
+            "default": 0
+          },
+          "p_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 500
+          }
+        }
+      },
+      "output_schema": {
+        "$ref": "postgrest-openapi-v1.json#/components/schemas/DailyLimitUpListResponse"
+      }
+    },
+    {
+      "name": "market_daily_limit_down_list",
+      "description": "Read exact-date immutable daily limit-down snapshots. Unverified default versions return deferred with empty items; explicit rejected versions return quantity_units_unverified (PT409). Quantities retain their business meaning and certified units; missing/unverified values are null, explicit zero is zero. Inspect quantity_quality; 100 stock shares means 100 shares, not 100 lots.",
+      "endpoint": "query_daily_limit_down_list",
+      "read_only": true,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "p_trade_date"
+        ],
+        "properties": {
+          "p_trade_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "p_version": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "default": null
+          },
+          "p_offset": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 50000,
+            "default": 0
+          },
+          "p_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 200
+          }
+        }
+      },
+      "output_schema": {
+        "$ref": "postgrest-openapi-v1.json#/components/schemas/DailyLimitDownListResponse"
+      }
+    },
+    {
+      "name": "market_call_auction_indicative_details",
+      "description": "Read bounded current-day auction displayed matching quantities in shares; these are indicative matching observations, not exchange trade ticks. Unverified quantities remain null. Quantities retain their business meaning and certified units; missing/unverified values are null, explicit zero is zero. Inspect quantity_quality; 100 stock shares means 100 shares, not 100 lots.",
+      "endpoint": "query_call_auction_indicative_details",
+      "read_only": true,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "p_symbol",
+          "p_trade_date"
+        ],
+        "properties": {
+          "p_symbol": {
+            "type": "string",
+            "pattern": "^(SSE|SZSE):[0-9]{6}$"
+          },
+          "p_trade_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "p_offset": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 5000,
+            "default": 0
+          },
+          "p_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 200
+          }
+        }
+      },
+      "output_schema": {
+        "$ref": "postgrest-openapi-v1.json#/components/schemas/AuctionIndicativeDetailResponse"
+      }
+    },
+    {
+      "name": "market_auction_one_price_limits",
+      "description": "Read 09:25:20 final-series one-price limit facts; cumulative or indicative quantities use declared value semantics and certified shares/CNY. Quantities retain their business meaning and certified units; missing/unverified values are null, explicit zero is zero. Inspect quantity_quality; 100 stock shares means 100 shares, not 100 lots.",
+      "endpoint": "query_auction_one_price_limits",
+      "read_only": true,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [],
+        "properties": {
+          "p_trade_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "default": null
+          }
+        }
+      },
+      "output_schema": {
+        "$ref": "postgrest-openapi-v1.json#/components/schemas/AuctionOnePriceLimitResponse"
+      }
+    },
+    {
+      "name": "market_call_auction_one_price_patterns",
+      "description": "Read the bounded 29-round auction one-price pattern window; price-only results do not change due to quantity normalization. Quantities retain their business meaning and certified units; missing/unverified values are null, explicit zero is zero. Inspect quantity_quality; 100 stock shares means 100 shares, not 100 lots.",
+      "endpoint": "query_call_auction_one_price_patterns",
+      "read_only": true,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [],
+        "properties": {
+          "p_trade_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "default": null
+          }
+        }
+      },
+      "output_schema": {
+        "$ref": "postgrest-openapi-v1.json#/components/schemas/CallAuctionOnePricePatternResponse"
+      }
+    },
+    {
+      "name": "market_call_auction_grab_lines",
+      "description": "Read exact-date bounded 09:24:53 auction grab-line percentages; bounds use percentage points and preserve the existing price-only calculation. Quantities retain their business meaning and certified units; missing/unverified values are null, explicit zero is zero. Inspect quantity_quality; 100 stock shares means 100 shares, not 100 lots.",
+      "endpoint": "query_call_auction_grab_lines",
+      "read_only": true,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "p_trade_date"
+        ],
+        "properties": {
+          "p_trade_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "p_min_grab_line_pct": {
+            "type": "number",
+            "default": 0
+          },
+          "p_max_grab_line_pct": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "default": null
+          },
+          "p_min_change_pct": {
+            "type": "number",
+            "default": 0
+          },
+          "p_max_change_pct": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "default": null
+          }
+        }
+      },
+      "output_schema": {
+        "$ref": "postgrest-openapi-v1.json#/components/schemas/CallAuctionGrabLineResponse"
+      }
+    },
+    {
+      "name": "market_quantity_unit_contract_version",
+      "description": "Read-only deployment preflight. Require stock-quantity.v1; missing or mismatched gates must not be treated as verified quantities.",
+      "endpoint": "quantity_unit_contract_version",
+      "read_only": true,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [],
+        "properties": {}
+      },
+      "output_schema": {
+        "type": "string",
+        "const": "stock-quantity.v1"
       }
     }
-  ]
+  ],
+  "quantity_unit_contract_version": "stock-quantity.v1"
 }

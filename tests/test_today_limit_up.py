@@ -46,7 +46,7 @@ class Client:
         )
 
 
-def test_akshare_limit_up_mapping_preserves_source_semantics() -> None:
+def test_akshare_limit_up_mapping_preserves_source_semantics(synthetic_quantity_contract) -> None:
     batch = AkshareCurrentDayLimitUpProvider(Client()).fetch_limit_up_pool(date(2026, 8, 11))
     record = batch.records[0]
     assert record.symbol == "SZSE:000001"
@@ -287,3 +287,11 @@ def test_fill_service_commits_raw_and_snapshot(tmp_path) -> None:
     ).fill(date(2026, 8, 11))
     assert result.status == "ready"
     assert persistence.committed
+
+
+@pytest.fixture
+def synthetic_quantity_contract(monkeypatch):
+    """Isolate the parser; real unverified-source blocking is tested separately."""
+    monkeypatch.setattr(
+        "market_data_center.providers.akshare_limit_up.quantity_unit_rule", lambda **kwargs: None
+    )

@@ -25,6 +25,7 @@ from market_data_center.domain.board_index import (
 from market_data_center.domain.ingestion import DatasetCode
 from market_data_center.domain.records import Market
 from market_data_center.providers.contracts import ProviderBatch, ProviderError, RawRow
+from market_data_center.providers.quantity_units import quantity_unit_rule
 
 THS_BOARD_ID = "THS:883423"
 THS_BOARD_CODE = "883423"
@@ -356,6 +357,13 @@ def _daily_bar_url(board_code: str, year: int) -> str:
 
 
 def _map_daily_bar(row: Mapping[str, str]) -> BoardIndexDailyBarRecord:
+    quantity_unit_rule(
+        provider="akshare_ths",
+        endpoint="board_index_daily_bars",
+        schema_version="akshare_ths.board_index_daily_bar.v1",
+        instrument_type="board_index",
+        field="成交量",
+    )
     return BoardIndexDailyBarRecord(
         board_id=THS_BOARD_ID,
         trade_date=_date_value(row.get("日期"), "日期"),

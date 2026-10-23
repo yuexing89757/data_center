@@ -200,12 +200,14 @@ insert into metrics.classification_daily_metric (
     calculation_id, namespace, classification_type, classification_code,
     membership_snapshot_date, trade_date, member_count, priced_member_count,
     advancing_count, declining_count, unchanged_count, total_volume,
-    total_amount, equal_weight_return, total_market_cap, market_cap_member_count
+    total_amount, equal_weight_return, total_market_cap, market_cap_member_count,
+    volume_member_count, amount_member_count
 ) values (
     :calculation_id, :namespace, :classification_type, :classification_code,
     :membership_snapshot_date, :trade_date, :member_count, :priced_member_count,
     :advancing_count, :declining_count, :unchanged_count, :total_volume,
-    :total_amount, :equal_weight_return, :total_market_cap, :market_cap_member_count
+    :total_amount, :equal_weight_return, :total_market_cap, :market_cap_member_count,
+    :volume_member_count, :amount_member_count
 )
 """),
                     [
@@ -226,6 +228,8 @@ insert into metrics.classification_daily_metric (
                             "equal_weight_return": record.equal_weight_return,
                             "total_market_cap": record.total_market_cap,
                             "market_cap_member_count": record.market_cap_member_count,
+                            "volume_member_count": record.volume_member_count,
+                            "amount_member_count": record.amount_member_count,
                         }
                         for record in output.classification_metrics
                     ],
@@ -247,10 +251,12 @@ insert into metrics.classification_daily_metric (
             _rights_issue(row)
             for row in connection.execute(_SELECT_RIGHTS_ISSUES, parameters).mappings()
         )
-        share_capital = tuple(
-            _share_capital(row)
-            for row in connection.execute(_SELECT_SHARE_CAPITAL, parameters).mappings()
-        )
+        capital_rows = tuple(connection.execute(_SELECT_SHARE_CAPITAL, parameters).mappings())
+        if any(row["total_shares"] is None for row in capital_rows):
+            raise ValueError(
+                "quantity_units_unverified: share-capital revision lacks certification"
+            )
+        share_capital = tuple(_share_capital(row) for row in capital_rows)
         memberships = _membership_snapshots(
             connection.execute(_SELECT_MEMBERSHIPS, parameters).mappings()
         )
@@ -281,14 +287,14 @@ insert into metrics.classification_daily_metric (
 _SELECT_DAILY_BARS = text("""
 with target_symbols as (
     select distinct symbol
-    from core.daily_bar
+    from audit.unit_safe_daily_bar
     where trade_date between :start_date and :end_date
 ), target_bars as (
     select bar.symbol, bar.trade_date, bar.market, bar.open, bar.high, bar.low,
            bar.close,
            coalesce(bar.previous_close, (
                select prior.close
-               from core.daily_bar prior
+               from audit.unit_safe_daily_bar prior
                where prior.symbol = bar.symbol
                  and prior.trade_date < bar.trade_date
                order by prior.trade_date desc
@@ -296,7 +302,7 @@ with target_symbols as (
            )) as previous_close,
            bar.volume, bar.amount,
            bar.trade_status, bar.is_st, bar.source_code
-    from core.daily_bar bar
+    from audit.unit_safe_daily_bar bar
     join target_symbols target using (symbol)
     where bar.trade_date between :start_date and :end_date
 ), warmup_bars as (
@@ -309,7 +315,7 @@ with target_symbols as (
                candidate.open, candidate.high, candidate.low, candidate.close,
                coalesce(candidate.previous_close, (
                    select prior.close
-                   from core.daily_bar prior
+                   from audit.unit_safe_daily_bar prior
                    where prior.symbol = candidate.symbol
                      and prior.trade_date < candidate.trade_date
                    order by prior.trade_date desc
@@ -317,7 +323,7 @@ with target_symbols as (
                )) as previous_close,
                candidate.volume, candidate.amount, candidate.trade_status,
                candidate.is_st, candidate.source_code
-        from core.daily_bar candidate
+        from audit.unit_safe_daily_bar candidate
         where candidate.symbol = target.symbol
           and candidate.trade_date < :start_date
         order by candidate.trade_date desc
@@ -341,7 +347,7 @@ with target_symbols as (
            bar.close,
            coalesce(bar.previous_close, (
                select prior.close
-               from core.daily_bar prior
+               from audit.unit_safe_daily_bar prior
                where prior.symbol = bar.symbol
                  and prior.trade_date < bar.trade_date
                order by prior.trade_date desc
@@ -349,7 +355,7 @@ with target_symbols as (
            )) as previous_close,
            bar.volume, bar.amount,
            bar.trade_status, bar.is_st, bar.source_code
-    from core.daily_bar bar
+    from audit.unit_safe_daily_bar bar
     join event_dates event
       on event.symbol = bar.symbol and event.trade_date = bar.trade_date
 )
@@ -391,7 +397,7 @@ with target_symbols as (
 select symbol, record_date, announcement_date, ex_date, payment_start_date,
        payment_end_date, listing_date, rights_ratio, rights_price,
        base_shares, proceeds, source_code
-from capital.rights_issue
+from audit.unit_safe_rights_issue
 where ex_date <= :end_date
   and symbol in (select symbol from target_symbols)
 order by symbol, record_date
@@ -405,7 +411,7 @@ with target_symbols as (
 )
 select symbol, effective_date, total_shares, restricted_shares,
        circulating_shares, listed_a_shares, change_reason, source_code
-from capital.share_capital
+from audit.unit_safe_share_capital
 where effective_date <= :end_date
   and symbol in (select symbol from target_symbols)
 order by symbol, effective_date

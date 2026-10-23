@@ -67,6 +67,11 @@ from market_data_center.domain.regulation import RegulationEventRecord
 from market_data_center.domain.shareholder_count import ShareholderCountRecord
 from market_data_center.domain.stock_daily_indicator import StockDailyIndicatorSnapshotRecord
 from market_data_center.domain.top10_float_holder import Top10FloatHolderRecord
+from market_data_center.quantity_certification import (
+    certify_quantity_batch,
+    quantity_certificates,
+    write_quantity_certificates,
+)
 from market_data_center.shareholder_count_batch import PreparedShareholderCountBatch
 from market_data_center.shareholder_count_service import ShareholderCountBackfillTarget
 from market_data_center.top10_float_holder_batch import PreparedTop10FloatHolderBatch
@@ -92,7 +97,8 @@ update ingestion.ingestion_run set
     fetched_rows = :fetched_rows,
     accepted_rows = :accepted_rows,
     rejected_rows = :rejected_rows,
-    error_summary = :error_summary
+    error_summary = :error_summary,
+    request_params = cast(:request_params as jsonb)
 where ingestion_id = :ingestion_id
 """)
 
@@ -886,15 +892,7 @@ class PostgreSQLPersistence:
             connection.execute(INSERT_INGESTION_RUN, parameters)
 
     def update_ingestion_run(self, run: IngestionRun) -> None:
-        parameters = {
-            "ingestion_id": run.ingestion_id,
-            "status": run.status.value,
-            "finished_at": run.finished_at,
-            "fetched_rows": run.fetched_rows,
-            "accepted_rows": run.accepted_rows,
-            "rejected_rows": run.rejected_rows,
-            "error_summary": run.error_summary,
-        }
+        parameters = self._run_update_parameters(run)
         with self._engine.begin() as connection:
             connection.execute(UPDATE_INGESTION_RUN, parameters)
 
@@ -1398,6 +1396,7 @@ where market = 'CN_A_SHARE'
     ) -> None:
         with self._engine.begin() as connection:
             self._insert_manifest(connection, manifest)
+            certify_quantity_batch(connection, run, manifest)
             if records:
                 self._ensure_envelope_ids(records, run.ingestion_id)
                 is_replay = run.replayed_from_raw_id is not None
@@ -1423,6 +1422,7 @@ where market = 'CN_A_SHARE'
     ) -> None:
         with self._engine.begin() as connection:
             self._insert_manifest(connection, manifest)
+            certify_quantity_batch(connection, run, manifest)
             if records:
                 self._ensure_envelope_ids(records, run.ingestion_id)
                 connection.execute(
@@ -1440,6 +1440,7 @@ where market = 'CN_A_SHARE'
     ) -> None:
         with self._engine.begin() as connection:
             self._insert_manifest(connection, manifest)
+            certify_quantity_batch(connection, run, manifest)
             if quality_results:
                 connection.execute(INSERT_QUALITY_RESULT, self._quality_parameters(quality_results))
             if records:
@@ -1477,6 +1478,14 @@ where market = 'CN_A_SHARE'
                 INSERT_RAW_MANIFEST,
                 [self._manifest_parameters(manifest) for manifest in manifests],
             )
+            write_quantity_certificates(
+                connection,
+                (
+                    certificate
+                    for batch in batches
+                    for certificate in quantity_certificates(connection, batch.run, batch.manifest)
+                ),
+            )
             if quality_results:
                 connection.execute(INSERT_QUALITY_RESULT, self._quality_parameters(quality_results))
             if records:
@@ -1495,6 +1504,7 @@ where market = 'CN_A_SHARE'
     ) -> None:
         with self._engine.begin() as connection:
             self._insert_manifest(connection, manifest)
+            certify_quantity_batch(connection, run, manifest)
             if quality_results:
                 connection.execute(INSERT_QUALITY_RESULT, self._quality_parameters(quality_results))
             if records:
@@ -1513,6 +1523,7 @@ where market = 'CN_A_SHARE'
     ) -> None:
         with self._engine.begin() as connection:
             self._insert_manifest(connection, manifest)
+            certify_quantity_batch(connection, run, manifest)
             if records:
                 self._ensure_envelope_ids(records, run.ingestion_id)
                 connection.execute(
@@ -1629,6 +1640,14 @@ where market = 'CN_A_SHARE'
                 )
             if quality_results:
                 connection.execute(INSERT_QUALITY_RESULT, self._quality_parameters(quality_results))
+            write_quantity_certificates(
+                connection,
+                (
+                    certificate
+                    for batch in batches
+                    for certificate in quantity_certificates(connection, batch.run, batch.manifest)
+                ),
+            )
             if records:
                 connection.execute(
                     INSERT_TOP10_FLOAT_HOLDER,
@@ -1810,6 +1829,7 @@ where trade_date between :start_date and :end_date
     ) -> None:
         with self._engine.begin() as connection:
             self._insert_manifest(connection, manifest)
+            certify_quantity_batch(connection, run, manifest)
             if quality_results:
                 connection.execute(INSERT_QUALITY_RESULT, self._quality_parameters(quality_results))
             if records:
@@ -1855,6 +1875,7 @@ where trade_date between :start_date and :end_date
     ) -> None:
         with self._engine.begin() as connection:
             self._insert_manifest(connection, manifest)
+            certify_quantity_batch(connection, run, manifest)
             if quality_results:
                 connection.execute(INSERT_QUALITY_RESULT, self._quality_parameters(quality_results))
             if records:
@@ -1942,6 +1963,7 @@ where trade_date between :start_date and :end_date
         ]
         with self._engine.begin() as connection:
             self._insert_manifest(connection, manifest)
+            certify_quantity_batch(connection, run, manifest)
             if quality_results:
                 connection.execute(INSERT_QUALITY_RESULT, self._quality_parameters(quality_results))
             if params:
@@ -1990,6 +2012,7 @@ where trade_date between :start_date and :end_date
         parameters = self._call_auction_market_parameters(records, run.ingestion_id)
         with self._engine.begin() as connection:
             self._insert_manifest(connection, manifest)
+            certify_quantity_batch(connection, run, manifest)
             if quality_results:
                 connection.execute(INSERT_QUALITY_RESULT, self._quality_parameters(quality_results))
             if parameters:
@@ -2045,6 +2068,7 @@ where trade_date between :start_date and :end_date
         self._ensure_single_envelope(record, run.ingestion_id)
         with self._engine.begin() as connection:
             self._insert_manifest(connection, manifest)
+            certify_quantity_batch(connection, run, manifest)
             if quality_results:
                 connection.execute(INSERT_QUALITY_RESULT, self._quality_parameters(quality_results))
             if not quality_results:
@@ -2075,6 +2099,7 @@ where trade_date between :start_date and :end_date
         self._ensure_single_envelope(record, run.ingestion_id)
         with self._engine.begin() as connection:
             self._insert_manifest(connection, manifest)
+            certify_quantity_batch(connection, run, manifest)
             if quality_results:
                 connection.execute(INSERT_QUALITY_RESULT, self._quality_parameters(quality_results))
             if not quality_results:
@@ -2104,6 +2129,7 @@ where namespace = :namespace
     ) -> None:
         with self._engine.begin() as connection:
             self._insert_manifest(connection, manifest)
+            certify_quantity_batch(connection, run, manifest)
             if records:
                 self._ensure_envelope_ids(records, run.ingestion_id)
                 connection.execute(
@@ -2121,6 +2147,7 @@ where namespace = :namespace
     ) -> None:
         with self._engine.begin() as connection:
             self._insert_manifest(connection, manifest)
+            certify_quantity_batch(connection, run, manifest)
             if quality_results:
                 connection.execute(INSERT_QUALITY_RESULT, self._quality_parameters(quality_results))
             if records:
@@ -2141,6 +2168,7 @@ where namespace = :namespace
         self._ensure_single_envelope(record, run.ingestion_id)
         with self._engine.begin() as connection:
             self._insert_manifest(connection, manifest)
+            certify_quantity_batch(connection, run, manifest)
             if quality_results:
                 connection.execute(INSERT_QUALITY_RESULT, self._quality_parameters(quality_results))
             if not quality_results:
@@ -2166,6 +2194,7 @@ where board_id = :board_id and trade_date = :trade_date
     ) -> None:
         with self._engine.begin() as connection:
             self._insert_manifest(connection, manifest)
+            certify_quantity_batch(connection, run, manifest)
             if quality_results:
                 connection.execute(INSERT_QUALITY_RESULT, self._quality_parameters(quality_results))
             connection.execute(UPDATE_INGESTION_RUN, self._run_update_parameters(run))
@@ -2234,6 +2263,7 @@ where board_id = :board_id and trade_date = :trade_date
             if trading_day is not True:
                 raise ValueError("ST snapshot requires a known trading day")
             self._insert_manifest(connection, manifest)
+            certify_quantity_batch(connection, run, manifest)
             connection.execute(
                 text("""
                     insert into regulation.st_day_snapshot
@@ -2268,6 +2298,7 @@ where board_id = :board_id and trade_date = :trade_date
             "accepted_rows": run.accepted_rows,
             "rejected_rows": run.rejected_rows,
             "error_summary": run.error_summary,
+            "request_params": dumps(dict(run.request_params), default=str, sort_keys=True),
         }
 
     @staticmethod

@@ -310,13 +310,17 @@ def test_daily_replacement_gaps_and_rollback(database_engine, factor_seed):  # n
 
 
 @pytest.mark.integration
-def test_live_raw_and_replay_publish_same_facts_with_new_lineage(
+@pytest.mark.parametrize("source_quantity", ["", "123.5"])
+def test_live_raw_and_replay_reject_unverified_quantities_and_preserve_raw(
     database_engine,  # noqa: F811
     factor_seed,
     tmp_path,
+    source_quantity,
 ):
+    from hashlib import sha256
     from unittest.mock import Mock
 
+    from market_data_center.providers.contracts import ProviderError
     from market_data_center.providers.tushare_technical_factor import (
         TECHNICAL_FACTOR_FIELDS,
         TushareTechnicalFactorProvider,
@@ -326,35 +330,100 @@ def test_live_raw_and_replay_publish_same_facts_with_new_lineage(
     from market_data_center.technical_factor_service import TechnicalFactorIngestionService
 
     row = dict.fromkeys(TECHNICAL_FACTOR_FIELDS, "")
-    row.update(ts_code="600000.SH", trade_date="20261009", macd_qfq="-0.123456789123456789")
+    row.update(
+        ts_code="600000.SH",
+        trade_date="20261009",
+        macd_qfq="-0.123456789123456789",
+        obv_bfq=source_quantity,
+    )
     client = Mock()
     client.query.return_value = [row, row]
     persistence = PostgreSQLTechnicalFactorPersistence(database_engine)
     store = LocalRawStore(tmp_path)
-    live = TechnicalFactorIngestionService(
+    service = TechnicalFactorIngestionService(
         provider=TushareTechnicalFactorProvider(client), persistence=persistence, raw_store=store
-    ).ingest_snapshot(DAY)
-    assert live.status is IngestionStatus.SUCCEEDED
-    assert (live.fetched_rows, live.accepted_rows) == (2, 1)
-    replay = RawReplayService(raw_store=store, persistence=persistence).replay(live.ingestion_id)
-    assert (replay.fetched_rows, replay.accepted_rows) == (2, 1)
-    assert replay.status == "succeeded"
-    client.query.assert_called_once()
-    assert len(list(tmp_path.rglob("*.jsonl"))) == 1
+    )
+    # An all-null quantity row is still an unverified source contract, not a
+    # successful standard batch with a conveniently empty set of quantities.
+    with pytest.raises(ProviderError, match="quantity unit contract unverified"):
+        service.ingest_snapshot(DAY)
+    raw_files = list(tmp_path.rglob("*.jsonl"))
+    assert len(raw_files) == 1
+    original_payload = raw_files[0].read_bytes()
     with database_engine.connect() as connection:
-        fact = connection.execute(
-            text(
-                "select forward_adjusted->>'macd',ingestion_id "
-                "from core.stock_technical_factor_snapshot"
+        live = (
+            connection.execute(
+                text("""
+            select ingestion_id,status,fetched_rows,accepted_rows,rejected_rows
+            from ingestion.ingestion_run where dataset_code='stock_technical_factor'
+        """)
             )
+            .mappings()
+            .one()
+        )
+        assert live["status"] == "failed"
+        assert (live["fetched_rows"], live["accepted_rows"], live["rejected_rows"]) == (2, 0, 2)
+        manifest = connection.execute(
+            text("""
+            select raw_id,content_sha256,byte_size,row_count from ingestion.raw_manifest
+            where ingestion_id=:id
+        """),
+            {"id": live["ingestion_id"]},
         ).one()
-        assert fact == ("-0.123456789123456789", replay.replay_ingestion_id)
+        assert manifest.content_sha256 == sha256(original_payload).hexdigest()
+        assert (manifest.byte_size, manifest.row_count) == (len(original_payload), 2)
+    with pytest.raises(ProviderError, match="quantity unit contract unverified"):
+        RawReplayService(raw_store=store, persistence=persistence).replay(live["ingestion_id"])
+    client.query.assert_called_once()
+    assert list(tmp_path.rglob("*.jsonl")) == raw_files
+    assert raw_files[0].read_bytes() == original_payload
+    with database_engine.connect() as connection:
+        runs = (
+            connection.execute(
+                text("""
+            select ingestion_id,status,replayed_from_raw_id from ingestion.ingestion_run
+            where dataset_code='stock_technical_factor' order by requested_at
+        """)
+            )
+            .mappings()
+            .all()
+        )
+        assert len(runs) == 2 and all(run["status"] == "failed" for run in runs)
+        replay = next(run for run in runs if run["ingestion_id"] != live["ingestion_id"])
+        assert replay["replayed_from_raw_id"] == manifest.raw_id
+        quality = (
+            connection.execute(
+                text("""
+            select ingestion_id,severity,status,details from audit.quality_result
+            where dataset_code='stock_technical_factor'
+        """)
+            )
+            .mappings()
+            .all()
+        )
+        assert {item["ingestion_id"] for item in quality} == {run["ingestion_id"] for run in runs}
+        assert len(quality) == 2
+        assert all(
+            item["severity"] == "error"
+            and item["status"] == "failed"
+            and item["details"]["quantity_reason"] == "quantity_units_unverified"
+            for item in quality
+        )
         assert (
             connection.execute(
-                text("select count(*) from ingestion.raw_manifest where ingestion_id = :original"),
-                {"original": live.ingestion_id},
+                text("select count(*) from core.stock_technical_factor_snapshot")
             ).scalar_one()
+            == 0
+        )
+        assert (
+            connection.execute(text("select count(*) from ingestion.raw_manifest")).scalar_one()
             == 1
+        )
+        assert (
+            connection.execute(
+                text("select count(*) from audit.quantity_unit_certification")
+            ).scalar_one()
+            == 0
         )
 
 

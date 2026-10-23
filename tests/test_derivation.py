@@ -1,4 +1,5 @@
 from contextlib import AbstractContextManager, nullcontext
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from uuid import UUID
@@ -9,6 +10,8 @@ from market_data_center.derivation import DerivationService
 from market_data_center.domain import (
     CalculationMode,
     CalculationRun,
+    ClassificationMembershipSnapshot,
+    ClassificationType,
     DailyBarRecord,
     DerivedCalculationInput,
     DerivedCalculationOutput,
@@ -95,14 +98,14 @@ def test_derivation_service_records_version_watermark_and_outputs() -> None:
         START_DATE,
         END_DATE,
         mode=CalculationMode.FULL,
-        algorithm_version="1.0.0",
+        algorithm_version="1.2.0",
     )
 
     assert summary.status == "succeeded"
     assert summary.output_rows == 3
     assert persistence.created[0].input_watermark == {"daily_bar": NOW.isoformat()}
     run, output = persistence.committed[0]
-    assert run.algorithm_version == "1.0.0"
+    assert run.algorithm_version == "1.2.0"
     assert len(output.adjusted_daily_bars) == 2
     assert len(output.daily_metrics) == 1
 
@@ -111,7 +114,45 @@ def test_derivation_service_rejects_an_unknown_algorithm_version() -> None:
     service = DerivationService(StubDerivedPersistence())
 
     with pytest.raises(ValueError, match="unsupported algorithm_version"):
-        service.recompute(START_DATE, END_DATE, algorithm_version="1.2.0")
+        service.recompute(START_DATE, END_DATE, algorithm_version="99.0.0")
+
+
+@pytest.mark.parametrize("version", ["1.0.0", "1.1.0"])
+def test_legacy_algorithm_cannot_create_new_results_with_changed_quantity_semantics(
+    version: str,
+) -> None:
+    persistence = StubDerivedPersistence()
+
+    with pytest.raises(ValueError, match="unsupported algorithm_version"):
+        DerivationService(persistence).recompute(START_DATE, END_DATE, algorithm_version=version)
+
+    assert persistence.created == []
+
+
+def test_default_algorithm_versions_incomplete_classification_totals() -> None:
+    persistence = StubDerivedPersistence()
+    persistence.inputs = replace(
+        persistence.inputs,
+        daily_bars=(replace(persistence.inputs.daily_bars[0], volume=None),),
+        memberships=(
+            ClassificationMembershipSnapshot(
+                namespace="eastmoney",
+                classification_type=ClassificationType.INDUSTRY,
+                classification_code="BK0475",
+                snapshot_date=START_DATE,
+                members=("SSE:600000",),
+            ),
+        ),
+    )
+
+    summary = DerivationService(persistence).recompute(START_DATE, END_DATE)
+    metric = persistence.committed[0][1].classification_metrics[0]
+
+    assert summary.algorithm_version == "1.2.0"
+    assert metric.total_volume is None
+    assert metric.volume_member_count == 0
+    assert metric.total_amount == Decimal("1000")
+    assert metric.amount_member_count == 1
 
 
 def test_incremental_recompute_skips_identical_input_signature() -> None:

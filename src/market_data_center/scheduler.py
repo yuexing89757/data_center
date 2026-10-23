@@ -99,6 +99,7 @@ from market_data_center.scheduling_catalog import (
     STALE_RUN_RECOVERY_JOB_ID,
     STOCK_DAILY_INDICATOR_JOB_ID,
     STOCK_POOL_JOB_ID,
+    STOCK_TECHNICAL_FACTOR_CATCHUP_JOB_ID,
     STOCK_TECHNICAL_FACTOR_JOB_ID,
     TODAY_LIMIT_DOWN_SNAPSHOT_JOB_ID,
     TODAY_LIMIT_UP_SNAPSHOT_JOB_ID,
@@ -227,6 +228,16 @@ def run_pytdx_pool_refresh_job(
 
 def run_stock_technical_factor_job() -> None:
     """Collect today's independent professional-factor snapshot inside the Worker."""
+    _run_stock_technical_factor_job(STOCK_TECHNICAL_FACTOR_JOB_ID, None)
+
+
+def run_stock_technical_factor_catchup_job() -> None:
+    """Retry yesterday explicitly; never label yesterday's factors as today's."""
+    yesterday = datetime.now(ZoneInfo(SCHEDULER_TIMEZONE)).date() - timedelta(days=1)
+    _run_stock_technical_factor_job(STOCK_TECHNICAL_FACTOR_CATCHUP_JOB_ID, yesterday.isoformat())
+
+
+def _run_stock_technical_factor_job(job_code: str, as_of_date: str | None) -> None:
     settings = WorkerSettings()  # type: ignore[call-arg]
     scheduling = SchedulerSettings()
     engine = create_engine(
@@ -235,12 +246,16 @@ def run_stock_technical_factor_job() -> None:
     try:
         execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
             WorkflowCode.STOCK_TECHNICAL_FACTOR,
-            _scheduled_job_fire_time(STOCK_TECHNICAL_FACTOR_JOB_ID, scheduling),
+            _scheduled_job_fire_time(
+                job_code,
+                scheduling,
+                weekdays_only=job_code != STOCK_TECHNICAL_FACTOR_CATCHUP_JOB_ID,
+            ),
             TriggerSource.SCHEDULED,
         )
         try:
             run_stock_technical_factor_workflow(
-                Namespace(provider="tushare", as_of_date=None),
+                Namespace(provider="tushare", as_of_date=as_of_date),
                 PostgreSQLPersistence(engine),
                 LocalRawStore(settings.raw_data_root),
                 execution=execution,
@@ -1109,6 +1124,7 @@ def build_scheduler(settings: SchedulerSettings | None = None) -> BlockingSchedu
         DAILY_RUN_JOB_ID: run_daily_market_job,
         STOCK_DAILY_INDICATOR_JOB_ID: run_stock_daily_indicator_job,
         STOCK_TECHNICAL_FACTOR_JOB_ID: run_stock_technical_factor_job,
+        STOCK_TECHNICAL_FACTOR_CATCHUP_JOB_ID: run_stock_technical_factor_catchup_job,
         STALE_RUN_RECOVERY_JOB_ID: run_stale_recovery_job,
         DEDUCTED_PROFIT_JOB_ID: run_deducted_profit_job,
         SHAREHOLDER_COUNT_DAILY_JOB_ID: run_shareholder_count_daily_job,

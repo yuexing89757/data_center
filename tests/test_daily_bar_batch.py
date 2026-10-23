@@ -66,7 +66,7 @@ def _prepared(symbol: str, code: str) -> PreparedDailyBarBatch:
         content_sha256="0" * 64,
         byte_size=100,
         row_count=1,
-        schema_version="pytdx.daily_bar.v1",
+        schema_version="pytdx.remote_daily_bar.v2",
     )
     record = DailyBarRecord(
         symbol=symbol,
@@ -99,10 +99,11 @@ def test_multi_run_commit_uses_one_transaction_and_bounded_executemany_calls() -
     persistence.commit_daily_bar_batches(batches)
 
     assert engine.begin_count == 1
-    assert len(engine.connection.executions) == 3
+    assert len(engine.connection.executions) == 4
     assert len(cast(list[object], engine.connection.executions[0][1])) == 100
-    assert len(cast(list[object], engine.connection.executions[1][1])) == 100
+    assert len(cast(list[object], engine.connection.executions[1][1])) == 200
     assert len(cast(list[object], engine.connection.executions[2][1])) == 100
+    assert len(cast(list[object], engine.connection.executions[3][1])) == 100
 
 
 def test_multi_run_commit_rejects_duplicate_natural_keys_before_transaction() -> None:

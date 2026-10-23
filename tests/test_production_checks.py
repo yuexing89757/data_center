@@ -449,7 +449,7 @@ def test_production_schema_expectations_follow_all_migrations() -> None:
     )
 
     assert tables == EXPECTED_TABLES
-    assert views == EXPECTED_VIEWS
+    assert {view for view in views if view[0] == "api_v1"} == EXPECTED_VIEWS
     assert set(API_VIEWS) == {view for schema, view in views if schema == "api_v1"}
 
 

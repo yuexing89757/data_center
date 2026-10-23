@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 
 from market_data_center.domain.today_limit_up import LimitUpSourceRecord
 from market_data_center.providers.contracts import ProviderBatch, ProviderError
+from market_data_center.providers.quantity_units import quantity_unit_rule
 
 RAW_SCHEMA_VERSION = "akshare_eastmoney.current_day_limit_up_pool.v1"
 SHANGHAI = ZoneInfo("Asia/Shanghai")
@@ -92,6 +93,13 @@ def _records(frame: object) -> Sequence[Mapping[object, object]]:
 
 
 def _map_row(row: Mapping[str, str], trade_date: date) -> LimitUpSourceRecord:
+    quantity_unit_rule(
+        provider="akshare",
+        endpoint="stock_zt_pool_em",
+        schema_version=RAW_SCHEMA_VERSION,
+        instrument_type="stock",
+        field="封板资金",
+    )
     code = row.get("代码", "").strip().zfill(6)
     if len(code) != 6 or not code.isdigit():
         raise ProviderError("invalid limit-up source code")
@@ -149,8 +157,8 @@ def _decimal(value: str | None) -> Decimal | None:
         result = Decimal(text)
     except InvalidOperation as error:
         raise ProviderError("invalid source-reported decimal") from error
-    if result < 0:
-        raise ProviderError("source-reported decimal must be nonnegative")
+    if not result.is_finite() or result < 0:
+        raise ProviderError("source-reported decimal must be finite and nonnegative")
     return result
 
 
