@@ -2992,6 +2992,13 @@ insert into core.stock_daily_indicator (
             with_price_limits=True,
         )
         if verified_source:
+            for upstream_run in (market_run, indicator_run):
+                connection.execute(
+                    UPDATE_INGESTION_RUN,
+                    core_persistence._run_update_parameters(
+                        _completed_run(upstream_run, row_count=len(symbols))
+                    ),
+                )
             _seed_quantity_fixture_proof(
                 connection, market_run.ingestion_id, ("daily_bar.volume", "daily_bar.amount")
             )
