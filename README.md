@@ -400,3 +400,9 @@ The CLI uses deterministic provider routing by default: BaoStock then AKShare fo
 
 本地单日采集会先保留较早记录计算昨收价，再裁剪请求日期。已有空昨收记录需要显式重新
 采集，普通缺行补采不会自动修复字段；验收同时检查记录覆盖、昨收完整性和 Raw 重放。
+
+The owner-authorized 2026-10-23 cleanup uses separate administrator preview/archive/apply tools.
+Offline Raw retirement preserves manifests, blocks replay until verified restoration, and excludes
+retired objects from scheduled compression. See the [monthly cleanup audit](docs/runbooks/month-retention-production-2026-10-23.md)
+for the exact cutoff, retained calculation inputs, archive evidence, and unfinished exceptions.
+This one-off operation does not change the Worker's recurring retention periods.
