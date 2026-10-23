@@ -7055,6 +7055,7 @@ def test_worker_has_only_ingestion_permissions(
         ("ingestion", "raw_manifest", "SELECT"),
         ("ingestion", "raw_compression", "SELECT"),
         ("ingestion", "raw_compression", "INSERT"),
+        ("ingestion", "raw_retirement", "SELECT"),
     }
     expected.update(
         ("audit", table, privilege)
@@ -7114,6 +7115,7 @@ def test_worker_has_only_ingestion_permissions(
 
 def test_internal_tables_have_rls_with_worker_only_policies(database_engine: Engine) -> None:
     expected_tables = {
+        ("ingestion", "raw_retirement"),
         ("ingestion", "raw_compression"),
         ("audit", "quantity_unit_certification"),
         ("audit", "quantity_unit_repair_run"),
@@ -7408,12 +7410,20 @@ def test_application_backup_restores_to_independent_database(
                    repeat('1',64),1,now() from ingestion.raw_manifest
         """)
         )
+        connection.execute(
+            text("""insert into ingestion.raw_retirement
+              (raw_id,archive_ref,archive_manifest_sha256,content_sha256,content_bytes,
+               row_count,retirement_cutoff)
+              select raw_id,'synthetic-archive',repeat('2',64),content_sha256,byte_size,
+                     row_count,date '2026-09-23' from ingestion.raw_manifest""")
+        )
     source_snapshot = capture_database_snapshot(migrated_database_url)
     assert (
         dict(source_snapshot.row_counts)["raw_compression"]
         == dict(source_snapshot.row_counts)["raw_manifest"]
         > 0
     )
+    assert dict(source_snapshot.row_counts)["raw_retirement"] > 0
     backup_path = tmp_path / "application-data.dump"
 
     monkeypatch.setenv("PGOPTIONS", "-c role=market_data_backup")

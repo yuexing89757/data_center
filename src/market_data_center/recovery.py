@@ -29,6 +29,7 @@ APPLICATION_SCHEMAS = (
     "today_limit_up",
 )
 COUNT_QUERIES = {
+    "raw_retirement": "select count(*) from ingestion.raw_retirement",
     "raw_compression": "select count(*) from ingestion.raw_compression",
     "regulation_rule": "select count(*) from regulation.rule",
     "regulation_event": "select count(*) from regulation.event",

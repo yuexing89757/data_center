@@ -18,6 +18,8 @@ ELIGIBLE = """
  m.storage_backend='local' and m.file_format='jsonl'
  and m.byte_size between 0 and :max_bytes and m.created_at < :cutoff
  and i.status in ('succeeded','partial','failed') and i.finished_at < :cutoff
+ and not exists(select 1 from ingestion.raw_retirement r
+                where r.raw_id=m.raw_id and r.restored_at is null)
 """
 PRIORITY = "case when c.raw_id is not null then 0 else 1 end"
 

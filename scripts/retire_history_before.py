@@ -83,6 +83,65 @@ TARGETS["core.daily_bar"] = """t.trade_date < (select min(trade_date) from (
     order by trade_date desc limit 120) protected)
     and (select count(*) from core.trading_calendar where market='CN_A_SHARE'
          and is_trading_day and trade_date < DATE '2026-09-23') >= 120"""
+TARGETS["core.board_index_daily_bar"] = TARGETS["core.daily_bar"]
+_old_session = """exists(select 1 from realtime.auction_collection_session s
+    where s.session_id=t.session_id and s.effective_trade_date < DATE '2026-09-23'
+    and s.finished_at is not null)"""
+for _table in (
+    "derived.auction_quote_metric",
+    "realtime.five_level_quote_snapshot",
+    "realtime.auction_collection_round",
+):
+    TARGETS[_table] = _old_session
+TARGETS["realtime.auction_collection_session"] = (
+    "t.effective_trade_date < DATE '2026-09-23' and t.finished_at is not null"
+)
+TARGETS["realtime.call_auction_market_series_round"] = """exists(
+    select 1 from realtime.call_auction_market_series_session s
+    where s.session_id=t.session_id and s.trade_date < DATE '2026-09-23'
+    and s.finished_at is not null)"""
+TARGETS["realtime.call_auction_market_series_session"] = (
+    "t.trade_date < DATE '2026-09-23' and t.finished_at is not null"
+)
+POOL_ELIGIBLE = """s.effective_trade_date < DATE '2026-09-23'
+    and not exists(select 1 from realtime.auction_collection_session a
+        where a.pool_snapshot_id=s.snapshot_id)
+    and not exists(select 1 from realtime.five_level_quote_snapshot q
+        where q.pool_snapshot_id=s.snapshot_id)"""
+TARGETS["stock_pool.calculation_quality"] = f"""exists(
+    select 1 from stock_pool.snapshot s where s.calculation_id=t.calculation_id
+    and ({POOL_ELIGIBLE})) and not exists(
+    select 1 from stock_pool.snapshot s where s.calculation_id=t.calculation_id
+    and not ({POOL_ELIGIBLE}))"""
+TARGETS["stock_pool.member"] = f"""exists(select 1 from stock_pool.snapshot s
+    where s.snapshot_id=t.snapshot_id and ({POOL_ELIGIBLE}))"""
+TARGETS["stock_pool.snapshot"] = POOL_ELIGIBLE.replace("s.", "t.")
+# A retained effective-date snapshot reads facts on its earlier basis date.
+# Protect inputs of every extant snapshot; clean snapshots first, then freshly
+# archive their now-unreferenced inputs. Do not rely on date-only child ordering.
+for _table in (
+    "derived.daily_price_limit",
+    "derived.price_limit_event",
+    "core.stock_daily_indicator",
+):
+    _calculation = "" if _table.startswith("core.") else "and s.calculation_id=t.calculation_id"
+    TARGETS[_table] += f""" and not exists(select 1 from stock_pool.snapshot s
+        join stock_pool.member m on m.snapshot_id=s.snapshot_id
+        where s.basis_trade_date=t.trade_date and m.symbol=t.symbol {_calculation})"""
+TARGETS["derived.close_price_new_high_120d_member"] = """exists(
+    select 1 from derived.close_price_new_high_120d_snapshot s
+    where s.snapshot_id=t.snapshot_id and s.trade_date < DATE '2026-09-23')"""
+TARGETS["derived.close_price_new_high_120d_snapshot"] = "t.trade_date < DATE '2026-09-23'"
+# Keep two prior shareholder periods for the existing latest/previous comparison;
+# all revisions within those periods remain available for as-of reads.
+TARGETS["core.shareholder_count"] = """t.announcement_date < DATE '2026-09-23'
+    and t.statistics_date < (select min(d.statistics_date) from (
+        select distinct s.statistics_date from core.shareholder_count s
+        where s.symbol=t.symbol and s.announcement_date < DATE '2026-09-23'
+        order by s.statistics_date desc limit 2) d)"""
+TARGETS["core.top10_float_holder"] = """t.announcement_date < DATE '2026-09-23'
+    and t.end_date < (select max(s.end_date) from core.top10_float_holder s
+        where s.symbol=t.symbol and s.announcement_date < DATE '2026-09-23')"""
 
 
 def ident(table):

@@ -27,6 +27,7 @@ TARGET_SCHEMAS = (
     "today_limit_down",
 )
 EXPECTED_TABLES = {
+    ("ingestion", "raw_retirement"),
     ("ingestion", "raw_compression"),
     ("audit", "quality_archive"),
     ("operations", "data_cleanup_report"),

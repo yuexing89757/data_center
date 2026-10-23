@@ -164,3 +164,75 @@ def test_partitioned_cleanup_resumes_committed_batches(operator, connection, tmp
     assert (
         connection.execute("select count(*) from retention_test.partitioned").fetchone()[0] == 1004
     )
+
+
+def test_catalog_covers_old_snapshots_and_retains_live_reference_data(operator):
+    assert {
+        "stock_pool.snapshot",
+        "stock_pool.member",
+        "derived.close_price_new_high_120d_snapshot",
+        "derived.close_price_new_high_120d_member",
+        "core.shareholder_count",
+        "core.top10_float_holder",
+    } <= operator.TARGETS.keys()
+    assert (
+        not {
+            "core.security",
+            "core.trading_calendar",
+            "ingestion.raw_manifest",
+            "regulation.rule",
+            "regulation.monitor_context",
+        }
+        & operator.TARGETS.keys()
+    )
+
+
+def test_pool_dependencies_survive_boundary_and_unfinished_sessions(operator, connection):
+    from psycopg import sql
+
+    for schema in ("stock_pool", "realtime", "derived", "core"):
+        connection.execute(sql.SQL("create schema {}").format(sql.Identifier(schema)))
+    connection.execute("""create table stock_pool.snapshot (
+        snapshot_id int, calculation_id int, effective_trade_date date, basis_trade_date date)""")
+    connection.execute("create table stock_pool.member(snapshot_id int, symbol text)")
+    connection.execute("create table stock_pool.calculation_quality(calculation_id int)")
+    connection.execute("create table realtime.auction_collection_session(pool_snapshot_id int)")
+    connection.execute("create table realtime.five_level_quote_snapshot(pool_snapshot_id int)")
+    connection.execute("""insert into stock_pool.snapshot values
+        (1,1,'2026-09-23','2026-09-22'), (2,2,'2026-09-01','2026-08-31'),
+        (3,3,'2026-08-01','2026-07-31'), (4,2,'2026-08-01','2026-07-31')""")
+    connection.execute("insert into stock_pool.member values(1,'A'),(2,'B'),(3,'C'),(4,'D')")
+    connection.execute("insert into stock_pool.calculation_quality values(1),(2),(3)")
+    connection.execute("insert into realtime.auction_collection_session values(2)")
+    for table, expected in (("snapshot", [3, 4]), ("member", [3, 4]), ("calculation_quality", [3])):
+        key = "calculation_id" if table == "calculation_quality" else "snapshot_id"
+        actual = connection.execute(
+            sql.SQL("select {} from {} t where {} order by 1").format(
+                sql.Identifier(key),
+                sql.Identifier("stock_pool", table),
+                sql.SQL(operator.TARGETS["stock_pool." + table]),
+            )
+        ).fetchall()
+        assert [r[0] for r in actual] == expected
+    for table in (
+        "derived.daily_price_limit",
+        "derived.price_limit_event",
+        "core.stock_daily_indicator",
+    ):
+        connection.execute(
+            sql.SQL("create table {}(calculation_id int,symbol text,trade_date date)").format(
+                operator.ident(table)
+            )
+        )
+        connection.execute(
+            sql.SQL(
+                "insert into {} values (1,'A','2026-09-22'),"
+                "(2,'B','2026-08-31'),(9,'X','2026-09-22')"
+            ).format(operator.ident(table))
+        )
+        actual = connection.execute(
+            sql.SQL("select symbol from {} t where {}").format(
+                operator.ident(table), sql.SQL(operator.TARGETS[table])
+            )
+        ).fetchall()
+        assert actual == [("X",)]
