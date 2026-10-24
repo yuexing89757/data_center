@@ -100,10 +100,19 @@ def test_workflow_window_shared_lock_and_reports(
                 "compress_raw": 2,
                 "archive_auction_quality": 3,
                 "archive_history_results": 4,
+                "retire_archived_raw": 5,
             }
             assert sequence == expected[code]
             calls.append(code)
             return operation()
+
+    class Retention:
+        def __init__(self, repo, root):
+            pass
+
+        def run(self, day, budget):
+            calls.append("retention")
+            return module.RawRetentionResult()
 
     for name, fake in [
         ("QualityArchivePersistence", Repo),
@@ -114,6 +123,8 @@ def test_workflow_window_shared_lock_and_reports(
         ("RawCleanupService", Raw),
         ("HistoryRetentionPersistence", Repo),
         ("HistoryCleanupService", History),
+        ("RawRetentionPersistence", Repo),
+        ("RawRetentionService", Retention),
     ]:
         monkeypatch.setattr(module, name, fake)
 
@@ -144,6 +155,8 @@ def test_workflow_window_shared_lock_and_reports(
             "quality",
             "archive_history_results",
             "history",
+            "retire_archived_raw",
+            "retention",
             "unlock",
             "partial" if raw_partial else "succeeded",
         ]

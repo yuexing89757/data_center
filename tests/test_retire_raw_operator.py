@@ -101,6 +101,26 @@ def test_apply_rechecks_references_is_idempotent_and_keeps_manifests(
             operator.apply(c, store, plan, index, receipt, tmp_path / "journal")
         assert c.execute("select count(*) from ingestion.raw_retirement").fetchone()[0] == 0
         path.write_bytes(data)
+        staged = operator.apply(
+            c, store, plan, index, receipt, tmp_path / "journal", register_only=True
+        )
+        assert staged["approved"] == 1 and staged["completed"] == 0
+        assert path.exists()
+        assert (
+            c.execute(
+                "select approved_storage_sha256 from ingestion.raw_retirement where raw_id=%s",
+                (raws[1],),
+            ).fetchone()[0]
+            == sha256(operator.encoded(plan["storage_identity"])).hexdigest()
+        )
+        c.execute("update ingestion.raw_retirement set approved_storage_sha256=%s", ("f" * 64,))
+        with pytest.raises(RuntimeError, match="approved_storage_conflict"):
+            operator.apply(c, store, plan, index, receipt, tmp_path / "journal", register_only=True)
+        assert path.exists()
+        c.execute(
+            "update ingestion.raw_retirement set approved_storage_sha256=%s",
+            (sha256(operator.encoded(plan["storage_identity"])).hexdigest(),),
+        )
         result = operator.apply(c, store, plan, index, receipt, tmp_path / "journal")
         assert result == {
             "completed": 1,

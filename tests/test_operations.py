@@ -189,6 +189,7 @@ def test_job_catalog_is_stable_and_references_defined_workflows() -> None:
         "compress_raw",
         "archive_auction_quality",
         "archive_history_results",
+        "retire_archived_raw",
     )
     assert all(job.timezone == "Asia/Shanghai" for job in jobs)
     assert {workflow.value for workflow in WorkflowCode} == set(workflows)

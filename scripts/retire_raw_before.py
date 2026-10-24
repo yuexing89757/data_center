@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 import re
+from datetime import date
 from pathlib import Path
 from uuid import UUID
 
@@ -278,7 +279,7 @@ def register_batch(c, rows, plan):
         return allowed
 
 
-def apply(c, store, plan, index, receipt, journal):
+def apply(c, store, plan, index, receipt, journal, *, register_only=False):
     if (
         plan["cutoff"] != CUTOFF
         or identity(c) != plan["database_identity"]
@@ -294,7 +295,7 @@ def apply(c, store, plan, index, receipt, journal):
     ).fetchone()[0]
     if not acquired:
         raise RuntimeError("maintenance_already_running")
-    completed = removed = protected = 0
+    completed = removed = protected = registered = 0
     try:
         for start in range(0, len(plan["eligible"]), 200):
             batch = plan["eligible"][start : start + 200]
@@ -320,6 +321,29 @@ def apply(c, store, plan, index, receipt, journal):
                         raise RuntimeError("first_retirement_online_raw_missing")
             allowed = register_batch(c, batch, plan)
             protected += len(batch) - len(allowed)
+            if register_only:
+                with c.transaction():
+                    sealed = c.execute(
+                        "update ingestion.raw_retirement set approved_storage_sha256=%s "
+                        "where raw_id=any(%s::uuid[]) and restored_at is null "
+                        "and online_removed_at is null and "
+                        "(approved_storage_sha256 is null or approved_storage_sha256=%s) "
+                        "returning raw_id::text",
+                        (
+                            hashlib.sha256(encoded(plan["storage_identity"])).hexdigest(),
+                            [str(r["raw_id"]) for r in allowed],
+                            hashlib.sha256(encoded(plan["storage_identity"])).hexdigest(),
+                        ),
+                    ).fetchall()
+                    if {r[0] for r in sealed} != {str(r["raw_id"]) for r in allowed}:
+                        raise RuntimeError("retirement_approved_storage_conflict")
+                # Only the Worker consumes these explicitly sealed declarations.
+                registered += len(allowed)
+                with journal.open("ab") as stream:
+                    stream.write(encoded({"registered_only": True, "approved": registered}) + b"\n")
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                continue
             confirmed = []
             for r in allowed:
                 manifest, proof = manifest_proof(r, plan)
@@ -346,16 +370,20 @@ def apply(c, store, plan, index, receipt, journal):
                 stream.flush()
                 os.fsync(stream.fileno())
             print(json.dumps(result), flush=True)
-        return {
+        result = {
             "completed": completed,
             "physical_bytes_removed_this_run": removed,
             "newly_protected": protected,
         }
+        if register_only:
+            result.update(registered_only=True, approved=registered)
+        return result
     finally:
         c.execute("select pg_advisory_unlock(hashtextextended('maintenance:data_cleanup',0))")
 
 
 def main():
+    global CUTOFF, OLD
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", nargs="?", choices=("preview", "apply"), default="preview")
     parser.add_argument("--index", type=Path, required=True)
@@ -363,7 +391,16 @@ def main():
     parser.add_argument("--plan", type=Path, required=True)
     parser.add_argument("--expected-plan-sha256")
     parser.add_argument("--raw-root", type=Path, required=True)
+    parser.add_argument("--cutoff", type=date.fromisoformat, default=date.fromisoformat(CUTOFF))
+    parser.add_argument(
+        "--register-only",
+        action="store_true",
+        help="Seal exact verified approvals for Worker; do not unlink files",
+    )
     args = parser.parse_args()
+    # ISO date parsing precedes interpolation; preserve the legacy default and plan binding.
+    OLD = OLD.replace(CUTOFF, args.cutoff.isoformat())
+    CUTOFF = args.cutoff.isoformat()
     receipt = json.loads(args.verification.read_bytes())
     index = index_proofs(args.index, receipt)
     with psycopg.connect(autocommit=True) as c:
@@ -401,6 +438,7 @@ def main():
                         index,
                         receipt,
                         args.plan.with_suffix(".receipts.jsonl"),
+                        register_only=args.register_only,
                     )
                 )
             )

@@ -5,6 +5,8 @@ Worker never invokes this module or receives retirement-write privileges.
 """
 
 import gzip
+import hashlib
+import json
 import re
 from collections.abc import Callable
 from contextlib import nullcontext
@@ -23,6 +25,13 @@ class OfflineRawProof:
     content_sha256: str
     content_bytes: int
     row_count: int
+
+
+def approved_storage_hash(store: LocalRawStore) -> str:
+    """Bind an approval to the path and mounted directory, not just its name."""
+    stat = store.root.stat()
+    identity = [hashlib.sha256(str(store.root).encode()).hexdigest(), stat.st_dev, stat.st_ino]
+    return hashlib.sha256(json.dumps(identity, separators=(",", ":")).encode()).hexdigest()
 
 
 def verify_online_raw(

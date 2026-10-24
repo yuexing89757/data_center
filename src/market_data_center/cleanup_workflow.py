@@ -15,6 +15,7 @@ from market_data_center.persistence.history_retention_postgres import HistoryRet
 from market_data_center.persistence.postgres import PostgreSQLPersistence
 from market_data_center.persistence.quality_archive_postgres import QualityArchivePersistence
 from market_data_center.persistence.raw_compression_postgres import RawCompressionPersistence
+from market_data_center.persistence.raw_retention_postgres import RawRetentionPersistence
 from market_data_center.quality_cleanup_service import (
     CleanupBudget,
     QualityCleanupFailure,
@@ -29,6 +30,7 @@ from market_data_center.raw_cleanup_service import (
     RawCleanupService,
     raw_cutoff,
 )
+from market_data_center.raw_retention_service import RawRetentionResult, RawRetentionService
 from market_data_center.settings import WorkerSettings
 
 logger = logging.getLogger(__name__)
@@ -39,6 +41,7 @@ class CleanupWorkflowResult:
     quality: QualityCleanupResult
     raw: RawCleanupResult | None = None
     history: HistoryCleanupResult | None = None
+    raw_retention: RawRetentionResult | None = None
 
     @property
     def errors(self) -> tuple[str, ...]:
@@ -46,6 +49,7 @@ class CleanupWorkflowResult:
             self.quality.errors
             + (self.raw.errors if self.raw else ())
             + (self.history.errors if self.history else ())
+            + (self.raw_retention.errors if self.raw_retention else ())
         )
 
     @property
@@ -57,6 +61,9 @@ class CleanupWorkflowResult:
             "quality": self.quality.report(),
             "raw": self.raw.report() if self.raw else {"skipped": True},
             "history": self.history.report() if self.history else {"skipped": True},
+            "raw_retention": self.raw_retention.report()
+            if self.raw_retention
+            else {"skipped": True},
             "partial": self.partial,
         }
 
@@ -89,6 +96,7 @@ def run_cleanup_workflow(
     status = "failed"
     raw_result = None
     history_result = None
+    retention_result = None
     try:
         if not duration:
             result = execution.step(
@@ -122,7 +130,7 @@ def run_cleanup_workflow(
                         reference_date,
                         run_id,
                         CleanupBudget(
-                            min(budget.deadline - 600, monotonic() + 900), cancelled=lost.is_set
+                            min(budget.deadline - 900, monotonic() + 600), cancelled=lost.is_set
                         ),
                     ),
                 )
@@ -134,7 +142,7 @@ def run_cleanup_workflow(
                         reference_date,
                         run_id,
                         CleanupBudget(
-                            min(budget.deadline - 600, monotonic() + 300), cancelled=lost.is_set
+                            min(budget.deadline - 900, monotonic() + 300), cancelled=lost.is_set
                         ),
                     ),
                 )
@@ -148,13 +156,26 @@ def run_cleanup_workflow(
                         reference_date,
                         run_id,
                         CleanupBudget(
-                            min(budget.deadline, monotonic() + 600), cancelled=lost.is_set
+                            min(budget.deadline - 300, monotonic() + 600), cancelled=lost.is_set
                         ),
                     ),
                 )
                 report["history"] = history_result.report()
+                retention_result = execution.step(
+                    "retire_archived_raw",
+                    5,
+                    lambda: RawRetentionService(
+                        RawRetentionPersistence(engine), settings.raw_data_root
+                    ).run(
+                        reference_date,
+                        CleanupBudget(
+                            min(budget.deadline, monotonic() + 300), cancelled=lost.is_set
+                        ),
+                    ),
+                )
+                report["raw_retention"] = retention_result.report()
         report["quality"] = result.report()
-        combined = CleanupWorkflowResult(result, raw_result, history_result)
+        combined = CleanupWorkflowResult(result, raw_result, history_result, retention_result)
         # Reporting must not restart a global scan after work or budget expiry.
         report["remaining"] = {"counts_complete": False, "has_more": combined.partial}
         status = "partial" if combined.partial else "succeeded"
