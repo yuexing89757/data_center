@@ -16,8 +16,8 @@ from market_data_center.providers.registry import create_provider
 type ProviderFactory = Callable[[str], ManagedMarketDataProvider]
 
 DEFAULT_PROVIDER_ROUTES: Mapping[DatasetCode, tuple[str, ...]] = {
-    DatasetCode.SECURITY: ("baostock", "akshare"),
-    DatasetCode.TRADING_CALENDAR: ("baostock", "akshare"),
+    DatasetCode.SECURITY: ("tushare", "akshare"),
+    DatasetCode.TRADING_CALENDAR: ("tushare", "akshare"),
     DatasetCode.DAILY_BAR: ("pytdx",),
     DatasetCode.CAPITAL: ("akshare",),
     DatasetCode.CLASSIFICATION_CATALOG: ("akshare",),

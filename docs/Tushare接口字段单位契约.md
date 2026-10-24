@@ -56,6 +56,11 @@
 `stock_basic`、`trade_cal`、`stock_st`、`disclosure_date` 的代码、日期、状态及分类字段
 不赋予股/元单位；分类数字不是数量。
 
+ADR-0071 将 Security/Trading Calendar 自动首选改为 Tushare、AKShare 兜底。新证券 Raw
+为 `tushare.security.v2`：`T600018.SH` 的明确历史退市身份保留在 Raw，并在请求血缘中
+记录排除原因，不映射为 `SSE:600018`；精确身份条件见 ADR，其他非法身份仍阻断。
+v1 回放保留旧规则，v2 回放重新核对排除明细。此规则涉及证券身份，不涉及手/股转换。
+
 ## 涨跌停列表：封单金额与板上成交金额分开
 
 | 接口 / 参数范围 | 字段 | 真实单位 / 核验范围 | 当前使用情况 |

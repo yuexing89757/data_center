@@ -1,4 +1,4 @@
-"""BaoStock adapter that contains every source-specific field name."""
+"""Legacy BaoStock mapping retained for immutable Raw replay (ADR-0071)."""
 
 from collections.abc import Callable, Mapping, Sequence
 from datetime import date, timedelta
@@ -6,7 +6,7 @@ from decimal import Decimal, InvalidOperation
 from logging import getLogger
 from socket import getdefaulttimeout, setdefaulttimeout
 from types import TracebackType
-from typing import Protocol, Self, cast
+from typing import Protocol, Self
 
 from market_data_center.domain.classification import ClassificationRecord
 from market_data_center.domain.ingestion import DatasetCode
@@ -95,9 +95,7 @@ class BaoStockProvider:
 
     @classmethod
     def default(cls) -> Self:
-        import baostock  # type: ignore[import-untyped]
-
-        return cls(cast(BaoStockClient, baostock))
+        raise ProviderError("BaoStock collection is retired; use Tushare (ADR-0071)")
 
     def __enter__(self) -> Self:
         previous_timeout = getdefaulttimeout()

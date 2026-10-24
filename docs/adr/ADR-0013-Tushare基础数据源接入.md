@@ -1,5 +1,7 @@
 # ADR-0013：Tushare 基础数据源接入
 
+> 2026-10-24：Security/Trading Calendar 已由 [ADR-0071](ADR-0071-BaoStock新采集退役与Tushare基础路由.md) 局部替代，首选 Tushare、AKShare 兜底；BaoStock 新采集退役，历史 Raw 回放保留。下文保留原决策背景。
+
 - 状态：Accepted
 - 日期：2026-08-02
 - 关联 Issue：#28

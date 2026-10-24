@@ -18,13 +18,12 @@ from market_data_center.providers import (
 
 
 def test_registry_exposes_stable_provider_codes() -> None:
-    assert available_provider_codes() == ("akshare", "baostock", "pytdx", "tushare")
+    assert available_provider_codes() == ("akshare", "pytdx", "tushare")
     assert available_board_index_provider_codes() == ("akshare_ths",)
 
 
 def test_registry_builds_each_adapter(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
     assert isinstance(create_provider("akshare"), AKShareProvider)
-    assert isinstance(create_provider("baostock"), BaoStockProvider)
     monkeypatch.setenv("PYTDX_POOL_PATH", str(tmp_path / "pytdx_pool.json"))
     monkeypatch.setenv("TUSHARE_TOKEN", "test-token")
     assert isinstance(create_provider("pytdx"), PytdxProvider)
@@ -37,3 +36,10 @@ def test_registry_rejects_unknown_provider() -> None:
         create_provider("unknown")
     with pytest.raises(ProviderError, match="unsupported board-index provider"):
         create_board_index_provider("unknown")
+
+
+def test_registry_rejects_retired_baostock_collection() -> None:
+    with pytest.raises(ProviderError, match="unsupported provider"):
+        create_provider("baostock")
+    with pytest.raises(ProviderError, match="retired"):
+        BaoStockProvider.default()

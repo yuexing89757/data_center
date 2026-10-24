@@ -1,5 +1,7 @@
 # ADR-0005：Provider 自动路由与故障切换
 
+> 2026-10-24：Security/Trading Calendar 已由 [ADR-0071](ADR-0071-BaoStock新采集退役与Tushare基础路由.md) 局部替代，首选 Tushare、AKShare 兜底；BaoStock 新采集退役，历史 Raw 回放保留。下文保留原决策背景。
+
 - 状态：Accepted
 - 日期：2026-07-28
 - 实现澄清：2026-08-09 股票 Daily Bar 固定使用 ADR-0024 的远程 pytdx；不回退其他 Provider

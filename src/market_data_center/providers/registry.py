@@ -4,7 +4,6 @@ from collections.abc import Callable
 
 from market_data_center.providers.akshare import AKShareProvider
 from market_data_center.providers.akshare_ths import AKShareTHSProvider
-from market_data_center.providers.baostock import BaoStockProvider
 from market_data_center.providers.contracts import (
     ManagedBoardIndexProvider,
     ManagedMarketDataProvider,
@@ -18,7 +17,6 @@ type BoardIndexProviderFactory = Callable[[], ManagedBoardIndexProvider]
 
 _PROVIDER_FACTORIES: dict[str, ProviderFactory] = {
     "akshare": AKShareProvider.default,
-    "baostock": BaoStockProvider.default,
     "pytdx": PytdxProvider.default,
     "tushare": TushareProvider.default,
 }

@@ -56,8 +56,8 @@
 
 - Provider-specific field names and units stop at the provider adapter boundary. Providers
   return standard domain records and never leak source payload fields downstream.
-- Automatic routing follows ADR-0005/ADR-0024: Security and Trading Calendar try BaoStock then
-  AKShare; ordinary stock Daily Bar uses remote pytdx only. Missing, stale, or suspended
+- Automatic routing follows ADR-0071/ADR-0005/ADR-0024: Security and Trading Calendar try Tushare then
+  AKShare; BaoStock is retired for new collection but its historical Raw replay is retained; ordinary stock Daily Bar uses remote pytdx only. Missing, stale, or suspended
   Daily Bars remain explicit gaps and are not filled from network providers.
 - ADR-0024 pytdx Daily Bar reads only explicitly configured remote TDX endpoints. It performs
   no endpoint discovery, uses bounded connection attempts/timeouts, and keeps gaps visible.

@@ -313,8 +313,15 @@ class StubReliabilityPersistence:
 
 @pytest.mark.parametrize("compressed", [False, True])
 def test_raw_replay_reuses_verified_raw_lineage_without_new_manifest(
-    tmp_path: Path, compressed: bool
+    tmp_path: Path, compressed: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    def no_live_provider(*args: object, **kwargs: object) -> None:
+        raise AssertionError("historical replay must not construct a live provider")
+
+    monkeypatch.setattr(
+        "market_data_center.providers.baostock.BaoStockProvider.default", no_live_provider
+    )
+    monkeypatch.setattr("market_data_center.providers.registry.create_provider", no_live_provider)
     store = LocalRawStore(tmp_path)
     source = _source(
         store,

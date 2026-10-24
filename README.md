@@ -4,7 +4,7 @@
 腾讯分时/K线/指数，新浪日K。使用既有X-API-Key，请求时读取且不入库。
 来源网站、上游地址、参数及示例见[实时接口说明](docs/竞价九合一来源实时接口.md)。
 
-A phase-one A-share daily market data pipeline using Python 3.12 and PostgreSQL. Security and calendar use BaoStock/AKShare routing; pytdx quote and Daily Bar reads share one capability-aware endpoint pool maintained by the Worker.
+A phase-one A-share daily market data pipeline using Python 3.12 and PostgreSQL. Security and calendar use Tushare/AKShare routing; pytdx quote and Daily Bar reads share one capability-aware endpoint pool maintained by the Worker.
 
 Remote Daily Bars keep category 9 and the standard TDX protocol. The reviewed candidate catalog
 supplements pytdx's legacy list; probes and collection share strict Decimal decoding and reject
@@ -396,7 +396,7 @@ the current Shanghai trading date only. It remains disabled unless
 `--confirm-current-day-single-symbol` is supplied, is never scheduled, and stores virtual auction
 indicative/matching observations—not exchange trade ticks or order-by-order data.
 
-The CLI uses deterministic provider routing by default: BaoStock then AKShare for security/calendar, and pytdx only for Daily Bars. At startup and every hour, the Worker probes a bounded candidate set and atomically publishes one versioned pool with quote, SSE, SZSE and BSE capability flags. Consumers filter that pool by capability, use bounded connection failover, and keep one endpoint for a successful batch. Missing or unavailable bars remain explicit gaps and are not filled from other providers. Public TDX nodes have no availability or rate-limit guarantee. Use `--provider baostock|akshare|pytdx` to bypass routing for reproducible diagnostics.
+The CLI uses deterministic provider routing by default: Tushare then AKShare for security/calendar (ADR-0071), and pytdx only for Daily Bars. At startup and every hour, the Worker probes a bounded candidate set and atomically publishes one versioned pool with quote, SSE, SZSE and BSE capability flags. Consumers filter that pool by capability, use bounded connection failover, and keep one endpoint for a successful batch. Missing or unavailable bars remain explicit gaps and are not filled from other providers. Public TDX nodes have no availability or rate-limit guarantee. Use `--provider tushare|akshare|pytdx` to bypass routing for reproducible diagnostics. BaoStock new collection is retired; its historical Raw, source codes and replay remain supported without the BaoStock SDK.
 
 ## 本地日线恢复验收补充
 

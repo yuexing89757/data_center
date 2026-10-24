@@ -50,7 +50,7 @@ Market Data Center 是一个独立的证券数据产品，负责数据的采集�
 - Security；
 - Trading Calendar；
 - 未复权 Daily Bar；
-- BaoStock 默认 Provider，以及 Accepted ADR 明确批准的显式可选 Provider；
+- 初期 BaoStock Provider 闭环（新采集已由 ADR-0071 退役）；当前 Security/Trading Calendar 首选 Tushare、AKShare 兜底，以及 Accepted ADR 明确批准的其他来源；
 - Raw Store 与采集审计；
 - 数据质量校验；
 - PostgreSQL/PostgREST；

@@ -1233,3 +1233,87 @@ def test_tushare_client_negotiates_gzip_and_decompresses_the_response(
 
     assert rows == [{"ts_code": "600000.SH"}]
     assert connection.sent_headers["Accept-Encoding"] == "gzip"
+
+
+class LegacyIdentityClient(FakeClient):
+    def __init__(self, **changes: str) -> None:
+        super().__init__()
+        self.changes = changes
+
+    def query(
+        self, api_name: str, *, params: Mapping[str, str], fields: Sequence[str]
+    ) -> Sequence[Mapping[str, object]]:
+        rows = list(super().query(api_name, params=params, fields=fields))
+        if api_name == "stock_basic" and params["list_status"] == "D":
+            rows.append(
+                {
+                    "ts_code": "T600018.SH",
+                    "symbol": "T600018",
+                    "name": "历史特殊身份",
+                    "exchange": "SSE",
+                    "list_status": "D",
+                    "list_date": "20000719",
+                    "delist_date": "20061020",
+                    **self.changes,
+                }
+            )
+        return rows
+
+
+def test_security_v2_keeps_excluded_legacy_identity_in_raw_and_replay() -> None:
+    batch = TushareProvider(LegacyIdentityClient()).fetch_securities()
+    assert batch.schema_version == "tushare.security.v2"
+    assert len(batch.raw_rows) == 4
+    assert len(batch.records) == 3
+    assert any(row["ts_code"] == "T600018.SH" for row in batch.raw_rows)
+    assert all(record.symbol != "SSE:600018" for record in batch.records)
+    assert batch.request_params["excluded_source_identities"] == [
+        {
+            "ts_code": "T600018.SH",
+            "list_status": "D",
+            "list_date": "20000719",
+            "delist_date": "20061020",
+            "reason": "legacy_identity_outside_standard_symbol_contract",
+        }
+    ]
+    replayed = normalize_tushare_raw(
+        DatasetCode.SECURITY, batch.schema_version, batch.raw_rows, batch.request_params
+    )
+    assert replayed == tuple(batch.records)
+    with pytest.raises(ProviderError, match="unsupported Tushare symbol"):
+        normalize_tushare_raw(DatasetCode.SECURITY, "tushare.security.v1", batch.raw_rows, {})
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"ts_code": "T600019.SH"},
+        {"list_status": "L"},
+        {"delist_date": "20061021"},
+        {"list_date": "20000720"},
+    ],
+)
+def test_security_v2_does_not_guess_other_nonstandard_identities(changes: dict[str, str]) -> None:
+    batch = TushareProvider(LegacyIdentityClient(**changes)).fetch_securities()
+    with pytest.raises(ProviderError, match="unsupported Tushare symbol"):
+        _ = batch.records
+
+
+def test_security_v2_replay_rejects_missing_exclusion_evidence() -> None:
+    batch = TushareProvider(LegacyIdentityClient()).fetch_securities()
+    with pytest.raises(ProviderError, match="identity exclusion metadata"):
+        normalize_tushare_raw(
+            DatasetCode.SECURITY,
+            batch.schema_version,
+            batch.raw_rows,
+            {**batch.request_params, "excluded_source_identities": []},
+        )
+
+
+def test_security_v2_bse_scope_preserves_legacy_raw_exclusion_and_replay() -> None:
+    batch = TushareBseSecurityProvider(LegacyIdentityClient()).fetch_securities()
+    assert len(batch.raw_rows) == 4
+    assert [record.symbol for record in batch.records] == ["BSE:920000"]
+    assert normalize_tushare_raw(
+        DatasetCode.SECURITY, batch.schema_version, batch.raw_rows, batch.request_params
+    ) == tuple(batch.records)

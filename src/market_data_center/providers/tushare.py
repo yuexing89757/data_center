@@ -79,6 +79,12 @@ SECURITY_FIELDS = (
     "delist_date",
 )
 CALENDAR_FIELDS = ("exchange", "cal_date", "is_open")
+LEGACY_SECURITY_IDENTITY_EXCLUSION = {
+    "ts_code": "T600018.SH",
+    "list_status": "D",
+    "list_date": "20000719",
+    "delist_date": "20061020",
+}
 DAILY_BAR_FIELDS = (
     "ts_code",
     "trade_date",
@@ -387,11 +393,15 @@ class TushareProvider(AbstractContextManager["TushareProvider"]):
             rows.extend(_rows(result, SECURITY_FIELDS, "stock_basic"))
         unique_rows = {row["ts_code"]: row for row in rows}
         ordered = [unique_rows[key] for key in sorted(unique_rows)]
+        request_params: dict[str, object] = {
+            "list_statuses": ["L", "D", "P"],
+            "excluded_source_identities": _security_identity_exclusions(ordered),
+        }
         return ProviderBatch(
             raw_rows=ordered,
-            request_params={"list_statuses": ["L", "D", "P"]},
-            schema_version="tushare.security.v1",
-            record_factory=lambda: [_map_security(row) for row in ordered],
+            request_params=request_params,
+            schema_version="tushare.security.v2",
+            record_factory=lambda: _security_records_v2(ordered, request_params),
         )
 
     def fetch_trading_calendar(
@@ -781,6 +791,8 @@ def normalize_tushare_raw(
     raw_rows: Sequence[Mapping[str, str]],
     request_params: Mapping[str, object],
 ) -> tuple[ProviderRecord, ...]:
+    if dataset_code is DatasetCode.SECURITY and schema_version == "tushare.security.v2":
+        return _security_records_v2(raw_rows, request_params)
     if dataset_code is DatasetCode.DAILY_BAR and schema_version == "tushare.index_daily.v1":
         return tuple(_index_daily_records(raw_rows, request_params))
     expected = {
@@ -906,6 +918,37 @@ def _raw_value(value: object) -> str:
 
 def _is_bse_security_row(row: Mapping[str, str]) -> bool:
     return row["ts_code"].strip().upper().endswith(".BJ")
+
+
+def _is_excluded_legacy_security(row: Mapping[str, str]) -> bool:
+    # ADR-0071 excludes one historical identity, never a prefix or an inferred alias.
+    return all(row.get(key) == value for key, value in LEGACY_SECURITY_IDENTITY_EXCLUSION.items())
+
+
+def _security_identity_exclusions(rows: Sequence[Mapping[str, str]]) -> list[dict[str, str]]:
+    return [
+        {
+            **LEGACY_SECURITY_IDENTITY_EXCLUSION,
+            "reason": "legacy_identity_outside_standard_symbol_contract",
+        }
+        for row in rows
+        if _is_excluded_legacy_security(row)
+    ]
+
+
+def _security_records_v2(
+    rows: Sequence[Mapping[str, str]], request_params: Mapping[str, object]
+) -> tuple[SecurityRecord, ...]:
+    if request_params.get("excluded_source_identities") != _security_identity_exclusions(rows):
+        raise ProviderError("Tushare security identity exclusion metadata does not match Raw")
+    scope = request_params.get("exchange_scope")
+    if scope not in (None, "BSE"):
+        raise ProviderError("unsupported Tushare security exchange_scope")
+    return tuple(
+        _map_security(row)
+        for row in rows
+        if not _is_excluded_legacy_security(row) and (scope is None or _is_bse_security_row(row))
+    )
 
 
 def _map_security(row: Mapping[str, str]) -> SecurityRecord:

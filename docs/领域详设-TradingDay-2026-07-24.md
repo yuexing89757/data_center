@@ -6,6 +6,8 @@
 
 ## 1. 领域职责
 
+2026-10-24 来源决策按 ADR-0071：后续自动采集使用 `tushare → akshare`，保留实际来源血缘和历史 BaoStock Raw 回放。Tushare 使用 SSE `trade_cal` 映射统一 `CN_A_SHARE` 日历，响应必须包含请求区间的每个自然日；缺日失败，禁止将缺日推断为休市。此检查不改变原有市场日历和前后交易日计算语义。
+
 Trading Calendar 提供市场时间基准，回答某个市场在某一天是否交易。它不包含证券停牌、行情、股本或统计信息。
 
 第一阶段只维护统一 A 股市场日历：
@@ -28,7 +30,7 @@ timezone = Asia/Shanghai
 | `is_trading_day` | boolean | 是否开市 |
 | `previous_trading_day` | date | 可重算派生字段 |
 | `next_trading_day` | date | 可重算派生字段 |
-| `source_code` | text | 标准来源标识，第一阶段为 `baostock` |
+| `source_code` | text | 实际标准来源标识；新采集为 `tushare` 或 `akshare`，历史可为 `baostock` |
 | `ingestion_id` | uuid | 采集批次 |
 | `created_at` | timestamptz | 创建时间 |
 | `updated_at` | timestamptz | 最近更新时间 |

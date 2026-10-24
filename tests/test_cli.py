@@ -801,3 +801,9 @@ def test_limit_down_snapshot_cli_requires_exact_trade_date() -> None:
     args = _parser().parse_args(["today-limit-down-snapshot", "--trade-date", "2026-09-18"])
     assert args.dataset == "today-limit-down-snapshot"
     assert args.trade_date == "2026-09-18"
+
+
+def test_cli_rejects_retired_baostock_collection() -> None:
+    with pytest.raises(SystemExit) as captured:
+        _parser().parse_args(["--provider", "baostock", "security"])
+    assert captured.value.code == 2
