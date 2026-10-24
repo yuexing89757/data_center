@@ -2,6 +2,8 @@
 
 Tushare逐字段业务、真实单位、来源证据及运行时适配状态见
 [Tushare接口字段单位契约](Tushare接口字段单位契约.md)（2026-10-24核验）。
+全链路只读复查仍发现历史认证缺口及实时跌停fund门禁遗漏，见
+[2026-10-24接口量纲排查](stock-quantity-unit-audit-2026-10-24.md)；本目录登记不能代替各实际入口的准入验证。
 
 本目录对应 ADR-0068、Issue #92 和 `stock-quantity.v1`。可执行目录为
 `providers/quantity_units.py` 的 `QUANTITY_UNIT_RULES`；身份必须同时匹配
