@@ -560,7 +560,12 @@ class DailyLimitDownListItem(QuantityAwareModel):
     consecutive_limit_down_days: int | None = Field(default=None, ge=1)
     limit_down_duration_seconds: int | None = Field(default=None, ge=0)
     duration_semantics: str
-    source_reported_sealed_funds_cny: Decimal | None
+    source_reported_sealed_funds_cny: Decimal | None = Field(
+        description=(
+            "来源封单金额, 人民币元; 当前为Tushare limit_list_d D.fd_amount, 原值保存; "
+            "不是limit_amount板上成交额。来源缺失为null。"
+        )
+    )
     closing_ask1_price: Decimal | None
     closing_ask1_volume_shares: int | None = Field(default=None, ge=0)
     closing_ask2_price: Decimal | None

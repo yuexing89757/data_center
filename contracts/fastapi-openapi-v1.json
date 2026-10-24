@@ -3441,7 +3441,7 @@
                 "type": "null"
               }
             ],
-            "description": "数据源报告的封单资金，单位为人民币元。",
+            "description": "来源封单金额, 人民币元; 当前为Tushare limit_list_d D.fd_amount, 原值保存; 不是limit_amount板上成交额。来源缺失为null。",
             "title": "Source Reported Sealed Funds Cny",
             "x-business": "stock_monetary_amount",
             "x-unit": "CNY"

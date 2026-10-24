@@ -163,6 +163,15 @@ def _rules() -> dict[QuantityIdentity, QuantityUnitRule]:
     )
     add(
         "tushare",
+        "limit_list_d",
+        ("tushare.current_day_limit_down_pool.v1",),
+        ("fd_amount",),
+        "cny",
+        "limit_list_d D-only fd_amount monetary contract; 2026-10-23 six-row "
+        "Raw comparison and THS 002388 sell-1 1.91e8 CNY display; docs/source-quantity-units.md",
+    )
+    add(
+        "tushare",
         "top10_floatholders",
         ("tushare.top10_float_holder.v1",),
         ("hold_amount", "hold_change"),
@@ -414,7 +423,10 @@ QUANTITY_FIELD_GROUP_FIELDS: Mapping[str, Mapping[str, tuple[str, ...]]] = Mappi
         "convertible_bond_daily_bar.remain_size": {"cb_daily": ("remain_size",)},
         "convertible_bond.bond.quantities": {"cb_basic": ("issue_size",)},
         "today_limit_up.source_observation.quantities": {"stock_zt_pool_em": ("封板资金",)},
-        "today_limit_down.source_observation.quantities": {"stock_zt_pool_dtgc_em": ("封单资金",)},
+        "today_limit_down.source_observation.quantities": {
+            "stock_zt_pool_dtgc_em": ("封单资金",),
+            "limit_list_d": ("fd_amount",),
+        },
     }
 )
 

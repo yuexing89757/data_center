@@ -46,8 +46,8 @@ class LimitDownSourceRecord:
     source_code: str = "akshare"
 
     def __post_init__(self) -> None:
-        if self.source_code != "akshare":
-            raise ValueError("limit-down source requires akshare")
+        if self.source_code not in {"akshare", "tushare"}:
+            raise ValueError("unsupported limit-down source")
         if self.first_limit_down_at is not None:
             raise ValueError("first_limit_down_at is unavailable from this source")
         if self.open_count is not None and self.open_count < 0:

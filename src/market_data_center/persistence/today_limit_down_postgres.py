@@ -22,7 +22,7 @@ from market_data_center.quantity_certification import certify_quantity_batch
 
 EMPTY_HASH = sha256(b"").hexdigest()
 RULE_VERSION = "cn_a_mainboard_limit_down_v1"
-ALGORITHM_VERSION = "today_limit_down_snapshot_v1"
+ALGORITHM_VERSION = "today_limit_down_snapshot_v2"
 
 
 @dataclass(frozen=True, slots=True)
@@ -205,6 +205,8 @@ insert into today_limit_down.snapshot (
             raise ValueError("Raw manifest and ingestion run are incoherent")
         if any(record.trade_date != trade_date for record in source_records):
             raise ValueError("source observation date does not match snapshot date")
+        if any(record.source_code != run.provider_code.value for record in source_records):
+            raise ValueError("source observation provider does not match ingestion lineage")
         with self._engine.begin() as connection:
             pool = (
                 connection.execute(
@@ -286,6 +288,9 @@ order by m.symbol
                 )
             input_hash = _hash(
                 {
+                    "algorithm_version": ALGORITHM_VERSION,
+                    "source_provider": run.provider_code.value,
+                    "source_schema_version": manifest.schema_version,
                     "pool_snapshot_id": str(pool["snapshot_id"]),
                     "source_sha256": manifest.content_sha256,
                     "members": [_content(member) for member in members],
@@ -740,7 +745,8 @@ def _update_ingestion_run(connection: Connection, run: IngestionRun) -> None:
     connection.execute(
         text("""
 update ingestion.ingestion_run set status=:status,finished_at=:finished,
- fetched_rows=:fetched,accepted_rows=:accepted,rejected_rows=:rejected,error_summary=:error
+ fetched_rows=:fetched,accepted_rows=:accepted,rejected_rows=:rejected,error_summary=:error,
+ request_params=cast(:request_params as jsonb)
 where ingestion_id=:id
 """),
         {
@@ -751,5 +757,6 @@ where ingestion_id=:id
             "rejected": run.rejected_rows,
             "error": run.error_summary,
             "id": run.ingestion_id,
+            "request_params": dumps(dict(run.request_params)),
         },
     )

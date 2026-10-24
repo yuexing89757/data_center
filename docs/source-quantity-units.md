@@ -145,3 +145,23 @@ Capital 未核实批次记录 `quantity_unit_registration=unverified`，不冒�
 历史 Raw 中缺少这些新键并不自动判为已认证；必须结合确切 registry 身份及 Raw 证明。
 
 本目录及代码不授权生产 migration、历史修复、采集、服务切换或重新计算。
+
+
+## 2026-10-24 Tushare跌停封单金额契约
+
+Issue #93，ADR-0056/0068澄清。新源唯一身份：tushare / limit_list_d /
+tushare.current_day_limit_down_pool.v1 / stock / fd_amount，源单位CNY，标准字段
+source_reported_sealed_funds_cny为元，使用Decimal原值，不乘除100或10000。
+
+官方接口doc298：https://tushare.pro/document/2?doc_id=298 支持limit_type=D，
+fd_amount为封单金额；limit_amount为跌停板上成交金额，禁止混用。
+该页fd_amount注释只写涨停买单且未单列元单位，不能单独作为跌停完整单位证明。
+补充实证：2026-10-23以D查询得到6条，fd_amount均有值；六只股票与既有独立
+AKShare Raw逐symbol/精确日期金额相同。002388返回190983232.0，MuMu同花顺
+新亚制程卖一金额显示1.91亿元，为金额单位交叉证据；同端点fd_amount涨停分支
+已有此前82条及客户端金额核验。不通过股价乘数量、日期或数量级推断转换规则。
+作为对照查询的limit_list_ths跌停池金额均null，不将该空响应当作单位证据。
+
+文档不提供ST统计；2026-10-23规范主板候选8只、来源6只。无来源的规范成员保留
+null及partial，不用其他提供商补字段。本次证据只认证新Tushare v1身份，不追认旧
+AKShare跌停接口、其他采集版本或未知字段。Raw和旧快照保持不可变。

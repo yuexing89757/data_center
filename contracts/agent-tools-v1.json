@@ -1136,7 +1136,7 @@
     },
     {
       "name": "market_daily_limit_down_list",
-      "description": "Read exact-date immutable daily limit-down snapshots. Unverified default versions return deferred with empty items; explicit rejected versions return quantity_units_unverified (PT409). Quantities retain their business meaning and certified units; missing/unverified values are null, explicit zero is zero. Inspect quantity_quality; 100 stock shares means 100 shares, not 100 lots.",
+      "description": "Read exact-date immutable daily limit-down snapshots. Unverified default versions return deferred with empty items; explicit rejected versions return quantity_units_unverified (PT409). Quantities retain their business meaning and certified units; missing/unverified values are null, explicit zero is zero. Inspect quantity_quality; 100 stock shares means 100 shares, not 100 lots. Source sealed funds use Tushare limit_list_d D.fd_amount in CNY without lot/share conversion; limit_amount is a different board-traded amount. Tushare omits ST stocks; source gaps remain explicit.",
       "endpoint": "query_daily_limit_down_list",
       "read_only": true,
       "input_schema": {

@@ -2,7 +2,7 @@
 
 from collections import Counter
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 from types import TracebackType
 from typing import Protocol, Self
@@ -118,11 +118,13 @@ class TodayLimitDownFillService:
         persistence: TodayLimitDownPersistence,
         raw_store: LocalRawStore,
         provider_factory: Callable[[], ManagedLimitDownProvider],
+        provider_code: ProviderCode = ProviderCode.AKSHARE,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self._persistence = persistence
         self._raw_store = raw_store
         self._provider_factory = provider_factory
+        self._provider_code = provider_code
         self._clock = clock
 
     def fill(self, trade_date: date) -> TodayLimitDownFillSummary:
@@ -132,7 +134,7 @@ class TodayLimitDownFillService:
         now = self._aware_now()
         run = IngestionRun(
             uuid4(),
-            ProviderCode.AKSHARE,
+            self._provider_code,
             DatasetCode.TODAY_LIMIT_DOWN_SOURCE,
             IngestionStatus.RUNNING,
             now,
@@ -143,6 +145,7 @@ class TodayLimitDownFillService:
         try:
             with self._provider_factory() as provider:
                 batch = provider.fetch_limit_down_pool(trade_date)
+                run = replace(run, request_params={**run.request_params, **batch.request_params})
         except Exception as error:
             failed = _finish_run(
                 run, self._aware_now(), 0, 0, 0, IngestionStatus.FAILED, type(error).__name__
@@ -152,7 +155,7 @@ class TodayLimitDownFillService:
             )
         try:
             stored = self._raw_store.write_jsonl(
-                provider=ProviderCode.AKSHARE.value,
+                provider=run.provider_code.value,
                 dataset=DatasetCode.TODAY_LIMIT_DOWN_SOURCE.value,
                 partition_date=trade_date,
                 ingestion_id=run.ingestion_id,
@@ -169,6 +172,8 @@ class TodayLimitDownFillService:
         manifest = _manifest(run.ingestion_id, stored)
         try:
             normalized = tuple(batch.records)
+            if any(record.source_code != run.provider_code.value for record in normalized):
+                raise ValueError("limit-down source provider does not match ingestion lineage")
         except Exception as error:
             failed = _finish_run(
                 run,
@@ -280,20 +285,22 @@ def fill_today_limit_down_snapshot(
     from market_data_center.persistence.today_limit_down_postgres import (
         PostgreSQLTodayLimitDownPersistence,
     )
-    from market_data_center.providers.akshare_limit_down import (
-        AkshareCurrentDayLimitDownProvider,
-        BoundedAkshareLimitDownClient,
-    )
-    from market_data_center.settings import TodayLimitDownProviderSettings
+    from market_data_center.providers.tushare import TushareHttpClient
+    from market_data_center.providers.tushare_limit_down import TushareCurrentDayLimitDownProvider
+    from market_data_center.settings import TodayLimitDownProviderSettings, TushareSettings
 
     settings = TodayLimitDownProviderSettings()
+    tushare = TushareSettings()  # type: ignore[call-arg]
     return TodayLimitDownFillService(
         persistence=PostgreSQLTodayLimitDownPersistence(engine),
         raw_store=raw_store,
-        provider_factory=lambda: AkshareCurrentDayLimitDownProvider(
-            BoundedAkshareLimitDownClient(
+        provider_code=ProviderCode.TUSHARE,
+        provider_factory=lambda: TushareCurrentDayLimitDownProvider(
+            TushareHttpClient(
+                tushare.tushare_token.get_secret_value(),
+                endpoint=tushare.tushare_endpoint,
                 timeout_seconds=settings.today_limit_down_timeout_seconds,
-                max_attempts=settings.today_limit_down_max_attempts,
-            )
+            ),
+            max_attempts=settings.today_limit_down_max_attempts,
         ),
     ).fill(trade_date)

@@ -105,7 +105,7 @@ class TodayLimitUpProviderSettings(BaseSettings):
 
 
 class TodayLimitDownProviderSettings(BaseSettings):
-    """Bounded public-node access for the current-day AKShare/EastMoney down pool."""
+    """Bounded access for the exact-date Tushare limit_list_d down pool."""
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

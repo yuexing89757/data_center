@@ -5790,7 +5790,7 @@
             "title": "Source Reported Sealed Funds Cny",
             "x-unit": "CNY",
             "x-business": "source_reported_sealed_funds",
-            "description": "业务数量或金额；单位见x-unit；缺失或未认证为null，显式0保持0。"
+            "description": "来源封单金额，人民币元；当前为Tushare limit_list_d D.fd_amount，按元原值冻结，不是limit_amount板上成交额；缺失为null，0保留0。"
           },
           "closing_ask1_price": {
             "anyOf": [
