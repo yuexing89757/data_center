@@ -20,6 +20,7 @@ PostgreSQL bigint 溢出。Decimal 上下文精度不能使转换发生舍入。
 | pytdx / local_day_file | pytdx.local_daily_bar.v1、v2、v3 | 股票 / volume | uint32 股，不乘100 | 本地 `.day` 二进制读取契约及合成文件回归 |
 | baostock / query_history_k_data_plus | baostock.daily_bar.v1 | 股票 / volume | 股 | 既有 BaoStock 股票日 K 契约及 adapter/replay 测试；不扩大到指数 |
 | tushare / daily | tushare.daily_bar.v1 | 股票 / vol | 手 ×100；amount 千元 ×1000 | [Tushare 日线字段表](https://tushare.pro/document/2?doc_id=27)及既有 adapter/replay 测试 |
+| tushare / index_daily | tushare.index_daily.v1 | 仅四个监管股票基准指数 / vol、amount | 独立指数聚合股数契约：手 ×100 → 股；千元 ×1000 → 元，点位不变 | [指数日线doc95](https://tushare.pro/document/2?doc_id=95)、ADR-0048来源澄清；适配器、Raw replay、独立字段组认证回归 |
 | tushare / daily_basic | tushare.stock_daily_indicator.v1 | 股票 / total_share、float_share、free_share | 万股 ×10000 | [Tushare 每日指标字段表](https://tushare.pro/document/2?doc_id=32)及既有资本数量测试 |
 | akshare / stock_zt_pool_em | akshare_eastmoney.current_day_limit_up_pool.v1 | 股票 / 封板资金 | 元，不缩放 | 下述 2026-10-24 官方映射、同花顺金额基准及当日 Raw 逐项核验 |
 | akshare / stock_zh_a_gbjg_em | akshare.capital.v1 | 股票 / 总股本、流通受限股份、已流通股份、已上市流通A股 | 未核实，阻断 | 当前官方字段表未明确来源单位；现有标准 DTO 的“股”不能反证来源单位 |
@@ -43,7 +44,6 @@ PostgreSQL bigint 溢出。Decimal 上下文精度不能使转换发生舍入。
 | Provider / endpoint / schema | 字段或品种 | 原因与当前标准化行为 |
 |---|---|---|
 | akshare_ths / board_index_daily_bars / akshare_ths.board_index_daily_bar.v1 | THS 板块指数成交量 | 尚无独立确认的聚合量纲；普通批次、Raw replay 和直接 live history 均拒绝输出标准记录 |
-| tushare / index_daily / tushare.index_daily.v1 | 指数 vol | [官方doc95](https://tushare.pro/document/2?doc_id=95)明确来源为手、amount为千元；项目独立指数聚合量契约仍未适配，保留来源 Raw，拒绝标准化，不调用股票日 K ×100 |
 | baostock / query_history_k_data_plus / baostock.daily_bar.v1 | 非股票代码（包含指数） | 不能从同 endpoint 股票规则推断；身份没有股票规则即失败 |
 | akshare / stock_zh_a_gbjg_em / akshare.capital.v1 | 四个股本数量字段 | 尚无独立来源单位证据；保留完整三类 Capital Raw，遇到 ShareCapital 记录则整批标准化失败，不能只删未知字段继续发布成功 |
 | akshare / stock_zt_pool_dtgc_em / akshare_eastmoney.current_day_limit_down_pool.v1 | 封单资金 | 官方字段表未明确来源单位，独立来源观察标准化失败；不借用涨停资金契约 |
@@ -55,6 +55,12 @@ PostgreSQL bigint 溢出。Decimal 上下文精度不能使转换发生舍入。
 完整保存和返回来源Decimal原值，不作手股换算，公开目录v3标记
 `source_native / provider_native_factor_scale`。这不认证它们为股数或无量纲；
 其他股票数量认证门禁仍有效。详见[技术因子运行手册](runbooks/stock-technical-factor.md)。
+
+2026-10-24监管基准修正：ADR-0048已批准的独立股票指数聚合量契约已接入单位目录、
+适配器、重放及入库认证。仅允许`000002.SH`、`000688.SH`、`399107.SZ`、`399102.SZ`；
+不把指数点位当股价，不扩展到期货指数、THS或旧BaoStock指数Raw。来源元数据含原始手、
+标准股、来源千元与标准元；旧Raw无这些标签可按原schema认证，有矛盾标签仍拒绝。
+部署、补数和历史剩余范围见[监管基准恢复记录](runbooks/regulation-index-units-2026-10-24.md)。
 
 ### 2026-10-24：涨停来源“封板资金”核验
 

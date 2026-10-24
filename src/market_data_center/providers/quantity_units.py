@@ -310,8 +310,18 @@ def _rules() -> dict[QuantityIdentity, QuantityUnitRule]:
         "index_daily",
         ("tushare.index_daily.v1",),
         ("vol",),
-        None,
-        "Index quantity semantics require independent certification",
+        "lot",
+        "Tushare official doc95 index_daily vol in hands; ADR-0048 regulation "
+        "equity-index aggregate shares: one hand=100 shares; four-index adapter allowlist",
+        "index",
+    )
+    add(
+        "tushare",
+        "index_daily",
+        ("tushare.index_daily.v1",),
+        ("amount",),
+        "thousand_cny",
+        "Tushare official doc95 index_daily amount in thousand CNY; ADR-0048",
         "index",
     )
     add(
@@ -355,6 +365,7 @@ QUANTITY_FIELD_GROUP_FIELDS: Mapping[str, Mapping[str, tuple[str, ...]]] = Mappi
             "local_day_file": ("amount",),
             "query_history_k_data_plus": ("amount",),
             "daily": ("amount",),
+            "index_daily": ("amount",),
         },
         "five_level_quote.quantities": {
             "get_security_quotes": (
@@ -519,6 +530,7 @@ def validate_quantity_metadata(
                 "convertible_bond",
             ),
             "tushare.convertible_bond.v1": ("convertible_bond.bond.quantities", "convertible_bond"),
+            "tushare.index_daily.v1": ("daily_bar.amount", "index"),
         }.get(schema_version, ("daily_bar.amount", "stock"))
         try:
             amount_rules = quantity_group_rules(

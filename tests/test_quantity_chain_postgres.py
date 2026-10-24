@@ -18,6 +18,7 @@ from test_quantity_unit_repair_integration import seed
 from market_data_center.persistence import PostgreSQLPersistence
 from market_data_center.pipeline import IngestionPipeline
 from market_data_center.providers.pytdx import PytdxProvider
+from market_data_center.providers.tushare import TushareProvider
 from market_data_center.public_api.app import create_app
 from market_data_center.public_api.queries import PostgreSQLPublicQueryService
 from market_data_center.quantity_unit_repair import apply_plan, preview
@@ -198,3 +199,81 @@ def test_legacy_remote_raw_repair_replay_and_same_http_client_never_restore_lots
     assert raw_path.read_bytes() == original_bytes
     assert source.manifest.schema_version == "pytdx.remote_daily_bar.v1"
     assert len(list(tmp_path.rglob("*.jsonl"))) == 1
+
+
+def test_regulation_index_pipeline_replay_certificates_and_api_rpc(database_engine, tmp_path):
+    day = date(2026, 10, 23)
+    _references(database_engine, day)
+    with database_engine.begin() as connection:
+        connection.execute(
+            text("""
+insert into core.security
+ (symbol,code,exchange,current_name,security_type,status,source_code,ingestion_id)
+select 'SSE:000688','000688','SSE','synthetic benchmark','index','listed','baostock',ingestion_id
+from core.security where symbol='SSE:600000'
+""")
+        )
+
+    class IndexClient:
+        def query(self, api_name, *, params, fields):
+            assert api_name == "index_daily"
+            return [
+                {
+                    "ts_code": "000688.SH",
+                    "trade_date": "20261023",
+                    "open": "100",
+                    "high": "102",
+                    "low": "99",
+                    "close": "101",
+                    "pre_close": "100",
+                    "vol": "0.37",
+                    "amount": "56.789",
+                }
+            ]
+
+    store = LocalRawStore(tmp_path)
+    persistence = PostgreSQLPersistence(database_engine)
+    run = IngestionPipeline(
+        provider=TushareProvider(IndexClient()), raw_store=store, persistence=persistence
+    ).ingest_daily_bars("SSE:000688", day, day)
+    assert run.accepted_rows == 1
+    source = persistence.replay_source(run.ingestion_id)
+    raw_path = store.root / source.manifest.object_path
+    original = raw_path.read_bytes()
+    for attempt in range(3):
+        if attempt:
+            replay = RawReplayService(raw_store=store, persistence=persistence).replay(
+                run.ingestion_id
+            )
+            assert replay.accepted_rows == 1
+        with database_engine.begin() as connection:
+            record = connection.execute(
+                text(
+                    "select volume,amount,ingestion_id from core.daily_bar "
+                    "where symbol='SSE:000688'"
+                )
+            ).one()
+            assert (record.volume, record.amount) == (37, Decimal("56789"))
+            assert (
+                connection.execute(
+                    text("""
+select count(*) from audit.quantity_unit_certification
+where ingestion_id=:id and status='certified'
+"""),
+                    {"id": record.ingestion_id},
+                ).scalar_one()
+                == 2
+            )
+            connection.execute(text("set local role market_data_api"))
+            public = (
+                connection.execute(
+                    text("select * from api_v1.query_daily_bars('SSE:000688',:day,:day,1)"),
+                    {"day": day},
+                )
+                .mappings()
+                .one()
+            )
+            assert public["volume"] == 37 and public["amount"] == Decimal("56789")
+            assert public["quantity_quality"]["status"] == "certified"
+    assert raw_path.read_bytes() == original
+    assert store.read_jsonl(source.manifest)[0]["vol"] == "0.37"

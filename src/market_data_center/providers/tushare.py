@@ -448,7 +448,12 @@ class TushareProvider(AbstractContextManager["TushareProvider"]):
             "start_date": start_date.strftime("%Y%m%d"),
             "end_date": end_date.strftime("%Y%m%d"),
             "adjust": "none",
-            **(quantity_unit_metadata(source_unit="lot") if not is_index else {}),
+            **quantity_unit_metadata(source_unit="lot"),
+            **(
+                {"source_amount_unit": "thousand_cny", "standard_amount_unit": "cny"}
+                if is_index
+                else {}
+            ),
         }
         return ProviderBatch(
             raw_rows=rows,
@@ -975,20 +980,31 @@ def _index_daily_records(
         if trade_date in dates:
             raise ProviderError("Tushare index_daily contains duplicate dates")
         dates.add(trade_date)
-    return [_map_daily_bar(row) for row in sorted(rows, key=lambda row: row["trade_date"])]
+    return [
+        _map_daily_bar(row, is_index=True)
+        for row in sorted(rows, key=lambda row: row["trade_date"])
+    ]
 
 
-def _map_daily_bar(row: Mapping[str, str]) -> DailyBarRecord:
+def _map_daily_bar(row: Mapping[str, str], *, is_index: bool = False) -> DailyBarRecord:
     _, _, symbol = _normalize_symbol(row["ts_code"])
     volume_shares = normalize_source_stock_quantity(
         row.get("vol"),
         provider="tushare",
-        endpoint="daily",
-        schema_version="tushare.daily_bar.v1",
-        instrument_type=stock_instrument_type(symbol),
+        endpoint="index_daily" if is_index else "daily",
+        schema_version="tushare.index_daily.v1" if is_index else "tushare.daily_bar.v1",
+        instrument_type="index" if is_index else stock_instrument_type(symbol),
         field="vol",
     )
     amount_thousand = _decimal(row.get("amount"))
+    amount = None
+    if amount_thousand is not None:
+        # Decimal multiplication can round under a caller's reduced precision.
+        parts = amount_thousand.as_tuple()
+        if not amount_thousand.is_finite() or amount_thousand < 0:
+            raise ProviderError("Tushare daily amount must be finite and nonnegative")
+        assert isinstance(parts.exponent, int)
+        amount = Decimal((parts.sign, parts.digits, parts.exponent + 3))
     return DailyBarRecord(
         symbol=symbol,
         trade_date=_parse_date(row["trade_date"]),
@@ -999,7 +1015,7 @@ def _map_daily_bar(row: Mapping[str, str]) -> DailyBarRecord:
         close=_decimal(row.get("close")),
         previous_close=_decimal(row.get("pre_close")),
         volume=volume_shares,
-        amount=amount_thousand * 1000 if amount_thousand is not None else None,
+        amount=amount,
         trade_status=TradeStatus.TRADING,
         is_st=None,
         source_code="tushare",

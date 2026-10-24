@@ -298,7 +298,12 @@ def test_raw_replay_preserves_daily_bar_normalization() -> None:
 
 @pytest.mark.parametrize(
     "symbol,ts_code",
-    [("SSE:000002", "000002.SH"), ("SZSE:399107", "399107.SZ"), ("SZSE:399102", "399102.SZ")],
+    [
+        ("SSE:000002", "000002.SH"),
+        ("SSE:000688", "000688.SH"),
+        ("SZSE:399107", "399107.SZ"),
+        ("SZSE:399102", "399102.SZ"),
+    ],
 )
 def test_regulation_index_daily_uses_exact_index_and_replays_units(symbol, ts_code):
     class IndexClient(FakeClient):
@@ -324,12 +329,15 @@ def test_regulation_index_daily_uses_exact_index_and_replays_units(symbol, ts_co
     )
     assert batch.schema_version == "tushare.index_daily.v1"
     assert batch.raw_rows[0]["vol"] == "12.34"
-    with pytest.raises(ProviderError, match="quantity unit contract"):
-        _ = batch.records
-    with pytest.raises(ProviderError, match="quantity unit contract"):
-        normalize_tushare_raw(
+    assert batch.records[0].volume == 1234
+    assert batch.records[0].amount == Decimal("56789")
+    assert batch.records[0].close == Decimal("101")
+    assert batch.request_params["source_quantity_unit"] == "lot"
+    for _ in range(2):
+        assert normalize_tushare_raw(
             DatasetCode.DAILY_BAR, batch.schema_version, batch.raw_rows, batch.request_params
-        )
+        ) == tuple(batch.records)
+    assert batch.raw_rows[0]["vol"] == "12.34"
 
 
 @pytest.mark.parametrize("mutation", ["empty", "wrong_symbol", "wrong_date", "duplicate"])
@@ -387,8 +395,8 @@ def test_regulation_index_preserves_missing_values_and_source_error():
         "SZSE:399102", date(2026, 9, 30), date(2026, 9, 30)
     )
     assert batch.raw_rows[0]["vol"] == ""
-    with pytest.raises(ProviderError, match="quantity unit contract"):
-        _ = batch.records
+    assert batch.records[0].volume is None
+    assert batch.records[0].amount is None
 
     class FailedClient(FakeClient):
         def query(self, api_name, *, params, fields):

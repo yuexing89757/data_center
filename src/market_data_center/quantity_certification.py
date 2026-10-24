@@ -92,6 +92,8 @@ def build_quantity_certificates(
             field_group=group,
             instrument_type="convertible_bond"
             if dataset in {"convertible_bond", "convertible_bond_daily_bar"}
+            else "index"
+            if dataset == "daily_bar" and manifest.schema_version == "tushare.index_daily.v1"
             else "stock",
         )
         evidence = {
