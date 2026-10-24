@@ -212,7 +212,7 @@
             "description": "No eligible batch exists for the exact date"
           }
         },
-        "description": " Quantity contract stock-quantity.v1: stock quantities are integer shares (100 means 100 shares, not 100 lots); amounts are CNY. Unverified/missing quantities are null and explicit zero remains zero; quantity_quality exposes independent field-group status/reason. No calculator or SQL unit guessing is permitted."
+        "description": " Quantity contract stock-quantity.v1: stock quantities are integer shares (100 means 100 shares, not 100 lots); amounts are CNY. Unverified/missing quantities are null and explicit zero remains zero; quantity_quality exposes independent field-group status/reason. No calculator or SQL unit guessing is permitted. Supports retained history: choose the whole online attempt when any rows exist, otherwise its historical copy; never combine attempts or fill individual missing symbols from history. Existing date, code-count, round-count and timeout boundaries apply."
       }
     },
     "/rpc/query_call_auction_market_series_snapshots": {
@@ -242,7 +242,7 @@
             "description": "No eligible session exists for the exact date"
           }
         },
-        "description": " Quantity contract stock-quantity.v1: stock quantities are integer shares (100 means 100 shares, not 100 lots); amounts are CNY. Unverified/missing quantities are null and explicit zero remains zero; quantity_quality exposes independent field-group status/reason. No calculator or SQL unit guessing is permitted."
+        "description": " Quantity contract stock-quantity.v1: stock quantities are integer shares (100 means 100 shares, not 100 lots); amounts are CNY. Unverified/missing quantities are null and explicit zero remains zero; quantity_quality exposes independent field-group status/reason. No calculator or SQL unit guessing is permitted. Supports retained history: choose the whole online attempt when any rows exist, otherwise its historical copy; never combine attempts or fill individual missing symbols from history. Existing date, code-count, round-count and timeout boundaries apply."
       }
     },
     "/rpc/query_close_price_new_highs_120d": {

@@ -367,7 +367,7 @@
     },
     {
       "name": "market_call_auction_snapshots",
-      "description": "Read the exact-date 09:25:20 final opening-auction series batch by six-digit codes; no earlier-round or legacy-table fallback. Quantities retain their business meaning and certified units; missing/unverified values are null, explicit zero is zero. Inspect quantity_quality; 100 stock shares means 100 shares, not 100 lots.",
+      "description": "Read the exact-date 09:25:20 final opening-auction series batch by six-digit codes; no earlier-round or legacy-table fallback. Quantities retain their business meaning and certified units; missing/unverified values are null, explicit zero is zero. Inspect quantity_quality; 100 stock shares means 100 shares, not 100 lots. Supports retained history: choose the whole online attempt when any rows exist, otherwise its historical copy; never combine attempts or fill individual missing symbols from history. Existing date, code-count, round-count and timeout boundaries apply.",
       "endpoint": "query_call_auction_market_snapshots",
       "read_only": true,
       "input_schema": {
@@ -399,7 +399,7 @@
     },
     {
       "name": "market_call_auction_series_snapshots",
-      "description": "Read one exact-date opening-auction market series session by six-digit codes, including batch codes and bid/ask five-level price-volume facts. Quantities retain their business meaning and certified units; missing/unverified values are null, explicit zero is zero. Inspect quantity_quality; 100 stock shares means 100 shares, not 100 lots.",
+      "description": "Read one exact-date opening-auction market series session by six-digit codes, including batch codes and bid/ask five-level price-volume facts. Quantities retain their business meaning and certified units; missing/unverified values are null, explicit zero is zero. Inspect quantity_quality; 100 stock shares means 100 shares, not 100 lots. Supports retained history: choose the whole online attempt when any rows exist, otherwise its historical copy; never combine attempts or fill individual missing symbols from history. Existing date, code-count, round-count and timeout boundaries apply.",
       "endpoint": "query_call_auction_market_series_snapshots",
       "read_only": true,
       "input_schema": {

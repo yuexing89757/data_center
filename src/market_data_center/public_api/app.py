@@ -748,6 +748,7 @@ def create_app(
             "返回指定交易日 09:25:20 序列末批的数据；优先使用成功 attempt，仅在没有成功"
             "attempt 时使用所选 partial attempt。同一个六位代码可能同时匹配沪市和深市证券，"
             "未命中的代码会明确列出。不使用其他日期、较早轮次或历史单次快照回退。"
+            "支持仍保留的历史序列快照；同一 attempt 在线有事实时整批读取在线，否则整批读取历史。"
         ),
     )
     def call_auction_market_snapshots(
@@ -772,6 +773,7 @@ def create_app(
             "会话。轮次按计划采集时间正序排列，并分别报告未命中的六位代码。不同会话或日期"
             "的数据不会合并或替代。可选 batch_code 按六位 HHMMSS 精确筛选所选会话内的"
             "单个采集批次；不传时返回全部轮次。"
+            "支持仍保留的历史序列快照；同一 attempt 在线有事实时整批读取在线，否则整批读取历史。"
         ),
     )
     def call_auction_market_series_snapshots(

@@ -363,6 +363,21 @@ def test_auction_read_contracts_name_the_final_series_batch() -> None:
     assert "legacy-table fallback" in tool["description"]
 
 
+def test_auction_snapshot_contracts_describe_retained_history_reads() -> None:
+    fastapi = _load("fastapi-openapi-v1.json")
+    postgrest = _load("postgrest-openapi-v1.json")
+    agent = _load("agent-tools-v1.json")
+    for route, endpoint in (
+        ("call-auction-market-snapshots", "query_call_auction_market_snapshots"),
+        ("call-auction-market-series-snapshots", "query_call_auction_market_series_snapshots"),
+    ):
+        description = fastapi["paths"][f"/api/v1/{route}/query"]["post"]["description"]
+        assert "历史" in description and "整批" in description
+        assert "retained history" in postgrest["paths"][f"/rpc/{endpoint}"]["post"]["description"]
+        tool = next(item for item in agent["tools"] if item["endpoint"] == endpoint)
+        assert "retained history" in tool["description"]
+
+
 def test_latest_stock_daily_indicator_contract_is_bounded_and_decimal_safe() -> None:
     fastapi = _load("fastapi-openapi-v1.json")
     operation = fastapi["paths"]["/api/v1/stock-daily-indicators/latest/query"]["post"]

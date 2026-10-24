@@ -165,6 +165,21 @@ FastAPI通过`POST /api/v1/call-auction-market-series-snapshots/query`代理该R
 `market_data_api`最小执行权限，不直接读取realtime表。PostgREST、Agent和FastAPI contracts
 必须同步签入；Raw、source code、节点及内部创建时间不进入公共契约。
 
+### 11.1 保留历史快照读取（2026-10-24，ADR-0074 / Issue #97）
+
+序列RPC当前签名含可选`p_batch_code`。它和末轮`query_call_auction_market_snapshots`
+均支持精确日期内仍保留的历史序列事实；末轮仍限`sample_seq=31 / 092520`。
+内部`audit.unit_safe_auction_snapshot_read`按日期、Session、轮次和ingestion整批选源：
+同attempt在线尚有任何事实则整批读在线，否则整批读历史，不按请求代码拼补副本。
+候选选择、items和missing_codes使用同一来源。成功/partial优先级、日期和会话选择规则不变。
+
+两侧均保留`stock-quantity.v1`持久认证、量额屏蔽和quantity_quality，未知单位不猜测。
+私有`audit.read_auction_snapshot_attempt`先限定同轮次及请求证券，同次调用只查一次原有数量认证，
+再以原类型投影12个量额字段，避免逐字段/证券重复检查；消费者没有该helper的EXECUTE权限。
+读取保持1～500代码、最多32轮、5秒timeout，复用月度分区及既有索引；无内部表/视图的消费者
+SELECT权限。在线三交易日和历史保留任务不变，不复制历史回在线，不启用通用Raw重放。
+一字涨跌停、形态及抢筹线等其他RPC不在此次历史扩展内；实际生产结果见对应运行记录。
+
 ## 12. 测试与上线
 
 单元测试覆盖领域不变量、时槽、Provider批次、deadline、重试、恢复和Session汇总。PostgreSQL integration tests使用隔离`TEST_DATABASE_URL`覆盖schema、分区、RLS、权限、事务和lineage。

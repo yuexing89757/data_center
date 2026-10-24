@@ -1516,9 +1516,9 @@ def test_cleanup_persistence_deletes_only_fully_archived_old_series_details(
         )
 
     assert payload["returned_rounds"] == 1
-    assert payload["rounds"][0]["returned_count"] == 0
-    assert payload["rounds"][0]["missing_codes"] == ["600000"]
-    assert payload["rounds"][0]["items"] == []
+    assert payload["rounds"][0]["returned_count"] == 1
+    assert payload["rounds"][0]["missing_codes"] == []
+    assert payload["rounds"][0]["items"][0]["symbol"] == "SSE:600000"
 
 
 def test_cleanup_persistence_deletes_expired_history_only(
