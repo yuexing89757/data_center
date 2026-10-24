@@ -31,6 +31,16 @@ class LimitUpHistoryItem:
     limit_up_at: datetime | None
     status: str | None
     reason: str | None
+    board_name: str | None
+    last_limit_up_at: datetime | None
+    max_sealed_amount_cny: Decimal | None
+    sealed_amount_cny: Decimal | None
+    main_net_amount_cny: Decimal | None
+    amount_cny: Decimal | None
+    actual_turnover_rate_pct: Decimal | None
+    actual_float_market_value_cny: Decimal | None
+    is_resealed: bool | None
+    reason_group_count: int | None
 
 
 @dataclass(frozen=True)

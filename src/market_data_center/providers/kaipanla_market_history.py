@@ -195,6 +195,27 @@ def _event(value: object, trade_date: date) -> datetime | None:
     return result
 
 
+def _count(value: object) -> int | None:
+    if value in (None, "", "--"):
+        return None
+    if type(value) is not int or value < 0:
+        raise ValueError("invalid source count")
+    return value
+
+
+def _flag(value: object) -> bool | None:
+    result = _count(value)
+    if result is None:
+        return None
+    if result not in (0, 1):
+        raise ValueError("invalid source flag")
+    return bool(result)
+
+
+def _optional_cell(row: list[object], index: int) -> object:
+    return row[index] if index < len(row) else None
+
+
 def _normalize_row(
     kind: HistoryListKind, row: object, trade_date: date
 ) -> AuctionHistoryItem | LimitUpHistoryItem | LimitDownHistoryItem | BrokenLimitUpHistoryItem:
@@ -235,6 +256,16 @@ def _normalize_row(
             limit_up_at=_event(row[6], trade_date),
             status=_text(row[9]),
             reason=_text(row[16]),
+            board_name=_text(row[11]),
+            last_limit_up_at=_event(_optional_cell(row, 25), trade_date),
+            max_sealed_amount_cny=_number(_optional_cell(row, 23), nonnegative=True),
+            sealed_amount_cny=_number(row[8], nonnegative=True),
+            main_net_amount_cny=_number(row[12]),
+            amount_cny=_number(row[13], nonnegative=True),
+            actual_turnover_rate_pct=_number(row[14], nonnegative=True),
+            actual_float_market_value_cny=_number(row[15], nonnegative=True),
+            is_resealed=_flag(_optional_cell(row, 24)),
+            reason_group_count=_count(_optional_cell(row, 27)),
         )
     if kind == "limit_down":
         return LimitDownHistoryItem(

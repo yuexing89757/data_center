@@ -8700,11 +8700,89 @@
       "LimitUpHistoryItem": {
         "additionalProperties": false,
         "properties": {
+          "actual_float_market_value_cny": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源实际流通市值，单位元；不是流通股数或普通流通市值，精确定义未完整提供。",
+            "title": "Actual Float Market Value Cny"
+          },
+          "actual_turnover_rate_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源实际换手率，百分比数值，3.95表示3.95%；精确分母未提供，区别于普通换手率。保留HTTP来源原值，可能与App显示存在差异，不做本地重算。",
+            "title": "Actual Turnover Rate Pct"
+          },
+          "amount_cny": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源该历史日期的成交额，单位元；不是竞价成交额。",
+            "title": "Amount Cny"
+          },
+          "board_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源板块文字，可含多个板块；不是标准分类身份。",
+            "title": "Board Name"
+          },
           "code": {
             "description": "六位股票代码。",
             "pattern": "^[0-9]{6}$",
             "title": "Code",
             "type": "string"
+          },
+          "is_resealed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源回封标识；true为显示回封，false为未显示，缺失为空。",
+            "title": "Is Resealed"
+          },
+          "last_limit_up_at": {
+            "anyOf": [
+              {
+                "example": "2026-09-18 09:35:00",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源最后涨停时间，上海时间；与 limit_up_at 区分，缺失时为空。",
+            "example": "2026-10-23 14:54:09",
+            "title": "Last Limit Up At"
           },
           "limit_up_at": {
             "anyOf": [
@@ -8720,6 +8798,32 @@
             "description": "来源涨停时间，上海时间。",
             "example": "2026-09-28 14:56:45",
             "title": "Limit Up At"
+          },
+          "main_net_amount_cny": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源主力净额，单位元，允许负值；来源资金档位定义未完整提供。",
+            "title": "Main Net Amount Cny"
+          },
+          "max_sealed_amount_cny": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源历史列表的最大封单金额，单位元；不是当前封单或股数，完整统计时段未提供。",
+            "title": "Max Sealed Amount Cny"
           },
           "name": {
             "anyOf": [
@@ -8742,8 +8846,34 @@
                 "type": "null"
               }
             ],
-            "description": "来源涨停原因文字。",
+            "description": "来源列表的涨停原因分组文字；不是个股详情的完整原因长文。",
             "title": "Reason"
+          },
+          "reason_group_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源同日列表内相同涨停原因分组的股票数量；不是本页数量，缺失为空。",
+            "title": "Reason Group Count"
+          },
+          "sealed_amount_cny": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源历史列表的封单金额，单位元；不是当前实时封单或股数。",
+            "title": "Sealed Amount Cny"
           },
           "status": {
             "anyOf": [
@@ -8769,7 +8899,17 @@
           "name",
           "limit_up_at",
           "status",
-          "reason"
+          "reason",
+          "board_name",
+          "last_limit_up_at",
+          "max_sealed_amount_cny",
+          "sealed_amount_cny",
+          "main_net_amount_cny",
+          "amount_cny",
+          "actual_turnover_rate_pct",
+          "actual_float_market_value_cny",
+          "is_resealed",
+          "reason_group_count"
         ],
         "title": "LimitUpHistoryItem",
         "type": "object"

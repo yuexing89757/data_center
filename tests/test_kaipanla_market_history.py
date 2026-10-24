@@ -39,6 +39,11 @@ def row(kind: str, code: str = "001368") -> list[object]:
         result[15], result[21], result[22] = "1234567890.123456789", "0.23", "8994552.123456789"
     elif kind == "limit_up":
         result[6], result[9], result[16] = 1790578605, "首板", "海峡两岸"
+        result[11], result[25] = "板块甲、板块乙", 1790578665
+        result[23], result[8] = "99999999.123456789", "1234567.123456789"
+        result[12], result[13] = "-987654.123456789", "23456789.123456789"
+        result[14], result[15] = "3.95", "6884600000.123456789"
+        result[24], result[27] = 1, 7
     elif kind == "limit_down":
         result[6], result[8], result[11] = 1790578293, "2404248", "光模块"
     else:
@@ -267,7 +272,33 @@ def test_history_routes_return_only_named_category_fields(kind):
     elif kind == "limit_up":
         assert item["limit_up_at"] == "2026-09-28 14:56:45"
         assert item["status"] == "首板" and item["reason"] == "海峡两岸"
-        assert "sealed_amount_cny" not in item
+        assert item["board_name"] == "板块甲、板块乙"
+        assert item["last_limit_up_at"] == "2026-09-28 14:57:45"
+        assert item["sealed_amount_cny"] == "1234567.123456789"
+        assert item["max_sealed_amount_cny"] == "99999999.123456789"
+        assert item["main_net_amount_cny"] == "-987654.123456789"
+        assert item["amount_cny"] == "23456789.123456789"
+        assert item["actual_turnover_rate_pct"] == "3.95"
+        assert item["actual_float_market_value_cny"] == "6884600000.123456789"
+        assert item["is_resealed"] is True and item["reason_group_count"] == 7
+        assert set(item) == {
+            "symbol",
+            "code",
+            "name",
+            "limit_up_at",
+            "status",
+            "reason",
+            "board_name",
+            "last_limit_up_at",
+            "sealed_amount_cny",
+            "max_sealed_amount_cny",
+            "main_net_amount_cny",
+            "amount_cny",
+            "actual_turnover_rate_pct",
+            "actual_float_market_value_cny",
+            "is_resealed",
+            "reason_group_count",
+        }
     elif kind == "limit_down":
         assert item["limit_down_at"] == "2026-09-28 14:51:33"
         assert item["sealed_amount_cny"] == "2404248"
@@ -362,3 +393,173 @@ def test_invalid_auction_research_numbers_fail_the_batch(index, value):
         provider(Transport({"errcode": 0, "day": "2026-09-28", "list": [source_row]})).fetch(
             kind="auction", trade_date=TRADE_DATE
         )
+
+
+LIMIT_UP_NUMBERS = [
+    (8, "sealed_amount_cny"),
+    (23, "max_sealed_amount_cny"),
+    (12, "main_net_amount_cny"),
+    (13, "amount_cny"),
+    (14, "actual_turnover_rate_pct"),
+    (15, "actual_float_market_value_cny"),
+]
+
+
+@pytest.mark.parametrize(("index", "field"), LIMIT_UP_NUMBERS)
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (None, None),
+        ("", None),
+        ("--", None),
+        (0, Decimal(0)),
+        ("0.123456789012345678901", Decimal("0.123456789012345678901")),
+    ],
+)
+def test_limit_up_numbers_preserve_null_zero_and_precision(index, field, value, expected):
+    source_row = row("limit_up")
+    source_row[index] = value
+    item = (
+        provider(Transport({"errcode": 0, "day": "2026-09-28", "list": [source_row]}))
+        .fetch(kind="limit_up", trade_date=TRADE_DATE)
+        .items[0]
+    )
+    assert getattr(item, field) == expected
+
+
+@pytest.mark.parametrize(("index", "field"), LIMIT_UP_NUMBERS)
+@pytest.mark.parametrize("value", [True, "NaN", "Infinity", "bad"])
+def test_limit_up_invalid_numbers_return_sanitized_502(index, field, value):
+    source_row = row("limit_up")
+    source_row[index] = value
+    response = client(Transport({"errcode": 0, "day": "2026-09-28", "list": [source_row]})).get(
+        ROUTES["limit_up"], params={"trade_date": "2026-09-28"}, headers={"X-API-Key": KEY}
+    )
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "upstream_error"
+    assert field not in response.text
+
+
+@pytest.mark.parametrize("index", [8, 23, 13, 14, 15])
+def test_limit_up_unsigned_numbers_reject_negative_values(index):
+    source_row = row("limit_up")
+    source_row[index] = "-0.1"
+    with pytest.raises(KaipanlaMarketHistoryUpstream):
+        provider(Transport({"errcode": 0, "day": "2026-09-28", "list": [source_row]})).fetch(
+            kind="limit_up", trade_date=TRADE_DATE
+        )
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"), [(None, None), ("", None), ("--", None), (0, False), (1, True)]
+)
+def test_limit_up_resealed_flag_is_nullable_boolean(value, expected):
+    source_row = row("limit_up")
+    source_row[24] = value
+    item = (
+        provider(Transport({"errcode": 0, "day": "2026-09-28", "list": [source_row]}))
+        .fetch(kind="limit_up", trade_date=TRADE_DATE)
+        .items[0]
+    )
+    assert item.is_resealed is expected
+
+
+@pytest.mark.parametrize(
+    ("index", "value"),
+    [
+        (24, True),
+        (24, 2),
+        (24, "1"),
+        (24, -1),
+        (27, True),
+        (27, -1),
+        (27, "2"),
+        (27, "2.5"),
+        (25, 0),
+        (25, True),
+        (25, 1790492205),
+        (25, "1790578665"),
+        (11, 123),
+    ],
+)
+def test_limit_up_invalid_new_metadata_fails_the_page(index, value):
+    source_row = row("limit_up")
+    source_row[index] = value
+    with pytest.raises(KaipanlaMarketHistoryUpstream):
+        provider(Transport({"errcode": 0, "day": "2026-09-28", "list": [source_row]})).fetch(
+            kind="limit_up", trade_date=TRADE_DATE
+        )
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"), [(None, None), ("", None), ("--", None), (0, 0), (40, 40)]
+)
+def test_limit_up_group_count_uses_source_count_not_page_count(value, expected):
+    source_row = row("limit_up")
+    source_row[27] = value
+    item = (
+        provider(Transport({"errcode": 0, "day": "2026-09-28", "list": [source_row]}))
+        .fetch(kind="limit_up", trade_date=TRADE_DATE)
+        .items[0]
+    )
+    assert item.reason_group_count == expected
+
+
+def test_limit_up_legacy_short_row_has_null_tail_fields_and_ignores_unknown_slots():
+    source_row = row("limit_up")[:23]
+    source_row[10], source_row[17] = "not-consecutive-days", "unknown-source-value"
+    response = client(Transport({"errcode": 0, "day": "2026-09-28", "list": [source_row]})).get(
+        ROUTES["limit_up"], params={"trade_date": "2026-09-28"}, headers={"X-API-Key": KEY}
+    )
+    assert response.status_code == 200
+    item = response.json()["items"][0]
+    for field in ("last_limit_up_at", "max_sealed_amount_cny", "is_resealed", "reason_group_count"):
+        assert field in item and item[field] is None
+    assert "unknown-source-value" not in response.text and "source_values" not in response.text
+
+
+def test_limit_up_keeps_http_actual_turnover_value_and_does_not_use_duplicate_slot():
+    source_row = row("limit_up")
+    source_row[14], source_row[29] = "6.66", "6.64"
+    response = client(Transport({"errcode": 0, "day": "2026-09-28", "list": [source_row]})).get(
+        ROUTES["limit_up"], params={"trade_date": "2026-09-28"}, headers={"X-API-Key": KEY}
+    )
+    assert response.status_code == 200
+    assert response.json()["items"][0]["actual_turnover_rate_pct"] == "6.66"
+
+
+def test_limit_up_openapi_components_match_saved_contract():
+    schema = (
+        client(Transport({"errcode": 0, "day": "2026-09-28", "list": []}))
+        .get("/openapi.json")
+        .json()
+    )
+    saved = json.loads(
+        (Path(__file__).parents[1] / "contracts/fastapi-openapi-v1.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    model = schema["components"]["schemas"]["LimitUpHistoryItem"]
+    assert model == saved["components"]["schemas"]["LimitUpHistoryItem"]
+    props = model["properties"]
+    assert "last_limit_up_at" in props and "is_resealed" in props and "reason_group_count" in props
+    assert props["last_limit_up_at"]["example"] == "2026-10-23 14:54:09"
+
+
+@pytest.mark.parametrize("value", [None, 0])
+def test_limit_up_api_preserves_zero_versus_missing(value):
+    source_row = row("limit_up")
+    source_row[11], source_row[25] = None, None
+    for index, _ in LIMIT_UP_NUMBERS:
+        source_row[index] = value
+    source_row[24], source_row[27] = value, value
+    response = client(Transport({"errcode": 0, "day": "2026-09-28", "list": [source_row]})).get(
+        ROUTES["limit_up"], params={"trade_date": "2026-09-28"}, headers={"X-API-Key": KEY}
+    )
+    assert response.status_code == 200
+    item = response.json()["items"][0]
+    assert item["board_name"] is None and item["last_limit_up_at"] is None
+    for _, field in LIMIT_UP_NUMBERS:
+        assert item[field] == (None if value is None else "0")
+    assert item["is_resealed"] is (None if value is None else False)
+    assert item["reason_group_count"] == value

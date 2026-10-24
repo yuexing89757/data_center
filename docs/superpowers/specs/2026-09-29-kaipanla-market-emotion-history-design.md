@@ -54,3 +54,23 @@ apiv=w48&PhoneOSNew=1&VerSion=6.3.20.0
 在 Provider 边界校验 JSON、`errcode`、实际 `day`、列表和行长、六位代码、同页重复、有限数值、非负金额、有效时间。明确成功且日期匹配的空列表可返回 200；来源失败、占位内容、日期不符或结构/字段错误统一 502，不伪装为空列表。日期和分页非法返回 422，缺失或错误 API Key 返回 401。没有跨页不可变快照保证，调用方需按代码去重。
 
 实现沿用现有开盘啦竞价 Provider 的固定 HTTP 防护和 API 注册方式，四个路由共享请求边界，但保留各自的响应模型、类别字段和 OpenAPI 描述。对现有竞价池不做破坏性改动。测试使用合成来源样例核对四类参数、日期/分页、字段下标与单位、时间格式、零/null、失败路径、鉴权与 OpenAPI 契约；另做不保存响应的有限真实来源核对。更新接口说明、ADR-0059 澄清与 `contracts/fastapi-openapi-v1.json`。完整本地质量门禁通过后再交付；提交、推送或部署仍分别按用户授权执行。
+
+
+## 2026-10-24 已确认增补：历史涨停字段（Issue #95）
+
+所有者完成 MuMu 从最左至最右逐列核验后要求修改接口，按 ADR-0059 增补执行。
+涨停记录新增 board_name、last_limit_up_at、max_sealed_amount_cny、sealed_amount_cny、
+main_net_amount_cny、amount_cny、actual_turnover_rate_pct、actual_float_market_value_cny、
+is_resealed、reason_group_count；来源位置分别为11、25、23、8、12、13、14、15、24、27。
+原有字段含义及其他类别保持不变；字段均可空，来源缺失或旧短行缺少尾部槽位时保留null。
+
+金额为 Decimal 元值，主力净额可负；实际换手为来源百分数，实际流通为市值而非股数。
+来源回封标识严格从整数0/1映射可空布尔，分组数量为可空非负整数，不能按本页重算。
+最后涨停时间独立于原涨停时间，必须在查询日期内并用 ApiTimestamp 输出。
+保留 App 6.64% 与 HTTP 6.66% 的实际换手差异，不从重复位置29或本地价格股本替换。
+不放行其他未核实槽位，不公开匿名来源数组。详细口径、示例和未确认公式边界见
+[接口说明](../../开盘啦市场情绪历史股票列表实时接口.md)与
+[核验记录](../../runbooks/kaipanla-limit-up-fields-2026-10-24.md)。
+
+本次为已接受只读接口的字段增量，无持久化/SQL迁移/任务/路由参数变更。
+同步 FastAPI OpenAPI 的 LimitUpHistoryItem 组件，PostgREST/Agent 契约保持原样。

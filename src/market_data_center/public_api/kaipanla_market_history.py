@@ -46,7 +46,39 @@ class LimitUpHistoryItem(_HistoryItem):
         description="来源涨停时间，上海时间。", json_schema_extra={"example": "2026-09-28 14:56:45"}
     )
     status: str | None = Field(description="来源首板/连板状态文字。")
-    reason: str | None = Field(description="来源涨停原因文字。")
+    reason: str | None = Field(
+        description="来源列表的涨停原因分组文字；不是个股详情的完整原因长文。"
+    )
+    board_name: str | None = Field(description="来源板块文字，可含多个板块；不是标准分类身份。")
+    last_limit_up_at: ApiTimestamp | None = Field(
+        description="来源最后涨停时间，上海时间；与 limit_up_at 区分，缺失时为空。",
+        json_schema_extra={"example": "2026-10-23 14:54:09"},
+    )
+    max_sealed_amount_cny: Decimal | None = Field(
+        description="来源历史列表的最大封单金额，单位元；不是当前封单或股数，完整统计时段未提供。"
+    )
+    sealed_amount_cny: Decimal | None = Field(
+        description="来源历史列表的封单金额，单位元；不是当前实时封单或股数。"
+    )
+    main_net_amount_cny: Decimal | None = Field(
+        description="来源主力净额，单位元，允许负值；来源资金档位定义未完整提供。"
+    )
+    amount_cny: Decimal | None = Field(
+        description="来源该历史日期的成交额，单位元；不是竞价成交额。"
+    )
+    actual_turnover_rate_pct: Decimal | None = Field(
+        description="来源实际换手率，百分比数值，3.95表示3.95%；精确分母未提供，区别于普通换手率。"
+        "保留HTTP来源原值，可能与App显示存在差异，不做本地重算。"
+    )
+    actual_float_market_value_cny: Decimal | None = Field(
+        description="来源实际流通市值，单位元；不是流通股数或普通流通市值，精确定义未完整提供。"
+    )
+    is_resealed: bool | None = Field(
+        description="来源回封标识；true为显示回封，false为未显示，缺失为空。"
+    )
+    reason_group_count: int | None = Field(
+        ge=0, description="来源同日列表内相同涨停原因分组的股票数量；不是本页数量，缺失为空。"
+    )
 
 
 class LimitDownHistoryItem(_HistoryItem):
