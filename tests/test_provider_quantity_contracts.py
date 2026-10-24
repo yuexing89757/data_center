@@ -104,10 +104,22 @@ def test_ths_unknown_quantity_contract_blocks_standard_record() -> None:
         )
 
 
-def test_technical_factor_unknown_output_scaling_blocks_even_empty_leaves() -> None:
+@pytest.mark.parametrize("value", [None, "0", "-123.456", "9007199254740993.01"])
+def test_technical_factor_source_values_preserve_native_scale(value) -> None:
     row = dict(dict.fromkeys(TECHNICAL_FACTOR_FIELDS), ts_code="600000.SH", trade_date="20261022")
-    with pytest.raises(ProviderError, match="quantity unit contract"):
-        normalize_technical_factor_raw([row], "tushare.stock_technical_factor.v1")
+    for basis in ("bfq", "qfq", "hfq"):
+        for name in ("obv", "emv", "maemv"):
+            row[f"{name}_{basis}"] = value
+    row["macd_qfq"] = "-0.123456789123456789"
+    original = row.copy()
+    record = normalize_technical_factor_raw([row], "tushare.stock_technical_factor.v1")[0]
+    for group in (record.unadjusted, record.forward_adjusted, record.backward_adjusted):
+        assert all(
+            group[name] == (None if value is None else Decimal(value))
+            for name in ("obv", "emv", "maemv")
+        )
+    assert record.forward_adjusted["macd"] == Decimal("-0.123456789123456789")
+    assert row == original
 
 
 @pytest.mark.parametrize("value", [True, -1, 92233720368547759])

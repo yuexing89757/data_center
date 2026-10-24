@@ -126,7 +126,7 @@ def test_quantity_snapshot_conflict_and_deployment_preflight_are_public_read_con
 
 def test_factor_public_quantity_catalog_changes_without_relabeling_source() -> None:
     item = _load("postgrest-openapi-v1.json")["components"]["schemas"]["StockTechnicalFactorItem"]
-    assert item["properties"]["factor_catalog_version"]["const"] == "stock-technical-factor.v2"
+    assert item["properties"]["factor_catalog_version"]["const"] == "stock-technical-factor.v3"
     assert "source_factor_catalog_version" in item["properties"]
     assert "quantity_quality" in item["properties"]
     for group in ("unadjusted", "forward_adjusted", "backward_adjusted"):

@@ -38,7 +38,9 @@ class StockTechnicalFactorItem(QuantityAwareModel):
     name: str = Field(description="证券名称")
     trade_date: date = Field(description="来源快照的交易日")
     source_code: str = Field(description="快照来源代码")
-    factor_catalog_version: str = Field(description="对外技术因子目录版本; v2隔离未认证数量叶子。")
+    factor_catalog_version: str = Field(
+        description="对外技术因子目录版本; v3保留Tushare原生指标尺度, OBV/EMV/MAEMV不作手股转换。"
+    )
     source_factor_catalog_version: str | None = Field(
         default=None,
         exclude_if=lambda value: value is None,
@@ -73,6 +75,7 @@ router = APIRouter()
     description=(
         "查询最多100个六位股票代码在精确交易日的已存储技术因子快照, 不回退历史日期。"
         "三种复权口径分别返回十进制字符串或空值, 共同计数项返回整数或空值。"
+        "OBV、EMV、MAEMV按来源原生尺度返回, 不声明为股或无量纲, 不作手股转换。"
         "仅调用有界只读接口, 不触发采集或计算。"
     ),
     responses={status: {"model": ErrorResponse} for status in (401, 422, 503, 504)},

@@ -13291,7 +13291,7 @@
             "type": "object"
           },
           "factor_catalog_version": {
-            "description": "对外技术因子目录版本; v2隔离未认证数量叶子。",
+            "description": "对外技术因子目录版本; v3保留Tushare原生指标尺度, OBV/EMV/MAEMV不作手股转换。",
             "title": "Factor Catalog Version",
             "type": "string"
           },
@@ -19326,7 +19326,7 @@
     },
     "/v1/stock-technical-factors/query": {
       "post": {
-        "description": "查询最多100个六位股票代码在精确交易日的已存储技术因子快照, 不回退历史日期。三种复权口径分别返回十进制字符串或空值, 共同计数项返回整数或空值。仅调用有界只读接口, 不触发采集或计算。",
+        "description": "查询最多100个六位股票代码在精确交易日的已存储技术因子快照, 不回退历史日期。三种复权口径分别返回十进制字符串或空值, 共同计数项返回整数或空值。OBV、EMV、MAEMV按来源原生尺度返回, 不声明为股或无量纲, 不作手股转换。仅调用有界只读接口, 不触发采集或计算。",
         "operationId": "query_stock_technical_factors_v1_stock_technical_factors_query_post",
         "requestBody": {
           "content": {

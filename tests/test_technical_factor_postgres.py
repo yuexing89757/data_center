@@ -471,3 +471,55 @@ def test_coverage_floor_rounds_up_and_uses_first_active_baseline(previous, basel
         )
         == expected
     )
+
+
+@pytest.mark.integration
+def test_real_adapter_native_factors_live_and_replay(database_engine, factor_seed, tmp_path):  # noqa: F811
+    from unittest.mock import Mock
+
+    from market_data_center.providers.tushare_technical_factor import (
+        TECHNICAL_FACTOR_FIELDS,
+        TushareTechnicalFactorProvider,
+    )
+    from market_data_center.raw_store import LocalRawStore
+    from market_data_center.reliability import RawReplayService
+    from market_data_center.technical_factor_service import TechnicalFactorIngestionService
+
+    row = dict.fromkeys(TECHNICAL_FACTOR_FIELDS, "")
+    row.update(ts_code="600000.SH", trade_date="20261009", macd_qfq="-0.123456789123456789")
+    for basis in ("bfq", "qfq", "hfq"):
+        for name in ("obv", "emv", "maemv"):
+            row[f"{name}_{basis}"] = "-123456.125"
+    client = Mock()
+    client.query.return_value = [row]
+    persistence = PostgreSQLTechnicalFactorPersistence(database_engine)
+    store = LocalRawStore(tmp_path)
+    run = TechnicalFactorIngestionService(
+        provider=TushareTechnicalFactorProvider(client), persistence=persistence, raw_store=store
+    ).ingest_snapshot(DAY)
+    assert run.status is IngestionStatus.SUCCEEDED
+    raw_path = next(tmp_path.rglob("*.jsonl"))
+    original = raw_path.read_bytes()
+    replay = RawReplayService(raw_store=store, persistence=persistence)
+    for dry in (True, False, False):
+        replay.replay(run.ingestion_id, dry_run=dry)
+        with database_engine.connect() as connection:
+            rows = (
+                connection.execute(text("select * from core.stock_technical_factor_snapshot"))
+                .mappings()
+                .all()
+            )
+            assert len(rows) == 1
+            connection.execute(text("set local role market_data_api"))
+            payload = connection.execute(
+                text("select api_v1.query_stock_technical_factors_by_codes(:codes,:day)"),
+                {"codes": ["600000"], "day": DAY},
+            ).scalar_one()
+            item = payload["items"][0]
+            assert item["quantity_quality"]["status"] == "source_native"
+            assert item["forward_adjusted"]["macd"] == "-0.123456789123456789"
+            for group in ("unadjusted", "forward_adjusted", "backward_adjusted"):
+                assert all(rows[0][group][name] == -123456.125 for name in ("obv", "emv", "maemv"))
+                assert all(item[group][name] == "-123456.125" for name in ("obv", "emv", "maemv"))
+        assert raw_path.read_bytes() == original
+        assert len(list(tmp_path.rglob("*.jsonl"))) == 1

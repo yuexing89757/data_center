@@ -13,19 +13,26 @@ from market_data_center.domain.ingestion import (
     RawManifest,
     ReplaySource,
 )
-from market_data_center.providers.contracts import ProviderError
 from market_data_center.providers.tushare_technical_factor import TECHNICAL_FACTOR_FIELDS
 from market_data_center.raw_store import LocalRawStore
 from market_data_center.reliability import RawReplayService
 
 
+@pytest.mark.parametrize("request_date", ["2026-10-09", "20261009"])
 @pytest.mark.parametrize("dry_run", [True, False])
-def test_technical_factor_raw_replay_rejects_unknown_units_and_retains_raw(tmp_path, dry_run):
+def test_technical_factor_raw_replay_preserves_native_scale_and_retains_raw(
+    tmp_path, dry_run, request_date
+):
     raw_store = LocalRawStore(tmp_path)
     original_id = uuid4()
     day = date(2026, 10, 9)
     row = dict.fromkeys(TECHNICAL_FACTOR_FIELDS, "")
-    row.update(ts_code="000001.SZ", trade_date="20261009", macd_qfq="-0.123456789123456789")
+    row.update(
+        ts_code="000001.SZ",
+        trade_date="20261009",
+        macd_qfq="-0.123456789123456789",
+        obv_bfq="123456",
+    )
     stored = raw_store.write_jsonl(
         provider="tushare",
         dataset="stock_technical_factor",
@@ -49,7 +56,7 @@ def test_technical_factor_raw_replay_rejects_unknown_units_and_retains_raw(tmp_p
         ProviderCode.TUSHARE,
         DatasetCode.STOCK_TECHNICAL_FACTOR,
         datetime(2026, 10, 9, tzinfo=UTC),
-        {"trade_date": "2026-10-09", "minimum_accepted_rows": 1},
+        {"trade_date": request_date, "minimum_accepted_rows": 1},
         manifest,
     )
     persistence = Mock()
@@ -58,25 +65,25 @@ def test_technical_factor_raw_replay_rejects_unknown_units_and_retains_raw(tmp_p
     persistence.technical_factor_securities.return_value = {"SZSE:000001"}
     persistence.known_trading_dates.return_value = {day}
     original_bytes = (tmp_path / stored.object_path).read_bytes()
-    with pytest.raises(ProviderError, match="quantity unit contract unverified"):
-        RawReplayService(raw_store=raw_store, persistence=persistence).replay(
-            original_id, dry_run=dry_run
-        )
-    persistence.commit_technical_factor_batch.assert_not_called()
+    RawReplayService(raw_store=raw_store, persistence=persistence).replay(
+        original_id, dry_run=dry_run
+    )
+    persistence.commit_rejected_batch.assert_not_called()
     if dry_run:
         persistence.create_ingestion_run.assert_not_called()
-        persistence.commit_rejected_batch.assert_not_called()
+        persistence.commit_technical_factor_batch.assert_not_called()
     else:
         persistence.create_ingestion_run.assert_called_once()
-        persistence.commit_rejected_batch.assert_called_once()
-        run, copied_manifest, quality = persistence.commit_rejected_batch.call_args.args
+        run, copied_manifest, envelopes, quality = (
+            persistence.commit_technical_factor_batch.call_args.args
+        )
         assert copied_manifest is None
-        assert run.status is IngestionStatus.FAILED
-        assert run.accepted_rows == 0
+        assert quality == ()
+        assert run.status is IngestionStatus.SUCCEEDED
+        assert run.accepted_rows == 1
+        assert run.request_params["trade_date"] == "2026-10-09"
         assert run.replayed_from_raw_id == manifest.raw_id
-        assert run.request_params["provider_schema_version"] == "tushare.stock_technical_factor.v1"
-        assert quality[0].rule_code == "stock_technical_factor.raw_replay"
-        assert quality[0].blocks_core_write
+        assert envelopes[0].record.unadjusted["obv"] == 123456
     assert raw_store.read_jsonl(manifest) == (row, row)
     assert (tmp_path / stored.object_path).read_bytes() == original_bytes
     assert len(list(tmp_path.rglob("*.jsonl"))) == 1

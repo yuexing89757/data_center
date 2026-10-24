@@ -934,7 +934,7 @@
     },
     {
       "name": "market_stock_technical_factors",
-      "description": "Read up to 100 exact-date source technical factor snapshots without historical fallback. Adjustment variants use decimal strings/null; common counts use integers/null; missing identifiers are explicit. Quantities retain their business meaning and certified units; missing/unverified values are null, explicit zero is zero. Inspect quantity_quality; 100 stock shares means 100 shares, not 100 lots. Factor response catalog is v2 while source catalog remains unchanged.",
+      "description": "Read up to 100 exact-date source technical factor snapshots without historical fallback. Adjustment variants use decimal strings/null; common counts use integers/null; missing identifiers are explicit. Factor response catalog v3 preserves Tushare native indicator scale, including OBV/EMV/MAEMV, without lot/share conversion or a claim of dimensionless units. Missing source values are null. quantity_quality status source_native identifies the independent factor contract; source catalog remains v1.",
       "endpoint": "query_stock_technical_factors",
       "read_only": true,
       "input_schema": {
@@ -966,7 +966,7 @@
     },
     {
       "name": "market_stock_technical_factors_by_codes",
-      "description": "Read up to 100 exact-date source technical factor snapshots without historical fallback. Adjustment variants use decimal strings/null; common counts use integers/null; missing identifiers are explicit. Quantities retain their business meaning and certified units; missing/unverified values are null, explicit zero is zero. Inspect quantity_quality; 100 stock shares means 100 shares, not 100 lots. Factor response catalog is v2 while source catalog remains unchanged.",
+      "description": "Read up to 100 exact-date source technical factor snapshots without historical fallback. Adjustment variants use decimal strings/null; common counts use integers/null; missing identifiers are explicit. Factor response catalog v3 preserves Tushare native indicator scale, including OBV/EMV/MAEMV, without lot/share conversion or a claim of dimensionless units. Missing source values are null. quantity_quality status source_native identifies the independent factor contract; source catalog remains v1.",
       "endpoint": "query_stock_technical_factors_by_codes",
       "read_only": true,
       "input_schema": {

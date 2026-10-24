@@ -311,7 +311,7 @@ select api_v1.query_latest_stock_daily_indicators(array['600000'])
     assert quote["quantity_quality"]["status"] == "unverified"
 
 
-def test_factor_quantity_leaves_are_null_under_a_new_response_catalog(database_engine: Engine):
+def test_factor_leaves_preserve_source_scale_under_v3_catalog(database_engine: Engine):
     ingestion_id = _facts(database_engine)
     with database_engine.begin() as connection:
         connection.execute(
@@ -336,13 +336,13 @@ select api_v1.query_stock_technical_factors(array['SSE:600000'],:day)
             text("select unadjusted from core.stock_technical_factor_snapshot")
         ).scalar_one()
 
-    assert result["factor_catalog_version"] == "stock-technical-factor.v2"
+    assert result["factor_catalog_version"] == "stock-technical-factor.v3"
     assert result["source_factor_catalog_version"] == "stock-technical-factor.v1"
     for group in ("unadjusted", "forward_adjusted", "backward_adjusted"):
-        assert result[group]["obv"] is result[group]["emv"] is result[group]["maemv"] is None
+        assert [result[group][name] for name in ("obv", "emv", "maemv")] == ["100", "20", "30"]
         assert result[group]["macd"] == "12.5"
     assert audit["obv"] == 100
-    assert result["quantity_quality"]["status"] == "unverified"
+    assert result["quantity_quality"]["status"] == "source_native"
 
 
 def test_immutable_snapshot_default_is_deferred_and_explicit_old_version_is_409(

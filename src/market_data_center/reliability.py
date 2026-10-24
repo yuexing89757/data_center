@@ -740,6 +740,14 @@ class RawReplayService:
                 )
                 completed = self._completed(run, fetched, len(factor_accepted), 0)
                 if completed is not None:
+                    # Older adapter batches recorded the source YYYYMMDD date.
+                    completed = replace(
+                        completed,
+                        request_params={
+                            **completed.request_params,
+                            "trade_date": trade_date.isoformat(),
+                        },
+                    )
                     factor_persistence.commit_technical_factor_batch(
                         completed,
                         None,

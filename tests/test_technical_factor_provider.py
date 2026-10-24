@@ -26,7 +26,7 @@ class Client:
         return self.rows
 
 
-def test_full_catalog_source_fields_and_raw_replay(synthetic_quantity_contract):
+def test_full_catalog_source_fields_and_raw_replay():
     row = source_row()
     row.update(
         ema_qfq_10="12.34567890123456789",
@@ -40,6 +40,7 @@ def test_full_catalog_source_fields_and_raw_replay(synthetic_quantity_contract):
     client = Client([row])
     batch = TushareTechnicalFactorProvider(client).fetch_snapshot(date(2026, 10, 9))
     record = batch.records[0]
+    assert batch.request_params["trade_date"] == "2026-10-09"
     assert len(TECHNICAL_FACTOR_FIELDS) == 261
     assert len(set(TECHNICAL_FACTOR_FIELDS)) == 261
     assert client.calls[0][:2] == ("stk_factor_pro", {"trade_date": "20261009"})
@@ -68,6 +69,9 @@ def test_catalog_preserves_basis_specific_default_parameters():
 @pytest.mark.parametrize(
     "field,value",
     [
+        ("obv_bfq", "NaN"),
+        ("emv_qfq", "oops"),
+        ("maemv_hfq", "Infinity"),
         ("macd_qfq", "NaN"),
         ("macd_qfq", "Infinity"),
         ("macd_qfq", "oops"),
@@ -87,7 +91,7 @@ def test_invalid_cells_abort(field, value):
         _ = batch.records
 
 
-def test_structure_date_duplicates_and_caps(synthetic_quantity_contract):
+def test_structure_date_duplicates_and_caps():
     row = source_row()
     for rows in (
         [],
@@ -95,6 +99,7 @@ def test_structure_date_duplicates_and_caps(synthetic_quantity_contract):
         [dict(row, trade_date="20261008")],
         [{k: v for k, v in row.items() if k != "macd_qfq"}],
         [row, dict(row, macd_qfq="1")],
+        [dict(row, obv_bfq="1"), dict(row, obv_bfq="2")],
     ):
         with pytest.raises(ProviderError):
             _ = (
@@ -108,7 +113,7 @@ def test_structure_date_duplicates_and_caps(synthetic_quantity_contract):
         normalize_technical_factor_raw(batch.raw_rows, "unknown")
 
 
-def test_transient_retries_paced_and_permission_not_retried(synthetic_quantity_contract):
+def test_transient_retries_paced_and_permission_not_retried():
     class Flaky(Client):
         def query(self, api_name, *, params, fields):
             self.calls.append(api_name)
@@ -169,7 +174,7 @@ def test_invalid_request_pacing_is_rejected(interval):
         TushareTechnicalFactorProvider(Client([]), request_interval_seconds=interval)
 
 
-def test_replay_rejects_malformed_structure_and_preserves_bse(synthetic_quantity_contract):
+def test_replay_rejects_malformed_structure_and_preserves_bse():
     with pytest.raises(ProviderError):
         normalize_technical_factor_raw([None], "tushare.stock_technical_factor.v1")
     row = source_row()
@@ -206,7 +211,7 @@ def test_source_date_requires_exact_ascii_digits(value):
         normalize_technical_factor_raw(batch.raw_rows, batch.schema_version)
 
 
-def test_replay_deduplicates_equal_records(synthetic_quantity_contract):
+def test_replay_deduplicates_equal_records():
     row = source_row()
     records = normalize_technical_factor_raw([row, dict(row)], "tushare.stock_technical_factor.v1")
     assert len(records) == 1

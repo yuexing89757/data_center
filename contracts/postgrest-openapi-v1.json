@@ -4194,8 +4194,8 @@
           },
           "factor_catalog_version": {
             "type": "string",
-            "const": "stock-technical-factor.v2",
-            "description": "Public quantity-safe factor catalog; source bytes/catalog are unchanged."
+            "const": "stock-technical-factor.v3",
+            "description": "Public source-native factor catalog v3; source bytes/catalog are unchanged."
           },
           "unadjusted": {
             "type": "object",
@@ -4206,7 +4206,7 @@
               ],
               "pattern": "^-?[0-9]+(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$"
             },
-            "description": "Decimal strings or null. Unverified obv/emv/maemv leaves retain their keys with null values. No uniform ×100 scaling; other factors retain their independent formulas and dimensions."
+            "description": "Decimal strings or null in Tushare native factor scale, including obv/emv/maemv. No lot/share conversion, no claim of shares or dimensionless units; missing source values remain null."
           },
           "forward_adjusted": {
             "type": "object",
@@ -4217,7 +4217,7 @@
               ],
               "pattern": "^-?[0-9]+(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$"
             },
-            "description": "Decimal strings or null. Unverified obv/emv/maemv leaves retain their keys with null values. No uniform ×100 scaling; other factors retain their independent formulas and dimensions."
+            "description": "Decimal strings or null in Tushare native factor scale, including obv/emv/maemv. No lot/share conversion, no claim of shares or dimensionless units; missing source values remain null."
           },
           "backward_adjusted": {
             "type": "object",
@@ -4228,7 +4228,7 @@
               ],
               "pattern": "^-?[0-9]+(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$"
             },
-            "description": "Decimal strings or null. Unverified obv/emv/maemv leaves retain their keys with null values. No uniform ×100 scaling; other factors retain their independent formulas and dimensions."
+            "description": "Decimal strings or null in Tushare native factor scale, including obv/emv/maemv. No lot/share conversion, no claim of shares or dimensionless units; missing source values remain null."
           },
           "common": {
             "type": "object",
@@ -4243,7 +4243,7 @@
           "source_factor_catalog_version": {
             "type": "string",
             "const": "stock-technical-factor.v1",
-            "description": "Original immutable source catalog, not relabeled as v2."
+            "description": "Original immutable source catalog, not relabeled as v3."
           },
           "quantity_quality": {
             "$ref": "#/components/schemas/QuantityQuality"
