@@ -188,7 +188,10 @@ def test_auction_series_rpc_qualifies_cte_payload_against_plpgsql_variable() -> 
     defining_migrations = [
         path
         for path in sorted(MIGRATION_DIR.glob("*.sql"))
-        if signature in path.read_text(encoding="utf-8")
+        if any(
+            f"{ddl} function api_v1.{signature}" in path.read_text(encoding="utf-8").lower()
+            for ddl in ("create", "create or replace")
+        )
     ]
 
     latest_definition = defining_migrations[-1].read_text(encoding="utf-8").lower()
