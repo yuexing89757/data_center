@@ -18,8 +18,10 @@ and blocked snapshot rebuild dependencies are recorded in the
 [quantity remediation delivery runbook](docs/stock-quantity-unit-remediation-2026-10-23.md).
 Local implementation does not certify production history or authorize production operations.
 
-The three Regulation benchmark indices use Tushare `index_daily` (ADR-0048 clarification,
+The four Regulation benchmark indices use Tushare `index_daily` (ADR-0048 clarification,
 Issue #69); this does not change ordinary stock routing or replace existing historical Raw.
+Their independent share/CNY unit contracts and the 2026-10-23 recovery evidence are recorded
+in the [Regulation benchmark recovery runbook](docs/runbooks/regulation-index-units-2026-10-24.md).
 
 ## Minimal Linux production release
 
