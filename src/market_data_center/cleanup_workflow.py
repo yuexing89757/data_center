@@ -162,7 +162,7 @@ def run_cleanup_workflow(
                 )
                 report["history"] = history_result.report()
                 retention_result = execution.step(
-                    "retire_archived_raw",
+                    "purge_expired_raw",
                     5,
                     lambda: RawRetentionService(
                         RawRetentionPersistence(engine),

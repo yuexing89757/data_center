@@ -153,6 +153,7 @@ class ReplaySource:
     request_params: Mapping[str, object]
     manifest: RawManifest | None
     raw_offline: bool = False
+    raw_purged: bool = False
 
 
 @dataclass(frozen=True, slots=True)

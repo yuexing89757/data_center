@@ -100,7 +100,7 @@ def test_workflow_window_shared_lock_and_reports(
                 "compress_raw": 2,
                 "archive_auction_quality": 3,
                 "archive_history_results": 4,
-                "retire_archived_raw": 5,
+                "purge_expired_raw": 5,
             }
             assert sequence == expected[code]
             calls.append(code)
@@ -155,7 +155,7 @@ def test_workflow_window_shared_lock_and_reports(
             "quality",
             "archive_history_results",
             "history",
-            "retire_archived_raw",
+            "purge_expired_raw",
             "retention",
             "unlock",
             "partial" if raw_partial else "succeeded",

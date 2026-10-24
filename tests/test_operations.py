@@ -41,13 +41,13 @@ def test_monthly_raw_retention_reports_partial_backlog_and_completed_objects():
         WorkflowCode.DATA_CLEANUP, NOW, TriggerSource.SCHEDULED
     )
     execution.step(
-        "retire_archived_raw",
+        "purge_expired_raw",
         5,
         lambda: RawRetentionResult(
             scanned=3,
             completed=2,
             removed_bytes=10,
-            errors=("expired_raw_requires_verified_offline_archive",),
+            errors=("raw_retention_backlog",),
         ),
     )
     execution.succeed()
@@ -212,7 +212,7 @@ def test_job_catalog_is_stable_and_references_defined_workflows() -> None:
         "compress_raw",
         "archive_auction_quality",
         "archive_history_results",
-        "retire_archived_raw",
+        "purge_expired_raw",
     )
     assert all(job.timezone == "Asia/Shanghai" for job in jobs)
     assert {workflow.value for workflow in WorkflowCode} == set(workflows)

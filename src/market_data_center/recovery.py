@@ -32,6 +32,8 @@ COUNT_QUERIES = {
     "history_archive": "select count(*) from audit.history_archive",
     "history_retention_catalog": "select count(*) from audit.history_retention_catalog",
     "raw_retirement": "select count(*) from ingestion.raw_retirement",
+    "raw_purge": "select count(*) from ingestion.raw_purge",
+    "raw_orphan_purge": "select count(*) from ingestion.raw_orphan_purge",
     "raw_compression": "select count(*) from ingestion.raw_compression",
     "regulation_rule": "select count(*) from regulation.rule",
     "regulation_event": "select count(*) from regulation.event",

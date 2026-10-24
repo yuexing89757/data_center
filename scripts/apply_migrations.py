@@ -30,6 +30,8 @@ EXPECTED_TABLES = {
     ("audit", "history_archive"),
     ("audit", "history_retention_catalog"),
     ("ingestion", "raw_retirement"),
+    ("ingestion", "raw_purge"),
+    ("ingestion", "raw_orphan_purge"),
     ("ingestion", "raw_compression"),
     ("audit", "quality_archive"),
     ("operations", "data_cleanup_report"),

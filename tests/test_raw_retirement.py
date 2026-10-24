@@ -16,7 +16,8 @@ from market_data_center.raw_store import LocalRawStore, RawIntegrityError
 from market_data_center.reliability import RawReplayService
 
 
-def test_offline_replay_stops_before_creating_run_or_reading_raw(tmp_path):
+@pytest.mark.parametrize("purged", [False, True])
+def test_offline_replay_stops_before_creating_run_or_reading_raw(tmp_path, purged):
     source = ReplaySource(
         uuid4(),
         ProviderCode.PYTDX,
@@ -24,7 +25,8 @@ def test_offline_replay_stops_before_creating_run_or_reading_raw(tmp_path):
         datetime.now(UTC),
         {},
         None,
-        raw_offline=True,
+        raw_offline=not purged,
+        raw_purged=purged,
     )
 
     class Repository:
@@ -35,7 +37,9 @@ def test_offline_replay_stops_before_creating_run_or_reading_raw(tmp_path):
             pytest.fail("offline replay must not create an ingestion run")
 
     for dry_run in (True, False):
-        with pytest.raises(RawIntegrityError, match="archived offline"):
+        with pytest.raises(
+            RawIntegrityError, match="permanently removed" if purged else "archived offline"
+        ):
             RawReplayService(raw_store=LocalRawStore(tmp_path), persistence=Repository()).replay(
                 source.source_ingestion_id, dry_run=dry_run
             )

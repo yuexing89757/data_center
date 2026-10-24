@@ -223,13 +223,13 @@ WORKFLOW_DEFINITIONS = (
     WorkflowDefinition(
         "data_cleanup",
         "数据清理任务",
-        "校验归档后清理合格历史结果; Raw超过7天压缩, 超过一个月清除已批准独立归档的副本。",
+        "校验归档后清理合格历史结果; Raw超过7天压缩, 超过一个自然月永久清除且不归档。",
         (
             "cleanup_call_auction_market_series_snapshots",
             "compress_raw",
             "archive_auction_quality",
             "archive_history_results",
-            "retire_archived_raw",
+            "purge_expired_raw",
         ),
     ),
 )

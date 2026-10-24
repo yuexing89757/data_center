@@ -412,6 +412,8 @@ class RawReplayService:
 
     def replay(self, source_ingestion_id: UUID, *, dry_run: bool = False) -> ReplaySummary:
         source = self._persistence.replay_source(source_ingestion_id)
+        if source.raw_purged:
+            raise RawIntegrityError("Raw object permanently removed by monthly retention policy")
         if source.raw_offline:
             raise RawIntegrityError("Raw object is archived offline; restore and verify it first")
         if source.dataset_code is DatasetCode.CALL_AUCTION_MARKET_SNAPSHOT:
@@ -1375,6 +1377,8 @@ def compare_daily_bar_sources(
     sources = persistence.daily_bar_replay_sources(symbol, start_date, end_date)
     latest: dict[tuple[str, date], DailyBarRecord] = {}
     for source in sorted(sources, key=lambda item: item.requested_at):
+        if source.raw_purged:
+            raise RawIntegrityError("Raw object permanently removed by monthly retention policy")
         if source.raw_offline:
             raise RawIntegrityError("Raw object is archived offline; restore and verify it first")
         if source.manifest is None:

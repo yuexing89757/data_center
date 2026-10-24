@@ -20,6 +20,7 @@ ELIGIBLE = """
  and i.status in ('succeeded','partial','failed') and i.finished_at < :cutoff
  and not exists(select 1 from ingestion.raw_retirement r
                 where r.raw_id=m.raw_id and r.restored_at is null)
+ and not exists(select 1 from ingestion.raw_purge p where p.raw_id=m.raw_id)
 """
 PRIORITY = "case when c.raw_id is not null then 0 else 1 end"
 

@@ -7098,6 +7098,8 @@ def test_worker_has_only_ingestion_permissions(
         ("ingestion", "raw_compression", "SELECT"),
         ("ingestion", "raw_compression", "INSERT"),
         ("ingestion", "raw_retirement", "SELECT"),
+        ("ingestion", "raw_purge", "SELECT"),
+        ("ingestion", "raw_orphan_purge", "SELECT"),
     }
     expected.update(
         ("audit", table, privilege)
@@ -7160,6 +7162,8 @@ def test_internal_tables_have_rls_with_worker_only_policies(database_engine: Eng
         ("audit", "history_archive"),
         ("audit", "history_retention_catalog"),
         ("ingestion", "raw_retirement"),
+        ("ingestion", "raw_purge"),
+        ("ingestion", "raw_orphan_purge"),
         ("ingestion", "raw_compression"),
         ("audit", "quantity_unit_certification"),
         ("audit", "quantity_unit_repair_run"),

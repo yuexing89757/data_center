@@ -409,9 +409,9 @@ retired objects from scheduled compression. See the [monthly cleanup audit](docs
 for the exact cutoff, retained calculation inputs, archive evidence, and unfinished exceptions.
 This one-off operation does not change the Worker's recurring retention periods.
 
-2026-10-24新增[Raw自然月线上保留](docs/adr/ADR-0072-Raw自然月线上保留与定时退役.md)：
-03:00清理工作流增加已批准独立归档Raw的定时退役，缺少归档证据或仍有事实依赖者保留并报告。
-这不是删除唯一副本的授权；生产启用与持续机外归档通道状态见[操作与验收记录](docs/runbooks/raw-monthly-retention-2026-10-24.md)。
+2026-10-24新增[Raw自然月永久清除](docs/adr/ADR-0073-Raw月前永久清除不再归档.md)：
+所有者明确旧Raw不再归档。03:00工作流按一个自然月永久清除过期文件，保留Manifest与清除审计，
+超期Raw不再保证回放。生产启用与实际清除量见[操作与验收记录](docs/runbooks/raw-monthly-retention-2026-10-24.md)。
 
 2026-10-23新增历史清理范围见[ADR-0070](docs/adr/ADR-0070-定时历史结果归档清理.md)及[清理闭环](docs/Raw无损压缩与清理闭环.md)：竞价附属事实、技术因子、龙虎榜、监管结果及旧版本快照按一个自然月、完整依赖组归档后清理；部署状态以发布审计为准。
 

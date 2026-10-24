@@ -916,7 +916,8 @@ select
     manifest.schema_version,
     manifest.storage_backend,
     exists(select 1 from ingestion.raw_retirement retired
-           where retired.raw_id=manifest.raw_id and retired.restored_at is null) raw_offline
+           where retired.raw_id=manifest.raw_id and retired.restored_at is null) raw_offline,
+    exists(select 1 from ingestion.raw_purge purged where purged.raw_id=manifest.raw_id) raw_purged
 from ingestion.ingestion_run run
 left join ingestion.raw_manifest manifest using (ingestion_id)
 where run.ingestion_id = :ingestion_id
@@ -950,7 +951,8 @@ select
     manifest.schema_version,
     manifest.storage_backend,
     exists(select 1 from ingestion.raw_retirement retired
-           where retired.raw_id=manifest.raw_id and retired.restored_at is null) raw_offline
+           where retired.raw_id=manifest.raw_id and retired.restored_at is null) raw_offline,
+    exists(select 1 from ingestion.raw_purge purged where purged.raw_id=manifest.raw_id) raw_purged
 from ingestion.ingestion_run run
 join ingestion.raw_manifest manifest using (ingestion_id)
 where run.dataset_code = 'daily_bar'
@@ -2524,6 +2526,7 @@ where board_id = :board_id and trade_date = :trade_date
             request_params=cast(Mapping[str, object], request_params),
             manifest=manifest,
             raw_offline=bool(row.get("raw_offline", False)),
+            raw_purged=bool(row.get("raw_purged", False)),
         )
 
     @staticmethod

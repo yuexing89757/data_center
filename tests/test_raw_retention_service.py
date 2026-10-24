@@ -1,4 +1,3 @@
-from contextlib import contextmanager
 from datetime import date
 from hashlib import sha256
 from time import monotonic
@@ -7,10 +6,19 @@ from uuid import uuid4
 import pytest
 
 from market_data_center.domain.ingestion import RawFileFormat, RawManifest
+from market_data_center.persistence.raw_retention_postgres import RawPurgeCandidate
 from market_data_center.quality_cleanup_service import CleanupBudget
 from market_data_center.raw_retention_service import RawRetentionService, retention_cutoff
-from market_data_center.raw_retirement import OfflineRawProof, approved_storage_hash
+from market_data_center.raw_retirement import approved_storage_hash, remove_purged_raw
 from market_data_center.raw_store import LocalRawStore
+
+
+@pytest.fixture(autouse=True)
+def isolate_registered_cleanup(monkeypatch):
+    from market_data_center import raw_retention_service as module
+    from market_data_center.raw_orphan_cleanup import OrphanCleanupResult
+
+    monkeypatch.setattr(module, "purge_orphan_files", lambda *args: OrphanCleanupResult())
 
 
 @pytest.mark.parametrize(
@@ -28,18 +36,17 @@ def test_retention_uses_calendar_month_and_shanghai_midnight(day, expected):
 
 
 @pytest.mark.parametrize("corrupt", [False, True])
-@pytest.mark.parametrize("api_root", [False, True])
-def test_only_approved_raw_removed_and_failure_keeps_file(tmp_path, corrupt, api_root):
-    content = b'{"volume":null}\n'
-    root = tmp_path / "api" if api_root else tmp_path
+@pytest.mark.parametrize("api_owned", [False, True])
+def test_purge_without_archive_uses_exact_root_and_keeps_corrupt_files(
+    tmp_path, corrupt, api_owned
+):
+    root = tmp_path / "api" if api_owned else tmp_path
     root.mkdir(exist_ok=True)
+    content = b'{"volume":null}\n'
     path = root / "old.jsonl"
     path.write_bytes(b"corrupt" if corrupt else content)
-    unapproved = tmp_path / "unapproved.jsonl"
-    unapproved.write_bytes(content)
-    raw_id = uuid4()
     manifest = RawManifest(
-        raw_id,
+        uuid4(),
         uuid4(),
         path.name,
         RawFileFormat.JSONL,
@@ -48,81 +55,143 @@ def test_only_approved_raw_removed_and_failure_keeps_file(tmp_path, corrupt, api
         1,
         "test.v1",
     )
-    proof = OfflineRawProof("verified-offline", "0" * 64, manifest.content_sha256, len(content), 1)
-    confirmed = []
+    events = []
 
     class Repo:
         def candidates(self, cutoff, after):
-            return ((raw_id, approved_storage_hash(LocalRawStore(root))),) if after is None else ()
+            return (RawPurgeCandidate(manifest, api_owned, None),) if after is None else ()
 
-        @contextmanager
-        def locked(self, candidate, cutoff, root_hash):
-            assert candidate == raw_id
+        def register(self, item, cutoff, root_hash):
             assert root_hash == approved_storage_hash(LocalRawStore(root))
-            yield manifest, proof, lambda: confirmed.append(raw_id)
+            events.append("declare_no_archive")
+            return True
+
+        def confirm(self, item, root_hash):
+            assert not path.exists()
+            events.append("confirm")
 
         def preview(self, cutoff):
-            return {"expired_unapproved_lower_bound": 1, "counts_complete": False}
+            return {"expired_objects_lower_bound": int(corrupt), "counts_complete": True}
 
     result = RawRetentionService(
-        Repo(), tmp_path, additional_roots=(root,) if api_root else ()
+        Repo(), tmp_path, additional_roots=(root,) if api_owned else ()
     ).run(date(2026, 10, 24), CleanupBudget(monotonic() + 10))
-    assert unapproved.exists()
     assert path.exists() == corrupt
-    assert len(confirmed) == (0 if corrupt else 1)
-    assert result.completed == (0 if corrupt else 1)
-    assert result.partial  # Never hide unapproved expired backlog.
-    assert result.removed_bytes == (0 if corrupt else len(content))
+    assert events == ([] if corrupt else ["declare_no_archive", "confirm"])
+    assert result.completed == int(not corrupt)
+    assert result.partial == corrupt
 
 
-def test_late_approvals_never_report_retention_complete(tmp_path):
+def test_late_candidates_never_report_retention_complete(tmp_path):
     class Repo:
         def candidates(self, cutoff, after):
             return ()
 
         def preview(self, cutoff):
-            return {
-                "expired_unapproved_lower_bound": 0,
-                "approved_pending_lower_bound": 1,
-                "counts_complete": True,
-            }
+            return {"expired_objects_lower_bound": 1, "counts_complete": True}
 
     result = RawRetentionService(Repo(), tmp_path).run(
         date(2026, 10, 24), CleanupBudget(monotonic() + 10)
     )
-    assert result.errors == ("raw_retention_pending_approvals",)
+    assert result.errors == ("raw_retention_backlog",)
 
 
-def test_storage_approval_changes_when_root_is_replaced(tmp_path):
+def test_storage_identity_changes_when_root_is_replaced(tmp_path):
     root = tmp_path / "raw"
     root.mkdir()
-    original = approved_storage_hash(LocalRawStore(root))
+    before = approved_storage_hash(LocalRawStore(root))
     root.rename(tmp_path / "old-root")
     root.mkdir()
-    assert approved_storage_hash(LocalRawStore(root)) != original
+    assert approved_storage_hash(LocalRawStore(root)) != before
 
 
-def test_approval_for_unconfigured_root_never_uses_another_store(tmp_path):
-    raw_id = uuid4()
-    path = tmp_path / "old.jsonl"
-    path.write_bytes(b"keep")
+@pytest.mark.parametrize("declared", [False, True])
+def test_missing_raw_requires_prior_purge_declaration(tmp_path, declared):
+    manifest = RawManifest(
+        uuid4(),
+        uuid4(),
+        "missing.jsonl",
+        RawFileFormat.JSONL,
+        sha256(b"").hexdigest(),
+        0,
+        0,
+        "test.v1",
+    )
+    events = []
 
     class Repo:
         def candidates(self, cutoff, after):
-            return ((raw_id, "f" * 64),) if after is None else ()
+            return (
+                (
+                    RawPurgeCandidate(
+                        manifest,
+                        False,
+                        approved_storage_hash(LocalRawStore(tmp_path)) if declared else None,
+                    ),
+                )
+                if after is None
+                else ()
+            )
 
-        def locked(self, *args):
-            pytest.fail("a different root must not consume this approval")
+        def register(self, *args):
+            events.append("registered")
+            return True
+
+        def confirm(self, *args):
+            events.append("confirmed")
 
         def preview(self, cutoff):
-            return {
-                "expired_unapproved_lower_bound": 0,
-                "approved_pending_lower_bound": 1,
-                "counts_complete": True,
-            }
+            return {"expired_objects_lower_bound": int(not declared), "counts_complete": True}
 
     result = RawRetentionService(Repo(), tmp_path).run(
         date(2026, 10, 24), CleanupBudget(monotonic() + 10)
     )
-    assert "raw_retirement_approved_root_not_configured" in result.errors
-    assert path.read_bytes() == b"keep"
+    assert result.completed == int(declared)
+    assert result.removed_bytes == 0
+    assert events == (["registered", "confirmed"] if declared else [])
+    if not declared:
+        assert "first_purge_online_raw_missing" in result.errors
+
+
+def test_purge_helper_never_fabricates_archive_evidence(tmp_path):
+    content = b'{"volume":null}\n'
+    path = tmp_path / "raw.jsonl"
+    path.write_bytes(content)
+    manifest = RawManifest(
+        uuid4(),
+        uuid4(),
+        path.name,
+        RawFileFormat.JSONL,
+        sha256(content).hexdigest(),
+        len(content),
+        1,
+        "test.v1",
+    )
+    events = []
+    assert remove_purged_raw(
+        LocalRawStore(tmp_path),
+        manifest,
+        register=lambda: events.append("purge"),
+        confirm=lambda: events.append("confirm"),
+    ) == len(content)
+    assert events == ["purge", "confirm"] and not path.exists()
+
+
+def test_binary_raw_expiry_matches_original_bytes(tmp_path):
+    content = b"PAR1\x00binary\ncontent\x00PAR1"
+    path = tmp_path / "raw.parquet"
+    path.write_bytes(content)
+    manifest = RawManifest(
+        uuid4(),
+        uuid4(),
+        path.name,
+        RawFileFormat.PARQUET,
+        sha256(content).hexdigest(),
+        len(content),
+        100,
+        "test.v1",
+    )
+    assert remove_purged_raw(
+        LocalRawStore(tmp_path), manifest, register=lambda: None, confirm=lambda: None
+    ) == len(content)
+    assert not path.exists()
