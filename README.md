@@ -411,3 +411,5 @@ This one-off operation does not change the Worker's recurring retention periods.
 
 2026-10-23涨停列表已恢复64条主板记录，状态partial，2只来源缺失保持可见；封板资金按元原值提供。
 单位证据、测试及线上验收见[恢复记录](docs/runbooks/limit-up-recovery-2026-10-24.md)。
+
+2026-10-23技术因子快照已补齐5571条，公开目录v3保留Tushare原生OBV/EMV/MAEMV值，不作手股转换；[定时任务原因及恢复验收](docs/runbooks/stock-technical-factor.md)。

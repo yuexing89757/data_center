@@ -1,6 +1,6 @@
 # StockTechnicalFactor 领域详设
 
-- 状态：本地已实现并验证；生产上线另行执行
+- 状态：已上线；2026-10-24来源尺度修正与补数验收见 docs/runbooks/stock-technical-factor.md
 - 验证：[实施记录](superpowers/plans/2026-10-10-stock-technical-factor.md)
 - 日期：2026-10-10
 - 依据：项目宪法、ADR-0013、ADR-0017、ADR-0066

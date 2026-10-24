@@ -16,7 +16,7 @@
 | 股本 | 对应生效日期及总股本、流通、自由流通口径的股数 | 不交换分母，不用旧已认证股本跨过较新未认证修订 |
 | 可转债成交量 | 独立来源契约下的整数张 | 股票证书不能准入；成交张数证书也不能准入金额或剩余规模 |
 | 指数 / THS 数量 | 独立来源契约；不推断为股票股数 | 量纲未确认时为 `null` |
-| 技术因子 JSON | 每个叶子保持自己的公式和量纲 | 未认证 `obv` / `emv` / `maemv` 保留键并为 `null`，不统一乘除 100 |
+| 技术因子 JSON | 独立Tushare原生指标尺度，含 `obv` / `emv` / `maemv`，不声明为股或无量纲 | 来源缺失为 `null`；不作手股转换，见2026-10-24修正 |
 
 来源股票 0.37 手可在有证据的 Provider 边界精确转为 37 股。Calculator、SQL 和 API 不通过价格、日期、量级推断单位，也不再次转换标准对象。显式来源 0 是可用事实；`null` 不是 0。
 
@@ -58,7 +58,7 @@ PostgREST 保留其原有 `timestamptz` / ISO 日期时间语义；FastAPI 的�
 
 - PostgREST：`contracts/postgrest-openapi-v1.json`，包含逐字段业务、单位、可空性、质量状态及只读视图字段目录。
 - Agent：`contracts/agent-tools-v1.json`，输入继续严格有界、只读；`output_schema` 引用同目录 PostgREST 的响应定义。
-- 技术因子对外目录为 `stock-technical-factor.v2`，同时返回 `source_factor_catalog_version=stock-technical-factor.v1`；不可变来源对象仍是 v1。
+- 技术因子对外目录为 `stock-technical-factor.v3`，同时返回 `source_factor_catalog_version=stock-technical-factor.v1`；不可变来源对象仍是 v1。
 - 已补登记设计 F9 中的 8 个遗漏只读 RPC，以及最新日指标读取和部署预检。登记契约不扩大任何数据库角色权限。
 - `persist_call_auction_indicative_details` 是受控写入桥接，不属于上述只读工具或公共契约。
 
