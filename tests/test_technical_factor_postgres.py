@@ -310,8 +310,8 @@ def test_daily_replacement_gaps_and_rollback(database_engine, factor_seed):  # n
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("source_quantity", ["", "123.5"])
-def test_live_raw_and_replay_reject_unverified_quantities_and_preserve_raw(
+@pytest.mark.parametrize("source_quantity", ["NaN", "Infinity"])
+def test_live_raw_and_replay_reject_nonfinite_factors_and_preserve_raw(
     database_engine,  # noqa: F811
     factor_seed,
     tmp_path,
@@ -343,9 +343,8 @@ def test_live_raw_and_replay_reject_unverified_quantities_and_preserve_raw(
     service = TechnicalFactorIngestionService(
         provider=TushareTechnicalFactorProvider(client), persistence=persistence, raw_store=store
     )
-    # An all-null quantity row is still an unverified source contract, not a
-    # successful standard batch with a conveniently empty set of quantities.
-    with pytest.raises(ProviderError, match="quantity unit contract unverified"):
+    # Native factor scaling does not relax finite-number validation.
+    with pytest.raises(ProviderError, match="invalid snapshot values"):
         service.ingest_snapshot(DAY)
     raw_files = list(tmp_path.rglob("*.jsonl"))
     assert len(raw_files) == 1
@@ -372,7 +371,7 @@ def test_live_raw_and_replay_reject_unverified_quantities_and_preserve_raw(
         ).one()
         assert manifest.content_sha256 == sha256(original_payload).hexdigest()
         assert (manifest.byte_size, manifest.row_count) == (len(original_payload), 2)
-    with pytest.raises(ProviderError, match="quantity unit contract unverified"):
+    with pytest.raises(ProviderError, match="invalid snapshot values"):
         RawReplayService(raw_store=store, persistence=persistence).replay(live["ingestion_id"])
     client.query.assert_called_once()
     assert list(tmp_path.rglob("*.jsonl")) == raw_files
@@ -406,7 +405,7 @@ def test_live_raw_and_replay_reject_unverified_quantities_and_preserve_raw(
         assert all(
             item["severity"] == "error"
             and item["status"] == "failed"
-            and item["details"]["quantity_reason"] == "quantity_units_unverified"
+            and item["details"]["error_type"] == "ProviderError"
             for item in quality
         )
         assert (
