@@ -413,3 +413,5 @@ This one-off operation does not change the Worker's recurring retention periods.
 单位证据、测试及线上验收见[恢复记录](docs/runbooks/limit-up-recovery-2026-10-24.md)。
 
 2026-10-23技术因子快照已补齐5571条，公开目录v3保留Tushare原生OBV/EMV/MAEMV值，不作手股转换；[定时任务原因及恢复验收](docs/runbooks/stock-technical-factor.md)。
+
+2026-10-23跌停列表已通过Tushare limit_list_d D恢复新版本：8个规范成员、6条来源封单金额，2个来源缺口保持null/partial；[恢复与验收记录](docs/runbooks/limit-down-tushare-2026-10-24.md)。
