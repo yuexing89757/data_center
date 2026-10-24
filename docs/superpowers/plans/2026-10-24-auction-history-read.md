@@ -32,11 +32,11 @@
 ### Task 2: API契约与交付
 
 **Files:** modify `src/market_data_center/public_api/app.py`、`contracts/{postgrest-openapi-v1,agent-tools-v1,fastapi-openapi-v1}.json`、领域详设、数据库导航、运行手册、ADR索引；新增运行记录。
-**Interfaces:** 两个既有HTTP路径不变；文档声明精确日期历史范围及无上线状态。
+**Interfaces:** 两个既有HTTP路径不变；文档声明精确日期历史范围及实际上线状态。
 
 - [x] 同步端点说明和契约，添加契约断言；保留其他竞价接口原语义。
-- [ ] 运行format、ruff、mypy、完整pytest及隔离PostgreSQL测试；独立最终审查。
-- [ ] 核验64个数据认证及事实/Raw证据不变，记录真实结果、生产接口未迁移限制。
+- [x] 运行format、ruff、mypy、完整pytest及隔离PostgreSQL测试；独立最终审查。
+- [x] 核验64个数据认证及事实/Raw证据不变，完成受保护迁移、独立API切换和真实HTTP验收。
 
 ## 执行记录
 
@@ -48,3 +48,8 @@
   认证语义不变，由认证/未认证量额及最大请求回归验证。若错误将影响历史量额读取，故上线前独立审查。
 - 新增盘口零/37股夹具最初违反价格为空且数量为0的既有CHECK，已补真实价格；不放宽数据库约束。
   修正后14项集成通过，单日分区裁剪/索引和私有helper权限均验证。
+- 最终CI40080689174及生产apply40081366000通过；静态检查已区分函数定义与引用。
+  本地全量2309通过/4跳过，隔离库恢复补跑通过，剩余3项Windows软链接权限限制。
+- 64认证/审计完成，334336事实指纹不变；72个有界HTTP请求逐项匹配全部序列及末轮。
+  API17:27:04安全切换，Worker未重启。实际结果与证据见对应runbook。
+- 最终独立审查无P0/P1/P2，无延期minor；按项目明确要求直接master提交，不新增分支或worktree。

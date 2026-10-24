@@ -251,6 +251,11 @@ batch code and bid/ask levels 1–5; a missing price with positive volume is pre
 fact. The retired limit-up-pool auction collector is not registered by the Worker, while its
 historical workflow and stored facts remain readable.
 
+Both snapshot endpoints support retained historical series facts (ADR-0074). They read the whole
+selected attempt from online storage when any of its rows remain there, otherwise from history;
+they never fill individual gaps from another copy or attempt. Existing date/session selection,
+code/round bounds, five-second SQL budget, and quantity certification gates still apply.
+
 `GET /api/v1/call-auction-grab-lines?trade_date=YYYY-MM-DD&min_grab_line_pct=0&min_change_pct=0`
 calculates the exact-date
 full-market auction price move from 09:24:53 to 09:25:20 relative to the stored previous close.
