@@ -1,5 +1,8 @@
 # 来源数量单位目录
 
+Tushare逐字段业务、真实单位、来源证据及运行时适配状态见
+[Tushare接口字段单位契约](Tushare接口字段单位契约.md)（2026-10-24核验）。
+
 本目录对应 ADR-0068、Issue #92 和 `stock-quantity.v1`。可执行目录为
 `providers/quantity_units.py` 的 `QUANTITY_UNIT_RULES`；身份必须同时匹配
 Provider、endpoint、Raw schema、品种和字段。未登记或明确未核实的规则抛出
@@ -40,16 +43,18 @@ PostgreSQL bigint 溢出。Decimal 上下文精度不能使转换发生舍入。
 | Provider / endpoint / schema | 字段或品种 | 原因与当前标准化行为 |
 |---|---|---|
 | akshare_ths / board_index_daily_bars / akshare_ths.board_index_daily_bar.v1 | THS 板块指数成交量 | 尚无独立确认的聚合量纲；普通批次、Raw replay 和直接 live history 均拒绝输出标准记录 |
-| tushare / index_daily / tushare.index_daily.v1 | 指数 vol | 独立指数语义未认证；保留来源 Raw，拒绝标准化，不调用股票日 K ×100 |
+| tushare / index_daily / tushare.index_daily.v1 | 指数 vol | [官方doc95](https://tushare.pro/document/2?doc_id=95)明确来源为手、amount为千元；项目独立指数聚合量契约仍未适配，保留来源 Raw，拒绝标准化，不调用股票日 K ×100 |
 | baostock / query_history_k_data_plus / baostock.daily_bar.v1 | 非股票代码（包含指数） | 不能从同 endpoint 股票规则推断；身份没有股票规则即失败 |
-| tushare / stk_factor_pro / tushare.stock_technical_factor.v1 | 三组 OBV、EMV、MAEMV | [官方参数表](https://tushare.pro/document/2?doc_id=328)不能证明输出缩放；不假设 OBV 为手或简单×100，整批标准化失败，全部为null的来源也不绕过 |
 | akshare / stock_zh_a_gbjg_em / akshare.capital.v1 | 四个股本数量字段 | 尚无独立来源单位证据；保留完整三类 Capital Raw，遇到 ShareCapital 记录则整批标准化失败，不能只删未知字段继续发布成功 |
 | akshare / stock_zt_pool_dtgc_em / akshare_eastmoney.current_day_limit_down_pool.v1 | 封单资金 | 官方字段表未明确来源单位，独立来源观察标准化失败；不借用涨停资金契约 |
 | 已退役 pysnowball 及其 Raw | 股票盘口数量 | 本整改不重新启用无已确认契约的适配器或 replay |
 | 未登记 schema、endpoint、品种或字段 | 所有数量 | fail closed；未知股票/基金/债券不可借股票规则转换 |
 
-技术因子来源公式与带符号 OBV 不由无符号整数股 helper 重定义。对外 JSON 叶子屏蔽、
-目录版本及历史数量认证由领域/持久化/公共读取门禁负责。
+技术因子来源公式与带符号 OBV 不由无符号整数股 helper 重定义。
+2026-10-24接受的来源尺度澄清已替代此前的整批阻断/null隔离方案：三组OBV、EMV、MAEMV
+完整保存和返回来源Decimal原值，不作手股换算，公开目录v3标记
+`source_native / provider_native_factor_scale`。这不认证它们为股数或无量纲；
+其他股票数量认证门禁仍有效。详见[技术因子运行手册](runbooks/stock-technical-factor.md)。
 
 ### 2026-10-24：涨停来源“封板资金”核验
 
@@ -103,7 +108,8 @@ PostgreSQL bigint 溢出。Decimal 上下文精度不能使转换发生舍入。
 结合官方 endpoint/字段/格式化链路和上述有明确金额语义的同日核验，将本目录精确身份的
 “封板资金”登记为 `cny`，适配器使用 Decimal 原值，不乘除100/10000。
 这不是跨来源通用单位推断器；未知 schema、跌停接口仍阻断。
-Tushare 本次仅作为核验来源，未新增生产适配器、自动切换或拼接来源批次。
+本段涨停恢复中的Tushare仅作为核验来源，涨停生产适配器未切换。
+随后跌停生产来源已独立切换为Tushare D，见本文件后文跌停契约；没有拼接来源批次。
 没有修改不可变 Raw。历史快照和其他日期不会因这条静态规则自动认证，仍须逐批核验并受控重建。
 
 可转债张数、金额与发行规模分别证明，不借用股票规则：
