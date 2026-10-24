@@ -107,7 +107,7 @@ def test_workflow_window_shared_lock_and_reports(
             return operation()
 
     class Retention:
-        def __init__(self, repo, root):
+        def __init__(self, repo, root, **kwargs):
             pass
 
         def run(self, day, budget):
@@ -131,7 +131,7 @@ def test_workflow_window_shared_lock_and_reports(
     def run():
         return module.run_cleanup_workflow(
             None,
-            SimpleNamespace(raw_data_root=tmp_path),
+            SimpleNamespace(raw_data_root=tmp_path, raw_retention_api_root=None),
             Execution(),
             now=datetime(2026, 9, 27, hour, tzinfo=ZoneInfo("Asia/Shanghai")),
             scheduled=True,

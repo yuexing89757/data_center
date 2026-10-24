@@ -18,21 +18,23 @@ and m.storage_backend='local' and m.file_format='jsonl'"""
 
 
 class RawRetentionPersistence(QualityArchivePersistence):
-    def candidates(self, cutoff: datetime, after: UUID | None = None) -> tuple[UUID, ...]:
+    def candidates(
+        self, cutoff: datetime, after: UUID | None = None
+    ) -> tuple[tuple[UUID, str], ...]:
         with self.transaction(readonly=True) as c:
             return tuple(
                 c.execute(
                     text(f"""
-                select m.raw_id from ingestion.raw_manifest m
+                    select m.raw_id,t.approved_storage_sha256 from ingestion.raw_manifest m
                 join ingestion.ingestion_run i using(ingestion_id)
                 join ingestion.raw_retirement t using(raw_id)
                 where {EXPIRED} and t.restored_at is null and t.online_removed_at is null
                 and t.approved_storage_sha256 is not null
-                and (:after is null or m.raw_id > cast(:after as uuid))
+                and (cast(:after as uuid) is null or m.raw_id > cast(:after as uuid))
                 order by m.raw_id limit 200
             """),
                     {"cutoff": cutoff, "after": after},
-                ).scalars()
+                ).tuples()
             )
 
     def preview(self, cutoff: datetime) -> dict[str, object]:

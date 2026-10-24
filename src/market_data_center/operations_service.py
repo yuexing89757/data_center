@@ -36,6 +36,7 @@ from market_data_center.persistence.today_limit_up_postgres import TodayLimitUpF
 from market_data_center.providers.pytdx_pool import PytdxPoolRefreshResult
 from market_data_center.quality_cleanup_service import QualityCleanupFailure, QualityCleanupResult
 from market_data_center.raw_cleanup_service import RawCleanupFailure, RawCleanupResult
+from market_data_center.raw_retention_service import RawRetentionResult
 from market_data_center.regulation_benchmark_service import (
     RegulationBenchmarkCollectionSummary,
 )
@@ -141,6 +142,13 @@ def safe_error_summary(error: BaseException) -> str:
 
 
 def _result_statistics(result: object) -> tuple[int, int, int, ExecutionStatus]:
+    if isinstance(result, RawRetentionResult):
+        return (
+            result.scanned,
+            result.completed,
+            result.scanned - result.completed,
+            ExecutionStatus.PARTIAL if result.partial else ExecutionStatus.SUCCEEDED,
+        )
     if isinstance(result, HistoryCleanupResult):
         return (
             result.deleted_rows,

@@ -33,6 +33,29 @@ from market_data_center.shareholder_count_batch import ShareholderCountSyncSumma
 NOW = datetime(2026, 8, 2, 10, tzinfo=UTC)
 
 
+def test_monthly_raw_retention_reports_partial_backlog_and_completed_objects():
+    from market_data_center.raw_retention_service import RawRetentionResult
+
+    persistence = MemoryOperationsPersistence()
+    execution = WorkflowExecutionService(cast(PostgreSQLOperationsPersistence, persistence)).start(
+        WorkflowCode.DATA_CLEANUP, NOW, TriggerSource.SCHEDULED
+    )
+    execution.step(
+        "retire_archived_raw",
+        5,
+        lambda: RawRetentionResult(
+            scanned=3,
+            completed=2,
+            removed_bytes=10,
+            errors=("expired_raw_requires_verified_offline_archive",),
+        ),
+    )
+    execution.succeed()
+    assert persistence.finished_jobs[0].status is ExecutionStatus.PARTIAL
+    assert persistence.finished_workflows[0].status is ExecutionStatus.PARTIAL
+    assert persistence.finished_workflows[0].accepted_rows == 2
+
+
 def test_raw_budget_exit_records_partial_and_completed_objects():
     from market_data_center.raw_cleanup_service import RawCleanupResult
 

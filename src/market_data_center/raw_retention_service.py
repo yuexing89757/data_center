@@ -31,28 +31,38 @@ class RawRetentionResult:
 
 
 class RawRetentionService:
-    def __init__(self, persistence: RawRetentionPersistence, root: Path) -> None:
+    def __init__(
+        self,
+        persistence: RawRetentionPersistence,
+        root: Path,
+        *,
+        additional_roots: tuple[Path, ...] = (),
+    ) -> None:
         self.persistence = persistence
-        self.store = LocalRawStore(root)
+        self.stores = tuple(LocalRawStore(p) for p in (root, *additional_roots))
 
     def run(self, day: date, budget: CleanupBudget) -> RawRetentionResult:
         cutoff = retention_cutoff(day)
         after = None
         scanned = completed = removed = 0
         errors: set[str] = set()
-        root_hash = approved_storage_hash(self.store)
+        stores = {approved_storage_hash(store): store for store in self.stores}
         try:
             while True:
                 budget.checkpoint()
                 page = self.persistence.candidates(cutoff, after)
                 if not page:
                     break
-                for raw_id in page:
+                for raw_id, root_hash in page:
                     budget.checkpoint()
                     if scanned >= 10_000:
                         raise CleanupInterrupted("raw_retention_object_budget")
                     scanned += 1
                     after = raw_id
+                    store = stores.get(root_hash)
+                    if store is None:
+                        errors.add("raw_retirement_approved_root_not_configured")
+                        continue
                     try:
                         # Hold the approved row lock through hashing, unlink and confirmation:
                         # an administrator cannot restore/revoke this declaration in between.
@@ -61,10 +71,10 @@ class RawRetentionService:
                                 errors.add("raw_retirement_approval_or_references_changed")
                                 continue
                             manifest, proof, confirm = item
-                            if approved_storage_hash(self.store) != root_hash:
+                            if approved_storage_hash(store) != root_hash:
                                 raise RawIntegrityError("approved Raw root changed")
                             removed += remove_retired_raw(
-                                self.store,
+                                store,
                                 manifest,
                                 proof,
                                 register=lambda: None,

@@ -28,9 +28,12 @@ def test_retention_uses_calendar_month_and_shanghai_midnight(day, expected):
 
 
 @pytest.mark.parametrize("corrupt", [False, True])
-def test_only_approved_raw_removed_and_failure_keeps_file(tmp_path, corrupt):
+@pytest.mark.parametrize("api_root", [False, True])
+def test_only_approved_raw_removed_and_failure_keeps_file(tmp_path, corrupt, api_root):
     content = b'{"volume":null}\n'
-    path = tmp_path / "old.jsonl"
+    root = tmp_path / "api" if api_root else tmp_path
+    root.mkdir(exist_ok=True)
+    path = root / "old.jsonl"
     path.write_bytes(b"corrupt" if corrupt else content)
     unapproved = tmp_path / "unapproved.jsonl"
     unapproved.write_bytes(content)
@@ -50,20 +53,20 @@ def test_only_approved_raw_removed_and_failure_keeps_file(tmp_path, corrupt):
 
     class Repo:
         def candidates(self, cutoff, after):
-            return (raw_id,) if after is None else ()
+            return ((raw_id, approved_storage_hash(LocalRawStore(root))),) if after is None else ()
 
         @contextmanager
         def locked(self, candidate, cutoff, root_hash):
             assert candidate == raw_id
-            assert root_hash == approved_storage_hash(LocalRawStore(tmp_path))
+            assert root_hash == approved_storage_hash(LocalRawStore(root))
             yield manifest, proof, lambda: confirmed.append(raw_id)
 
         def preview(self, cutoff):
             return {"expired_unapproved_lower_bound": 1, "counts_complete": False}
 
-    result = RawRetentionService(Repo(), tmp_path).run(
-        date(2026, 10, 24), CleanupBudget(monotonic() + 10)
-    )
+    result = RawRetentionService(
+        Repo(), tmp_path, additional_roots=(root,) if api_root else ()
+    ).run(date(2026, 10, 24), CleanupBudget(monotonic() + 10))
     assert unapproved.exists()
     assert path.exists() == corrupt
     assert len(confirmed) == (0 if corrupt else 1)
@@ -97,3 +100,29 @@ def test_storage_approval_changes_when_root_is_replaced(tmp_path):
     root.rename(tmp_path / "old-root")
     root.mkdir()
     assert approved_storage_hash(LocalRawStore(root)) != original
+
+
+def test_approval_for_unconfigured_root_never_uses_another_store(tmp_path):
+    raw_id = uuid4()
+    path = tmp_path / "old.jsonl"
+    path.write_bytes(b"keep")
+
+    class Repo:
+        def candidates(self, cutoff, after):
+            return ((raw_id, "f" * 64),) if after is None else ()
+
+        def locked(self, *args):
+            pytest.fail("a different root must not consume this approval")
+
+        def preview(self, cutoff):
+            return {
+                "expired_unapproved_lower_bound": 0,
+                "approved_pending_lower_bound": 1,
+                "counts_complete": True,
+            }
+
+    result = RawRetentionService(Repo(), tmp_path).run(
+        date(2026, 10, 24), CleanupBudget(monotonic() + 10)
+    )
+    assert "raw_retirement_approved_root_not_configured" in result.errors
+    assert path.read_bytes() == b"keep"

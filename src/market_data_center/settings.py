@@ -12,6 +12,8 @@ class WorkerSettings(BaseSettings):
 
     database_url: SecretStr
     raw_data_root: Path = Path("data/raw")
+    # Explicit second persistent root; never infer it from a local Manifest path.
+    raw_retention_api_root: Path | None = None
     daily_bar_write_batch_size: int = Field(default=100, ge=1, le=500)
 
 

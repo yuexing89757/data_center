@@ -165,7 +165,11 @@ def run_cleanup_workflow(
                     "retire_archived_raw",
                     5,
                     lambda: RawRetentionService(
-                        RawRetentionPersistence(engine), settings.raw_data_root
+                        RawRetentionPersistence(engine),
+                        settings.raw_data_root,
+                        additional_roots=(settings.raw_retention_api_root,)
+                        if settings.raw_retention_api_root
+                        else (),
                     ).run(
                         reference_date,
                         CleanupBudget(
