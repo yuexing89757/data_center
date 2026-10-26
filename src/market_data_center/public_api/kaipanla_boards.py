@@ -137,7 +137,8 @@ def latest_boards(
     "/history",
     response_model=KaipanlaBoardRankingResponse,
     summary="查询开盘啦历史板块排行",
-    description=DESCRIPTION + "必填trade_date，拒绝未来日期和来源日期错位。",
+    description=DESCRIPTION + "必填trade_date；上海当天读取最新源，过去日期读取历史源。"
+    "拒绝未来日期和来源日期错位。",
 )
 def historical_boards(
     provider: Provider, trade_date: TradeDate, offset: Offset = 0, limit: Limit = 60

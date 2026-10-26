@@ -120,6 +120,7 @@ class KaipanlaBoardsProvider:
             raise KaipanlaBoardsInvalid("invalid page bounds")
         if trade_date is not None and trade_date > today:
             raise KaipanlaBoardsInvalid("future dates are unsupported")
+        historical = trade_date is not None and trade_date < today
         params = dict(
             c="ZhiShuRanking",
             a="ZhiShuStockList_W8" if board_code else "RealRankingInfo",
@@ -129,9 +130,9 @@ class KaipanlaBoardsProvider:
             Index=str(offset),
             PhoneOSNew="1",
             VerSion="5",
-            apiv="w41" if board_code else ("w26" if trade_date else "w21"),
+            apiv="w41" if board_code else ("w26" if historical else "w21"),
         )
-        if trade_date is not None:
+        if historical and trade_date is not None:
             params["Date"] = trade_date.isoformat()
         if board_code:
             params.update(
@@ -140,7 +141,7 @@ class KaipanlaBoardsProvider:
         else:
             params["ZSType"] = "7"
         request = Request(
-            (HIS if trade_date else HQ) + "?" + urlencode(params),
+            (HIS if historical else HQ) + "?" + urlencode(params),
             headers={"User-Agent": UA, "Accept": "application/json"},
             method="GET",
         )

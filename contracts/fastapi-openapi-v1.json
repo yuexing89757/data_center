@@ -17390,7 +17390,7 @@
     },
     "/api/v1/realtime/kaipanla/boards/history": {
       "get": {
-        "description": "复用X-API-Key，每次只读取一页开盘啦HTTP响应，不重试、不自动全量翻页、不落库。小数以字符串返回，金额单位元。沿next_offset分页，来源变动可能影响跨页一致性。必填trade_date，拒绝未来日期和来源日期错位。",
+        "description": "复用X-API-Key，每次只读取一页开盘啦HTTP响应，不重试、不自动全量翻页、不落库。小数以字符串返回，金额单位元。沿next_offset分页，来源变动可能影响跨页一致性。必填trade_date；上海当天读取最新源，过去日期读取历史源。拒绝未来日期和来源日期错位。",
         "operationId": "historical_boards_api_v1_realtime_kaipanla_boards_history_get",
         "parameters": [
           {

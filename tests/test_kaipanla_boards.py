@@ -151,6 +151,40 @@ def test_historical_members_have_standard_symbols_and_dynamic_forecast_years():
     assert all(query[k] == ["0"] for k in ("IsZZ", "IsKZZType", "filterType", "TSZB", "TSZB_Type"))
 
 
+@pytest.mark.parametrize("source_day", ["2026-09-29", "2026-09-28"])
+def test_today_ranking_uses_current_source_but_requires_requested_date(source_day):
+    transport = Transport(Day=[source_day])
+
+    def current_only(request, timeout):
+        body = transport(request, timeout)
+        if urlsplit(request.full_url).hostname == "apphis.longhuvip.com":
+            return b'{"errcode":1}'
+        return body
+
+    api = client(current_only)
+    # Shanghai is already September 29 while UTC is still September 28.
+    api.app.state.kaipanla_boards_provider = KaipanlaBoardsProvider(
+        request_bytes=current_only,
+        clock=lambda: datetime(2026, 9, 28, 16, 30, tzinfo=UTC),
+    )
+    response = api.get(
+        BASE + "/history",
+        params={"trade_date": "2026-09-29"},
+        headers={"X-API-Key": KEY},
+    )
+    assert response.status_code == (200 if source_day == "2026-09-29" else 502)
+    if response.status_code == 200:
+        data = response.json()
+        assert data["query_mode"] == "history"
+        assert data["requested_date"] == data["trade_date"] == "2026-09-29"
+    assert len(transport.calls) == 1
+    request = transport.calls[0][0]
+    assert urlsplit(request.full_url).hostname == "apphq.longhuvip.com"
+    query = parse_qs(urlsplit(request.full_url).query)
+    assert query["apiv"] == ["w21"]
+    assert "Date" not in query
+
+
 def test_forecast_missing_years_and_zero_sentinel_are_explicit():
     row = stock()
     row[44:47] = [0, 0, 0]
