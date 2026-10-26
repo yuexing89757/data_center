@@ -2,12 +2,18 @@
 
 import json
 import re
+import socket
+import ssl
+import time
 from collections.abc import Callable
+from contextlib import suppress
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from http.client import HTTPException, HTTPSConnection
+from threading import BoundedSemaphore, Event, Thread, Timer
 from typing import cast
-from urllib.parse import urlencode
-from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
+from urllib.parse import urlencode, urlsplit
+from urllib.request import Request
 from zoneinfo import ZoneInfo
 
 from market_data_center.domain.kaipanla_boards import (
@@ -21,6 +27,10 @@ from market_data_center.domain.kaipanla_boards import (
 from market_data_center.providers.kaipanla_boards_socket import request_members as _request_members
 
 MAX_RESPONSE_BYTES = 2_000_000
+MAX_MEMBER_ROWS = 6000
+MAX_MEMBER_BYTES = 8 * 1024 * 1024
+LEADER_RANKS = {f"龙{label}": rank for rank, label in enumerate("一二三四五六七八九十", 1)}
+_DNS_SLOTS = BoundedSemaphore(16)
 HQ = "https://apphq.longhuvip.com/w1/api/index.php"
 HIS = "https://apphis.longhuvip.com/w1/api/index.php"
 SHANGHAI = ZoneInfo("Asia/Shanghai")
@@ -35,17 +45,99 @@ class KaipanlaBoardsInvalid(ValueError):
     """Invalid bounded request or unsupported date."""
 
 
-class _NoRedirect(HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[no-untyped-def]
-        return None
+def _remaining(deadline: float) -> float:
+    value = deadline - time.monotonic()
+    if value <= 0:
+        raise TimeoutError("HTTP board deadline exceeded")
+    return value
+
+
+def _connect_http(host: str, deadline: float) -> socket.socket:
+    _remaining(deadline)
+    # System DNS cannot be cancelled; bound abandoned resolvers as well as caller wait.
+    if not _DNS_SLOTS.acquire(blocking=False):
+        raise OSError("board DNS capacity exceeded")
+    ready = Event()
+    addresses: list[
+        tuple[int, int, int, str, tuple[str, int] | tuple[str, int, int, int] | tuple[int, bytes]]
+    ] = []
+    errors: list[OSError] = []
+
+    def resolve() -> None:
+        try:
+            addresses.extend(socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM))
+        except OSError as exc:
+            errors.append(exc)
+        finally:
+            _DNS_SLOTS.release()
+            ready.set()
+
+    resolver = Thread(target=resolve, daemon=True)
+    try:
+        resolver.start()
+    except RuntimeError:
+        _DNS_SLOTS.release()
+        raise OSError("could not start board resolver") from None
+    if not ready.wait(_remaining(deadline)):
+        raise TimeoutError("board DNS deadline exceeded")
+    if errors or not addresses:
+        raise OSError("board DNS failed")
+    family, kind, protocol, _, address = addresses[0]
+    raw = socket.socket(family, kind, protocol)
+    try:
+        raw.settimeout(_remaining(deadline))
+        raw.connect(address)
+        _remaining(deadline)
+        return raw
+    except BaseException:
+        raw.close()
+        raise
 
 
 def _request_bytes(request: Request, timeout: float) -> bytes:
-    with build_opener(ProxyHandler({}), _NoRedirect()).open(request, timeout=timeout) as response:
-        body = response.read(MAX_RESPONSE_BYTES + 1)
-        if response.status != 200 or len(body) > MAX_RESPONSE_BYTES:
-            raise KaipanlaBoardsUpstream("invalid source response")
-        return cast(bytes, body)
+    deadline = time.monotonic() + timeout
+
+    def remaining() -> float:
+        return _remaining(deadline)
+
+    url = urlsplit(request.full_url)
+    if url.scheme != "https" or url.hostname not in {urlsplit(HQ).hostname, urlsplit(HIS).hostname}:
+        raise ValueError("unexpected board endpoint")
+    host = cast(str, url.hostname)
+    context = ssl.create_default_context()
+    with _connect_http(host, deadline) as raw:
+        connection = context.wrap_socket(raw, server_hostname=host, do_handshake_on_connect=False)
+        try:
+            connection.settimeout(remaining())
+            connection.do_handshake()
+            http = HTTPSConnection(host, timeout=remaining(), context=context)
+            http.sock = connection
+
+            def abort() -> None:
+                # Interrupt slow response headers as well as a slow body.
+                with suppress(OSError):
+                    connection.shutdown(socket.SHUT_RDWR)
+
+            timer = Timer(remaining(), abort)
+            timer.daemon = True
+            timer.start()
+            try:
+                connection.settimeout(remaining())
+                http.request(
+                    "GET", url.path + "?" + url.query, headers=dict(request.header_items())
+                )
+                with http.getresponse() as response:
+                    body = response.read(MAX_RESPONSE_BYTES + 1)
+                    remaining()
+                    if response.status != 200 or len(body) > MAX_RESPONSE_BYTES:
+                        raise KaipanlaBoardsUpstream("invalid source response")
+                    return body
+            finally:
+                timer.cancel()
+                timer.join()
+                http.close()
+        finally:
+            connection.close()
 
 
 class KaipanlaBoardsProvider:
@@ -91,13 +183,65 @@ class KaipanlaBoardsProvider:
     ) -> KaipanlaBoardMembersPage:
         if not re.fullmatch(r"[0-9]{6}", board_code):
             raise KaipanlaBoardsInvalid("invalid board code")
-        data, actual, rows = self._fetch(trade_date, offset, limit, board_code)
+        today = self._clock().astimezone(SHANGHAI).date()
+        if not 0 <= offset <= 10000 or not 1 <= limit <= 60 or trade_date > today:
+            raise KaipanlaBoardsInvalid("invalid member request")
+        deadline = time.monotonic() + self._timeout
+        collected: list[KaipanlaBoardMember] = []
+        seen: set[str] = set()
+        years: tuple[int, ...] | None = None
+        source_total: object = None
+        response_bytes = 0
         try:
-            years = _forecast_years(data.get("ZB"))
-            items = tuple(_member(row, years) for row in rows)
-            if len({item.code for item in items}) != len(items):
-                raise ValueError("duplicate stock code")
-        except (ValueError, TypeError, ArithmeticError) as exc:
+            for source_offset in range(0, MAX_MEMBER_ROWS + 1, 60):
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError("member collection deadline exceeded")
+                data, actual, rows = self._fetch(
+                    trade_date,
+                    source_offset,
+                    60,
+                    board_code,
+                    timeout_seconds=remaining,
+                    today=today,
+                )
+                page_bytes = data.get("_response_bytes", 0)
+                if not isinstance(page_bytes, int) or page_bytes < 0:
+                    raise ValueError("invalid source byte count")
+                response_bytes += page_bytes
+                if response_bytes > MAX_MEMBER_BYTES or time.monotonic() >= deadline:
+                    raise ValueError("member collection resource limit")
+                page_years = _forecast_years(data.get("ZB"))
+                if years is None:
+                    years = page_years
+                    source_total = data.get("_source_total")
+                if page_years != years or data.get("_source_total") != source_total:
+                    raise ValueError("inconsistent member pages")
+                for row in rows:
+                    item = _member(row, years)
+                    if item.code in seen:
+                        raise ValueError("duplicate stock code")
+                    seen.add(item.code)
+                    collected.append(item)
+                if len(collected) > MAX_MEMBER_ROWS:
+                    raise ValueError("too many members")
+                if len(rows) < 60:
+                    if source_total is not None and source_total != len(collected):
+                        raise ValueError("incomplete member collection")
+                    break
+            else:
+                raise ValueError("unterminated member collection")
+            # Stable passes avoid Decimal unary minus rounding at context precision.
+            collected.sort(key=lambda item: item.code)
+            collected.sort(
+                key=lambda item: (item.change_pct is not None, item.change_pct or Decimal(0)),
+                reverse=True,
+            )
+            collected.sort(key=lambda item: LEADER_RANKS.get(item.leader_label or "", 11))
+            items = tuple(collected[offset : offset + limit])
+            if time.monotonic() >= deadline:
+                raise TimeoutError("member collection deadline exceeded")
+        except (OSError, ValueError, TypeError, ArithmeticError) as exc:
             raise KaipanlaBoardsUpstream("invalid board members") from exc
         return KaipanlaBoardMembersPage(
             query_mode="history",
@@ -105,25 +249,33 @@ class KaipanlaBoardsProvider:
             trade_date=actual,
             observed_at=self._clock(),
             board_code=board_code,
-            forecast_years=years,
+            forecast_years=years or (),
             offset=offset,
             limit=limit,
             returned_count=len(items),
-            next_offset=_next(offset, limit, len(items)),
+            next_offset=offset + len(items) if offset + len(items) < len(collected) else None,
             items=items,
         )
 
     def _fetch(
-        self, trade_date: date | None, offset: int, limit: int, board_code: str | None = None
+        self,
+        trade_date: date | None,
+        offset: int,
+        limit: int,
+        board_code: str | None = None,
+        *,
+        timeout_seconds: float | None = None,
+        today: date | None = None,
     ) -> tuple[dict[str, object], date, list[object]]:
-        today = self._clock().astimezone(SHANGHAI).date()
+        today = today or self._clock().astimezone(SHANGHAI).date()
+        timeout = self._timeout if timeout_seconds is None else timeout_seconds
         if not 0 <= offset <= 10000 or not 1 <= limit <= 60:
             raise KaipanlaBoardsInvalid("invalid page bounds")
         if trade_date is not None and trade_date > today:
             raise KaipanlaBoardsInvalid("future dates are unsupported")
         if board_code is not None and trade_date == today:
             try:
-                data = self._request_members(board_code, offset, limit, self._timeout)
+                data = self._request_members(board_code, offset, limit, timeout)
                 return _validate_page(data, trade_date, today, limit)
             except (OSError, ValueError, TypeError, ArithmeticError, RecursionError) as exc:
                 raise KaipanlaBoardsUpstream("Kaipanla board request failed") from exc
@@ -153,14 +305,23 @@ class KaipanlaBoardsProvider:
             method="GET",
         )
         try:
-            body = self._request(request, self._timeout)
+            body = self._request(request, timeout)
             if len(body) > MAX_RESPONSE_BYTES:
                 raise ValueError("source response too large")
             data = json.loads(
                 body.decode("utf-8-sig"), parse_float=Decimal, parse_constant=_invalid_constant
             )
-            return _validate_page(data, trade_date, today, limit)
-        except (OSError, ValueError, TypeError, ArithmeticError, RecursionError) as exc:
+            validated, actual, rows = _validate_page(data, trade_date, today, limit)
+            validated["_response_bytes"] = len(body)
+            return validated, actual, rows
+        except (
+            OSError,
+            HTTPException,
+            ValueError,
+            TypeError,
+            ArithmeticError,
+            RecursionError,
+        ) as exc:
             raise KaipanlaBoardsUpstream("Kaipanla board request failed") from exc
 
 

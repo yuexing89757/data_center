@@ -175,7 +175,14 @@ def parse_page(body: bytes, board_code: str, offset: int, limit: int) -> dict[st
     labels = [_text(v) for v in fields.get(23, [])]
     if len(labels) > 100:
         raise ValueError("too many forecast labels")
-    return {"errcode": 0, "Day": actual, "list": rows, "ZB": labels}
+    return {
+        "errcode": 0,
+        "Day": actual,
+        "list": rows,
+        "ZB": labels,
+        "_source_total": total,
+        "_response_bytes": len(body),
+    }
 
 
 def _remaining(deadline: float) -> float:

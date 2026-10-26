@@ -84,7 +84,7 @@ class _BoardResponse(ApiModel):
     returned_count: int = Field(ge=0, le=60, description="本页实际返回数量。")
     total: None = Field(description="固定null；来源Count可能仅为页长度，不能作为总数。")
     next_offset: int | None = Field(
-        description="满页时可继续尝试的偏移；下页可能为空，达到上限则为空。"
+        description="下一页偏移；排行满页时可尝试，成员仅在完整排序列表仍有剩余时返回，否则null。"
     )
 
 
@@ -95,7 +95,9 @@ class KaipanlaBoardRankingResponse(_BoardResponse):
 class KaipanlaBoardMembersResponse(_BoardResponse):
     board_code: str = Field(pattern=r"^[0-9]{6}$", description="请求的开盘啦板块代码。")
     forecast_years: list[int] = Field(description="已核实的三年预测年份；无法核实时为空。")
-    items: list[KaipanlaBoardMember] = Field(description="本页指定日期成分股及来源机构预测。")
+    items: list[KaipanlaBoardMember] = Field(
+        description="完整板块排序后截取的一页：龙一至龙十优先，其余涨幅降序；同值按代码升序，缺失涨幅末尾。"
+    )
 
 
 def _provider(request: Request) -> KaipanlaBoardsProvider:
@@ -152,8 +154,11 @@ def historical_boards(
     "/{board_code}/members/history",
     response_model=KaipanlaBoardMembersResponse,
     summary="查询开盘啦指定日期成分股及机构预测",
-    description=DESCRIPTION
-    + "trade_date不允许未来日期；上海当天读取TLS当前快照，过去日期读取HTTP历史。"
+    description="复用X-API-Key；有界收集整个板块后排序、分页，不落库。"
+    "来源龙一至龙十按名次优先，其余涨幅降序；同名次按涨幅，同值按代码，缺失涨幅末尾。"
+    "最多6000条、101次上游请求、累计8MiB，共用配置的至多10秒期限；中途失败整次502。"
+    "offset/limit作用于排序后的完整列表；独立请求无快照隔离，total仍null。"
+    "trade_date不允许未来日期；上海当天读取TLS当前快照，过去日期读取HTTP历史。"
     "来源日期必须匹配请求日；当天数据不代表收盘终值。TLS证书验证失败或完整请求超时返回502。"
     "预测年份由来源标签确定，无法核实时不猜测。",
 )
