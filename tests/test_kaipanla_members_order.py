@@ -3,6 +3,7 @@
 import json
 from datetime import date
 from decimal import Decimal
+from http.client import HTTPException
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
 
@@ -163,7 +164,7 @@ def test_http_deadline_interrupts_slow_headers_and_body(monkeypatch, slow_header
     thread.start()
     start = time.monotonic()
     try:
-        with pytest.raises((OSError, ValueError, boards.KaipanlaBoardsUpstream)):
+        with pytest.raises((OSError, HTTPException, ValueError, boards.KaipanlaBoardsUpstream)):
             boards._request_bytes(Request(boards.HIS), 0.12)
         assert time.monotonic() - start < 0.7
         assert len(sent) >= 2
