@@ -1,4 +1,4 @@
-"""Bounded anonymous HTTP board reads, with named fields and exact source dates."""
+"""Bounded anonymous board reads, with named fields and exact source dates."""
 
 import json
 import re
@@ -18,6 +18,7 @@ from market_data_center.domain.kaipanla_boards import (
     KaipanlaBoardRankingPage,
     KaipanlaProfitForecast,
 )
+from market_data_center.providers.kaipanla_boards_socket import request_members as _request_members
 
 MAX_RESPONSE_BYTES = 2_000_000
 HQ = "https://apphq.longhuvip.com/w1/api/index.php"
@@ -53,12 +54,14 @@ class KaipanlaBoardsProvider:
         *,
         timeout_seconds: float = 8,
         request_bytes: Callable[[Request, float], bytes] = _request_bytes,
+        request_members: Callable[[str, int, int, float], dict[str, object]] = _request_members,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         if not 0 < timeout_seconds <= 10:
             raise ValueError("timeout must be between 0 and 10 seconds")
         self._timeout = timeout_seconds
         self._request = request_bytes
+        self._request_members = request_members
         self._clock = clock
 
     def ranking(
@@ -88,8 +91,6 @@ class KaipanlaBoardsProvider:
     ) -> KaipanlaBoardMembersPage:
         if not re.fullmatch(r"[0-9]{6}", board_code):
             raise KaipanlaBoardsInvalid("invalid board code")
-        if trade_date >= self._clock().astimezone(SHANGHAI).date():
-            raise KaipanlaBoardsInvalid("historical members require a past date")
         data, actual, rows = self._fetch(trade_date, offset, limit, board_code)
         try:
             years = _forecast_years(data.get("ZB"))
@@ -120,6 +121,12 @@ class KaipanlaBoardsProvider:
             raise KaipanlaBoardsInvalid("invalid page bounds")
         if trade_date is not None and trade_date > today:
             raise KaipanlaBoardsInvalid("future dates are unsupported")
+        if board_code is not None and trade_date == today:
+            try:
+                data = self._request_members(board_code, offset, limit, self._timeout)
+                return _validate_page(data, trade_date, today, limit)
+            except (OSError, ValueError, TypeError, ArithmeticError, RecursionError) as exc:
+                raise KaipanlaBoardsUpstream("Kaipanla board request failed") from exc
         historical = trade_date is not None and trade_date < today
         params = dict(
             c="ZhiShuRanking",
@@ -152,26 +159,32 @@ class KaipanlaBoardsProvider:
             data = json.loads(
                 body.decode("utf-8-sig"), parse_float=Decimal, parse_constant=_invalid_constant
             )
-            if (
-                not isinstance(data, dict)
-                or type(data.get("errcode")) not in (str, int)
-                or str(data["errcode"]) != "0"
-            ):
-                raise ValueError("unsuccessful source response")
-            day = data.get("Day")
-            if isinstance(day, list) and len(day) == 1:
-                day = day[0]
-            if not isinstance(day, str) or not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", day):
-                raise ValueError("missing or invalid source date")
-            actual = date.fromisoformat(day)
-            if actual > today or (trade_date is not None and actual != trade_date):
-                raise ValueError("mismatched source date")
-            rows = data.get("list")
-            if not isinstance(rows, list) or len(rows) > limit:
-                raise ValueError("missing source list or ignored page limit")
-            return data, actual, rows
+            return _validate_page(data, trade_date, today, limit)
         except (OSError, ValueError, TypeError, ArithmeticError, RecursionError) as exc:
             raise KaipanlaBoardsUpstream("Kaipanla board request failed") from exc
+
+
+def _validate_page(
+    data: object, trade_date: date | None, today: date, limit: int
+) -> tuple[dict[str, object], date, list[object]]:
+    if (
+        not isinstance(data, dict)
+        or type(data.get("errcode")) not in (str, int)
+        or str(data["errcode"]) != "0"
+    ):
+        raise ValueError("unsuccessful source response")
+    day = data.get("Day")
+    if isinstance(day, list) and len(day) == 1:
+        day = day[0]
+    if not isinstance(day, str) or not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", day):
+        raise ValueError("missing or invalid source date")
+    actual = date.fromisoformat(day)
+    if actual > today or (trade_date is not None and actual != trade_date):
+        raise ValueError("mismatched source date")
+    rows = data.get("list")
+    if not isinstance(rows, list) or len(rows) > limit:
+        raise ValueError("missing source list or ignored page limit")
+    return data, actual, rows
 
 
 def _next(offset: int, limit: int, count: int) -> int | None:

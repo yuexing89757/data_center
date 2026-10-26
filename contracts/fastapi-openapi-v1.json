@@ -6782,7 +6782,7 @@
                 "type": "null"
               }
             ],
-            "description": "所选历史日的来源价格，单位元。",
+            "description": "所选日期的来源价格，单位元；当天为当前快照。",
             "title": "Last Price"
           },
           "leader_label": {
@@ -6975,7 +6975,7 @@
             "type": "array"
           },
           "items": {
-            "description": "本页历史成分股及来源机构预测。",
+            "description": "本页指定日期成分股及来源机构预测。",
             "items": {
               "$ref": "#/components/schemas/KaipanlaBoardMember"
             },
@@ -17305,7 +17305,7 @@
     },
     "/api/v1/realtime/kaipanla/boards": {
       "get": {
-        "description": "复用X-API-Key，每次只读取一页开盘啦HTTP响应，不重试、不自动全量翻页、不落库。小数以字符串返回，金额单位元。沿next_offset分页，来源变动可能影响跨页一致性。实际行情日以trade_date为准。",
+        "description": "复用X-API-Key，每次只读取一页开盘啦响应，不重试、不自动全量翻页、不落库。小数以字符串返回，金额单位元。沿next_offset分页，来源变动可能影响跨页一致性。实际行情日以trade_date为准。",
         "operationId": "latest_boards_api_v1_realtime_kaipanla_boards_get",
         "parameters": [
           {
@@ -17390,7 +17390,7 @@
     },
     "/api/v1/realtime/kaipanla/boards/history": {
       "get": {
-        "description": "复用X-API-Key，每次只读取一页开盘啦HTTP响应，不重试、不自动全量翻页、不落库。小数以字符串返回，金额单位元。沿next_offset分页，来源变动可能影响跨页一致性。必填trade_date；上海当天读取最新源，过去日期读取历史源。拒绝未来日期和来源日期错位。",
+        "description": "复用X-API-Key，每次只读取一页开盘啦响应，不重试、不自动全量翻页、不落库。小数以字符串返回，金额单位元。沿next_offset分页，来源变动可能影响跨页一致性。必填trade_date；上海当天读取最新源，过去日期读取历史源。拒绝未来日期和来源日期错位。",
         "operationId": "historical_boards_api_v1_realtime_kaipanla_boards_history_get",
         "parameters": [
           {
@@ -17487,7 +17487,7 @@
     },
     "/api/v1/realtime/kaipanla/boards/{board_code}/members/history": {
       "get": {
-        "description": "复用X-API-Key，每次只读取一页开盘啦HTTP响应，不重试、不自动全量翻页、不落库。小数以字符串返回，金额单位元。沿next_offset分页，来源变动可能影响跨页一致性。trade_date必须早于上海当天；本接口不包含当天TLS行情。预测年份由来源标签确定，无法核实时不猜测。",
+        "description": "复用X-API-Key，每次只读取一页开盘啦响应，不重试、不自动全量翻页、不落库。小数以字符串返回，金额单位元。沿next_offset分页，来源变动可能影响跨页一致性。trade_date不允许未来日期；上海当天读取TLS当前快照，过去日期读取HTTP历史。来源日期必须匹配请求日；当天数据不代表收盘终值。TLS证书验证失败或完整请求超时返回502。预测年份由来源标签确定，无法核实时不猜测。",
         "operationId": "historical_members_api_v1_realtime_kaipanla_boards__board_code__members_history_get",
         "parameters": [
           {
@@ -17587,7 +17587,7 @@
             "APIKeyHeader": []
           }
         ],
-        "summary": "查询开盘啦历史成分股及机构预测",
+        "summary": "查询开盘啦指定日期成分股及机构预测",
         "tags": [
           "实时接口"
         ]

@@ -258,7 +258,7 @@ def test_decimal_json_precision_null_zero_and_short_page():
         ("/803023/members/history", {}),
         ("/history", {"trade_date": "2026-02-30"}),
         ("/history", {"trade_date": "2026-09-30"}),
-        ("/803023/members/history", {"trade_date": "2026-09-29"}),
+        ("/803023/members/history", {"trade_date": "2026-09-30"}),
         ("/bad/members/history", {"trade_date": str(DAY)}),
         ("", {"limit": 0}),
         ("", {"limit": 61}),

@@ -45,7 +45,7 @@ class KaipanlaBoardMember(ApiModel):
     code: str = Field(pattern=r"^[0-9]{6}$", description="六位股票代码，保留前导零。")
     name: str | None = Field(description="来源股票名称。")
     concept: str | None = Field(description="来源概念文本，不等同于数据中心分类成员关系。")
-    last_price: Decimal | None = Field(description="所选历史日的来源价格，单位元。")
+    last_price: Decimal | None = Field(description="所选日期的来源价格，单位元；当天为当前快照。")
     change_pct: Decimal | None = Field(description="来源涨跌幅，单位百分比。")
     amount_cny: Decimal | None = Field(description="成交额，单位元。")
     actual_float_market_value_cny: Decimal | None = Field(description="来源实际流通市值，单位元。")
@@ -95,7 +95,7 @@ class KaipanlaBoardRankingResponse(_BoardResponse):
 class KaipanlaBoardMembersResponse(_BoardResponse):
     board_code: str = Field(pattern=r"^[0-9]{6}$", description="请求的开盘啦板块代码。")
     forecast_years: list[int] = Field(description="已核实的三年预测年份；无法核实时为空。")
-    items: list[KaipanlaBoardMember] = Field(description="本页历史成分股及来源机构预测。")
+    items: list[KaipanlaBoardMember] = Field(description="本页指定日期成分股及来源机构预测。")
 
 
 def _provider(request: Request) -> KaipanlaBoardsProvider:
@@ -116,7 +116,7 @@ router = APIRouter(
     },
 )
 DESCRIPTION = (
-    "复用X-API-Key，每次只读取一页开盘啦HTTP响应，不重试、不自动全量翻页、不落库。"
+    "复用X-API-Key，每次只读取一页开盘啦响应，不重试、不自动全量翻页、不落库。"
     "小数以字符串返回，金额单位元。沿next_offset分页，来源变动可能影响跨页一致性。"
 )
 
@@ -151,8 +151,10 @@ def historical_boards(
 @router.get(
     "/{board_code}/members/history",
     response_model=KaipanlaBoardMembersResponse,
-    summary="查询开盘啦历史成分股及机构预测",
-    description=DESCRIPTION + "trade_date必须早于上海当天；本接口不包含当天TLS行情。"
+    summary="查询开盘啦指定日期成分股及机构预测",
+    description=DESCRIPTION
+    + "trade_date不允许未来日期；上海当天读取TLS当前快照，过去日期读取HTTP历史。"
+    "来源日期必须匹配请求日；当天数据不代表收盘终值。TLS证书验证失败或完整请求超时返回502。"
     "预测年份由来源标签确定，无法核实时不猜测。",
 )
 def historical_members(
