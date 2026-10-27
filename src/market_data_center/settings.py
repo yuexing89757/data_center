@@ -127,6 +127,7 @@ class ApiSettings(BaseSettings):
     fastapi_tencent_quote_deadline_seconds: float = Field(default=8.0, ge=1, le=15)
     fastapi_kaipanla_timeout_seconds: float = Field(default=8.0, ge=1, le=10)
     fastapi_auction_sources_timeout_seconds: float = Field(default=8.0, ge=1, le=10)
+    fastapi_xuangubao_timeout_seconds: float = Field(default=8.0, ge=1, le=10)
     fastapi_auction_live_timeout_seconds: float = Field(default=5.0, ge=1, le=8)
     fastapi_auction_live_max_attempts: int = Field(default=2, ge=1, le=2)
     fastapi_auction_live_cache_seconds: float = Field(default=3.0, ge=0, le=5)

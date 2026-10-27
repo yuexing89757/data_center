@@ -4,6 +4,11 @@
 腾讯分时/K线/指数，新浪日K。使用既有X-API-Key，请求时读取且不入库。
 来源网站、上游地址、参数及示例见[实时接口说明](docs/竞价九合一来源实时接口.md)。
 
+选股宝最新涨停池已增加本地实现：`GET /api/v1/realtime/xuangubao/limit-up`，
+沿用`X-API-Key`。来源日期与抓取时间分开，跨日可返回上一来源日，缺证日期为空；
+来源原因与未核实统计明确标记，不估算成交额、不入库。该接口尚未部署，
+字段及限制见[选股宝接口说明](docs/选股宝涨停池来源实时接口.md)。
+
 A phase-one A-share daily market data pipeline using Python 3.12 and PostgreSQL. Security and calendar use Tushare/AKShare routing; pytdx quote and Daily Bar reads share one capability-aware endpoint pool maintained by the Worker.
 
 Remote Daily Bars keep category 9 and the standard TDX protocol. The reviewed candidate catalog

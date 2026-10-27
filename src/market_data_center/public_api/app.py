@@ -58,6 +58,10 @@ from market_data_center.providers.kaipanla_money_effect import (
     KaipanlaMoneyEffectProvider,
     KaipanlaMoneyEffectUpstream,
 )
+from market_data_center.providers.xuangubao_limit_up import (
+    XuangubaoLimitUpProvider,
+    XuangubaoLimitUpUpstream,
+)
 from market_data_center.public_api.auction_indicative_live import (
     AuctionIndicativeLiveBusy,
     AuctionIndicativeLiveInvalid,
@@ -135,6 +139,7 @@ from market_data_center.public_api.tencent_quote_live import (
     TencentQuoteLiveService,
     TencentQuoteLiveUpstream,
 )
+from market_data_center.public_api.xuangubao_limit_up import router as xuangubao_limit_up_router
 from market_data_center.raw_store import LocalRawStore
 from market_data_center.settings import ApiSettings
 
@@ -156,6 +161,7 @@ def create_app(
     kaipanla_boards_provider: KaipanlaBoardsProvider | None = None,
     kaipanla_market_history_provider: KaipanlaMarketHistoryProvider | None = None,
     auction_sources_provider: AuctionSourcesProvider | None = None,
+    xuangubao_limit_up_provider: XuangubaoLimitUpProvider | None = None,
 ) -> FastAPI:
     configured = settings or ApiSettings()  # type: ignore[call-arg]
     owned_engine: Engine | None = None
@@ -249,6 +255,10 @@ def create_app(
         timeout_seconds=configured.fastapi_kaipanla_timeout_seconds
     )
     app.include_router(kaipanla_hot_talks_router, dependencies=[Depends(_require_api_key)])
+    app.state.xuangubao_limit_up_provider = xuangubao_limit_up_provider or XuangubaoLimitUpProvider(
+        timeout_seconds=configured.fastapi_xuangubao_timeout_seconds
+    )
+    app.include_router(xuangubao_limit_up_router, dependencies=[Depends(_require_api_key)])
     app.state.kaipanla_boards_provider = kaipanla_boards_provider or KaipanlaBoardsProvider(
         timeout_seconds=configured.fastapi_kaipanla_timeout_seconds
     )
@@ -1051,6 +1061,10 @@ def _install_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(KaipanlaHotTalksUpstream)
     async def kaipanla_hot_talks_upstream(_: Request, __: KaipanlaHotTalksUpstream) -> JSONResponse:
         return _error_response(502, "upstream_error", "Kaipanla hot-talks provider request failed")
+
+    @app.exception_handler(XuangubaoLimitUpUpstream)
+    async def xuangubao_limit_up_upstream(_: Request, __: XuangubaoLimitUpUpstream) -> JSONResponse:
+        return _error_response(502, "upstream_error", "Xuangubao limit-up provider request failed")
 
     @app.exception_handler(KaipanlaMoneyEffectUpstream)
     async def kaipanla_money_effect_upstream(

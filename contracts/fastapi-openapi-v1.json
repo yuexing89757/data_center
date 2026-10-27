@@ -13835,6 +13835,850 @@
         ],
         "title": "ValidationError",
         "type": "object"
+      },
+      "XuangubaoCounts": {
+        "additionalProperties": false,
+        "properties": {
+          "break_limit_down_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源打开跌停次数。",
+            "title": "Break Limit Down Count"
+          },
+          "break_limit_up_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源开板次数。",
+            "title": "Break Limit Up Count"
+          },
+          "limit_down_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源连续跌停天数。",
+            "title": "Limit Down Days"
+          },
+          "limit_up_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源连续涨停天数，不是数据中心计算结果。",
+            "title": "Limit Up Days"
+          },
+          "multi_board_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源N天M板的M板数，不自行推导。",
+            "title": "Multi Board Count"
+          },
+          "multi_board_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源N天M板的N天数，不自行推导。",
+            "title": "Multi Board Days"
+          },
+          "yesterday_break_limit_up_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源昨日开板次数。",
+            "title": "Yesterday Break Limit Up Count"
+          },
+          "yesterday_limit_down_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源昨日连续跌停天数。",
+            "title": "Yesterday Limit Down Days"
+          },
+          "yesterday_limit_up_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源昨日连续涨停天数。",
+            "title": "Yesterday Limit Up Days"
+          }
+        },
+        "required": [
+          "limit_up_days",
+          "limit_down_days",
+          "yesterday_limit_up_days",
+          "yesterday_limit_down_days",
+          "break_limit_up_count",
+          "break_limit_down_count",
+          "yesterday_break_limit_up_count",
+          "multi_board_days",
+          "multi_board_count"
+        ],
+        "title": "XuangubaoCounts",
+        "type": "object"
+      },
+      "XuangubaoLimitUpItem": {
+        "additionalProperties": false,
+        "properties": {
+          "change_ratio": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源涨跌幅小数比例，0.1表示10%，不乘100。",
+            "title": "Change Ratio"
+          },
+          "first_break_limit_down_at": {
+            "anyOf": [
+              {
+                "example": "2026-09-18 09:35:00",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源首次打开跌停时间，源0为空。",
+            "title": "First Break Limit Down At"
+          },
+          "first_break_limit_up_at": {
+            "anyOf": [
+              {
+                "example": "2026-09-18 09:35:00",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源首次开板时间，源0或缺失为空。",
+            "title": "First Break Limit Up At"
+          },
+          "first_limit_down_at": {
+            "anyOf": [
+              {
+                "example": "2026-09-18 09:35:00",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源首次跌停时间，源0或缺失为空。",
+            "title": "First Limit Down At"
+          },
+          "first_limit_up_at": {
+            "anyOf": [
+              {
+                "example": "2026-09-18 09:35:00",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源首次涨停时间，源0或缺失为空。",
+            "title": "First Limit Up At"
+          },
+          "issue_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源发行价格，人民币元。",
+            "title": "Issue Price"
+          },
+          "last_break_limit_down_at": {
+            "anyOf": [
+              {
+                "example": "2026-09-18 09:35:00",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源最后打开跌停时间，源0为空。",
+            "title": "Last Break Limit Down At"
+          },
+          "last_break_limit_up_at": {
+            "anyOf": [
+              {
+                "example": "2026-09-18 09:35:00",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源最后开板时间，源0或缺失为空。",
+            "title": "Last Break Limit Up At"
+          },
+          "last_limit_down_at": {
+            "anyOf": [
+              {
+                "example": "2026-09-18 09:35:00",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源最后跌停时间，源0或缺失为空。",
+            "title": "Last Limit Down At"
+          },
+          "last_limit_up_at": {
+            "anyOf": [
+              {
+                "example": "2026-09-18 09:35:00",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源最后涨停时间，源0或缺失为空。",
+            "title": "Last Limit Up At"
+          },
+          "last_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源当前价格，人民币元。",
+            "title": "Last Price"
+          },
+          "listing_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源上市时间在上海的日期，源0或缺失为空。",
+            "title": "Listing Date"
+          },
+          "name": {
+            "description": "来源股票名称，不过滤ST或重排。",
+            "title": "Name",
+            "type": "string"
+          },
+          "source_counts": {
+            "$ref": "#/components/schemas/XuangubaoCounts",
+            "description": "来源计数，不替代规范涨跌停事实或日终股票池。"
+          },
+          "source_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/XuangubaoReason"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "选股宝提供的原因与关联板块文字。"
+          },
+          "source_statistics": {
+            "$ref": "#/components/schemas/XuangubaoUnverifiedStatistics",
+            "description": "仅转述的未核实来源数值，禁止作为标准数量/金额/派生计算输入；零与缺失分开。"
+          },
+          "source_symbol": {
+            "description": "来源证券标识，如000678.SZ，保留前导零。",
+            "title": "Source Symbol",
+            "type": "string"
+          },
+          "symbol": {
+            "description": "标准证券代码，如SZSE:000678。",
+            "title": "Symbol",
+            "type": "string"
+          },
+          "timeline": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/XuangubaoTimelineEvent"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源封板/开板事件，按来源顺序；不是分钟行情，不推导交易指标。",
+            "title": "Timeline"
+          },
+          "turnover_ratio": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源换手小数比例，0.1表示10%，不估算成交额。",
+            "title": "Turnover Ratio"
+          },
+          "yesterday_first_limit_up_at": {
+            "anyOf": [
+              {
+                "example": "2026-09-18 09:35:00",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源昨日首次涨停时间。",
+            "title": "Yesterday First Limit Up At"
+          },
+          "yesterday_last_limit_up_at": {
+            "anyOf": [
+              {
+                "example": "2026-09-18 09:35:00",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源昨日最后涨停时间。",
+            "title": "Yesterday Last Limit Up At"
+          }
+        },
+        "required": [
+          "symbol",
+          "source_symbol",
+          "name",
+          "last_price",
+          "issue_price",
+          "change_ratio",
+          "turnover_ratio",
+          "listing_date",
+          "first_limit_up_at",
+          "last_limit_up_at",
+          "first_break_limit_up_at",
+          "last_break_limit_up_at",
+          "first_limit_down_at",
+          "last_limit_down_at",
+          "first_break_limit_down_at",
+          "last_break_limit_down_at",
+          "yesterday_first_limit_up_at",
+          "yesterday_last_limit_up_at",
+          "timeline",
+          "source_counts",
+          "source_statistics",
+          "source_reason"
+        ],
+        "title": "XuangubaoLimitUpItem",
+        "type": "object"
+      },
+      "XuangubaoLimitUpResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "date_status": {
+            "description": "空池或任一条目缺少当前涨停事件时unknown；非交易日历认证。",
+            "enum": [
+              "verified_from_events",
+              "unknown"
+            ],
+            "title": "Date Status",
+            "type": "string"
+          },
+          "items": {
+            "description": "完整来源列表，保持来源顺序。",
+            "items": {
+              "$ref": "#/components/schemas/XuangubaoLimitUpItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "observed_at": {
+            "description": "实际收到响应的上海时间，与源数据日期分开。",
+            "example": "2026-09-18 09:35:00",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "persisted": {
+            "const": false,
+            "description": "固定false，不入库、不保存Raw、不触发Worker。",
+            "title": "Persisted",
+            "type": "boolean"
+          },
+          "returned_count": {
+            "description": "本次来源列表条数，不宣称全市场覆盖。",
+            "maximum": 5000.0,
+            "minimum": 0.0,
+            "title": "Returned Count",
+            "type": "integer"
+          },
+          "source_code": {
+            "const": "xuangubao",
+            "description": "固定来源代码。",
+            "title": "Source Code",
+            "type": "string"
+          },
+          "source_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "由每只股票当前首次/最后涨停事件核对的一致上海日期；可早于今天，缺证为空。",
+            "title": "Source Date"
+          },
+          "source_layout": {
+            "const": "xuangubao.limit_up.v1",
+            "description": "来源适配布局版本。",
+            "title": "Source Layout",
+            "type": "string"
+          },
+          "source_name": {
+            "const": "选股宝",
+            "description": "固定来源名称。",
+            "title": "Source Name",
+            "type": "string"
+          },
+          "source_url": {
+            "description": "固定上游最新涨停池URL。",
+            "title": "Source Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_code",
+          "source_name",
+          "source_url",
+          "source_layout",
+          "persisted",
+          "observed_at",
+          "source_date",
+          "date_status",
+          "returned_count",
+          "items"
+        ],
+        "title": "XuangubaoLimitUpResponse",
+        "type": "object"
+      },
+      "XuangubaoPlate": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源板块名称。",
+            "title": "Name"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源板块原因原文，不代表数据中心观点。",
+            "title": "Reason"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "选股宝关联板块ID，不是数据中心分类ID。",
+            "title": "Source Id"
+          }
+        },
+        "required": [
+          "source_id",
+          "name",
+          "reason"
+        ],
+        "title": "XuangubaoPlate",
+        "type": "object"
+      },
+      "XuangubaoReason": {
+        "additionalProperties": false,
+        "properties": {
+          "related_plates": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/XuangubaoPlate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "本池内附带的关联板块信息。",
+            "title": "Related Plates"
+          },
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "原因对象关联的标准证券代码，缺失为空。",
+            "title": "Symbol"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源个股涨停原因原文，不作事实认证或交易判断。",
+            "title": "Text"
+          }
+        },
+        "required": [
+          "symbol",
+          "text",
+          "related_plates"
+        ],
+        "title": "XuangubaoReason",
+        "type": "object"
+      },
+      "XuangubaoTimelineEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "anyOf": [
+              {
+                "example": "2026-09-18 09:35:00",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源事件时间，源0或缺失为空。",
+            "title": "At"
+          },
+          "source_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源状态码，已观察1封板、2开板；其他码原样保留，不推断完整枚举。",
+            "title": "Source Status"
+          }
+        },
+        "required": [
+          "at",
+          "source_status"
+        ],
+        "title": "XuangubaoTimelineEvent",
+        "type": "object"
+      },
+      "XuangubaoUnverifiedStatistics": {
+        "additionalProperties": false,
+        "properties": {
+          "buy_lock_ratio": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源买封单比值；分母、单位未核实。",
+            "title": "Buy Lock Ratio"
+          },
+          "momentum_value": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源mtm数值，口径及单位未核实。",
+            "title": "Momentum Value"
+          },
+          "nearly_new_accumulated_change": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源次新累计变化，口径未核实。",
+            "title": "Nearly New Accumulated Change"
+          },
+          "nearly_new_break_days": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源次新开板天数值，统计口径未核实。",
+            "title": "Nearly New Break Days"
+          },
+          "new_stock_accumulated_change": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源新股累计变化，口径未核实。",
+            "title": "New Stock Accumulated Change"
+          },
+          "new_stock_break_flag": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源新股开板标记数值，口径未核实。",
+            "title": "New Stock Break Flag"
+          },
+          "new_stock_flag": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源新股标记数值，口径未核实。",
+            "title": "New Stock Flag"
+          },
+          "new_stock_limit_up_days": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源新股涨停天数值，口径未核实。",
+            "title": "New Stock Limit Up Days"
+          },
+          "new_stock_pre_break_price": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源新股开板前价格值，口径未核实。",
+            "title": "New Stock Pre Break Price"
+          },
+          "non_restricted_capital_value": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源non_restricted_capital数值，单位未核实；不能解释为股数或认证市值。",
+            "title": "Non Restricted Capital Value"
+          },
+          "sell_lock_ratio": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源卖封单比值；分母、单位未核实。",
+            "title": "Sell Lock Ratio"
+          },
+          "stock_type_code": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源股票类型码，枚举未核实。",
+            "title": "Stock Type Code"
+          },
+          "total_capital_value": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源total_capital数值，单位未核实；不能解释为股本或人民币市值。",
+            "title": "Total Capital Value"
+          },
+          "volume_bias_ratio": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源量比值，计算口径未核实。",
+            "title": "Volume Bias Ratio"
+          }
+        },
+        "required": [
+          "buy_lock_ratio",
+          "sell_lock_ratio",
+          "stock_type_code",
+          "new_stock_flag",
+          "momentum_value",
+          "volume_bias_ratio",
+          "total_capital_value",
+          "non_restricted_capital_value",
+          "nearly_new_accumulated_change",
+          "nearly_new_break_days",
+          "new_stock_accumulated_change",
+          "new_stock_break_flag",
+          "new_stock_limit_up_days",
+          "new_stock_pre_break_price"
+        ],
+        "title": "XuangubaoUnverifiedStatistics",
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -18540,6 +19384,53 @@
           }
         ],
         "summary": "腾讯当日分时图数据（累计量额）",
+        "tags": [
+          "实时接口"
+        ]
+      }
+    },
+    "/api/v1/realtime/xuangubao/limit-up": {
+      "get": {
+        "description": "单次匿名读取来源最新池；闭市/跨日可返回上一来源日期。API Key保护，不提供日期回退、历史查询或持久化，不等同数据中心日终涨停快照。",
+        "operationId": "latest_limit_up_api_v1_realtime_xuangubao_limit_up_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/XuangubaoLimitUpResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "查询选股宝最新可用涨停池",
         "tags": [
           "实时接口"
         ]
