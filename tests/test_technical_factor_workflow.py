@@ -25,8 +25,8 @@ def test_technical_factor_job_has_bounded_evening_readiness_retries() -> None:
     catchup = jobs["stock-technical-factor-catchup"]
     assert (catchup.day_of_week, catchup.hour, catchup.minute, catchup.timezone) == (
         "mon-sun",
-        8,
-        30,
+        4,
+        0,
         "Asia/Shanghai",
     )
     assert catchup.workflow_code == job.workflow_code
@@ -93,6 +93,13 @@ def test_scheduler_registers_factor_runner(tmp_path) -> None:
     assert catchup is not None
     assert catchup.func.__name__ == "run_stock_technical_factor_catchup_job"
     assert catchup.max_instances == 1 and catchup.coalesce
+    assert str(catchup.trigger) == "cron[day_of_week='mon-sun', hour='4', minute='0']"
+    # Friday evening UTC is already Saturday's next-day catch-up in Shanghai.
+    from datetime import UTC, datetime
+
+    fire = catchup.trigger.get_next_fire_time(None, datetime(2026, 10, 16, 19, 59, tzinfo=UTC))
+    assert fire.isoformat() == "2026-10-17T04:00:00+08:00"
+    assert fire.hour < 5
 
 
 def test_catchup_pins_previous_shanghai_date_not_current_day(monkeypatch):
@@ -105,7 +112,7 @@ def test_catchup_pins_previous_shanghai_date_not_current_day(monkeypatch):
     monkeypatch.setattr(
         scheduler,
         "datetime",
-        SimpleNamespace(now=lambda zone: datetime(2026, 10, 17, 8, 30, tzinfo=zone)),
+        SimpleNamespace(now=lambda zone: datetime(2026, 10, 17, 4, 0, tzinfo=zone)),
     )
     scheduler.run_stock_technical_factor_catchup_job()
     run.assert_called_once_with("stock-technical-factor-catchup", "2026-10-16")
@@ -137,7 +144,7 @@ def test_catchup_records_weekend_fire_time_and_disposes_resources(
     class Weekend(datetime):
         @classmethod
         def now(cls, tz=None):
-            return cls(2026, 10, day, 8, 30, tzinfo=tz)
+            return cls(2026, 10, day, 4, 0, tzinfo=tz)
 
     monkeypatch.setattr(scheduler, "datetime", Weekend)
     workflow = Mock(side_effect=RuntimeError("not ready") if failed else None)
@@ -150,7 +157,7 @@ def test_catchup_records_weekend_fire_time_and_disposes_resources(
     else:
         scheduler.run_stock_technical_factor_catchup_job()
         execution.succeed.assert_called_once()
-    assert service.start.call_args.args[1] == datetime(2026, 10, day, 0, 30, tzinfo=UTC)
+    assert service.start.call_args.args[1] == datetime(2026, 10, day - 1, 20, 0, tzinfo=UTC)
     args = workflow.call_args.args[0]
     assert args.provider == "tushare" and args.as_of_date == f"2026-10-{day - 1}"
     engine.dispose.assert_called_once()

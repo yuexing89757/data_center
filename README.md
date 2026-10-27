@@ -198,7 +198,7 @@ bases. Existing daily indicators keep their original behavior. The authenticated
 `POST /v1/stock-technical-factors/query` reads up to 100 codes for an exact trading date.
 See the [technical-factor runbook](docs/runbooks/stock-technical-factor.md) for migration
 prerequisites, single-day retries, Raw replay and missing-data behavior.
-`stock-technical-factor-catchup` retries the exact previous Shanghai date at 08:30 daily;
+`stock-technical-factor-catchup` retries the exact previous Shanghai date at 04:00 daily;
 closed dates are skipped and incomplete source snapshots remain failed. The API request body is
 `{"trade_date":"2026-10-15","codes":["601188","000001","600000"]}`; codes remain strings,
 and unavailable records are reported in `missing_codes` without substituting a different date.
@@ -371,7 +371,7 @@ The daily local-TDX workflow and cross-platform APScheduler deployment are docum
 The opt-in Regulation workflow runs inside the Worker at 22:00 Asia/Shanghai on weekdays. It
 collects SSE/SZSE official regulation events and the three allowlisted official benchmark indices,
 evaluates the configured exchange rules, and persists deterministic next-session trigger scenarios.
-An independent 08:30 reconciliation run versions late official events. Enable these jobs only after
+The previously designed 08:30 event reconciliation job is not implemented or registered. Enable the implemented workflow only after
 source-rights review and the ordered migrations; run one exact date manually with
 `market-data-center regulation-calculate --trade-date YYYY-MM-DD`. Its output is a rules-based
 condition calculation, not a prediction or a statement that suspension or another action is certain.

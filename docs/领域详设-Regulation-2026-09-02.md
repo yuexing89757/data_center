@@ -638,7 +638,10 @@ calculate_regulation_monitor
 Capital、每日指标和事件水位，离开事务后调用纯 Calculator，再在单个写事务中发布一个
 CalculationRun 的 status/rule_result/warning。不得把两个 Provider 的部分记录合并成一个成功来源批次。
 
-### 11.2 盘前对账
+### 11.2 盘前对账（尚未实现）
+
+2026-10-27核验：当前受控任务目录和scheduler均未注册此任务，下述08:30是历史设计，
+不是线上运行安排。后续实施须按项目所有者要求，将次日补采/对账计划安排于05:00之前。
 
 Workflow code：`regulation_event_reconciliation`
 Job ID：`regulation-event-reconciliation`
