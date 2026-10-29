@@ -435,7 +435,8 @@ Tushare字段单位、精确换算、封单字段差异及待认证范围见[Tus
 
 2026-10-23跌停列表已通过Tushare limit_list_d D恢复新版本：8个规范成员、6条来源封单金额，2个来源缺口保持null/partial；[恢复与验收记录](docs/runbooks/limit-down-tushare-2026-10-24.md)。
 
-## 选股宝三池增量（本地待发布）
+## 选股宝三池增量（已上线）
 
 新增 `/api/v1/realtime/xuangubao/stock-pools`，提供最新/历史涨停、炸板及昨日涨停股表现。
 保留已上线最新涨停池接口。参数、单位和日期核验边界见[接口说明](docs/选股宝三池实时接口.md)。
+2026-10-29已完成生产API发布，三池最新与历史查询均通过；见[发布验收记录](docs/runbooks/xuangubao-stock-pools-release-2026-10-29.md)。
