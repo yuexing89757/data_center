@@ -76,6 +76,48 @@ def api(payload):
     return client, calls
 
 
+def test_eastmoney_historical_cutoff_is_sent_and_returned_without_changing_adjustment():
+    payload = {"rc": 0, "data": {"code": "600000", "klines": [",".join(BAR)]}}
+    client, calls = api(payload)
+    response = client.get(
+        ROOT + "/eastmoney/klines?symbol=SSE:600000&limit=250&trade_date=2026-10-12",
+        headers={"X-API-Key": KEY},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["trade_date"] == "2026-10-12"
+    assert body["adjustment"] == "forward"
+    assert body["items"][0]["close"] == "9.67"
+    params = parse_qs(urlsplit(calls[0].full_url).query)
+    assert params["end"] == ["20261012"]
+    assert params["fqt"] == ["1"]
+    assert params["lmt"] == ["250"]
+
+
+def test_eastmoney_rejects_rows_after_requested_cutoff_and_future_requests():
+    client, calls = api({"rc": 0, "data": {"klines": [",".join(BAR)]}})
+    response = client.get(
+        ROOT + "/eastmoney/klines?symbol=SSE:600000&trade_date=2026-10-11",
+        headers={"X-API-Key": KEY},
+    )
+    assert response.status_code == 502
+    count = len(calls)
+    response = client.get(
+        ROOT + "/eastmoney/klines?symbol=SSE:600000&trade_date=2026-10-14",
+        headers={"X-API-Key": KEY},
+    )
+    assert response.status_code == 422
+    assert len(calls) == count
+
+
+def test_eastmoney_omitted_cutoff_keeps_latest_behavior():
+    client, calls = api({"rc": 0, "data": {"klines": []}})
+    response = client.get(ROOT + "/eastmoney/klines?symbol=SSE:600000", headers={"X-API-Key": KEY})
+    assert response.status_code == 200
+    assert response.json()["trade_date"] is None
+    assert parse_qs(urlsplit(calls[0].full_url).query)["end"] == ["20500101"]
+
+
 CASES = [
     (
         "/eastmoney/quotes?page=2&page_size=500&market=mainboard",

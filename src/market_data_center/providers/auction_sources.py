@@ -327,6 +327,8 @@ class AuctionSourcesProvider:
             trade_date is None or trade_date > today
         ):
             raise AuctionSourcesInvalid("invalid source date")
+        if endpoint == "eastmoney_kline" and trade_date is not None and trade_date > today:
+            raise AuctionSourcesInvalid("invalid source date")
         if not 1 <= limit <= 640 or period not in {"day", "week"} or server not in {"web", "ifzq"}:
             raise AuctionSourcesInvalid("invalid kline selection")
         params: dict[str, Any]
@@ -376,7 +378,7 @@ class AuctionSourcesProvider:
                     "fields2": "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61",
                     "klt": 101,
                     "fqt": 1,
-                    "end": "20500101",
+                    "end": trade_date.strftime("%Y%m%d") if trade_date else "20500101",
                     "lmt": limit,
                     "ut": "fa5fd1943c7b386f172d6893dbfba10b",
                     "_": milliseconds,
@@ -544,9 +546,10 @@ class AuctionSourcesProvider:
             rows = _rows(data["klines"], 1000)
             if any(not isinstance(row, str) for row in rows):
                 raise ValueError("invalid bar string")
-            return self._bars(
-                [_bar(r.split(","), 100, eastmoney=True) for r in rows][-limit:], "forward"
-            )
+            items = [_bar(r.split(","), 100, eastmoney=True) for r in rows]
+            if requested_day is not None and any(i["trade_date"] > requested_day for i in items):
+                raise ValueError("source bars exceed requested cutoff")
+            return self._bars(items[-limit:], "forward")
         if endpoint == "tencent_kline":
             tcode, _ = _source_symbol(symbol)
             stock = _mapping(data[tcode])

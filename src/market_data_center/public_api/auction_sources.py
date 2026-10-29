@@ -242,14 +242,22 @@ def broken_limit(
     description=_description(
         "东方财富 https://www.eastmoney.com/",
         "https://push2his.eastmoney.com/api/qt/stock/kline/get",
-        "策略历史行情，klt=101、fqt=1、end=20500101；不写普通日K领域",
+        "前复权日线，klt=101、fqt=1；可选trade_date作为含当日截止日期传入end，"
+        "省略时end=20500101。越过截止日期的来源响应报502。复权基准沿用来源查询时口径，"
+        "不是历史时点快照；不写普通日K领域",
         "/api/v1/realtime/eastmoney/klines?symbol=SSE:600000&limit=160",
     ),
 )
 def eastmoney_klines(
-    provider: Provider, symbol: Symbol, limit: BarLimit = 160
+    provider: Provider,
+    symbol: Symbol,
+    limit: BarLimit = 160,
+    trade_date: Annotated[
+        date | None,
+        Query(description="含当日的日线截止日期；不得为未来日期；省略时读取最新日线。"),
+    ] = None,
 ) -> dict[str, JsonValue]:
-    return provider.fetch("eastmoney_kline", symbol=symbol, limit=limit)
+    return provider.fetch("eastmoney_kline", symbol=symbol, limit=limit, trade_date=trade_date)
 
 
 @router.get(

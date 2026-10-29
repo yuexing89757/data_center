@@ -16857,7 +16857,7 @@
     },
     "/api/v1/realtime/eastmoney/klines": {
       "get": {
-        "description": "来源网站：东方财富 https://www.eastmoney.com/。上游接口：https://push2his.eastmoney.com/api/qt/stock/kline/get。用途：策略历史行情，klt=101、fqt=1、end=20500101；不写普通日K领域。调用示例：`GET /api/v1/realtime/eastmoney/klines?symbol=SSE:600000&limit=160`，请求头`X-API-Key: <你的API Key>`。一次只读一个上游响应，不入库、不自动翻页、不跨源回退；失败502，参数错误422。响应内upstream_parameters回显实际查询参数/POST JSON体，金额及小数序列化为字符串。",
+        "description": "来源网站：东方财富 https://www.eastmoney.com/。上游接口：https://push2his.eastmoney.com/api/qt/stock/kline/get。用途：前复权日线，klt=101、fqt=1；可选trade_date作为含当日截止日期传入end，省略时end=20500101。越过截止日期的来源响应报502。复权基准沿用来源查询时口径，不是历史时点快照；不写普通日K领域。调用示例：`GET /api/v1/realtime/eastmoney/klines?symbol=SSE:600000&limit=160`，请求头`X-API-Key: <你的API Key>`。一次只读一个上游响应，不入库、不自动翻页、不跨源回退；失败502，参数错误422。响应内upstream_parameters回显实际查询参数/POST JSON体，金额及小数序列化为字符串。",
         "operationId": "eastmoney_klines_api_v1_realtime_eastmoney_klines_get",
         "parameters": [
           {
@@ -16889,6 +16889,25 @@
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
+            }
+          },
+          {
+            "description": "交易日。",
+            "in": "query",
+            "name": "trade_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "含当日的日线截止日期；不得为未来日期；省略时读取最新日线。",
+              "title": "Trade Date"
             }
           }
         ],
