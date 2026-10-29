@@ -434,3 +434,8 @@ Tushare字段单位、精确换算、封单字段差异及待认证范围见[Tus
 2026-10-23技术因子快照已补齐5571条，公开目录v3保留Tushare原生OBV/EMV/MAEMV值，不作手股转换；[定时任务原因及恢复验收](docs/runbooks/stock-technical-factor.md)。
 
 2026-10-23跌停列表已通过Tushare limit_list_d D恢复新版本：8个规范成员、6条来源封单金额，2个来源缺口保持null/partial；[恢复与验收记录](docs/runbooks/limit-down-tushare-2026-10-24.md)。
+
+## 选股宝三池增量（本地待发布）
+
+新增 `/api/v1/realtime/xuangubao/stock-pools`，提供最新/历史涨停、炸板及昨日涨停股表现。
+保留已上线最新涨停池接口。参数、单位和日期核验边界见[接口说明](docs/选股宝三池实时接口.md)。

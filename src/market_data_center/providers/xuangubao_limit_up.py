@@ -7,11 +7,12 @@ import ssl
 import time
 from collections.abc import Callable
 from contextlib import suppress
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from http.client import HTTPException, HTTPSConnection
 from threading import Timer
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
 from urllib.request import Request
 from zoneinfo import ZoneInfo
 
@@ -79,6 +80,29 @@ def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 def _request_bytes(request: Request, timeout: float) -> bytes:
     if request.full_url != SOURCE_URL or request.method != "GET":
         raise ValueError("unexpected source endpoint")
+    return _request_pool_bytes(request, timeout)
+
+
+def _request_pool_bytes(request: Request, timeout: float) -> bytes:
+    """Shared fixed-host transport for the three pools, with one total deadline."""
+    url = urlsplit(request.full_url)
+    params = parse_qs(url.query, keep_blank_values=True, strict_parsing=True)
+    if (
+        request.get_method() != "GET"
+        or url.scheme != "https"
+        or url.netloc != "flash-api.xuangubao.cn"
+        or url.path != "/api/pool/detail"
+        or url.fragment
+        or set(params) - {"pool_name", "date"}
+        or params.get("pool_name")
+        not in (["limit_up"], ["limit_up_broken"], ["yesterday_limit_up"])
+    ):
+        raise ValueError("unexpected source endpoint")
+    if "date" in params:
+        values = params["date"]
+        if len(values) != 1 or not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", values[0]):
+            raise ValueError("invalid source date")
+        date.fromisoformat(values[0])
     deadline = time.monotonic() + timeout
     host = "flash-api.xuangubao.cn"
     context = ssl.create_default_context()
@@ -101,7 +125,7 @@ def _request_bytes(request: Request, timeout: float) -> bytes:
             try:
                 http.request(
                     "GET",
-                    "/api/pool/detail?pool_name=limit_up",
+                    url.path + "?" + url.query,
                     headers=dict(request.header_items()),
                 )
                 with http.getresponse() as response:

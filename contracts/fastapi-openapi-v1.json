@@ -5709,7 +5709,7 @@
                 "type": "null"
               }
             ],
-            "description": "多次异动列表的来源偏离值，百分比。",
+            "description": "多次异动或热门股列表的来源偏离值，百分比；严重异动行未提供时为空。",
             "title": "Deviation Pct"
           },
           "document_url": {
@@ -14387,6 +14387,249 @@
         "title": "XuangubaoPlate",
         "type": "object"
       },
+      "XuangubaoPoolItemResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "change_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "本次池行情涨跌幅，百分比数值；-2.3表示-2.3%。缺失不补零。",
+            "title": "Change Pct"
+          },
+          "code": {
+            "description": "六位股票代码。",
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "consecutive_limit_up_days": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源本期连续涨停板数，不是几天几板的累计板数；0保留，缺失或-1为null。",
+            "title": "Consecutive Limit Up Days"
+          },
+          "first_limit_up_at": {
+            "anyOf": [
+              {
+                "example": "2026-09-18 09:35:00",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "本期首次涨停时间，零或缺失为null。",
+            "title": "First Limit Up At"
+          },
+          "last_broken_limit_up_at": {
+            "anyOf": [
+              {
+                "example": "2026-09-18 09:35:00",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "本期最后开板时间。",
+            "title": "Last Broken Limit Up At"
+          },
+          "last_limit_up_at": {
+            "anyOf": [
+              {
+                "example": "2026-09-18 09:35:00",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "本期最后涨停时间。",
+            "title": "Last Limit Up At"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源股票名称，缺失为 null。",
+            "title": "Name"
+          },
+          "previous_consecutive_limit_up_days": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "来源前一交易日连续涨停板数，未加1；缺失或-1为null。",
+            "title": "Previous Consecutive Limit Up Days"
+          },
+          "previous_last_limit_up_at": {
+            "anyOf": [
+              {
+                "example": "2026-09-18 09:35:00",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "前一交易日最后涨停时间，不能证明本期行情日期。",
+            "title": "Previous Last Limit Up At"
+          },
+          "symbol": {
+            "description": "标准证券代码，如 SZSE:001234。",
+            "title": "Symbol",
+            "type": "string"
+          },
+          "topics": {
+            "description": "来源关联题材名称；无题材时为空。",
+            "items": {
+              "type": "string"
+            },
+            "title": "Topics",
+            "type": "array"
+          }
+        },
+        "required": [
+          "symbol",
+          "code",
+          "name",
+          "change_pct",
+          "consecutive_limit_up_days",
+          "previous_consecutive_limit_up_days",
+          "first_limit_up_at",
+          "last_limit_up_at",
+          "last_broken_limit_up_at",
+          "previous_last_limit_up_at",
+          "topics"
+        ],
+        "title": "XuangubaoPoolItemResponse",
+        "type": "object"
+      },
+      "XuangubaoPoolResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "date_verification": {
+            "description": "event_dates_consistent仅表示已出现的本期事件日期一致；unverified表示无法核验。",
+            "enum": [
+              "event_dates_consistent",
+              "unverified"
+            ],
+            "title": "Date Verification",
+            "type": "string"
+          },
+          "items": {
+            "description": "返回的数据记录列表。",
+            "items": {
+              "$ref": "#/components/schemas/XuangubaoPoolItemResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "observed_at": {
+            "description": "取得响应的上海时间，不是行情日期。",
+            "example": "2026-09-18 09:35:00",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "persisted": {
+            "const": false,
+            "description": "不入库，不保存Raw。",
+            "title": "Persisted",
+            "type": "boolean"
+          },
+          "pool_type": {
+            "description": "涨停、炸板或昨日涨停；昨日池不等于已经去重的断板池。",
+            "enum": [
+              "limit_up",
+              "broken_limit_up",
+              "previous_limit_up"
+            ],
+            "title": "Pool Type",
+            "type": "string"
+          },
+          "requested_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "请求日期；省略表示最新可用池，不保证今天。",
+            "title": "Requested Date"
+          },
+          "returned_count": {
+            "description": "本次来源列表条数，无本地分页或ST过滤，不保证全市场完整。",
+            "maximum": 2000.0,
+            "minimum": 0.0,
+            "title": "Returned Count",
+            "type": "integer"
+          },
+          "source_code": {
+            "const": "xuangubao",
+            "description": "来源选股宝。",
+            "title": "Source Code",
+            "type": "string"
+          },
+          "source_event_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "本期涨停/开板事件一致的日期；无可核验事件时null。不是所有记录行情日期的独立证明。",
+            "title": "Source Event Date"
+          }
+        },
+        "required": [
+          "source_code",
+          "persisted",
+          "pool_type",
+          "requested_date",
+          "source_event_date",
+          "date_verification",
+          "observed_at",
+          "returned_count",
+          "items"
+        ],
+        "title": "XuangubaoPoolResponse",
+        "type": "object"
+      },
       "XuangubaoReason": {
         "additionalProperties": false,
         "properties": {
@@ -19431,6 +19674,100 @@
           }
         ],
         "summary": "查询选股宝最新可用涨停池",
+        "tags": [
+          "实时接口"
+        ]
+      }
+    },
+    "/api/v1/realtime/xuangubao/stock-pools": {
+      "get": {
+        "description": "一次有界来源查询，支持最新/当日/历史；连续板数和涨幅来自来源数值字段。指定日期与本期事件冲突返回502，无事件则明确未核验，不回退日期。",
+        "operationId": "stock_pools_api_v1_realtime_xuangubao_stock_pools_get",
+        "parameters": [
+          {
+            "description": "选股宝池类型：limit_up涨停、broken_limit_up炸板、previous_limit_up昨日涨停。",
+            "in": "query",
+            "name": "pool_type",
+            "required": true,
+            "schema": {
+              "description": "limit_up涨停；broken_limit_up炸板；previous_limit_up昨日涨停。",
+              "enum": [
+                "limit_up",
+                "broken_limit_up",
+                "previous_limit_up"
+              ],
+              "title": "Pool Type",
+              "type": "string"
+            }
+          },
+          {
+            "description": "交易日。",
+            "in": "query",
+            "name": "trade_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "可选YYYY-MM-DD，不得未来；今天或省略时读取最新池。",
+              "title": "Trade Date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/XuangubaoPoolResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "查询选股宝涨停、炸板和昨日涨停池",
         "tags": [
           "实时接口"
         ]

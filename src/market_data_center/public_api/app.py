@@ -62,6 +62,11 @@ from market_data_center.providers.xuangubao_limit_up import (
     XuangubaoLimitUpProvider,
     XuangubaoLimitUpUpstream,
 )
+from market_data_center.providers.xuangubao_pools import (
+    XuangubaoPoolsInvalid,
+    XuangubaoPoolsProvider,
+    XuangubaoPoolsUpstream,
+)
 from market_data_center.public_api.auction_indicative_live import (
     AuctionIndicativeLiveBusy,
     AuctionIndicativeLiveInvalid,
@@ -140,6 +145,7 @@ from market_data_center.public_api.tencent_quote_live import (
     TencentQuoteLiveUpstream,
 )
 from market_data_center.public_api.xuangubao_limit_up import router as xuangubao_limit_up_router
+from market_data_center.public_api.xuangubao_pools import router as xuangubao_pools_router
 from market_data_center.raw_store import LocalRawStore
 from market_data_center.settings import ApiSettings
 
@@ -162,6 +168,7 @@ def create_app(
     kaipanla_market_history_provider: KaipanlaMarketHistoryProvider | None = None,
     auction_sources_provider: AuctionSourcesProvider | None = None,
     xuangubao_limit_up_provider: XuangubaoLimitUpProvider | None = None,
+    xuangubao_pools_provider: XuangubaoPoolsProvider | None = None,
 ) -> FastAPI:
     configured = settings or ApiSettings()  # type: ignore[call-arg]
     owned_engine: Engine | None = None
@@ -259,6 +266,10 @@ def create_app(
         timeout_seconds=configured.fastapi_xuangubao_timeout_seconds
     )
     app.include_router(xuangubao_limit_up_router, dependencies=[Depends(_require_api_key)])
+    app.state.xuangubao_pools_provider = xuangubao_pools_provider or XuangubaoPoolsProvider(
+        timeout_seconds=configured.fastapi_xuangubao_timeout_seconds
+    )
+    app.include_router(xuangubao_pools_router, dependencies=[Depends(_require_api_key)])
     app.state.kaipanla_boards_provider = kaipanla_boards_provider or KaipanlaBoardsProvider(
         timeout_seconds=configured.fastapi_kaipanla_timeout_seconds
     )
@@ -1022,6 +1033,16 @@ def _require_bounded_date_range(start_date: date, end_date: date) -> None:
 
 
 def _install_exception_handlers(app: FastAPI) -> None:
+    @app.exception_handler(XuangubaoPoolsUpstream)
+    async def xuangubao_upstream(_: Request, __: XuangubaoPoolsUpstream) -> JSONResponse:
+        return _error_response(
+            502, "upstream_error", "Xuangubao stock-pool provider request failed"
+        )
+
+    @app.exception_handler(XuangubaoPoolsInvalid)
+    async def xuangubao_invalid(_: Request, __: XuangubaoPoolsInvalid) -> JSONResponse:
+        return _error_response(422, "validation_error", "stock-pool request parameters are invalid")
+
     @app.exception_handler(AuctionSourcesUpstream)
     async def auction_sources_upstream(_: Request, __: AuctionSourcesUpstream) -> JSONResponse:
         return _error_response(502, "upstream_error", "external source request failed")

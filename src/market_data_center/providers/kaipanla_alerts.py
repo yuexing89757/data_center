@@ -232,6 +232,12 @@ def _item(row: object, layout: str, group: str = "items") -> AlertItem:
             document = None
         elif not isinstance(document, str) or urlsplit(document).scheme not in ("https", "http"):
             raise ValueError("invalid document URL")
+    if layout == "hot" and len(row) == 12:
+        # The 2026-10-28 MuMu card matches raw 4; other numeric columns remain unverified.
+        rule_description = row[2]
+        if rule_description is not None and not isinstance(rule_description, str):
+            raise ValueError("invalid source rule description")
+        deviation = _decimal(row[4])
     if layout == "multiple" and len(row) == 11:
         rule_description = row[3]
         if rule_description is not None and not isinstance(rule_description, str):

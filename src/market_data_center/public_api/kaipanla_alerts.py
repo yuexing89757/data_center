@@ -39,7 +39,9 @@ class KaipanlaAlertItem(ApiModel):
         ge=0,
         description="仅从来源明确的10日内N次异动文字提取；未提供为null，不混入公告或系统测算次数。",
     )
-    deviation_pct: Decimal | None = Field(description="多次异动列表的来源偏离值，百分比。")
+    deviation_pct: Decimal | None = Field(
+        description="多次异动或热门股列表的来源偏离值，百分比；严重异动行未提供时为空。"
+    )
     expected_trigger_price: Decimal | None = Field(
         description="多次异动列表来源预计异动价，元；不擅自解释为今日或次日。"
     )

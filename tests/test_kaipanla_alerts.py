@@ -50,6 +50,29 @@ def parameters(request):
     return parse_qs(request.data.decode() if request.data else urlsplit(request.full_url).query)
 
 
+@pytest.mark.parametrize("deviation", ["12.34567890123456789", "0", None])
+def test_hot_preserves_deployed_rule_and_deviation_mapping(deviation):
+    row = ["001216", "示例股票", "10日100%", "99", deviation, *([None] * 7)]
+    response = client(Transport({"errcode": "0", "List": [row]})).get(
+        PREFIX + "/hot", headers={"X-API-Key": KEY}
+    )
+    assert response.status_code == 200
+    item = response.json()["groups"][0]["items"][0]
+    assert item["rule_description"] == "10日100%"
+    assert item["deviation_pct"] == deviation
+    assert item["last_price"] is None
+    assert item["change_pct"] is None
+
+
+@pytest.mark.parametrize("rule,deviation", [(123, "1"), ("规则", "invalid")])
+def test_hot_rejects_invalid_deployed_source_fields(rule, deviation):
+    row = ["001216", "示例股票", rule, "99", deviation, *([None] * 7)]
+    response = client(Transport({"errcode": "0", "List": [row]})).get(
+        PREFIX + "/hot", headers={"X-API-Key": KEY}
+    )
+    assert response.status_code == 502
+
+
 def test_severe_normalizes_dates_symbols_and_precise_decimals_without_persistence():
     transport = Transport(
         {

@@ -5,6 +5,7 @@
 from typing import Any
 
 FIELD_DESCRIPTIONS_ZH = {
+    "pool_type": "选股宝池类型：limit_up涨停、broken_limit_up炸板、previous_limit_up昨日涨停。",
     "page": "来源页号，从1开始，最大100；一次请求只读取一页。",
     "page_size": "来源单页上限；行情最多6000、股池500、题材100、成分股1000。",
     "market": "即时行情市场：all全部沪深A股、mainboard主板、star科创板、growth创业板。",
