@@ -156,6 +156,11 @@ from partial checks.
 
 ## Secrets and operational safety
 
+- Routine production deployments, including Worker/API updates and ordered SQL migrations,
+  do not create PostgreSQL or Raw backups, or run/wait for backup copying, backup validation,
+  or restore drills (constitution principle 12). Never make them a deployment gate or ask
+  again; perform backup or restore only when the owner separately requests it. Preserve
+  existing Raw, backups, retention rules, and all other deployment checks.
 - Never commit or print `.env`, credentials, API keys, JWT secrets, database URLs, local TDX
   paths, backups, or Raw market data. Use documented environment variables and redact values
   from logs and reports.

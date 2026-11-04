@@ -1,7 +1,8 @@
 # 股票五日均量（包含当日）
 
 依据 ADR-0076 与 [Issue #103](https://github.com/yuexing89757/data_center/issues/103)。
-本地实现不代表生产数据库已建表或任务已启用。
+2026-11-04 已完成生产迁移、Worker 上线和 2026-11-03 单日补算，详见
+[生产发布验收](stock-volume-average-5d-release-2026-11-04.md)。下文发布前检查保留为历史记录。
 
 ## 日常维护
 
@@ -79,9 +80,9 @@ uv run pytest tests/test_stock_volume_average.py tests/test_stock_volume_average
 原子回滚、RLS/最小权限和结果完整性约束。未配置时跳过，不能宣称集成验证通过。
 完整本地门禁仍为 Ruff 格式/静态检查、mypy src 和 pytest；生产状态须单独验收。
 
-2026-11-04 本地验收：`uv run ruff format --check .`、`uv run ruff check .`、
+2026-11-04 发布前本地验收：`uv run ruff format --check .`、`uv run ruff check .`、
 `uv run mypy src` 均通过；分页修复后 `uv run pytest` 为 2244 passed、239 skipped。
 分页修复前单独 `uv run pytest -m integration` 为 1 passed、236 skipped、2245 deselected；
 未设置 TEST_DATABASE_URL，新增五项 PostgreSQL 测试均跳过，未验证真实数据库迁移。
 独立代码复核发现的认证替换证据丢失问题已由先失败后通过的回归测试验证修复。
-未执行生产迁移、重算、采集、部署或推送。
+上述本地验收阶段未执行生产迁移、重算、采集、部署或推送；后续生产实际执行结果见顶部发布验收。
