@@ -211,6 +211,15 @@ closed dates are skipped and incomplete source snapshots remain failed. The API 
 `{"trade_date":"2026-10-15","codes":["601188","000001","600000"]}`; codes remain strings,
 and unavailable records are reported in `missing_codes` without substituting a different date.
 
+Stock five-day volume averages are maintained separately by
+`stock-volume-average-5d-daily` at 21:45 Asia/Shanghai on weekdays after the exact-date
+daily-market workflow reaches a terminal state. The fixed five-market-day window includes
+the target day; only certified integral share volumes are admitted. Missing, suspended or
+unverified inputs leave a null average with quality reasons. Results live in
+`derived.stock_volume_average_5d`, with immutable date-specific publications in
+`derived.stock_volume_average_5d_snapshot`. See the
+[five-day volume-average runbook](docs/runbooks/stock-volume-average-5d.md).
+
 Run the unified cross-platform collection Worker as the single supervised application process:
 
 ```bash

@@ -25,6 +25,7 @@ from market_data_center.domain.regulation import (
     RegulationRunStatus,
 )
 from market_data_center.domain.stock_pool import StockPoolBuildSummary
+from market_data_center.domain.stock_volume_average import VolumeAverageBuildSummary
 from market_data_center.dragon_tiger_service import (
     DragonTigerBackfillSummary,
     DragonTigerCollectionSummary,
@@ -142,6 +143,14 @@ def safe_error_summary(error: BaseException) -> str:
 
 
 def _result_statistics(result: object) -> tuple[int, int, int, ExecutionStatus]:
+    if isinstance(result, VolumeAverageBuildSummary):
+        incomplete = result.candidate_count - result.complete_count
+        return (
+            result.candidate_count,
+            result.complete_count,
+            incomplete,
+            ExecutionStatus.PARTIAL if incomplete else ExecutionStatus.SUCCEEDED,
+        )
     if isinstance(result, RawRetentionResult):
         return (
             result.scanned,

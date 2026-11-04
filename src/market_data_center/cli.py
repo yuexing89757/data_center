@@ -65,6 +65,9 @@ from market_data_center.persistence.hot_money_postgres import PostgreSQLHotMoney
 from market_data_center.persistence.regulation_event_postgres import (
     PostgreSQLRegulationEventPersistence,
 )
+from market_data_center.persistence.stock_volume_average_postgres import (
+    PostgreSQLStockVolumeAveragePersistence,
+)
 from market_data_center.pipeline import BoardIndexIngestionPipeline, IngestionPipeline
 from market_data_center.providers import (
     DragonTigerProvider,
@@ -96,6 +99,7 @@ from market_data_center.shareholder_count_service import (
     ShareholderCountService,
 )
 from market_data_center.stock_pool_service import StockPoolService
+from market_data_center.stock_volume_average_service import StockVolumeAverageService
 from market_data_center.top10_float_holder_service import Top10FloatHolderService
 
 AUTO_PROVIDER_CODE = "auto"
@@ -134,6 +138,9 @@ def main() -> None:
         from market_data_center.scheduler import run_worker
 
         run_worker(check=args.check)
+        return
+    if args.dataset == "stock-volume-average-5d-build":
+        _run_stock_volume_average_command(args.trade_date)
         return
     if args.dataset == "regulation-events":
         _run_regulation_event_command(args)
@@ -1706,6 +1713,34 @@ def _run_cleanup_command(args: Namespace) -> None:
         engine.dispose()
 
 
+def _run_stock_volume_average_command(trade_date: date) -> None:
+    settings = WorkerSettings()  # type: ignore[call-arg]
+    engine = create_engine(
+        sqlalchemy_url(settings.database_url.get_secret_value()), pool_pre_ping=True
+    )
+    try:
+        execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
+            WorkflowCode.STOCK_VOLUME_AVERAGE_5D,
+            datetime.now(UTC).replace(second=0, microsecond=0),
+            TriggerSource.MANUAL,
+        )
+        try:
+            summary = execution.step(
+                "build_stock_volume_average_5d",
+                1,
+                lambda: StockVolumeAverageService(
+                    PostgreSQLStockVolumeAveragePersistence(engine)
+                ).build(trade_date),
+            )
+        except BaseException as error:
+            execution.fail(error)
+            raise
+        execution.succeed()
+        print(dumps(asdict(summary), default=str, sort_keys=True))
+    finally:
+        engine.dispose()
+
+
 def _parser() -> ArgumentParser:
     parser = ArgumentParser(prog="market-data-center")
     parser.add_argument(
@@ -2100,6 +2135,12 @@ def _parser() -> ArgumentParser:
         required=True,
         help="exact price-limit event trading date YYYY-MM-DD",
     )
+
+    volume_average = subparsers.add_parser(
+        "stock-volume-average-5d-build",
+        help="build the certified five-market-day volume average including an exact target day",
+    )
+    volume_average.add_argument("--trade-date", required=True, type=date.fromisoformat)
 
     closing_highs = subparsers.add_parser(
         "close-price-new-highs-120d-build",

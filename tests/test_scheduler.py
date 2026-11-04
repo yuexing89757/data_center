@@ -1113,6 +1113,7 @@ def test_scheduler_health_requires_jobs_fresh_snapshot_and_no_stale_runs(tmp_pat
             "stock-technical-factor-catchup",
             STOCK_POOL_JOB_ID,
             CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID,
+            "stock-volume-average-5d-daily",
             BOARD_INDEX_DAILY_BAR_JOB_ID,
             CALL_AUCTION_MARKET_SERIES_ARCHIVE_JOB_ID,
             DATA_CLEANUP_JOB_ID,

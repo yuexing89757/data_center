@@ -21,6 +21,7 @@ TODAY_LIMIT_UP_SNAPSHOT_JOB_ID = "today-limit-up-snapshot-daily"
 TODAY_LIMIT_DOWN_SNAPSHOT_JOB_ID = "today-limit-down-snapshot-daily"
 PYTDX_POOL_REFRESH_JOB_ID = "pytdx-pool-refresh"
 CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID = "close-price-new-highs-120d-daily"
+STOCK_VOLUME_AVERAGE_5D_JOB_ID = "stock-volume-average-5d-daily"
 BOARD_INDEX_DAILY_BAR_JOB_ID = "board-index-883423-daily-bar"
 SECURITY_BSE_JOB_ID = "security-bse-daily"
 DRAGON_TIGER_JOB_ID = "dragon-tiger-daily"
@@ -60,6 +61,12 @@ class JobDefinition:
 
 
 WORKFLOW_DEFINITIONS = (
+    WorkflowDefinition(
+        "stock_volume_average_5d",
+        "股票五日均量更新",
+        "按包含当日的五个固定交易日计算已认证成交股数均量。",
+        ("build_stock_volume_average_5d",),
+    ),
     WorkflowDefinition(
         "stock_technical_factor",
         "专业版股票技术因子更新",
@@ -431,6 +438,21 @@ def job_definitions(settings: SchedulerSettings) -> tuple[JobDefinition, ...]:
             day_of_week="mon-fri",
             hour=22,
             minute=10,
+        ),
+        JobDefinition(
+            STOCK_VOLUME_AVERAGE_5D_JOB_ID,
+            "股票五日均量更新",
+            "日 K 终态后发布包含当日的五日均量; 缺失留空并记录原因。",
+            "stock_volume_average_5d",
+            "cron",
+            "周一至周五 21:45",
+            timezone,
+            settings.stock_volume_average_5d_enabled,
+            timeout,
+            "同日 daily_market 未终态时失败; 缺口可按精确日期显式重算",
+            day_of_week="mon-fri",
+            hour=21,
+            minute=45,
         ),
         JobDefinition(
             CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID,

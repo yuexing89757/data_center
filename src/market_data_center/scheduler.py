@@ -60,6 +60,9 @@ from market_data_center.persistence.regulation_postgres import (
     PostgreSQLRegulationPersistence,
 )
 from market_data_center.persistence.stock_pool_postgres import PostgreSQLStockPoolPersistence
+from market_data_center.persistence.stock_volume_average_postgres import (
+    PostgreSQLStockVolumeAveragePersistence,
+)
 from market_data_center.pipeline import BoardIndexIngestionPipeline, IngestionPipeline
 from market_data_center.providers import create_board_index_provider, create_provider
 from market_data_center.providers.contracts import ProviderError
@@ -101,6 +104,7 @@ from market_data_center.scheduling_catalog import (
     STOCK_POOL_JOB_ID,
     STOCK_TECHNICAL_FACTOR_CATCHUP_JOB_ID,
     STOCK_TECHNICAL_FACTOR_JOB_ID,
+    STOCK_VOLUME_AVERAGE_5D_JOB_ID,
     TODAY_LIMIT_DOWN_SNAPSHOT_JOB_ID,
     TODAY_LIMIT_UP_SNAPSHOT_JOB_ID,
     TOP10_FLOAT_HOLDERS_WEEKLY_JOB_ID,
@@ -116,6 +120,7 @@ from market_data_center.settings import (
 )
 from market_data_center.shareholder_count_service import ShareholderCountService
 from market_data_center.stock_pool_service import StockPoolService
+from market_data_center.stock_volume_average_service import StockVolumeAverageService
 from market_data_center.top10_float_holder_service import Top10FloatHolderService
 
 SCHEDULER_LOCK_KEY = "market-data-center:scheduler"
@@ -322,6 +327,35 @@ def run_daily_market_job() -> None:
                 PostgreSQLPersistence(engine),
                 LocalRawStore(settings.raw_data_root),
                 execution=execution,
+            )
+        except BaseException as error:
+            execution.fail(error)
+            raise
+        execution.succeed()
+    finally:
+        engine.dispose()
+
+
+def run_stock_volume_average_5d_job() -> None:
+    """Publish the planned Shanghai date, never substitute a newer bar date."""
+    settings = WorkerSettings()  # type: ignore[call-arg]
+    scheduling = SchedulerSettings()
+    engine = create_engine(
+        sqlalchemy_url(settings.database_url.get_secret_value()), pool_pre_ping=True
+    )
+    try:
+        scheduled_for = _scheduled_job_fire_time(STOCK_VOLUME_AVERAGE_5D_JOB_ID, scheduling)
+        trade_date = scheduled_for.astimezone(ZoneInfo(SCHEDULER_TIMEZONE)).date()
+        execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
+            WorkflowCode.STOCK_VOLUME_AVERAGE_5D, scheduled_for, TriggerSource.SCHEDULED
+        )
+        try:
+            execution.step(
+                "build_stock_volume_average_5d",
+                1,
+                lambda: StockVolumeAverageService(
+                    PostgreSQLStockVolumeAveragePersistence(engine)
+                ).build(trade_date),
             )
         except BaseException as error:
             execution.fail(error)
@@ -1137,6 +1171,7 @@ def build_scheduler(settings: SchedulerSettings | None = None) -> BlockingSchedu
         TODAY_LIMIT_UP_SNAPSHOT_JOB_ID: run_today_limit_up_snapshot_job,
         TODAY_LIMIT_DOWN_SNAPSHOT_JOB_ID: run_today_limit_down_snapshot_job,
         CLOSE_PRICE_NEW_HIGHS_120D_JOB_ID: run_close_price_new_highs_120d_job,
+        STOCK_VOLUME_AVERAGE_5D_JOB_ID: run_stock_volume_average_5d_job,
         BOARD_INDEX_DAILY_BAR_JOB_ID: run_board_index_daily_bar_job,
         SECURITY_BSE_JOB_ID: run_security_bse_job,
         DRAGON_TIGER_JOB_ID: run_dragon_tiger_job,

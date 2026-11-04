@@ -42,6 +42,7 @@ class SchedulerSettings(BaseSettings):
     today_limit_up_snapshot_enabled: bool = False
     today_limit_down_snapshot_enabled: bool = False
     close_price_new_highs_120d_enabled: bool = True
+    stock_volume_average_5d_enabled: bool = True
     board_index_daily_bar_enabled: bool = True
     shareholder_count_daily_enabled: bool = False
     # Tushare BSE L/D/P catalog sync is an explicit source-rights-gated task.

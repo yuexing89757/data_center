@@ -36,6 +36,7 @@ class WorkflowCode(StrEnum):
     TODAY_LIMIT_UP_SNAPSHOT = "today_limit_up_snapshot"
     TODAY_LIMIT_DOWN_SNAPSHOT = "today_limit_down_snapshot"
     CLOSE_PRICE_NEW_HIGHS_120D = "close_price_new_highs_120d"
+    STOCK_VOLUME_AVERAGE_5D = "stock_volume_average_5d"
     BOARD_INDEX_DAILY_BAR = "board_index_daily_bar"
     SHAREHOLDER_COUNT_DAILY = "shareholder_count_daily"
     SHAREHOLDER_COUNT_BACKFILL = "shareholder_count_backfill"
