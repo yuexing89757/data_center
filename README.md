@@ -1,5 +1,9 @@
 # Market Data Center
 
+代码主仓库：[Gitee](https://gitee.com/guokaige/data_center)，默认分支 `master`。
+GitHub 保留代码镜像、Issues、CI 和受保护的生产迁移流程，详见
+[仓库托管说明](docs/代码仓库与发布流程.md)。
+
 竞价九合一的12类来源已接入apiServer“实时接口”：东方财富行情/股池/日K/题材，
 腾讯分时/K线/指数，新浪日K。使用既有X-API-Key，请求时读取且不入库。
 来源网站、上游地址、参数及示例见[实时接口说明](docs/竞价九合一来源实时接口.md)。

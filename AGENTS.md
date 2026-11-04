@@ -8,6 +8,10 @@
   verify migrations and tests and report the discrepancy instead of guessing.
 - GitHub Issues are the only task-planning system of record. Do not create, read, or
   synchronize Linear issues for this project.
+- The primary code remote `origin` is `https://gitee.com/guokaige/data_center.git`.
+  Keep `github` as the code mirror at `https://github.com/yuexing89757/data_center.git`.
+  GitHub Issues and the existing GitHub CI/protected production workflow remain in use;
+  release commits must also reach `github/master` before those checks or migrations run.
 - Keep Market Data Center responsible for traceable source facts, deterministic objective
   derivations, quality checks, persistence, and stable read contracts. Trading strategies,
   subjective labels, backtests, portfolio management, and application-specific judgments
