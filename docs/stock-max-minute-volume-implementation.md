@@ -25,6 +25,8 @@ Issue #105；Accepted ADR-0077。2026-11-08所有者明确授权正式完成并�
 - 服务负责有效普通股宇宙、30分钟总采集预算、不可变Raw、逐股票采集/认证与版本化发布。
 - 存储：`derived.stock_max_minute_volume` 与 `derived.stock_max_minute_volume_snapshot`，
   复用 `derived.calculation_run`；输入血缘在 `ingestion` 和 `audit`，不建立分钟Core明细。
+- 本指标新Raw首次即写无损gzip表示，逻辑Manifest仍为JSONL，哈希/字节/行数按解压内容校验。
+  无现有Raw改写或删除，其他数据集及七天压缩/月度清除保持既有规则。
 - 日常使用现有20:30 `stock-daily-indicators-daily` 工作流：日历、最大分钟量、
   Tushare每日指标、满足原前提的Tushare保留清理。两项业务步骤独立，错误不冒充成功。
 - 发布不可变，数值相同而来源认证变化时保留新的发布证据；不以局部失败缩小旧有效集合。

@@ -202,6 +202,7 @@ class StockMaxMinuteVolumeService:
             ingestion_id=ingestion_id,
             rows=verified.raw_rows,
             schema_version=SOURCE_SCHEMA_VERSION,
+            gzip_compress=True,
         )
         manifest = RawManifest(
             uuid4(),

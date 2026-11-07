@@ -2,6 +2,7 @@
 
 import gzip
 from collections.abc import Iterable, Mapping
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import date
 from hashlib import sha256
@@ -48,6 +49,7 @@ class LocalRawStore:
         ingestion_id: UUID,
         rows: Iterable[Mapping[str, str]],
         schema_version: str,
+        gzip_compress: bool = False,
     ) -> StoredRawObject:
         relative_path = PurePosixPath(
             provider,
@@ -59,30 +61,42 @@ class LocalRawStore:
         )
         destination = self._safe_path(relative_path.as_posix())
         compressed = self._safe_path(relative_path.as_posix() + ".gz")
-        if compressed.exists():
+        if compressed.exists() or (gzip_compress and destination.exists()):
             raise FileExistsError("Raw logical object already exists")
         destination.parent.mkdir(parents=True, exist_ok=True)
         digest = sha256()
         byte_size = 0
         row_count = 0
         created = False
+        physical = compressed if gzip_compress else destination
         try:
-            with destination.open("xb") as raw_file:
+            with physical.open("xb") as raw_file:
                 created = True
-                if compressed.exists():
+                alternate = destination if gzip_compress else compressed
+                if alternate.exists():
                     raise FileExistsError("Raw logical object already exists")
-                for row in rows:
-                    payload = (
-                        dumps(dict(row), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-                        + "\n"
-                    ).encode()
-                    raw_file.write(payload)
-                    digest.update(payload)
-                    byte_size += len(payload)
-                    row_count += 1
+                representation = (
+                    gzip.GzipFile(
+                        filename="", mode="wb", fileobj=raw_file, compresslevel=6, mtime=0
+                    )
+                    if gzip_compress
+                    else nullcontext(raw_file)
+                )
+                with representation as output:
+                    for row in rows:
+                        payload = (
+                            dumps(
+                                dict(row), ensure_ascii=False, sort_keys=True, separators=(",", ":")
+                            )
+                            + "\n"
+                        ).encode()
+                        output.write(payload)
+                        digest.update(payload)
+                        byte_size += len(payload)
+                        row_count += 1
         except Exception:
             if created:
-                destination.unlink(missing_ok=True)
+                physical.unlink(missing_ok=True)
             raise
 
         return StoredRawObject(

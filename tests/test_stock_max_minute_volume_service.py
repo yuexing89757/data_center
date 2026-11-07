@@ -100,6 +100,8 @@ def test_complete_source_is_replayed_archived_and_certified_before_publication(t
     run, manifest, certificate = persistence.recorded[0]
     assert run.accepted_rows == 240
     assert manifest.row_count == 240
+    assert not (tmp_path / manifest.object_path).exists()
+    assert (tmp_path / (manifest.object_path + ".gz")).exists()
     assert certificate["field_group"] == "stock_minute_volume.volume"
     day, peaks, proof = persistence.published[0]
     assert day == DAY

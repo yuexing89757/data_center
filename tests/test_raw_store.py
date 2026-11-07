@@ -15,6 +15,80 @@ from market_data_center.raw_store import LocalRawStore, RawIntegrityError
 INGESTION_ID = UUID("74b11082-4ec0-4ae4-826f-a80a96cb9985")
 
 
+def test_new_jsonl_can_start_as_immutable_gzip_with_logical_hash(tmp_path):
+    store = LocalRawStore(tmp_path)
+    rows = [
+        {"symbol": "SSE:600327", "source": "repeated-context" * 30, "minute": str(i)}
+        for i in range(240)
+    ]
+    kwargs = dict(
+        provider="pytdx",
+        dataset="stock_minute_volume",
+        partition_date=date(2026, 11, 3),
+        ingestion_id=INGESTION_ID,
+        rows=rows,
+        schema_version="pytdx.stock_minute_volume.v1",
+    )
+    stored = store.write_jsonl(**kwargs, gzip_compress=True)
+    plain = store.resolve_path(stored.object_path)
+    compressed = store.resolve_path(stored.object_path + ".gz")
+    assert not plain.exists()
+    content = gzip.decompress(compressed.read_bytes())
+    assert sha256(content).hexdigest() == stored.content_sha256
+    assert len(content) == stored.byte_size
+    assert compressed.stat().st_size < stored.byte_size // 10
+    manifest = RawManifest(
+        uuid4(),
+        INGESTION_ID,
+        stored.object_path,
+        RawFileFormat.JSONL,
+        stored.content_sha256,
+        stored.byte_size,
+        stored.row_count,
+        stored.schema_version,
+    )
+    assert store.read_jsonl(manifest) == tuple(rows)
+    before = compressed.read_bytes()
+    for compressed_output in (True, False):
+        with pytest.raises(FileExistsError):
+            store.write_jsonl(**kwargs, gzip_compress=compressed_output)
+    assert compressed.read_bytes() == before
+
+
+def test_new_gzip_cannot_replace_existing_plain_raw(tmp_path):
+    store = LocalRawStore(tmp_path)
+    kwargs = dict(
+        provider="pytdx",
+        dataset="stock_minute_volume",
+        partition_date=date(2026, 11, 3),
+        ingestion_id=INGESTION_ID,
+        rows=[{"value": "0"}],
+        schema_version="test.v1",
+    )
+    stored = store.write_jsonl(**kwargs)
+    with pytest.raises(FileExistsError):
+        store.write_jsonl(**kwargs, gzip_compress=True)
+    assert not store.resolve_path(stored.object_path + ".gz").exists()
+
+
+def test_failed_new_gzip_write_does_not_leave_partial_raw(tmp_path):
+    def broken_rows():
+        yield {"value": "0"}
+        raise RuntimeError("synthetic iterator failure")
+
+    with pytest.raises(RuntimeError):
+        LocalRawStore(tmp_path).write_jsonl(
+            provider="pytdx",
+            dataset="stock_minute_volume",
+            partition_date=date(2026, 11, 3),
+            ingestion_id=INGESTION_ID,
+            rows=broken_rows(),
+            schema_version="test.v1",
+            gzip_compress=True,
+        )
+    assert not list(tmp_path.rglob("*.gz"))
+
+
 def test_jsonl_is_immutable_and_hash_matches_file(tmp_path: Path) -> None:
     store = LocalRawStore(tmp_path)
     rows = [{"code": "sh.600000", "name": "浦发银行"}]
