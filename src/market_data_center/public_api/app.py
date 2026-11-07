@@ -235,7 +235,9 @@ def create_app(
     )
     app.include_router(auction_sources_router, dependencies=[Depends(_require_api_key)])
     app.include_router(technical_factors_router, dependencies=[Depends(_require_api_key)])
-    app.include_router(stock_max_minute_volume_router, dependencies=[Depends(_require_api_key)])
+    app.include_router(
+        stock_max_minute_volume_router, prefix="/api", dependencies=[Depends(_require_api_key)]
+    )
     app.state.kaipanla_alerts_provider = kaipanla_alerts_provider or KaipanlaAlertsProvider(
         timeout_seconds=configured.fastapi_kaipanla_timeout_seconds
     )

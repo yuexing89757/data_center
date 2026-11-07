@@ -20726,6 +20726,83 @@
         ]
       }
     },
+    "/api/v1/stock-daily-indicators/minute-volume-peak/query": {
+      "post": {
+        "description": "只读单一已发布计算版本, 最多500只股票; 无发布时not_ready, 不触发采集或回退日期。",
+        "operationId": "query_stock_max_minute_volume_api_v1_stock_daily_indicators_minute_volume_peak_query_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StockMaxMinuteVolumeQuery"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StockMaxMinuteVolumeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "按准确交易日查询最大一分钟成交股数",
+        "tags": [
+          "市场数据"
+        ]
+      }
+    },
     "/api/v1/top-gainers-20d": {
       "get": {
         "description": "按严格的二十交易日窗口计算区间收益率，并返回涨幅最高的股票。",
@@ -20928,83 +21005,6 @@
         "summary": "检查 API 服务就绪状态",
         "tags": [
           "系统状态"
-        ]
-      }
-    },
-    "/v1/stock-daily-indicators/minute-volume-peak/query": {
-      "post": {
-        "description": "只读单一已发布计算版本, 最多500只股票; 无发布时not_ready, 不触发采集或回退日期。",
-        "operationId": "query_stock_max_minute_volume_v1_stock_daily_indicators_minute_volume_peak_query_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/StockMaxMinuteVolumeQuery"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StockMaxMinuteVolumeResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Unauthorized"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Unprocessable Entity"
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Service Unavailable"
-          },
-          "504": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Gateway Timeout"
-          }
-        },
-        "security": [
-          {
-            "APIKeyHeader": []
-          }
-        ],
-        "summary": "按准确交易日查询最大一分钟成交股数",
-        "tags": [
-          "市场数据"
         ]
       }
     },

@@ -4,13 +4,15 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from pydantic import ValidationError
+from pydantic import SecretStr, ValidationError
 
+from market_data_center.public_api import create_app
 from market_data_center.public_api.stock_max_minute_volume import (
     StockMaxMinuteVolumeQuery,
     StockMaxMinuteVolumeResponse,
     router,
 )
+from market_data_center.settings import ApiSettings
 
 
 def test_minute_query_requires_exact_nonfuture_date_and_bounded_standard_symbols():
@@ -103,3 +105,45 @@ def test_minute_response_uses_shanghai_wall_clock_and_preserves_real_zero():
     assert response["published_at"] == "2026-11-03 20:31:01"
     assert response["items"][0]["peak_at"] == "2026-11-03 09:31:00"
     assert response["items"][0]["max_minute_volume_shares"] == 0
+
+
+def test_integrated_app_exposes_authenticated_api_prefix():
+    service = MagicMock()
+    service._execute.return_value = [
+        {
+            "payload": {
+                "trade_date": "2026-11-03",
+                "status": "not_ready",
+                "version": None,
+                "calculation_id": None,
+                "algorithm_version": None,
+                "calculated_at": None,
+                "published_at": None,
+                "items": [
+                    {
+                        "symbol": "SSE:600327",
+                        "max_minute_volume_shares": None,
+                        "peak_at": None,
+                        "expected_count": 240,
+                        "observed_count": 0,
+                        "quality_status": "missing",
+                        "quality_reasons": ["not_ready"],
+                    }
+                ],
+            }
+        }
+    ]
+    key = "synthetic-minute-api-key-0000000000000"
+    app = create_app(
+        settings=ApiSettings(
+            _env_file=None, fastapi_database_url=SecretStr("unused"), fastapi_api_key=SecretStr(key)
+        ),
+        query_service=service,
+        auction_indicative_service=object(),
+    )
+    client = TestClient(app)
+    path = "/api/v1/stock-daily-indicators/minute-volume-peak/query"
+    body = {"symbols": ["SSE:600327"], "trade_date": "2026-11-03"}
+    assert client.post(path, json=body).status_code == 401
+    assert client.post(path, json=body, headers={"X-API-Key": key}).status_code == 200
+    assert "/v1/stock-daily-indicators/minute-volume-peak/query" not in app.openapi()["paths"]
