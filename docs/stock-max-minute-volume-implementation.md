@@ -1,7 +1,8 @@
 # 每日最大一分钟成交量实现与发布记录
 
 Issue #105；Accepted ADR-0077。2026-11-08所有者明确授权正式完成并部署此前约定的最小链路。
-当前状态：正式代码已接通并通过聚焦隔离验证，全量验证与生产发布待完成。
+当前状态：2026-11-08正式上线，Worker/API代码版本`252ecac784484f14c18a2a1fcaf8011d654d61af`；
+受保护迁移、完整检查及生产样本入库/HTTP验收通过。
 早期实验脚本不等于正式HTTP能力。
 
 ## 数据边界
@@ -57,8 +58,7 @@ items包含symbol、max_minute_volume_shares、peak_at、expected_count、observ
 quality_status及quality_reasons。时间为上海墙钟`YYYY-MM-DD HH:mm:ss`；缺失为null。
 无当日发布为not_ready，局部覆盖为partial，不从其他交易日或其他批次补值。
 
-早期实验样本大东方2026-11-03为7,260,200股、09:58；正式线上实际读取结果需在上线后另记，
-不能用早期实验或本地HTTP结果代替生产验收。
+生产大东方2026-11-03实际返回7,260,200股、09:58:00、240/240，详见下方生产验收。
 
 ## 发布与回退
 
@@ -71,7 +71,7 @@ quality_status及quality_reasons。时间为上海墙钟`YYYY-MM-DD HH:mm:ss`；
 SSH此前在banner前关闭；所有者要求重试后已恢复，已核对现有Worker/API服务活跃、
 实际池仍只有已核验peer。旧Worker发行b8cba2b、旧API发行d10fa45保留作为回退目标。
 环境中的Raw/调度池/调度状态及API Raw路径均为绝对持久化路径，本次不移动或重建。
-磁盘可用约459MB，依赖文件与现有发行一致（忽略换行差异）；计划新代码独立发行、
+发布前磁盘可用约459MB，依赖文件与现有发行一致（忽略换行差异）；新代码独立发行、
 各自只读复用对应现有依赖环境，不修改旧环境或执行额外依赖安装，不复制Raw。
 
 隔离实测：使用一次性PostgreSQL17数据库、合成证券生命周期/日历fixture及实际有界来源，
@@ -80,3 +80,28 @@ SSH此前在banner前关闭；所有者要求重试后已恢复，已核对现�
 item为complete。一次性数据库及临时Raw已清理；该结果不是生产验收。
 审查已修复：握手分片总超时、市场后续单位失败时禁止前面股票认证、零有效重试误标partial、
 日期自动转换epoch/时间戳；独立复核未剩P1/P2。
+
+## 2026-11-08生产验收
+
+- 发行代码`252ecac`已到达Gitee与GitHub master；[CI 42398581363](https://github.com/yuexing89757/data_center/actions/runs/42398581363)成功：
+  Ruff格式654文件、Ruff检查、mypy195源文件通过；普通测试2359 passed/246 skipped，隔离PostgreSQL 245 passed。
+  本机普通测试2358 passed/247 skipped；隔离PostgreSQL 244 passed/1 skipped（本机未安装pg_dump），该用例已在CI通过。
+- [受保护生产流程42399228905](https://github.com/yuexing89757/data_center/actions/runs/42399228905)成功，
+  完成ordered migration `20261108000100`、schema/RLS/迁移历史检查及数据库/PostgREST smoke。
+- Worker发行`/home/releases/market-data-center-252ecac-minute-worker`，PID24444；
+  API发行`/home/releases/market-data-center-252ecac-minute-api`，PID24484。
+  `/healthz=ok`、`/readyz=ready`、API只读角色/RPC权限检查、HTTP smoke及Worker只读健康检查均通过。
+  `/home/project-worker`与`/home/project-api`稳定链接已切换；前述b8cba2b/d10fa45旧发行保留回退。
+- 只执行一次`SSE:600327/2026-11-03`明确样本：1个来源run、1个certified数量认证、1条结果、1个发布。
+  `calculation_id=8c4ab8ac-d17c-47e5-a9c1-b207c33ee3a2`，version1，算法`stock_max_minute_volume.v1`，
+  calculated_at/published_at均为`2026-11-08 02:04:59`上海时间。
+  真实HTTP返回7,260,200股、峰值`2026-11-03 09:58:00`、240/240、item complete；
+  顶层为partial，因为coverage_scope=requested_symbols，不能视为全市场完成。
+- 使用现有API进程配置的既有密钥实测：新路径HTTP200、无密钥401、缺trade_date为422；
+  只读查询前后来源run数不变。未变更API密钥或增加查询时采集。
+- **启动日期覆盖缺口：当前仅有2026-11-03上述样本发布，2026-11-06没有任何发布。**
+  对`SSE:600327`和`SZSE:002088`查询11月6日均HTTP200、status=not_ready、数值null。
+  因此消费端11月9日06:00若读取前一交易日11月6日，该字段仍缺失，应按既有null语义处理。
+  本次未补算11月6日或其他股票/日期；后续沿用20:30日常任务，未触发全历史回填。
+- 未创建PostgreSQL/Raw备份，未复制或删除旧Raw/备份，未触发策略或群消息。
+  安全验收摘要在本机产物`max-minute-volume-production-acceptance-20261108.json`，不含凭证或Raw量柱。

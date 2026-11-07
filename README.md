@@ -5,7 +5,7 @@ GitHub 保留代码镜像、Issues、CI 和受保护的生产迁移流程，详�
 [仓库托管说明](docs/代码仓库与发布流程.md)。
 
 每日最大一分钟成交量按准确股票/交易日维护原始股数，不计算竞价绘图尺度。
-正式实现与发布验证正在进行，接口调用和状态见[实现文档](docs/stock-max-minute-volume-implementation.md)。
+正式链路已上线；当前只初始化2026-11-03大东方样本，11月6日尚无发布。接口调用和验收见[实现文档](docs/stock-max-minute-volume-implementation.md)。
 
 竞价九合一的12类来源已接入apiServer“实时接口”：东方财富行情/股池/日K/题材，
 腾讯分时/K线/指数，新浪日K。使用既有X-API-Key，请求时读取且不入库。

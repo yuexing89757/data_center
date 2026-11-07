@@ -50,19 +50,23 @@
 
 ## Task 4: 审查、完整验证与部署
 
-- [ ] 独立spec/quality审查，解决硬问题；ruff format/check、mypy src、完整pytest、隔离integration通过。
-- [ ] Issue105更新；所有相关文件按明确名单commit，推送Gitee origin及GitHub master，等待CI。
-- [ ] GitHub protected production migration；部署Worker/API新发行，旧发行路径保留可回退，不备份。
-- [ ] 只核对明确样本并从真实HTTP精确日期读取结果；记录版本、schema、计数、任务及健康结果于实现/运行文档，不扩写Wiki。
+- [x] 独立spec/quality审查，解决硬问题；ruff format/check、mypy src、完整pytest、隔离integration通过。
+- [x] Issue105更新；所有相关文件按明确名单commit，推送Gitee origin及GitHub master，等待CI。
+- [x] GitHub protected production migration；部署Worker/API新发行，旧发行路径保留可回退，不备份。
+- [x] 只核对明确样本并从真实HTTP精确日期读取结果；记录版本、schema、计数、任务及健康结果于实现/运行文档，不扩写Wiki。
 
 ## Execution ledger
 
 - Ruling: 在master开发，依据AGENTS明确指令，不创建worktree。
 - Ruling: 现行用户部署授权已明确接受此前最小方案；单位证据是独立技术门禁，不因授权免除。
 - Ruling: 两个实现任务独立写文件；Task1产出领域接口供Task2/3使用，接口固定如上；共用文件由root整合，禁止并发改cli/operations/registry。
-- Ruling: 当前正式状态为实施中；本地实验20项通过不等于新链路验证通过。
+- Ruling: 正式状态以代码CI、受保护迁移与真实生产HTTP验收为准，早期实验不替代正式验收。
 
 - Task1/2/3 complete: 源适配/单位门禁、版本存储/RPC、HTTP与每日编排均接通；正式聚焦测试120 passed，隔离真实来源HTTP样本7,260,200股@09:58。
 - 独立来源及全链路审查完成，四项P2均修复并复核；新回归25 passed。
-- Ruff格式/检查与mypy195源文件通过；全量2601测试含本地隔离PG正在执行。
+- Ruff格式/检查与mypy195源文件通过；最终CI普通测试2359 passed/246 skipped，隔离PostgreSQL245 passed。
+- 本机最终普通测试2358 passed/247 skipped；隔离PG244 passed/1 skipped（缺pg_dump，CI该用例通过）。
 - 运维入口已恢复；现存节点仍为已核验peer。原Worker/API版本b8cba2b/d10fa45及各自依赖环境保留。
+- Task4 complete: 252ecac已推送两远端并通过CI42398581363；受保护生产流程42399228905成功。
+- Worker/API切换成功，健康、权限、HTTP检查通过；生产样本7260200股@09:58、240/240，version1。
+- 当前仅11月3日单只样本发布；11月6日无发布，返回not_ready/null，未扩展回填。详见实现文档生产验收。
