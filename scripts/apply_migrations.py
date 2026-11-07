@@ -76,6 +76,8 @@ EXPECTED_TABLES = {
     ("derived", "close_price_new_high_120d_snapshot"),
     ("derived", "stock_volume_average_5d"),
     ("derived", "stock_volume_average_5d_snapshot"),
+    ("derived", "stock_max_minute_volume"),
+    ("derived", "stock_max_minute_volume_snapshot"),
     ("derived", "daily_metric"),
     ("derived", "market_capitalization"),
     ("derived", "daily_price_limit"),

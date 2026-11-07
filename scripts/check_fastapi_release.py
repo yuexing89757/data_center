@@ -16,6 +16,7 @@ PUBLISHED_FUNCTIONS = (
     "api_v1.query_call_auction_market_snapshots(date,text[])",
     "api_v1.query_call_auction_market_series_snapshots(date,text[],text)",
     "api_v1.query_latest_stock_daily_indicators(text[])",
+    "api_v1.query_stock_max_minute_volume(text[],date)",
     "api_v1.query_stock_technical_factors(text[],date)",
     "api_v1.query_stock_technical_factors_by_codes(text[],date)",
     "api_v1.query_auction_one_price_limits(date)",
