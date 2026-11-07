@@ -14,7 +14,7 @@ from typing import cast
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import create_engine
+from sqlalchemy import Engine, create_engine
 
 from market_data_center.auction_service import AuctionCollectionService
 from market_data_center.board_moneyflow_service import BoardMoneyflowService
@@ -29,6 +29,7 @@ from market_data_center.domain import CalculationMode
 from market_data_center.domain.ingestion import DatasetCode, IngestionRun, IngestionStatus
 from market_data_center.domain.operations import TriggerSource, WorkflowCode
 from market_data_center.domain.regulation import REGULATION_RULES_EFFECTIVE_FROM
+from market_data_center.domain.stock_max_minute_volume import MinuteVolumeBuildSummary
 from market_data_center.domain.stock_pool import (
     MAINBOARD_LIMIT_DOWN_POOL,
     MAINBOARD_LIMIT_UP_POOL,
@@ -65,6 +66,9 @@ from market_data_center.persistence.hot_money_postgres import PostgreSQLHotMoney
 from market_data_center.persistence.regulation_event_postgres import (
     PostgreSQLRegulationEventPersistence,
 )
+from market_data_center.persistence.stock_max_minute_volume_postgres import (
+    PostgreSQLStockMaxMinuteVolumePersistence,
+)
 from market_data_center.persistence.stock_volume_average_postgres import (
     PostgreSQLStockVolumeAveragePersistence,
 )
@@ -84,6 +88,7 @@ from market_data_center.providers import (
     create_board_index_provider,
     create_provider,
 )
+from market_data_center.providers.stock_minute_volume import PytdxMinuteVolumeProvider
 from market_data_center.raw_store import LocalRawStore
 from market_data_center.regulation_event_service import RegulationEventCollectionService
 from market_data_center.regulation_service import RegulationMonitorService, RegulationService
@@ -92,12 +97,13 @@ from market_data_center.reliability import (
     compare_daily_bar_sources,
     recover_stale_runs,
 )
-from market_data_center.settings import TushareSettings, WorkerSettings
+from market_data_center.settings import PytdxPoolSettings, TushareSettings, WorkerSettings
 from market_data_center.shareholder_count_batch import ShareholderCountSyncSummary
 from market_data_center.shareholder_count_service import (
     ShareholderCountBackfillTarget,
     ShareholderCountService,
 )
+from market_data_center.stock_max_minute_volume_service import StockMaxMinuteVolumeService
 from market_data_center.stock_pool_service import StockPoolService
 from market_data_center.stock_volume_average_service import StockVolumeAverageService
 from market_data_center.top10_float_holder_service import Top10FloatHolderService
@@ -118,9 +124,10 @@ SHANGHAI_TIME_ZONE = ZoneInfo("Asia/Shanghai")
 class StockDailyIndicatorWorkflowResult:
     as_of_date: date
     calendar_run: IngestionRun
-    snapshot_run: IngestionRun
+    snapshot_run: IngestionRun | None
     cutoff_date: date
     deleted_rows: int
+    minute_volume: MinuteVolumeBuildSummary | None = None
 
 
 class _DragonTigerBackfillIncomplete(RuntimeError):
@@ -141,6 +148,9 @@ def main() -> None:
         return
     if args.dataset == "stock-volume-average-5d-build":
         _run_stock_volume_average_command(args.trade_date)
+        return
+    if args.dataset == "stock-max-minute-volume-build":
+        _run_stock_max_minute_volume_command(args.trade_date, args.symbols)
         return
     if args.dataset == "regulation-events":
         _run_regulation_event_command(args)
@@ -1236,25 +1246,48 @@ def run_stock_daily_indicator_workflow(
         dataset="stock-daily-indicators-bulk",
         trade_date=as_of_date.isoformat(),
     )
-    snapshot_run = _execute_workflow_step(
-        execution,
-        "stock_daily_indicator",
-        2,
-        lambda: _execute_operation(snapshot_args, persistence, raw_store),
-    )
-    allowed_statuses = {IngestionStatus.SUCCEEDED, IngestionStatus.PARTIAL}
-    if snapshot_run is None:
-        raise RuntimeError("stock daily indicator snapshot is not safe for retention")
-    snapshot_ingestion = cast(IngestionRun, snapshot_run)
-    if snapshot_ingestion.status not in allowed_statuses or snapshot_ingestion.accepted_rows <= 0:
-        raise RuntimeError("stock daily indicator snapshot is not safe for retention")
+    minute_volume = None
+    minute_error = None
+    try:
+        minute_volume = _execute_workflow_step(
+            execution,
+            "stock_max_minute_volume",
+            2,
+            lambda: _build_stock_max_minute_volume(persistence._engine, raw_store, as_of_date),
+        )
+    except Exception as error:
+        minute_error = error
+        print(f"stock-max-minute-volume failed: {type(error).__name__}", file=stderr)
+
+    def collect_snapshot() -> IngestionRun:
+        snapshot = cast(
+            IngestionRun | None, _execute_operation(snapshot_args, persistence, raw_store)
+        )
+        if (
+            snapshot is None
+            or snapshot.status not in {IngestionStatus.SUCCEEDED, IngestionStatus.PARTIAL}
+            or snapshot.accepted_rows <= 0
+        ):
+            raise RuntimeError("stock daily indicator snapshot is not safe for retention")
+        return snapshot
+
+    snapshot_ingestion = None
     cutoff_date = _one_month_before(as_of_date)
-    deleted = _execute_workflow_step(
-        execution,
-        "retention",
-        3,
-        lambda: persistence.delete_stock_daily_indicators_before(cutoff_date),
-    )
+    deleted = 0
+    try:
+        snapshot_ingestion = _execute_workflow_step(
+            execution, "stock_daily_indicator", 3, collect_snapshot
+        )
+        deleted = _execute_workflow_step(
+            execution,
+            "retention",
+            4,
+            lambda: persistence.delete_stock_daily_indicators_before(cutoff_date),
+        )
+    except Exception as error:
+        if minute_error is not None:
+            raise
+        print(f"stock-daily-indicator step failed: {type(error).__name__}", file=stderr)
     print(f"stock-daily-indicator-retention cutoff={cutoff_date.isoformat()} deleted={deleted}")
     return StockDailyIndicatorWorkflowResult(
         as_of_date=as_of_date,
@@ -1262,6 +1295,7 @@ def run_stock_daily_indicator_workflow(
         snapshot_run=snapshot_ingestion,
         cutoff_date=cutoff_date,
         deleted_rows=deleted,
+        minute_volume=minute_volume,
     )
 
 
@@ -1741,6 +1775,50 @@ def _run_stock_volume_average_command(trade_date: date) -> None:
         engine.dispose()
 
 
+def _build_stock_max_minute_volume(
+    engine: Engine,
+    raw_store: LocalRawStore,
+    trade_date: date,
+    symbols: tuple[str, ...] | None = None,
+) -> MinuteVolumeBuildSummary:
+    return StockMaxMinuteVolumeService(
+        PostgreSQLStockMaxMinuteVolumePersistence(engine),
+        raw_store,
+        PytdxMinuteVolumeProvider(PytdxPoolSettings().pytdx_pool_path),
+    ).build(trade_date, symbols=symbols)
+
+
+def _run_stock_max_minute_volume_command(trade_date: date, symbols: list[str] | None) -> None:
+    settings = WorkerSettings()  # type: ignore[call-arg]
+    engine = create_engine(
+        sqlalchemy_url(settings.database_url.get_secret_value()), pool_pre_ping=True
+    )
+    try:
+        execution = WorkflowExecutionService(PostgreSQLOperationsPersistence(engine)).start(
+            WorkflowCode.STOCK_DAILY_INDICATOR,
+            datetime.now(UTC),
+            TriggerSource.MANUAL,
+        )
+        try:
+            summary = execution.step(
+                "stock_max_minute_volume",
+                1,
+                lambda: _build_stock_max_minute_volume(
+                    engine,
+                    LocalRawStore(settings.raw_data_root),
+                    trade_date,
+                    tuple(symbols) if symbols is not None else None,
+                ),
+            )
+        except BaseException as error:
+            execution.fail(error)
+            raise
+        execution.succeed()
+        print(dumps(asdict(summary), default=str, sort_keys=True))
+    finally:
+        engine.dispose()
+
+
 def _parser() -> ArgumentParser:
     parser = ArgumentParser(prog="market-data-center")
     parser.add_argument(
@@ -2141,6 +2219,14 @@ def _parser() -> ArgumentParser:
         help="build the certified five-market-day volume average including an exact target day",
     )
     volume_average.add_argument("--trade-date", required=True, type=date.fromisoformat)
+    minute_volume = subparsers.add_parser(
+        "stock-max-minute-volume-build",
+        help="build native exact-date minute volume peak; never scale for charts",
+    )
+    minute_volume.add_argument("--trade-date", required=True, type=date.fromisoformat)
+    minute_volume.add_argument(
+        "--symbols", nargs="+", help="optional explicit subset; default exact-date stock universe"
+    )
 
     closing_highs = subparsers.add_parser(
         "close-price-new-highs-120d-build",

@@ -450,6 +450,7 @@ def localize_openapi(schema: dict[str, Any]) -> dict[str, Any]:
 # Explicit stock response catalog: these rules must never annotate bond/index
 # quantities or count fields just because their names look similar.
 _STOCK_QUANTITY_MODELS = {
+    "StockMaxMinuteVolumeItem",
     "DailyBarItem",
     "DailyLimitUpListItem",
     "DailyLimitDownListItem",
@@ -465,6 +466,7 @@ _STOCK_QUANTITY_MODELS = {
     "SourceMinuteItem",
 }
 _STOCK_SHARE_FIELDS = {
+    "max_minute_volume_shares",
     "volume",
     "volume_shares",
     "cumulative_volume",

@@ -83,7 +83,7 @@ WORKFLOW_DEFINITIONS = (
         "stock_daily_indicator",
         "股票每日指标更新",
         "同步交易日历、全市场每日指标并执行安全保留。",
-        ("trading_calendar", "stock_daily_indicator", "retention"),
+        ("trading_calendar", "stock_max_minute_volume", "stock_daily_indicator", "retention"),
     ),
     WorkflowDefinition(
         "stale_run_recovery",

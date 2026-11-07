@@ -13341,6 +13341,226 @@
         "title": "SourceThemeStockItem",
         "type": "object"
       },
+      "StockMaxMinuteVolumeItem": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_count": {
+            "description": "该股票目标交易日应有的合法一分钟量柱数, 固定240",
+            "minimum": 0.0,
+            "title": "Expected Count",
+            "type": "integer"
+          },
+          "max_minute_volume_shares": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "当日完整且单位已认证的原生一分钟成交量最大值, 单位股; 缺失为null 成交量100股就是100股，不是100手；缺失为null。",
+            "examples": [
+              100
+            ],
+            "title": "Max Minute Volume Shares",
+            "x-business": "stock_traded_volume",
+            "x-unit": "share"
+          },
+          "observed_count": {
+            "description": "该股票实际获取的目标日一分钟量柱数",
+            "minimum": 0.0,
+            "title": "Observed Count",
+            "type": "integer"
+          },
+          "peak_at": {
+            "anyOf": [
+              {
+                "example": "2026-09-18 09:35:00",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "最早峰值量柱的上海时间结束标签",
+            "example": "2026-11-03 09:58:00",
+            "title": "Peak At"
+          },
+          "quality_reasons": {
+            "description": "缺失或认证失败的稳定原因码, 完整值为空数组",
+            "items": {
+              "type": "string"
+            },
+            "title": "Quality Reasons",
+            "type": "array"
+          },
+          "quality_status": {
+            "description": "目标日完整性及数量认证状态",
+            "enum": [
+              "complete",
+              "missing"
+            ],
+            "title": "Quality Status",
+            "type": "string"
+          },
+          "symbol": {
+            "description": "带交易所前缀的标准证券代码。",
+            "pattern": "^(SSE|SZSE|BSE):[0-9]{6}$",
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "max_minute_volume_shares",
+          "peak_at",
+          "expected_count",
+          "observed_count",
+          "quality_status",
+          "quality_reasons"
+        ],
+        "title": "StockMaxMinuteVolumeItem",
+        "type": "object"
+      },
+      "StockMaxMinuteVolumeQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "symbols": {
+            "description": "标准股票代码集合, 最多500个, 按请求顺序去重",
+            "items": {
+              "pattern": "^(SSE|SZSE|BSE):[0-9]{6}$",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Symbols",
+            "type": "array"
+          },
+          "trade_date": {
+            "description": "必填准确交易日, 不回退历史日期",
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbols",
+          "trade_date"
+        ],
+        "title": "StockMaxMinuteVolumeQuery",
+        "type": "object"
+      },
+      "StockMaxMinuteVolumeResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "algorithm_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "计算算法版本。",
+            "title": "Algorithm Version"
+          },
+          "calculated_at": {
+            "anyOf": [
+              {
+                "example": "2026-09-18 09:35:00",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "计算批次的上海时间",
+            "example": "2026-11-03 20:31:00",
+            "title": "Calculated At"
+          },
+          "calculation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "计算批次标识。",
+            "title": "Calculation Id"
+          },
+          "items": {
+            "description": "返回的数据记录列表。",
+            "items": {
+              "$ref": "#/components/schemas/StockMaxMinuteVolumeItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "example": "2026-09-18 09:35:00",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "当前不可变版本的上海时间发布时刻",
+            "example": "2026-11-03 20:31:00",
+            "title": "Published At"
+          },
+          "status": {
+            "description": "状态。",
+            "enum": [
+              "not_ready",
+              "partial",
+              "ready"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "trade_date": {
+            "description": "交易日。",
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "不可变结果版本。",
+            "title": "Version"
+          }
+        },
+        "required": [
+          "trade_date",
+          "status",
+          "version",
+          "calculation_id",
+          "algorithm_version",
+          "calculated_at",
+          "published_at",
+          "items"
+        ],
+        "title": "StockMaxMinuteVolumeResponse",
+        "type": "object"
+      },
       "StockQuoteLevel": {
         "additionalProperties": false,
         "properties": {
@@ -20708,6 +20928,83 @@
         "summary": "检查 API 服务就绪状态",
         "tags": [
           "系统状态"
+        ]
+      }
+    },
+    "/v1/stock-daily-indicators/minute-volume-peak/query": {
+      "post": {
+        "description": "只读单一已发布计算版本, 最多500只股票; 无发布时not_ready, 不触发采集或回退日期。",
+        "operationId": "query_stock_max_minute_volume_v1_stock_daily_indicators_minute_volume_peak_query_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StockMaxMinuteVolumeQuery"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StockMaxMinuteVolumeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "按准确交易日查询最大一分钟成交股数",
+        "tags": [
+          "市场数据"
         ]
       }
     },

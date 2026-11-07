@@ -138,6 +138,9 @@ from market_data_center.public_api.queries import (
     PublicQueryUnavailable,
 )
 from market_data_center.public_api.regulation_monitor import router as regulation_monitor_router
+from market_data_center.public_api.stock_max_minute_volume import (
+    router as stock_max_minute_volume_router,
+)
 from market_data_center.public_api.technical_factors import router as technical_factors_router
 from market_data_center.public_api.tencent_quote_live import (
     DirectTencentQuoteLiveService,
@@ -232,6 +235,7 @@ def create_app(
     )
     app.include_router(auction_sources_router, dependencies=[Depends(_require_api_key)])
     app.include_router(technical_factors_router, dependencies=[Depends(_require_api_key)])
+    app.include_router(stock_max_minute_volume_router, dependencies=[Depends(_require_api_key)])
     app.state.kaipanla_alerts_provider = kaipanla_alerts_provider or KaipanlaAlertsProvider(
         timeout_seconds=configured.fastapi_kaipanla_timeout_seconds
     )

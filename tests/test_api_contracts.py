@@ -38,6 +38,7 @@ EXPECTED_ENDPOINTS = {
     "query_regulation_monitor_inputs",
     "query_stock_technical_factors",
     "query_stock_technical_factors_by_codes",
+    "query_stock_max_minute_volume",
     "query_auction_one_price_limits",
     "query_call_auction_grab_lines",
     "query_call_auction_indicative_details",

@@ -10,6 +10,9 @@ Tushare逐字段业务、真实单位、来源证据及运行时适配状态见
 Provider、endpoint、Raw schema、品种和字段。未登记或明确未核实的规则抛出
 `ProviderError`，不能按数量级猜测，不能把未知数值改为 null 后发布成功批次。
 静态规则仅证明转换约定，不能代替历史 ingestion 与 Raw hash 的逐批认证。
+ADR-0077新增的 `pytdx.stock_minute_volume.v1` 还强制核对peer、category、market、交易所及
+单位证据版本；五字段静态注册身份不足以准入。普通股类别、股票/日期及原生量编码随Raw保存，
+新采集与重放分别验证，完整源身份进入逐批认证哈希；未知身份失败关闭。
 
 标准股票数量为整数股，零保留为零，缺失保留为 null。来源 `0.37` 手精确转换为
 `37` 股，`0.001` 手因不能表示整数股而失败。拒绝 bool、float、负数、非有限值和
@@ -19,6 +22,7 @@ PostgreSQL bigint 溢出。Decimal 上下文精度不能使转换发生舍入。
 |---|---|---|---|---|
 | akshare / stock_zh_a_hist | akshare.daily_bar.v1、v2 | 股票 / 成交量 | 手 ×100；金额元 | [AKShare 东财历史行情字段表](https://akshare.akfamily.xyz/data/stock/stock.html#id20)及日 K 适配器测试 |
 | pytdx / get_security_bars | pytdx.remote_daily_bar.v1、v2 | 股票 / volume | 手 ×100；金额元 | ADR-0024、Issue #90 与现有精确协议解码器回归 |
+| pytdx / get_security_bars category8 | pytdx.stock_minute_volume.v1 | 普通股票 / volume；仅103.251.85.94:7709的SSE/1、SZSE/0 | 股 ×1；不继承日K手规则，不准入BSE或其他peer | ADR-0077、[跨市场8样本核验](minute-volume-unit-evidence-2026-11-08.md)；运行时强制完整源身份及原生编码重放 |
 | pytdx / local_day_file | pytdx.local_daily_bar.v1、v2、v3 | 股票 / volume | uint32 股，不乘100 | 本地 `.day` 二进制读取契约及合成文件回归 |
 | baostock / query_history_k_data_plus | baostock.daily_bar.v1 | 股票 / volume | 股 | 既有 BaoStock 股票日 K 契约及 adapter/replay 测试；不扩大到指数 |
 | tushare / daily | tushare.daily_bar.v1 | 股票 / vol | 手 ×100；amount 千元 ×1000 | [Tushare 日线字段表](https://tushare.pro/document/2?doc_id=27)及既有 adapter/replay 测试 |

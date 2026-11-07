@@ -1322,6 +1322,39 @@
         "type": "string",
         "const": "stock-quantity.v1"
       }
+    },
+    {
+      "name": "market_stock_max_minute_volume",
+      "description": "Read the source-reported maximum integral one-minute share quantity for an exact nonfuture trade date from one immutable publication. Missing results are null with reasons; no fallback date, minute details, calculation, or collection. Requested-symbol-only coverage is partial.",
+      "endpoint": "query_stock_max_minute_volume",
+      "read_only": true,
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "p_symbols",
+          "p_trade_date"
+        ],
+        "properties": {
+          "p_symbols": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 500,
+            "items": {
+              "type": "string",
+              "pattern": "^(SSE|SZSE|BSE):[0-9]{6}$"
+            }
+          },
+          "p_trade_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Required exact nonfuture Asia/Shanghai trading date; no fallback."
+          }
+        }
+      },
+      "output_schema": {
+        "$ref": "postgrest-openapi-v1.json#/components/schemas/StockMaxMinuteVolumeResponse"
+      }
     }
   ],
   "quantity_unit_contract_version": "stock-quantity.v1"

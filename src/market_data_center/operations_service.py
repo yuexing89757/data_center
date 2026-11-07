@@ -24,6 +24,7 @@ from market_data_center.domain.regulation import (
     RegulationCalculationSummary,
     RegulationRunStatus,
 )
+from market_data_center.domain.stock_max_minute_volume import MinuteVolumeBuildSummary
 from market_data_center.domain.stock_pool import StockPoolBuildSummary
 from market_data_center.domain.stock_volume_average import VolumeAverageBuildSummary
 from market_data_center.dragon_tiger_service import (
@@ -61,12 +62,15 @@ class WorkflowExecution:
         self._accepted_rows = 0
         self._rejected_rows = 0
         self._partial = False
+        self._failed_steps = 0
+        self._completed_steps = 0
 
     def step(self, job_code: str, sequence_no: int, operation: Callable[[], T]) -> T:
         job = self._persistence.start_job(self.run.workflow_run_id, job_code, sequence_no)
         try:
             result = operation()
         except BaseException as error:
+            self._failed_steps += 1
             fetched = accepted = rejected = 0
             if isinstance(error, (DataCleanupFailure, QualityCleanupFailure, RawCleanupFailure)):
                 fetched, accepted, rejected, _ = _result_statistics(error.result)
@@ -87,6 +91,10 @@ class WorkflowExecution:
         self._accepted_rows += accepted
         self._rejected_rows += rejected
         self._partial = self._partial or status is ExecutionStatus.PARTIAL
+        if status is ExecutionStatus.FAILED:
+            self._failed_steps += 1
+        else:
+            self._completed_steps += 1
         self._persistence.finish_job(
             job.finish(
                 status,
@@ -101,7 +109,13 @@ class WorkflowExecution:
         return result
 
     def succeed(self) -> None:
-        status = ExecutionStatus.PARTIAL if self._partial else ExecutionStatus.SUCCEEDED
+        status = (
+            ExecutionStatus.FAILED
+            if self._failed_steps and not self._completed_steps
+            else ExecutionStatus.PARTIAL
+            if self._partial or self._failed_steps
+            else ExecutionStatus.SUCCEEDED
+        )
         self.run = self.run.finish(
             status,
             datetime.now(UTC),
@@ -143,6 +157,17 @@ def safe_error_summary(error: BaseException) -> str:
 
 
 def _result_statistics(result: object) -> tuple[int, int, int, ExecutionStatus]:
+    if isinstance(result, MinuteVolumeBuildSummary):
+        missing = result.candidate_count - result.complete_count
+        status = (
+            ExecutionStatus.FAILED
+            if result.status in {"not_ready", "failed"}
+            or (result.candidate_count > 0 and result.complete_count == 0)
+            else ExecutionStatus.PARTIAL
+            if missing or result.status == "partial"
+            else ExecutionStatus.SUCCEEDED
+        )
+        return result.candidate_count, result.complete_count, missing, status
     if isinstance(result, VolumeAverageBuildSummary):
         incomplete = result.candidate_count - result.complete_count
         return (

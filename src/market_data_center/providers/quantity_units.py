@@ -57,6 +57,15 @@ def _rules() -> dict[QuantityIdentity, QuantityUnitRule]:
     )
     add(
         "pytdx",
+        "get_security_bars",
+        ("pytdx.stock_minute_volume.v1",),
+        ("volume",),
+        "share",
+        "ADR-0077: mandatory peer/category/market evidence identity gate; "
+        "docs/minute-volume-unit-evidence-2026-11-08.md; never a generic daily/TDX rule",
+    )
+    add(
+        "pytdx",
         "local_day_file",
         ("pytdx.local_daily_bar.v1", "pytdx.local_daily_bar.v2", "pytdx.local_daily_bar.v3"),
         ("volume",),
@@ -351,6 +360,7 @@ QUANTITY_UNIT_RULES = MappingProxyType(_rules())
 # Explicit endpoint/field pairs keep quantity and monetary proof independent.
 QUANTITY_FIELD_GROUP_FIELDS: Mapping[str, Mapping[str, tuple[str, ...]]] = MappingProxyType(
     {
+        "stock_minute_volume.volume": {"get_security_bars": ("volume",)},
         "daily_bar.volume": {
             "stock_zh_a_hist": ("成交量",),
             "get_security_bars": ("volume",),
@@ -443,7 +453,12 @@ QUANTITY_FIELD_GROUP_FIELDS: Mapping[str, Mapping[str, tuple[str, ...]]] = Mappi
 
 
 def quantity_group_rules(
-    *, provider: str, schema_version: str, field_group: str, instrument_type: str = "stock"
+    *,
+    provider: str,
+    schema_version: str,
+    field_group: str,
+    instrument_type: str = "stock",
+    source_context: Mapping[str, object] | None = None,
 ) -> tuple[tuple[QuantityIdentity, QuantityUnitRule], ...]:
     fields_by_endpoint = QUANTITY_FIELD_GROUP_FIELDS.get(field_group, {})
     registered_endpoints = {
@@ -479,6 +494,7 @@ def quantity_group_rules(
             schema_version=identity[2],
             instrument_type=identity[3],
             field=identity[4],
+            source_context=source_context,
         )
     return matches
 
@@ -491,6 +507,10 @@ def validate_quantity_metadata(
     replay: bool = False,
 ) -> None:
     """Absent legacy metadata is allowed; explicit claims must match source evidence."""
+    if schema_version == "pytdx.stock_minute_volume.v1":
+        _validate_minute_identity(
+            provider, "get_security_bars", schema_version, "stock", "volume", request_params
+        )
     expected: dict[str, object] = {
         "provider_schema_version": schema_version,
         "quantity_unit_contract_version": UNIT_CONTRACT_VERSION,
@@ -554,14 +574,45 @@ def validate_quantity_metadata(
 
 
 def quantity_unit_rule(
-    *, provider: str, endpoint: str, schema_version: str, instrument_type: str, field: str
+    *,
+    provider: str,
+    endpoint: str,
+    schema_version: str,
+    instrument_type: str,
+    field: str,
+    source_context: Mapping[str, object] | None = None,
 ) -> QuantityUnitRule:
+    if schema_version == "pytdx.stock_minute_volume.v1":
+        _validate_minute_identity(
+            provider, endpoint, schema_version, instrument_type, field, source_context
+        )
     identity = provider, endpoint, schema_version, instrument_type, field
     rule = QUANTITY_UNIT_RULES.get(identity)
     if rule is None or rule.source_unit is None:
         reason = "not registered" if rule is None else rule.evidence
         raise ProviderError(f"quantity unit contract unverified for {'/'.join(identity)}: {reason}")
     return rule
+
+
+def _validate_minute_identity(
+    provider: str,
+    endpoint: str,
+    schema_version: str,
+    instrument_type: str,
+    field: str,
+    source_context: Mapping[str, object] | None,
+) -> None:
+    if source_context is None or (provider, endpoint, schema_version, instrument_type, field) != (
+        "pytdx",
+        "get_security_bars",
+        "pytdx.stock_minute_volume.v1",
+        "stock",
+        "volume",
+    ):
+        raise ProviderError("quantity unit contract requires verified minute source identity")
+    from market_data_center.providers.stock_minute_volume import validate_minute_volume_identity
+
+    validate_minute_volume_identity(source_context)
 
 
 def normalize_stock_quantity(value: object, *, source_unit: str, context: str) -> int | None:
@@ -611,6 +662,7 @@ def normalize_source_stock_quantity(
     schema_version: str,
     instrument_type: str,
     field: str,
+    source_context: Mapping[str, object] | None = None,
 ) -> int | None:
     rule = quantity_unit_rule(
         provider=provider,
@@ -618,6 +670,7 @@ def normalize_source_stock_quantity(
         schema_version=schema_version,
         instrument_type=instrument_type,
         field=field,
+        source_context=source_context,
     )
     assert rule.source_unit is not None
     return normalize_stock_quantity(

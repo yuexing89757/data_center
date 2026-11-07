@@ -1,6 +1,6 @@
 """Unit admission and atomic evidence for newly normalized facts (ADR-0068)."""
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import fields, is_dataclass
 from hashlib import sha256
 from json import dumps
@@ -19,6 +19,7 @@ from market_data_center.providers.quantity_units import (
 )
 
 _GROUPS = {
+    "stock_minute_volume": ("stock_minute_volume.volume",),
     "daily_bar": ("daily_bar.volume", "daily_bar.amount"),
     "capital": ("capital.rights_issue.quantities",),
     "stock_daily_indicator": ("stock_daily_indicator.shares",),
@@ -78,10 +79,21 @@ def check_standard_quantities(records: Iterable[object]) -> None:
 
 
 def build_quantity_certificates(
-    *, ingestion_id: UUID, provider: str, dataset: str, manifest: RawManifest
+    *,
+    ingestion_id: UUID,
+    provider: str,
+    dataset: str,
+    manifest: RawManifest,
+    request_params: Mapping[str, object] | None = None,
 ) -> tuple[dict[str, object], ...]:
     """Describe a current adapter's output; historical certification must replay Raw."""
     groups = _GROUPS.get(dataset, ())
+    if dataset == "stock_minute_volume":
+        if manifest.schema_version != "pytdx.stock_minute_volume.v1" or request_params is None:
+            raise ProviderError("minute quantity certification requires exact source identity")
+        validate_quantity_metadata(
+            provider=provider, schema_version=manifest.schema_version, request_params=request_params
+        )
     if dataset == "five_level_quote" and provider == "tencent_quote":
         groups = ("stock_quote_snapshot.quantities",)
     result: list[dict[str, object]] = []
@@ -95,8 +107,9 @@ def build_quantity_certificates(
             else "index"
             if dataset == "daily_bar" and manifest.schema_version == "tushare.index_daily.v1"
             else "stock",
+            source_context=request_params,
         )
-        evidence = {
+        evidence: dict[str, object] = {
             "ingestion_id": str(ingestion_id),
             "raw_id": str(manifest.raw_id),
             "raw_hashes": [manifest.content_sha256],
@@ -111,6 +124,8 @@ def build_quantity_certificates(
                 for identity, rule in rules
             ],
         }
+        if dataset == "stock_minute_volume":
+            evidence["source_context"] = dict(request_params or {})
         evidence_hash = sha256(dumps(evidence, sort_keys=True).encode()).hexdigest()
         result.append(
             {
@@ -174,6 +189,7 @@ def quantity_certificates(
         provider=run.provider_code.value,
         dataset=run.dataset_code.value,
         manifest=manifest,
+        request_params=run.request_params,
     )
 
 

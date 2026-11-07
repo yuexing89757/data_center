@@ -1162,6 +1162,55 @@
           }
         ]
       }
+    },
+    "/rpc/query_stock_max_minute_volume": {
+      "post": {
+        "operationId": "queryStockMaxMinuteVolume",
+        "summary": "Read certified source-reported maximum minute volume for an exact date and one publication version",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "p_symbols",
+                  "p_trade_date"
+                ],
+                "properties": {
+                  "p_symbols": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 500,
+                    "items": {
+                      "type": "string",
+                      "pattern": "^(SSE|SZSE|BSE):[0-9]{6}$"
+                    }
+                  },
+                  "p_trade_date": {
+                    "type": "string",
+                    "format": "date",
+                    "description": "Required exact nonfuture Asia/Shanghai trading date; no fallback."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Exact requested date; not_ready never falls back; requested-symbol-only coverage remains partial. No minute detail or collection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StockMaxMinuteVolumeResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -9554,6 +9603,130 @@
           "issue_size",
           "quantity_quality"
         ]
+      },
+      "StockMaxMinuteVolumeItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "symbol",
+          "max_minute_volume_shares",
+          "peak_at",
+          "expected_count",
+          "observed_count",
+          "quality_status",
+          "quality_reasons"
+        ],
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "pattern": "^(SSE|SZSE|BSE):[0-9]{6}$"
+          },
+          "max_minute_volume_shares": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "Source-reported native one-minute quantity peak in integral shares; null for incomplete or uncertified data; explicit zero remains zero."
+          },
+          "peak_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "expected_count": {
+            "type": "integer",
+            "const": 240
+          },
+          "observed_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "quality_status": {
+            "type": "string",
+            "enum": [
+              "complete",
+              "missing"
+            ]
+          },
+          "quality_reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "StockMaxMinuteVolumeResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "trade_date",
+          "status",
+          "version",
+          "calculation_id",
+          "algorithm_version",
+          "calculated_at",
+          "published_at",
+          "items"
+        ],
+        "properties": {
+          "trade_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "not_ready",
+              "partial",
+              "ready"
+            ]
+          },
+          "version": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "calculation_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "algorithm_version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "calculated_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "published_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "items": {
+            "type": "array",
+            "maxItems": 500,
+            "items": {
+              "$ref": "#/components/schemas/StockMaxMinuteVolumeItem"
+            }
+          }
+        }
       }
     },
     "requestBodies": {
