@@ -2,7 +2,6 @@
 
 # ruff: noqa: F811 - imported fixtures are injected by pytest.
 
-from datetime import datetime
 from json import dumps
 from uuid import uuid4
 from zoneinfo import ZoneInfo
@@ -21,7 +20,11 @@ pytestmark = pytest.mark.integration
 
 def test_live_bridge_certificate_is_atomic_and_reuse_does_not_certify_legacy(database_engine):
     _facts(database_engine)
-    today = datetime.now(ZoneInfo("Asia/Shanghai"))
+    # Use the database clock: a disposable VM can lag the host by milliseconds.
+    with database_engine.connect() as connection:
+        today = connection.scalar(text("select current_timestamp")).astimezone(
+            ZoneInfo("Asia/Shanghai")
+        )
     ingestion_id, raw_id = uuid4(), uuid4()
     parameters = {
         "id": ingestion_id,

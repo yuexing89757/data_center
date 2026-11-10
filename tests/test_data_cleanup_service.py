@@ -99,7 +99,7 @@ def test_cleanup_service_deletes_only_after_cutoff_is_resolved() -> None:
         deleted_rows=123,
         history_cutoff_date=date(2026, 3, 3),
         history_deleted_rows=45,
-        quality_result_cutoff_date=date(2026, 8, 4),
+        quality_result_cutoff_date=date(2026, 8, 19),
         quality_result_deleted_rows=0,
     )
     assert persistence.requested_dates == (date(2026, 9, 3), 3)
@@ -139,7 +139,7 @@ def test_cleanup_summary_rejects_negative_deleted_count() -> None:
             deleted_rows=-1,
             history_cutoff_date=date(2026, 3, 3),
             history_deleted_rows=0,
-            quality_result_cutoff_date=date(2026, 8, 4),
+            quality_result_cutoff_date=date(2026, 8, 19),
             quality_result_deleted_rows=0,
         )
 
@@ -153,13 +153,13 @@ def test_cleanup_summary_rejects_negative_quality_result_deleted_count() -> None
             deleted_rows=0,
             history_cutoff_date=date(2026, 3, 3),
             history_deleted_rows=0,
-            quality_result_cutoff_date=date(2026, 8, 4),
+            quality_result_cutoff_date=date(2026, 8, 19),
             quality_result_deleted_rows=-1,
         )
 
 
-def test_quality_result_cutoff_returns_thirty_calendar_days_before() -> None:
-    assert quality_result_cutoff(date(2026, 9, 16)) == date(2026, 8, 17)
+def test_quality_result_cutoff_returns_fifteen_calendar_days_before() -> None:
+    assert quality_result_cutoff(date(2026, 9, 16)) == date(2026, 9, 1)
 
 
 def test_history_failure_preserves_committed_online_counts():
@@ -179,8 +179,8 @@ def test_history_failure_preserves_committed_online_counts():
 
 
 def test_quality_result_cutoff_crosses_month_and_year_boundaries() -> None:
-    assert quality_result_cutoff(date(2026, 3, 1)) == date(2026, 1, 30)
-    assert quality_result_cutoff(date(2027, 1, 15)) == date(2026, 12, 16)
+    assert quality_result_cutoff(date(2026, 3, 1)) == date(2026, 2, 14)
+    assert quality_result_cutoff(date(2027, 1, 15)) == date(2026, 12, 31)
 
 
 @pytest.mark.parametrize(

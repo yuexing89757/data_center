@@ -53,6 +53,13 @@ def test_workflow_window_shared_lock_and_reports(
                 )
             return QualityCleanupResult()
 
+    class Direct(Quality):
+        def __init__(self, repo):
+            pass
+
+        def run(self, day, budget):
+            return super().run(day, None, budget)
+
     class Facts:
         def __init__(self, engine):
             pass
@@ -98,7 +105,7 @@ def test_workflow_window_shared_lock_and_reports(
             expected = {
                 "cleanup_call_auction_market_series_snapshots": 1,
                 "compress_raw": 2,
-                "archive_auction_quality": 3,
+                "purge_expired_audit_inputs": 3,
                 "archive_history_results": 4,
                 "purge_expired_raw": 5,
             }
@@ -117,6 +124,8 @@ def test_workflow_window_shared_lock_and_reports(
     for name, fake in [
         ("QualityArchivePersistence", Repo),
         ("QualityCleanupService", Quality),
+        ("DirectRetentionService", Direct),
+        ("PostgreSQLDirectRetentionPersistence", Repo),
         ("PostgreSQLPersistence", Facts),
         ("DataCleanupService", Snapshots),
         ("RawCompressionPersistence", Repo),
@@ -151,7 +160,7 @@ def test_workflow_window_shared_lock_and_reports(
             "snapshots",
             "compress_raw",
             "raw",
-            "archive_auction_quality",
+            "purge_expired_audit_inputs",
             "quality",
             "archive_history_results",
             "history",
@@ -162,7 +171,7 @@ def test_workflow_window_shared_lock_and_reports(
         ]
         assert result.partial == raw_partial
     else:
-        assert calls == ["start", "archive_auction_quality", "partial"]
+        assert calls == ["start", "purge_expired_audit_inputs", "partial"]
         assert result.errors == ("outside_maintenance_window",)
 
 

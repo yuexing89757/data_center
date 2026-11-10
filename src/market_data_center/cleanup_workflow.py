@@ -9,8 +9,16 @@ from time import monotonic
 from sqlalchemy import Engine
 
 from market_data_center.data_cleanup_service import DataCleanupFailure, DataCleanupService
+from market_data_center.direct_retention_service import (
+    DirectRetentionResult,
+    DirectRetentionService,
+    retention_cutoff,
+)
 from market_data_center.history_cleanup_service import HistoryCleanupResult, HistoryCleanupService
 from market_data_center.operations_service import WorkflowExecution
+from market_data_center.persistence.direct_retention_postgres import (
+    PostgreSQLDirectRetentionPersistence,
+)
 from market_data_center.persistence.history_retention_postgres import HistoryRetentionPersistence
 from market_data_center.persistence.postgres import PostgreSQLPersistence
 from market_data_center.persistence.quality_archive_postgres import QualityArchivePersistence
@@ -19,10 +27,8 @@ from market_data_center.persistence.raw_retention_postgres import RawRetentionPe
 from market_data_center.quality_cleanup_service import (
     CleanupBudget,
     QualityCleanupFailure,
-    QualityCleanupResult,
     QualityCleanupService,
     maintenance_seconds,
-    quality_cutoff,
 )
 from market_data_center.raw_cleanup_service import (
     RawCleanupFailure,
@@ -38,7 +44,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class CleanupWorkflowResult:
-    quality: QualityCleanupResult
+    quality: DirectRetentionResult
     raw: RawCleanupResult | None = None
     history: HistoryCleanupResult | None = None
     raw_retention: RawRetentionResult | None = None
@@ -88,7 +94,9 @@ def run_cleanup_workflow(
         run_id,
         reference_date,
         now,
-        quality_cutoff(reference_date),
+        datetime.combine(
+            retention_cutoff(reference_date), datetime.min.time(), ZoneInfo("Asia/Shanghai")
+        ),
         service.disk_report(),
         raw_before=raw_cutoff(reference_date),
     )
@@ -100,9 +108,9 @@ def run_cleanup_workflow(
     try:
         if not duration:
             result = execution.step(
-                "archive_auction_quality",
+                "purge_expired_audit_inputs",
                 3,
-                lambda: QualityCleanupResult(errors=("outside_maintenance_window",)),
+                lambda: DirectRetentionResult(errors=("outside_maintenance_window",)),
             )
         else:
             lost = Event()
@@ -136,11 +144,12 @@ def run_cleanup_workflow(
                 )
                 report["raw"] = raw_result.report()
                 result = execution.step(
-                    "archive_auction_quality",
+                    "purge_expired_audit_inputs",
                     3,
-                    lambda: service.run(
+                    lambda: DirectRetentionService(
+                        PostgreSQLDirectRetentionPersistence(engine)
+                    ).run(
                         reference_date,
-                        run_id,
                         CleanupBudget(
                             min(budget.deadline - 900, monotonic() + 300), cancelled=lost.is_set
                         ),

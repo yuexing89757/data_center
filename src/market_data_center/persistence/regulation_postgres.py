@@ -618,14 +618,19 @@ def _monitor_checkpoint(
         text("select regulation.monitor_chain_current(:id)"), {"id": parent}
     ).scalar_one():
         raise ValueError("monitor history was superseded; recompute from the first changed day")
-    states = connection.execute(
+    checkpoint = connection.execute(
         text("""
-        select payload->'state' from regulation.monitor_input
-        where calculation_id=:id order by symbol
+        select m.inputs_expired_at, array(
+            select q.payload->'state' from regulation.monitor_input q
+            where q.calculation_id=m.calculation_id order by q.symbol
+        ) as states
+        from regulation.monitor_context m where m.calculation_id=:id
     """),
         {"id": parent},
-    ).scalars()
-    return parent, tuple(decode_monitor_state(state) for state in states)
+    ).one()
+    if checkpoint.inputs_expired_at is not None:
+        raise ValueError("monitor checkpoint inputs expired under the 15-day retention policy")
+    return parent, tuple(decode_monitor_state(state) for state in checkpoint.states)
 
 
 def _load_active_rules(connection: Connection, trade_date: date) -> tuple[RegulationRule, ...]:

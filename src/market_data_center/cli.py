@@ -1670,8 +1670,12 @@ def _dragon_tiger_provider(provider_code: str) -> DragonTigerProvider:
 
 def _run_cleanup_command(args: Namespace) -> None:
     from market_data_center.cleanup_workflow import run_cleanup_workflow
+    from market_data_center.direct_retention_service import DirectRetentionService
     from market_data_center.history_retention import month_cutoff
     from market_data_center.operations_service import WorkflowExecutionService
+    from market_data_center.persistence.direct_retention_postgres import (
+        PostgreSQLDirectRetentionPersistence,
+    )
     from market_data_center.persistence.history_retention_postgres import (
         HistoryRetentionPersistence,
     )
@@ -1680,7 +1684,6 @@ def _run_cleanup_command(args: Namespace) -> None:
     from market_data_center.persistence.raw_compression_postgres import RawCompressionPersistence
     from market_data_center.persistence.raw_retention_postgres import RawRetentionPersistence
     from market_data_center.quality_archive import read_quality_archive
-    from market_data_center.quality_cleanup_service import QualityCleanupService
     from market_data_center.raw_cleanup_service import raw_cutoff
     from market_data_center.raw_retention_service import retention_cutoff
 
@@ -1693,7 +1696,6 @@ def _run_cleanup_command(args: Namespace) -> None:
     )
     try:
         repo = QualityArchivePersistence(engine)
-        service = QualityCleanupService(repo, settings.raw_data_root)
         now = datetime.now(SHANGHAI_TIME_ZONE)
         if args.dataset == "quality-archive-inspect":
             archives = repo.archives(args.ingestion_id)
@@ -1714,7 +1716,9 @@ def _run_cleanup_command(args: Namespace) -> None:
             print(
                 dumps(
                     {
-                        "quality": service.preview(now.date()),
+                        "direct_retention": DirectRetentionService(
+                            PostgreSQLDirectRetentionPersistence(engine)
+                        ).preview(now.date()),
                         "raw": RawCompressionPersistence(engine).preview(raw_cutoff(now.date())),
                         "raw_retention": RawRetentionPersistence(engine).preview(
                             retention_cutoff(now.date())

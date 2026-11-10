@@ -1827,10 +1827,14 @@ def test_quality_archive_candidate_boundaries_and_rls(database_engine, quality_a
     candidates = repo.quality_candidates(cutoff)
     assert [g.ingestion_id for g in candidates] == [good_id]
     with repo.transaction() as c:
-        # A bare DELETE cannot erase even an eligible row without archive evidence.
+        # ADR-0078 supersedes the old archive prerequisite for every expired rule.
         assert (
-            c.execute(text("delete from audit.quality_result returning quality_result_id")).all()
-            == []
+            len(
+                c.execute(
+                    text("delete from audit.quality_result returning quality_result_id")
+                ).all()
+            )
+            == 10
         )
 
 
@@ -1856,7 +1860,7 @@ def test_quality_archive_metadata_permissions(migrated_database_url):
                 c.execute(statement)
 
 
-def test_quality_archive_exact_ids_do_not_authorize_unlisted_or_error_rows(
+def test_quality_archive_metadata_does_not_override_fifteen_day_boundary(
     database_engine, quality_archive_worker, tmp_path
 ):
     from datetime import timedelta
@@ -1870,13 +1874,13 @@ def test_quality_archive_exact_ids_do_not_authorize_unlisted_or_error_rows(
     rows = repo.load_quality_rows(group)
     archive = write_quality_archive(tmp_path, group, rows, operation_id=uuid4())
     repo.commit_quality_archive(tmp_path, archive, rows, cutoff, checkpoint=lambda: None)
-    _seed_archive_quality(
+    _, expired = _seed_archive_quality(
         database_engine, ingestion_id=ingestion_id, created=group.first_created_at
     )
     _, protected = _seed_archive_quality(
-        database_engine, ingestion_id=ingestion_id, severity="error", created=group.first_created_at
+        database_engine, ingestion_id=ingestion_id, severity="error", created=datetime.now(UTC)
     )
-    # A damaged registration which lists ERROR must still not authorize deletion.
+    # Even a damaged registration cannot authorize deletion of recent evidence.
     with database_engine.begin() as c:
         c.execute(
             text(
@@ -1886,10 +1890,9 @@ def test_quality_archive_exact_ids_do_not_authorize_unlisted_or_error_rows(
             {"id": protected, "ingestion": ingestion_id},
         )
     with repo.transaction() as c:
-        assert (
-            c.execute(text("delete from audit.quality_result returning quality_result_id")).all()
-            == []
-        )
+        assert c.execute(
+            text("delete from audit.quality_result returning quality_result_id")
+        ).all() == [(expired,)]
 
 
 def test_quality_archive_report_lifecycle_and_owned_temp(database_engine, quality_archive_worker):

@@ -11,6 +11,7 @@ from market_data_center.call_auction_market_series_service import (
 from market_data_center.call_auction_market_service import CallAuctionMarketCollectionSummary
 from market_data_center.daily_bar_batch import DailyBarBulkSummary
 from market_data_center.data_cleanup_service import DataCleanupFailure, DataCleanupSummary
+from market_data_center.direct_retention_service import DirectRetentionResult
 from market_data_center.domain.auction import AuctionCollectionSummary
 from market_data_center.domain.close_price_new_highs import ClosePriceNewHighBuildSummary
 from market_data_center.domain.ingestion import IngestionRun, IngestionStatus
@@ -157,6 +158,10 @@ def safe_error_summary(error: BaseException) -> str:
 
 
 def _result_statistics(result: object) -> tuple[int, int, int, ExecutionStatus]:
+    if isinstance(result, DirectRetentionResult):
+        count = result.deleted_rows + result.monitor_input_deleted_rows
+        status = ExecutionStatus.PARTIAL if result.partial else ExecutionStatus.SUCCEEDED
+        return count, count, 0, status
     if isinstance(result, MinuteVolumeBuildSummary):
         missing = result.candidate_count - result.complete_count
         status = (

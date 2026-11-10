@@ -96,7 +96,7 @@ def test_failed_cleanup_keeps_previously_committed_counts():
         raise error
 
     with pytest.raises(QualityCleanupFailure):
-        execution.step("archive_auction_quality", 2, operation)
+        execution.step("purge_expired_audit_inputs", 2, operation)
     execution.fail(error)
     assert persistence.finished_jobs[0].accepted_rows == 1
     assert persistence.finished_jobs[0].status is ExecutionStatus.FAILED
@@ -210,7 +210,7 @@ def test_job_catalog_is_stable_and_references_defined_workflows() -> None:
     assert workflows["data_cleanup"].step_codes == (
         "cleanup_call_auction_market_series_snapshots",
         "compress_raw",
-        "archive_auction_quality",
+        "purge_expired_audit_inputs",
         "archive_history_results",
         "purge_expired_raw",
     )

@@ -1,5 +1,11 @@
 # Worker 调度系统
 
+2026-11-10 保留策略更新（ADR-0078）：每天 03:00 的 `data-cleanup-daily` 将
+`audit.quality_result`、`regulation.monitor_input` 改为保留近 15 天，过期直接分批删除，
+不创建归档。按上海日期的 15 天前零点划界；监管输入按批次交易日划界，跳过运行中批次。
+监管事件保留，已过期输入的公共查询和历史重算明确报缺失。每批最多 5,000 行，
+共享现有维护锁、窗口和预算，未清完记录 partial。其他历史结果及 Raw 保留原策略。
+
 > 对应代码：`src/market_data_center/scheduler.py`、`scheduling_catalog.py`、`worker_admin.py`、`settings.py`
 > 治理依据：宪法第 11 条（进程内调度）、ADR-0017（统一 Worker 进程内调度）、ADR-0018（Worker 本地只读管理页面）、ADR-0016（跨平台调度与运行可靠性）
 

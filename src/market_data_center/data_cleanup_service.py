@@ -7,7 +7,7 @@ from datetime import date, timedelta
 from typing import Protocol
 
 RETAINED_COMPLETED_TRADING_DAYS = 3
-QUALITY_RESULT_RETENTION_DAYS = 30
+QUALITY_RESULT_RETENTION_DAYS = 15
 
 
 class DataCleanupPersistence(Protocol):
