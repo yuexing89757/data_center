@@ -14,11 +14,39 @@ see the [configuration maintenance record](最小生产发布运行手册.md#同
 
 The owner requested service ports above 10000 on the new server. Configure
 PostgreSQL at `127.0.0.1:15432`, the API at `127.0.0.1:18000`, and the Worker
-read-only task page at `127.0.0.1:18765/admin/scheduled-tasks`. These are loopback
-listeners. Keep the API and Worker database identities separate. The protected
+read-only task page at `127.0.0.1:18765/admin/scheduled-tasks`. These were initially
+loopback listeners. Keep the API and Worker database identities separate. The protected
 migration tunnel forwards runner `127.0.0.1:15432` to server `127.0.0.1:15432`;
 its SSH key permits only that database destination. The older dated port records
 below describe their original deployments.
+
+### Owner-authorized public access (2026-11-11)
+
+The owner subsequently requested public access on these same high ports. Nginx
+terminates HTTPS on the server interface at ports `18000` (API) and `18765`
+(Worker task page), proxying to the unchanged IPv4 loopback backends. The API
+retains `X-API-Key`; the Worker proxy requires separate HTTP Basic authentication.
+This preserves ADR-0018's hard-coded loopback binding and prohibition on
+unauthenticated proxies. Both proxy listeners use TLS 1.2/1.3 and per-IP request
+limits; they do not enable a port 80 listener.
+
+Public URLs are `https://120.48.108.186:18000/docs` and
+`https://120.48.108.186:18765/admin/scheduled-tasks`. PostgreSQL listens on port
+`15432`; external HBA rules allow only the existing API reader for
+`market_data_center`, using TLS and SCRAM authentication. Worker, migration,
+operations and PostgreSQL administrator logins remain unavailable over the
+public connection. Local database credentials, grants and the protected GitHub
+migration tunnel remain unchanged.
+
+The initial certificate is self-signed and contains the public IP as a SAN.
+Clients must explicitly trust the certificate and PostgreSQL clients should use
+`sslmode=verify-full` with its public certificate as `sslrootcert`. The certificate
+is at `/etc/ssl/certs/mdc-public-120.48.108.186.crt`; the private key remains
+restricted. API, Worker proxy and read-only database access credentials are stored
+only in `/root/mdc-public-access.env` (mode `0600`), never in this runbook or logs.
+Preserve the Nginx configuration, password file, TLS files and local backend
+bindings on later releases. This explicit public-access authorization supersedes
+the initial deployment's firewall restriction below.
 
 ## Preconditions
 
