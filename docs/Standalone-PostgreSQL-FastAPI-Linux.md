@@ -33,20 +33,30 @@ limits; they do not enable a port 80 listener.
 Public URLs are `https://120.48.108.186:18000/docs` and
 `https://120.48.108.186:18765/admin/scheduled-tasks`. PostgreSQL listens on port
 `15432`; external HBA rules allow only the existing API reader for
-`market_data_center`, using TLS and SCRAM authentication. Worker, migration,
+`market_data_center`, using SCRAM authentication. Worker, migration,
 operations and PostgreSQL administrator logins remain unavailable over the
 public connection. Local database credentials, grants and the protected GitHub
 migration tunnel remain unchanged.
 
 The initial certificate is self-signed and contains the public IP as a SAN.
-Clients must explicitly trust the certificate and PostgreSQL clients should use
-`sslmode=verify-full` with its public certificate as `sslrootcert`. The certificate
+HTTPS clients must explicitly trust the certificate. PostgreSQL clients choosing
+TLS should use `sslmode=verify-full` with its public certificate as `sslrootcert`. The certificate
 is at `/etc/ssl/certs/mdc-public-120.48.108.186.crt`; the private key remains
 restricted. API, Worker proxy and read-only database access credentials are stored
 only in `/root/mdc-public-access.env` (mode `0600`), never in this runbook or logs.
 Preserve the Nginx configuration, password file, TLS files and local backend
 bindings on later releases. This explicit public-access authorization supersedes
 the initial deployment's firewall restriction below.
+
+Later on 2026-11-11, the owner explicitly requested PostgreSQL connections without
+SSL for Navicat. The public API-reader HBA rule now uses `host` rather than
+`hostssl`, retaining SCRAM password authentication and the existing read-only
+permissions. Navicat may use `Conn.UseSSL=false` (libpq `sslmode=disable`). TLS is
+still available for clients choosing it; non-SSL sessions do not encrypt query
+text or results. The HBA configuration was reloaded without restarting PostgreSQL
+or the application services. API and Worker HTTPS settings are unchanged. External
+checks verified a non-SSL bounded read, read-only transactions, a five-second
+statement timeout, and rejection of Worker, migration and administrator logins.
 
 ## Preconditions
 
