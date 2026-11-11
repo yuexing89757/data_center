@@ -10,6 +10,16 @@ steps to a 120-second ceiling. This is a configuration-only change, not a databa
 an API release. Preserve these drop-ins and protected environment files during later releases;
 see the [configuration maintenance record](最小生产发布运行手册.md#同机数据库直连与重启退避2026-09-22).
 
+## Current server ports (2026-11-11)
+
+The owner requested service ports above 10000 on the new server. Configure
+PostgreSQL at `127.0.0.1:15432`, the API at `127.0.0.1:18000`, and the Worker
+read-only task page at `127.0.0.1:18765/admin/scheduled-tasks`. These are loopback
+listeners. Keep the API and Worker database identities separate. The protected
+migration tunnel forwards runner `127.0.0.1:15432` to server `127.0.0.1:15432`;
+its SSH key permits only that database destination. The older dated port records
+below describe their original deployments.
+
 ## Preconditions
 
 Since 2026-10-10, the owner has permanently waived PostgreSQL backup and database restore
