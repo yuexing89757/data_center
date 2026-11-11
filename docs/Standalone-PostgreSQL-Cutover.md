@@ -8,9 +8,10 @@ provision, copy, stop, migrate, or switch production.
 
 The ordered migrations are substantially portable to standard PostgreSQL. They use normal DDL, RLS,
 PL/pgSQL, `pgcrypto`, and `btree_gist`. The target needs those contrib extensions and a migration role
-able to create extensions, schemas, roles, functions, policies, and grants. Conditional grants to
-`anon`/`authenticated` and the conditional PostgREST `authenticator` setting become no-ops when those
-roles are absent. Historical names `supabase/migrations` and
+able to create extensions, schemas, roles, functions, policies, and grants. Provision compatibility roles `anon` and `authenticated` as NOLOGIN roles before applying the
+full migration chain: several historical migrations revoke privileges from them unconditionally.
+This does not enable anonymous access or Supabase Auth. The conditional PostgREST `authenticator`
+setting remains a no-op when that role is absent. Historical names `supabase/migrations` and
 `supabase_migrations.schema_migrations` do not create a runtime dependency and remain stable.
 
 ## Decisions required
